@@ -1,0 +1,10 @@
+# Cursor Rules
+
+# Project Context
+This is a Next.js 14+ project using App Router, TypeScript, Tailwind CSS, and Supabase.
+
+# Code Style
+- Use functional components.
+- Use TypeScript interfaces for props.
+- Use `lucide-react` for icons.
+- Use `shadcn/ui` for components (if applicable).
