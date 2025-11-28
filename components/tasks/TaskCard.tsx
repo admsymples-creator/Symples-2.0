@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "./Avatar";
 import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface TaskCardProps {
     id: string;
@@ -35,12 +37,33 @@ export function TaskCard({
 }: TaskCardProps) {
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
 
+    // Hook do dnd-kit para tornar o card sortable
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+    };
+
     return (
         <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
             className={cn(
                 "bg-white rounded-lg border border-gray-200 shadow-sm p-3 cursor-pointer",
                 "hover:shadow-md transition-shadow",
-                "flex flex-col gap-3"
+                "flex flex-col gap-3",
+                isDragging && "shadow-lg rotate-2"
             )}
             onClick={onClick}
         >

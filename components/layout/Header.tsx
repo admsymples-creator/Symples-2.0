@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Search, Bell, Settings, User } from "lucide-react";
+import Link from "next/link";
+import { Search, Settings, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { NotificationsPopover } from "@/components/layout/NotificationsPopover";
 
 export function Header() {
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -55,26 +57,19 @@ export function Header() {
             {/* Ações & Perfil */}
             <div className="flex items-center gap-2 ml-4">
                 {/* Notificações */}
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 relative"
-                    aria-label="Notificações"
-                >
-                    <Bell className="w-5 h-5 text-gray-600" />
-                    {/* Badge de notificações */}
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
-                </Button>
+                <NotificationsPopover />
 
                 {/* Configurações */}
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9"
-                    aria-label="Configurações"
-                >
-                    <Settings className="w-5 h-5 text-gray-600" />
-                </Button>
+                <Link href="/settings">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        aria-label="Configurações"
+                    >
+                        <Settings className="w-5 h-5 text-gray-600" />
+                    </Button>
+                </Link>
 
                 {/* Avatar do Usuário */}
                 <Button

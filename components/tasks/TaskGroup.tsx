@@ -1,11 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown, ChevronRight, Plus, Circle, MoreHorizontal, Pencil, Palette, Trash2 } from "lucide-react";
 import { TaskRow } from "./TaskRow";
 import { cn } from "@/lib/utils";
+import {
+    SortableContext,
+    verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
 
 interface Task {
     id: string;
@@ -20,71 +33,171 @@ interface Task {
 }
 
 interface TaskGroupProps {
+    id: string;
     title: string;
     icon?: string;
     tasks: Task[];
     onTaskClick?: (taskId: string) => void;
-    onAddTask?: () => void;
+    onAddTask?: (title: string, context: { status?: string; priority?: string; assignee?: string }) => void;
+    onToggleComplete?: (taskId: string, completed: boolean) => void;
     defaultCollapsed?: boolean;
+    groupBy?: "status" | "priority" | "assignee";
 }
 
 export function TaskGroup({
+    id,
     title,
     icon,
     tasks,
     onTaskClick,
     onAddTask,
+    onToggleComplete,
     defaultCollapsed = false,
+    groupBy = "status",
 }: TaskGroupProps) {
     const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
     const [isHovered, setIsHovered] = useState(false);
+    const [isQuickAddActive, setIsQuickAddActive] = useState(false);
+    const [quickAddValue, setQuickAddValue] = useState("");
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const completedCount = tasks.filter((t) => t.completed).length;
     const totalCount = tasks.length;
 
+    // Tornar o grupo um droppable
+    const { setNodeRef, isOver } = useDroppable({
+        id: id,
+    });
+
+    // Focar no input quando Quick Add é ativado
+    useEffect(() => {
+        if (isQuickAddActive && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isQuickAddActive]);
+
+    // Função para determinar o contexto do grupo
+    const getGroupContext = () => {
+        const context: { status?: string; priority?: string; assignee?: string } = {};
+
+        switch (groupBy) {
+            case "status":
+                context.status = title;
+                break;
+            case "priority":
+                // Mapear título para prioridade
+                const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
+                    "urgent": "urgent",
+                    "high": "high",
+                    "medium": "medium",
+                    "low": "low",
+                };
+                const priority = priorityMap[title.toLowerCase()];
+                if (priority) {
+                    context.priority = priority;
+                }
+                break;
+            case "assignee":
+                context.assignee = title;
+                break;
+        }
+
+        return context;
+    };
+
+    const handleQuickAddSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter" && quickAddValue.trim()) {
+            const context = getGroupContext();
+            onAddTask?.(quickAddValue.trim(), context);
+            setQuickAddValue("");
+            setIsQuickAddActive(false);
+        } else if (e.key === "Escape") {
+            setIsQuickAddActive(false);
+            setQuickAddValue("");
+        }
+    };
+
     return (
         <div
-            className="mb-6"
+            ref={setNodeRef}
+            className={cn(
+                "mb-6 transition-colors",
+                isOver && !isCollapsed && "bg-blue-50/30 rounded-lg p-2"
+            )}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
             {/* Header do Grupo */}
-            <div className="flex items-center justify-between mb-2 px-1">
+            <div className="flex items-center gap-2 h-8 mb-2 px-1 group">
+                <button
+                    onClick={() => setIsCollapsed(!isCollapsed)}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                >
+                    {isCollapsed ? (
+                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                    ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                    )}
+                </button>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="p-1 hover:bg-gray-100 rounded transition-colors"
-                    >
-                        {isCollapsed ? (
-                            <ChevronRight className="w-4 h-4 text-gray-500" />
-                        ) : (
-                            <ChevronDown className="w-4 h-4 text-gray-500" />
-                        )}
-                    </button>
-                    <div className="flex items-center gap-2">
-                        {icon && <span className="text-xs">{icon}</span>}
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</h3>
-                        <Badge variant="outline" className="text-xs px-2 py-0 bg-gray-100 text-gray-600 border-gray-200">
-                            {completedCount}/{totalCount}
-                        </Badge>
+                    {icon && <span className="text-xs">{icon}</span>}
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</h3>
+                    <Badge variant="outline" className="text-xs px-2 py-0 bg-gray-100 text-gray-600 border-gray-200">
+                        {completedCount}/{totalCount}
+                    </Badge>
+
+                    {/* Menu de Ações do Grupo */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                    }}
+                                >
+                                    <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-48">
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        console.log("Editar grupo:", title);
+                                        // TODO: Implementar edição
+                                    }}
+                                >
+                                    <Pencil className="w-4 h-4 mr-2" />
+                                    Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        console.log("Mudar cor do grupo:", title);
+                                        // TODO: Implementar mudança de cor
+                                    }}
+                                >
+                                    <Palette className="w-4 h-4 mr-2" />
+                                    Mudar Cor
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        console.log("Excluir grupo:", title);
+                                        // TODO: Implementar exclusão
+                                    }}
+                                    className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                                >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Excluir Grupo
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </div>
-
-                {/* Botão Adicionar (visível no hover) */}
-                {isHovered && !isCollapsed && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs text-gray-600 hover:text-gray-900"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onAddTask?.();
-                        }}
-                    >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Adicionar
-                    </Button>
-                )}
             </div>
 
             {/* Lista de Tarefas */}
@@ -95,15 +208,75 @@ export function TaskGroup({
                             Nenhuma tarefa neste grupo
                         </div>
                     ) : (
-                        tasks.map((task, index) => (
-                            <TaskRow
-                                key={task.id}
-                                {...task}
-                                onClick={() => onTaskClick?.(task.id)}
-                                isLast={index === tasks.length - 1}
-                            />
-                        ))
+                        <SortableContext
+                            items={tasks.map((t) => t.id)}
+                            strategy={verticalListSortingStrategy}
+                        >
+                            {tasks.map((task, index) => (
+                                <TaskRow
+                                    key={task.id}
+                                    {...task}
+                                    onClick={() => onTaskClick?.(task.id)}
+                                    onToggleComplete={onToggleComplete}
+                                    isLast={index === tasks.length - 1}
+                                />
+                            ))}
+                        </SortableContext>
                     )}
+
+                    {/* Quick Add no rodapé - Ghost Row */}
+                    <div
+                        className={cn(
+                            "h-12 border-b border-gray-100 hover:bg-gray-50 transition-colors",
+                            "grid grid-cols-[20px_3px_auto_1fr_auto_120px_100px_120px_40px] items-center gap-2 px-4"
+                        )}
+                    >
+                        {/* Espaço do Drag Handle (vazio) */}
+                        <div />
+
+                        {/* Espaço da linha de prioridade (vazio) */}
+                        <div />
+
+                        {/* Ícone Plus/Circle (onde ficaria o checkbox) */}
+                        <div className="flex items-center justify-center">
+                            {isQuickAddActive ? (
+                                <Circle className="w-4 h-4 text-gray-400" />
+                            ) : (
+                                <Plus className="w-4 h-4 text-gray-300" />
+                            )}
+                        </div>
+
+                        {/* Texto/Input (onde ficaria o título) */}
+                        {isQuickAddActive ? (
+                            <Input
+                                ref={inputRef}
+                                value={quickAddValue}
+                                onChange={(e) => setQuickAddValue(e.target.value)}
+                                onKeyDown={handleQuickAddSubmit}
+                                onBlur={() => {
+                                    if (!quickAddValue.trim()) {
+                                        setIsQuickAddActive(false);
+                                    }
+                                }}
+                                placeholder="Adicionar tarefa aqui..."
+                                className="h-auto text-sm text-gray-900 border-0 outline-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 px-0 bg-transparent placeholder:text-gray-400"
+                            />
+                        ) : (
+                            <button
+                                onClick={() => setIsQuickAddActive(true)}
+                                className="w-full text-left text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                Adicionar tarefa aqui...
+                            </button>
+                        )}
+
+                        {/* Espaços vazios para manter alinhamento com TaskRow */}
+                        <div />
+                        <div />
+                        <div />
+                        <div />
+                        <div />
+                    </div>
                 </div>
             )}
         </div>

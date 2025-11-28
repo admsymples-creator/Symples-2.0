@@ -3,8 +3,8 @@
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Users, Settings, Building2 } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     Select,
@@ -22,18 +22,35 @@ interface NavItem {
 
 const personalItems: NavItem[] = [
     { label: "Minha Semana", href: "/home", icon: Home },
+    { label: "Assistente IA", href: "/assistant", icon: Sparkles },
 ];
 
 const workspaceItems: NavItem[] = [
     { label: "Tarefas", href: "/tasks", icon: CheckSquare },
     { label: "Financeiro", href: "/finance", icon: DollarSign },
-    { label: "Time", href: "/team", icon: Users },
 ];
 
 export function Sidebar() {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
 
     const isActive = (href: string) => {
+        // Tratamento para links com query params (ex: /settings?tab=members)
+        if (href.includes('?')) {
+            const [path, query] = href.split('?');
+            const params = new URLSearchParams(query);
+            const targetTab = params.get('tab');
+            const currentTab = searchParams.get('tab');
+            
+            return pathname === path && currentTab === targetTab;
+        }
+
+        // Tratamento específico para /settings (sem tab na URL)
+        if (href === "/settings") {
+            // Só ativo se estiver em settings e não tiver tab ou tab for general
+            return pathname === "/settings" && (!searchParams.get('tab') || searchParams.get('tab') === 'general');
+        }
+
         if (href === "/home") {
             return pathname === "/home";
         }
@@ -77,15 +94,15 @@ export function Sidebar() {
                                     <Link
                                         href={item.href}
                                         className={cn(
-                                            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
                                             active
-                                                ? "bg-indigo-50 text-indigo-600"
-                                                : "text-gray-700 hover:bg-gray-50"
+                                                ? "bg-green-50 text-green-700 font-semibold"
+                                                : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
                                         )}
                                     >
                                         <Icon className={cn(
                                             "w-5 h-5",
-                                            active ? "text-indigo-600" : "text-gray-500"
+                                            active ? "text-green-700" : "text-gray-500"
                                         )} />
                                         {item.label}
                                     </Link>
@@ -106,7 +123,7 @@ export function Sidebar() {
                         <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
                             <SelectTrigger className="w-full h-9 text-sm">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    <Building2 className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                    {!selectedWorkspace && <Building2 className="w-4 h-4 text-gray-500 flex-shrink-0" />}
                                     <SelectValue placeholder="Selecione o Workspace" className="truncate" />
                                 </div>
                             </SelectTrigger>
@@ -135,15 +152,15 @@ export function Sidebar() {
                                     <Link
                                         href={item.href}
                                         className={cn(
-                                            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
                                             active
-                                                ? "bg-indigo-50 text-indigo-600"
-                                                : "text-gray-700 hover:bg-gray-50"
+                                                ? "bg-green-50 text-green-700 font-semibold"
+                                                : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
                                         )}
                                     >
                                         <Icon className={cn(
                                             "w-5 h-5",
-                                            active ? "text-indigo-600" : "text-gray-500"
+                                            active ? "text-green-700" : "text-gray-500"
                                         )} />
                                         {item.label}
                                     </Link>
@@ -155,19 +172,19 @@ export function Sidebar() {
             </nav>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 space-y-1">
+            <div className="p-4 border-t border-gray-200 mt-auto">
                 <Link
                     href="/settings"
                     className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                        pathname === "/settings"
-                            ? "bg-indigo-50 text-indigo-600"
-                            : "text-gray-700 hover:bg-gray-50"
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                        isActive("/settings")
+                            ? "bg-gray-100 text-gray-900 font-semibold"
+                            : "text-gray-500 font-medium hover:bg-gray-50 hover:text-gray-900"
                     )}
                 >
                     <Settings className={cn(
                         "w-5 h-5",
-                        pathname === "/settings" ? "text-indigo-600" : "text-gray-500"
+                        isActive("/settings") ? "text-gray-900" : "text-gray-400"
                     )} />
                     Configurações
                 </Link>

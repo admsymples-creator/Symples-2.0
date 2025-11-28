@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { createWorkspace } from "@/lib/actions/onboarding";
 import {
     Select,
     SelectContent,
@@ -23,8 +24,10 @@ export function OnboardingWizard() {
     const [segment, setSegment] = useState("");
     const [isConnecting, setIsConnecting] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
-
-    const magicCode = "#START-8821";
+    
+    // Novos estados
+    const [magicCode, setMagicCode] = useState("");
+    const [isCreating, setIsCreating] = useState(false);
 
     const steps = [
         { number: 1, label: "Sua Empresa", icon: Building2 },
@@ -32,9 +35,28 @@ export function OnboardingWizard() {
         { number: 3, label: "Tudo Pronto", icon: CheckCircle2 },
     ];
 
-    const handleStep1Continue = () => {
+    const handleStep1Continue = async () => {
         if (companyName && segment) {
-            setCurrentStep(2);
+            setIsCreating(true);
+            try {
+                const formData = new FormData();
+                formData.append("name", companyName);
+                formData.append("segment", segment);
+
+                const result = await createWorkspace(formData);
+
+                if (result.success && result.magicCode) {
+                    setMagicCode(result.magicCode);
+                    setCurrentStep(2);
+                } else {
+                    alert(result.error || "Erro ao criar workspace");
+                }
+            } catch (error) {
+                console.error(error);
+                alert("Erro inesperado ao criar workspace");
+            } finally {
+                setIsCreating(false);
+            }
         }
     };
 
@@ -178,13 +200,20 @@ export function OnboardingWizard() {
 
                                 <Button
                                     onClick={handleStep1Continue}
-                                    disabled={!companyName || !segment}
-                                    className={`w-full h-11 text-white font-medium rounded-lg transition-all ${!companyName || !segment
+                                    disabled={!companyName || !segment || isCreating}
+                                    className={`w-full h-11 text-white font-medium rounded-lg transition-all ${!companyName || !segment || isCreating
                                             ? "bg-green-600 opacity-50 cursor-not-allowed"
                                             : "bg-green-500 hover:bg-green-700 opacity-100"
                                         }`}
                                 >
-                                    Continuar
+                                    {isCreating ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            Criando workspace...
+                                        </>
+                                    ) : (
+                                        "Continuar"
+                                    )}
                                 </Button>
                             </div>
                         </>

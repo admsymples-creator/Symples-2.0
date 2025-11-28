@@ -131,6 +131,7 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
     * Todas as tarefas aparecem no mesmo Grid do dia.
     * **Diferenciação:** Usar uma "Etiqueta" (Badge) ou pílula colorida dentro do card da tarefa para indicar a origem (ex: 🟢 Agência V4 | 🟣 Pessoal).
 
+
 \`\`\`sql  
 \-- 1\. Convites para Workspaces (Gestão de Time)  
 CREATE TABLE public.workspace\_invites (  
@@ -172,3 +173,49 @@ ALTER TABLE public.workspace\_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 
 \-- Adicionar policies de leitura/escrita baseadas em "is\_workspace\_member" para as novas tabelas.  
+
+## 7. REGRAS DE NEGÓCIO V2.2 (Task Logic)
+
+### 7.1. Lógica de Visualização (Dashboard)
+- **Modos de Visão:**
+  - **5 Dias (Padrão):** Mostra a semana útil (Seg-Sex).
+  - **3 Dias (Foco):** Lógica de "Janela Deslizante". Deve tentar centralizar o dia de "Hoje" (Ex: Ontem, **Hoje**, Amanhã).
+- **Mobile:** Independente da seleção, exibe apenas 1 dia por vez (Lista vertical ou Carrossel).
+
+### 7.2. Smart Triggers (Ações Rápidas na Tarefa)
+- **Botão Raio (⚡):**
+  - *Ação:* Move a `due_date` para o próximo Domingo (Fim do ciclo semanal).
+  - *Estado:* Ícone fica Amarelo e fixo se a data for domingo.
+- **Botão Exclamação (🔥):**
+  - *Ação:* Move a `due_date` para Hoje E define `priority = 'high'`.
+  - *Estado:* Ícone fica Vermelho e fixo.
+
+### 7.3. Criação Rápida (Quick Add)
+- **Local:** Rodapé da coluna do dia.
+- **Comportamento:** Ao pressionar `Enter`:
+  1. Cria a tarefa vinculada à data da coluna.
+  2. Se estiver dentro de um Workspace filtrado, herda o ID. Se estiver na visão geral, cria como "Pessoal" (sem workspace_id).
+  3. UI Optimistic: O input limpa imediatamente.
+
+### 7.4. Uploads e Arquivos
+- **Armazenamento:** Arquivos não residem no banco de dados. Devem ser enviados para o Supabase Storage.
+- **Dupla Visualização:** Um upload feito no chat (Contexto) deve aparecer na Timeline E TAMBÉM na galeria de arquivos da tarefa (Editor).
+## 8. REGRAS DE NEGÓCIO V2.3 (Finance Logic)
+
+### 8.1. Transações e Recorrência
+- **Estrutura:** Toda transação tem `amount`, `type` (income/expense), `status` (paid/pending) e `category`.
+- **Recorrência (MVP):**
+  - O sistema não cria transações futuras infinitas.
+  - Existe uma flag `is_recurring` (boolean).
+  - **Automação:** Um Job (n8n ou Cron) roda todo dia 1º e duplica as transações marcadas como `is_recurring` para o mês atual com status `pending`.
+
+### 8.2. Diagnóstico de Saúde Financeira (Runway)
+- **Cálculo de Status:**
+  - *Saudável:* (Receitas Previstas - Despesas Previstas) > 0 E (Caixa Atual > 3x Custo Fixo).
+  - *Atenção:* (Receitas - Despesas) < 0 MAS (Caixa Atual > Custo Fixo).
+  - *Crítico:* (Receitas - Despesas) < 0 E (Caixa Atual < Custo Fixo).
+- **Visualização:** O Dashboard deve exibir esse status de forma textual e colorida ("Você tem 3 meses de caixa").
+
+### 8.3. Categorização
+- **Categorias Padrão:** O sistema inicia com lista básica (Serviços, Software, Pessoal, Impostos).
+- **Customização:** Usuário pode criar novas categorias (tabela `categories` vinculada ao `workspace_id`).

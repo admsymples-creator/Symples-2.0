@@ -123,3 +123,56 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 ### 6.3. Grid da Dashboard
 - **Semana:** Grid de 5 colunas fixas em Desktop (`lg:grid-cols-5`). Proibido scroll horizontal para dias da semana.
 - **Empty States:** Minimalistas (apenas borda tracejada e ícone), sem ilustrações grandes que poluem a visão.
+
+## 7. ATUALIZAÇÕES V3.2 (Dashboard & Task Refinement)
+
+### 7.1. Dashboard "The Cockpit"
+- **Grid Semanal:**
+  - **Colunas:** Altura fixa (`h-[600px]`) com scroll interno (`overflow-y-auto`).
+  - **Visual:** Estilo "Clean". Sem bordas pesadas. Fundo `bg-gray-50` para dias inativos, `bg-green-50/30` para o dia atual.
+  - **Quick Add:** Input fixo no rodapé da coluna. Estilo minimalista (sem borda total, apenas linha de base ou transparente).
+
+### 7.2. Lista de Tarefas (Task Row)
+- **Estilo:** "Checklist" (Linha) > "Card" (Caixa).
+- **Container:** `border-b border-gray-100`, `py-2`, `hover:bg-gray-50`.
+- **Identificação:**
+  - **Workspace:** Barra vertical colorida na esquerda (`w-1 rounded-r`).
+  - **Pessoal:** Sem barra (Clean).
+- **Ações (Hover):**
+  - "Grip" (Drag handle) na esquerda.
+  - Botões "Raio" (Semana) e "Exclamação" (Urgente) na direita.
+
+### 7.3. Modal de Tarefa (Task Detail)
+- **Dimensões:** Widescreen (`max-w-6xl` ou `w-[90vw]`).
+- **Layout:** Split-Screen Rígido.
+  - **Esquerda (Editor):** Branco. Título Grande (`text-3xl bold`). Rich Text Toolbar. Arquivos em Grid (`grid-cols-2`).
+  - **Direita (Contexto):** Cinza (`bg-gray-50`). Timeline conectada por linha vertical. Card de Origem do WhatsApp destacado.
+
+### 7.4. Navegação (Sidebar & Header)
+- **Sidebar:** Hierarquia Invertida. "Minha Semana" (Global) no topo. Seletor de Workspace e menus específicos abaixo de um divisor.
+- **Header:** Controles de Visualização (3 Dias / 5 Dias) próximos ao título da seção, usando `Tabs` (Segmented Control).
+
+## 8. ATUALIZAÇÕES V3.3 (Módulo Financeiro)
+
+### 8.1. Dashboard Financeiro
+- **Cards de KPI:**
+  - Estilo: Borda superior colorida (`border-t-4`) para indicar status (Verde=Entrada, Vermelho=Saída, Azul=Saldo).
+  - Tipografia: Valores em destaque (`text-3xl bold`).
+- **Diagnóstico Visual (Health Card):**
+  - Card de largura total com cor de fundo semântica (`bg-green-50` para saudável, `bg-red-50` para crítico).
+  - Deve conter ícone de status e mensagem explicativa clara.
+
+### 8.2. Modal de Transação (Smart Form)
+- **Layout Híbrido:**
+  - **Topo:** Seletor de Tipo (Entrada/Saída) como `Segmented Control` (Tabs largura total).
+  - **Hero Input:** O valor monetário é o protagonista. Fonte gigante (`text-5xl`), centralizado, sem bordas de input. A cor do texto muda conforme o tipo (Verde/Vermelho).
+  - **Corpo:** Campos secundários (Data, Categoria, Descrição) agrupados em um bloco visualmente distinto (fundo cinza claro ou lista com ícones à esquerda).
+- **Ações:**
+  - Botão Principal: Neutro Escuro (`bg-slate-900`). Não usar verde/vermelho para o botão de salvar para evitar poluição visual.
+
+### 8.3. Listas Financeiras (Extrato)
+- **Transaction Row:**
+  - Layout compacto.
+  - Ícone de categoria à esquerda (circular).
+  - Valor alinhado à direita com cor semântica.
+  - Data discreta abaixo do título.

@@ -10,8 +10,26 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Avatar, AvatarGroup } from "./Avatar";
-import { MoreVertical, GripVertical, Zap, AlertTriangle } from "lucide-react";
+import {
+    MoreVertical,
+    GripVertical,
+    Zap,
+    CircleAlert,
+    Maximize2,
+    MessageCircle,
+    Copy,
+    Trash2,
+} from "lucide-react";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface TaskRowProps {
     id: string;
@@ -24,6 +42,7 @@ interface TaskRowProps {
     tags?: string[];
     hasUpdates?: boolean;
     onClick?: () => void;
+    onToggleComplete?: (id: string, completed: boolean) => void;
     isLast?: boolean;
 }
 
@@ -111,6 +130,7 @@ export function TaskRow({
     tags = [],
     hasUpdates = false,
     onClick,
+    onToggleComplete,
     isLast = false,
 }: TaskRowProps) {
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
@@ -120,30 +140,60 @@ export function TaskRow({
     const isFocusActive = isNextSunday(dueDate);
     const isUrgentActive = isToday(dueDate) || priority === "high" || priority === "urgent";
 
+    // Hook do dnd-kit para tornar a linha sortable
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+    };
+
     return (
         <TooltipProvider>
             <div
+                ref={setNodeRef}
+                style={style}
                 className={cn(
                     "h-12 hover:bg-gray-50 transition-colors cursor-pointer group",
                     "grid grid-cols-[20px_3px_auto_1fr_auto_120px_100px_120px_40px] items-center gap-2 px-4",
-                    !isLast && "border-b border-gray-50"
+                    !isLast && "border-b border-gray-50",
+                    isDragging && "shadow-lg bg-white rounded-lg"
                 )}
                 onClick={onClick}
             >
-                {/* Drag Handle (visível apenas no hover) */}
-                <div className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <GripVertical className="w-4 h-4 text-gray-300 cursor-grab active:cursor-grabbing" />
+                {/* Drag Handle (estilo Linear - invisível até hover) */}
+                <div 
+                    {...attributes}
+                    {...listeners}
+                    className="flex items-center justify-center pr-2"
+                >
+                    <GripVertical className="w-4 h-4 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                 </div>
 
-                {/* Linha vertical de prioridade (mais fina e arredondada) */}
-                <div className={cn("w-[3px] h-full rounded-full", priorityColors[priority])} />
+                {/* Barra de Workspace (sutil e elegante) */}
+                <div className={cn("w-[3px] h-4 rounded-full mr-3", priorityColors[priority])} />
 
                 {/* Checkbox */}
                 <div onClick={(e) => e.stopPropagation()}>
-                    <Checkbox checked={completed} />
+                    <Checkbox 
+                        checked={completed} 
+                        onCheckedChange={(checked) => {
+                            if (onToggleComplete) {
+                                onToggleComplete(id, checked === true);
+                            }
+                        }}
+                    />
                 </div>
 
-                {/* Título com tags e indicador de atualização */}
+                {/* Título com tags e indicador de atualização (alinhamento vertical preciso) */}
                 <div className="flex items-center gap-2 min-w-0">
                     {/* Indicador de atualização não lida */}
                     {hasUpdates && (
@@ -165,7 +215,7 @@ export function TaskRow({
                     )}
                     <span
                         className={cn(
-                            "text-sm text-gray-900 truncate",
+                            "text-sm text-gray-900 truncate leading-tight",
                             hasUpdates ? "font-semibold" : "font-medium",
                             completed && "line-through text-gray-500"
                         )}
@@ -174,7 +224,7 @@ export function TaskRow({
                     </span>
                 </div>
 
-                {/* Ações Rápidas (visíveis apenas no hover, ou sempre se ativo) */}
+                {/* Ações Rápidas (hierarquia visual - sutis quando inativos) */}
                 <div
                     className={cn(
                         "flex items-center gap-1 transition-opacity pointer-events-none group-hover:pointer-events-auto",
@@ -192,8 +242,8 @@ export function TaskRow({
                                 className={cn(
                                     "h-7 w-7 transition-all duration-200 active:scale-110",
                                     isFocusActive
-                                        ? "fill-yellow-400 text-yellow-600 hover:bg-yellow-50"
-                                        : "text-gray-400 hover:text-yellow-500 hover:bg-yellow-50"
+                                        ? "text-yellow-500 fill-yellow-400 opacity-100 hover:bg-yellow-50"
+                                        : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
                                 )}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -219,8 +269,8 @@ export function TaskRow({
                                 className={cn(
                                     "h-7 w-7 transition-all duration-200 active:scale-110",
                                     isUrgentActive
-                                        ? "fill-red-400 text-red-600 hover:bg-red-50"
-                                        : "text-gray-400 hover:text-red-500 hover:bg-red-50"
+                                        ? "text-red-500 fill-red-400 opacity-100 hover:bg-red-50"
+                                        : "text-gray-300 hover:text-red-500 hover:bg-red-50"
                                 )}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -230,7 +280,7 @@ export function TaskRow({
                                     // TODO: Implementar ação no backend
                                 }}
                             >
-                                <AlertTriangle className={cn("w-4 h-4", isUrgentActive && "fill-current")} />
+                                <CircleAlert className={cn("w-4 h-4", isUrgentActive && "fill-current")} />
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -248,14 +298,14 @@ export function TaskRow({
                     )}
                 </div>
 
-                {/* Data */}
+                {/* Data (reduzido peso visual) */}
                 <div className="text-xs text-right">
                     {dueDate ? (
                         <span
                             className={cn(
-                                "text-gray-500",
-                                isToday(dueDate) && "text-red-600 font-bold",
-                                isOverdue && !isToday(dueDate) && "text-red-600 font-medium"
+                                "text-gray-400",
+                                isToday(dueDate) && "text-red-500 font-medium",
+                                isOverdue && !isToday(dueDate) && "text-red-500 font-medium"
                             )}
                         >
                             {new Date(dueDate).toLocaleDateString("pt-BR", {
@@ -274,19 +324,66 @@ export function TaskRow({
                     <span className="text-xs text-gray-500 whitespace-nowrap">{statusInfo.label}</span>
                 </div>
 
-                {/* Ações (menu) */}
+                {/* Menu de Ações da Tarefa */}
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            // TODO: Abrir menu de ações
-                        }}
-                    >
-                        <MoreVertical className="w-4 h-4 text-gray-500" />
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                }}
+                            >
+                                <MoreVertical className="w-4 h-4 text-gray-500" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClick?.();
+                                }}
+                            >
+                                <Maximize2 className="w-4 h-4 mr-2" />
+                                Abrir Detalhes
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    console.log("Ver no WhatsApp:", id);
+                                    // TODO: Implementar visualização no WhatsApp
+                                }}
+                                className="text-green-600 focus:bg-green-50 focus:text-green-600"
+                            >
+                                <MessageCircle className="w-4 h-4 mr-2" />
+                                Ver no WhatsApp
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    console.log("Duplicar tarefa:", id);
+                                    // TODO: Implementar duplicação
+                                }}
+                            >
+                                <Copy className="w-4 h-4 mr-2" />
+                                Duplicar
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    console.log("Excluir tarefa:", id);
+                                    // TODO: Implementar exclusão
+                                }}
+                                className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                            >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Excluir
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
         </TooltipProvider>

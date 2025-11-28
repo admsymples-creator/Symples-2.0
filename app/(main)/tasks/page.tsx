@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,9 +13,33 @@ import {
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Search, Filter, Plus, List, LayoutGrid } from "lucide-react";
+import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/EmptyState";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+    DragStartEvent,
+    DragOverlay,
+} from "@dnd-kit/core";
+import {
+    arrayMove,
+    sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { getTasks, createTask, updateTask, type Task as TaskFromDB } from "@/lib/actions/tasks";
+import { useRouter } from "next/navigation";
 
 type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
@@ -34,133 +58,93 @@ interface Task {
 }
 
 export default function TasksPage() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<ContextTab>("todas");
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [groupBy, setGroupBy] = useState<GroupBy>("status");
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [localTasks, setLocalTasks] = useState<Task[]>([]);
+    const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-    // Dados mockados com status customizáveis
-    const mockTasks: Task[] = [
-        {
-            id: "1",
-            title: "Revisar proposta comercial para cliente X",
-            completed: false,
-            priority: "urgent",
-            status: "Backlog",
-            assignees: [{ name: "João Silva" }],
-            dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Comercial"],
-            hasUpdates: true,
-        },
-        {
-            id: "2",
-            title: "Enviar relatório mensal de vendas",
-            completed: false,
-            priority: "high",
-            status: "Triagem",
-            assignees: [{ name: "Maria Santos" }, { name: "Pedro Costa" }],
-            dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Financeiro"],
-            hasUpdates: true,
-        },
-        {
-            id: "3",
-            title: "Finalizar design do novo produto",
-            completed: false,
-            priority: "urgent",
-            status: "Execução",
-            assignees: [{ name: "Ana Lima" }],
-            dueDate: new Date().toISOString(), // Hoje (Urgente)
-            tags: ["Design"],
-            hasUpdates: true,
-        },
-        {
-            id: "4",
-            title: "Preparar apresentação para reunião de diretoria",
-            completed: false,
-            priority: "high",
-            status: "Backlog",
-            assignees: [],
-            dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Executivo"],
-        },
-        {
-            id: "5",
-            title: "Atualizar documentação técnica",
-            completed: true,
-            priority: "medium",
-            status: "Revisão",
-            assignees: [{ name: "Carlos Oliveira" }],
-            dueDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Técnico"],
-        },
-        {
-            id: "6",
-            title: "Implementar nova feature de autenticação",
-            completed: false,
-            priority: "high",
-            status: "Execução",
-            assignees: [{ name: "Lucas Ferreira" }, { name: "Julia Alves" }],
-            // Próximo domingo (Foco Semanal)
-            dueDate: (() => {
-                const today = new Date();
-                const dayOfWeek = today.getDay();
-                const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
-                const nextSunday = new Date(today);
-                nextSunday.setDate(today.getDate() + daysUntilSunday);
-                nextSunday.setHours(0, 0, 0, 0);
-                return nextSunday.toISOString();
-            })(),
-            tags: ["Desenvolvimento"],
-        },
-        {
-            id: "7",
-            title: "Revisar campanha de marketing digital",
-            completed: false,
-            priority: "medium",
-            status: "Triagem",
-            assignees: [{ name: "Mariana Rocha" }],
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Marketing"],
-        },
-        {
-            id: "8",
-            title: "Organizar evento de lançamento",
-            completed: false,
-            priority: "high",
-            status: "Execução",
-            assignees: [{ name: "Roberto Silva" }, { name: "Fernanda Lima" }],
-            dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Eventos"],
-        },
-        {
-            id: "9",
-            title: "Validar testes de integração",
-            completed: false,
-            priority: "medium",
-            status: "Revisão",
-            assignees: [{ name: "Carlos Oliveira" }],
-            dueDate: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["QA"],
-        },
-        {
-            id: "10",
-            title: "Criar wireframes para nova interface",
-            completed: false,
-            priority: "low",
-            status: "Backlog",
-            assignees: [{ name: "Ana Lima" }],
-            dueDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
-            tags: ["Design"],
-        },
-    ];
+    // Sensores para drag & drop
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    // Função para mapear dados do banco para interface local
+    const mapTaskFromDB = (task: TaskFromDB): Task => {
+        // Mapear status do banco para status customizável
+        const statusMap: Record<string, string> = {
+            todo: "Backlog",
+            in_progress: "Execução",
+            done: "Revisão",
+            archived: "Arquivado",
+        };
+
+        // Extrair tags do origin_context se existir
+        const tags: string[] = [];
+        if (task.origin_context?.tags) {
+            tags.push(...task.origin_context.tags);
+        }
+
+        return {
+            id: task.id,
+            title: task.title,
+            completed: task.status === "done",
+            priority: task.priority,
+            status: statusMap[task.status] || task.status,
+            assignees: task.assignee_id ? [{ name: "Usuário" }] : [], // TODO: Buscar nome real do usuário
+            dueDate: task.due_date || undefined,
+            tags,
+            hasUpdates: false, // TODO: Implementar lógica de atualizações
+        };
+    };
+
+    // Buscar tarefas do banco
+    useEffect(() => {
+        const loadTasks = async () => {
+            try {
+                // Determinar filtros baseado na aba ativa
+                let filters: { workspaceId?: string | null } = {};
+                
+                if (activeTab === "minhas") {
+                    filters.workspaceId = null; // Tarefas pessoais
+                } else if (activeTab === "time") {
+                    // TODO: Filtrar por workspace do time
+                    // Por enquanto, buscar todas
+                }
+
+                const tasksFromDB = await getTasks(filters);
+                const mappedTasks = tasksFromDB.map(mapTaskFromDB);
+                setLocalTasks(mappedTasks);
+            } catch (error) {
+                console.error("Erro ao carregar tarefas:", error);
+            }
+        };
+
+        loadTasks();
+    }, [activeTab]);
 
     // Função de agrupamento dinâmico
     const groupedData = useMemo(() => {
+        // Inicializar grupos padrão se estiver agrupando por status
         const groups: Record<string, Task[]> = {};
+        
+        if (groupBy === "status") {
+            groups["Backlog"] = [];
+            groups["Execução"] = [];
+            groups["Revisão"] = [];
+        }
 
-        mockTasks.forEach((task) => {
+        localTasks.forEach((task) => {
             let groupKey: string;
 
             switch (groupBy) {
@@ -184,7 +168,7 @@ export default function TasksPage() {
         });
 
         return groups;
-    }, [groupBy]);
+    }, [groupBy, localTasks]);
 
     // Converter grupos para formato de colunas (Kanban)
     const kanbanColumns = useMemo(() => {
@@ -231,6 +215,231 @@ export default function TasksPage() {
         }));
     }, [groupedData]);
 
+    // Mapear status customizáveis para status do banco
+    const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archived" => {
+        const statusLower = status.toLowerCase();
+        if (statusLower.includes("backlog") || statusLower === "todo" || statusLower === "não iniciado") {
+            return "todo";
+        }
+        if (statusLower.includes("triagem") || statusLower.includes("execução") || statusLower === "in_progress") {
+            return "in_progress";
+        }
+        if (statusLower.includes("revisão") || statusLower === "done" || statusLower === "finalizado") {
+            return "done";
+        }
+        return "todo";
+    };
+
+    // Handler para quando o drag começa
+    const handleDragStart = (event: DragStartEvent) => {
+        const { active } = event;
+        const task = localTasks.find((t) => t.id === active.id);
+        setActiveTask(task || null);
+    };
+
+    // Handler para quando o drag termina
+    const handleDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event;
+        setActiveTask(null);
+
+        if (!over) {
+            return;
+        }
+
+        // Encontrar grupo de origem
+        const sourceGroup = Object.entries(groupedData).find(([_, tasks]) =>
+            tasks.some((task) => task.id === active.id)
+        );
+
+        if (!sourceGroup) {
+            return;
+        }
+
+        const [sourceGroupKey, sourceTasks] = sourceGroup;
+        const sourceTaskIndex = sourceTasks.findIndex((task) => task.id === active.id);
+        const task = sourceTasks[sourceTaskIndex];
+
+        if (sourceTaskIndex === -1 || !task) {
+            return;
+        }
+
+        // Verificar se está arrastando para um grupo (drop zone) ou para uma tarefa
+        let destinationGroupKey: string | undefined;
+
+        // Verificar se over.id é um ID de grupo
+        const isGroupId = Object.keys(groupedData).includes(over.id as string);
+        if (isGroupId) {
+            destinationGroupKey = over.id as string;
+        } else {
+            // É uma tarefa, encontrar o grupo que contém essa tarefa
+            destinationGroupKey = Object.entries(groupedData).find(([_, tasks]) =>
+                tasks.some((t) => t.id === over.id)
+            )?.[0];
+        }
+
+        if (!destinationGroupKey) {
+            return;
+        }
+
+        // Se está no mesmo grupo, apenas reordenar
+        if (sourceGroupKey === destinationGroupKey) {
+            const destinationTasks = groupedData[destinationGroupKey];
+            const overTaskIndex = destinationTasks.findIndex((t) => t.id === over.id);
+            const newIndex = overTaskIndex === -1 ? destinationTasks.length - 1 : overTaskIndex;
+
+            if (sourceTaskIndex === newIndex) {
+                return;
+            }
+
+            // Optimistic update: usar arrayMove dentro do grupo
+            const newTasks = [...localTasks];
+            const tasksInGroup = newTasks.filter((t) => {
+                let groupKey: string;
+                switch (groupBy) {
+                    case "status":
+                        groupKey = t.status || "Sem Status";
+                        break;
+                    case "priority":
+                        groupKey = t.priority || "medium";
+                        break;
+                    case "assignee":
+                        groupKey = t.assignees?.[0]?.name || "Não atribuído";
+                        break;
+                    default:
+                        groupKey = t.status || "Sem Status";
+                }
+                return groupKey === destinationGroupKey;
+            });
+
+            const groupTaskIds = tasksInGroup.map((t) => t.id);
+            const oldGroupIndex = groupTaskIds.indexOf(active.id as string);
+            const newGroupIndex = overTaskIndex === -1 ? groupTaskIds.length - 1 : groupTaskIds.indexOf(over.id as string);
+
+            if (oldGroupIndex === -1 || newGroupIndex === -1) {
+                return;
+            }
+
+            const reorderedGroupTasks = arrayMove(tasksInGroup, oldGroupIndex, newGroupIndex);
+            
+            // Substituir as tarefas do grupo na lista completa
+            let groupStartIndex = 0;
+            for (let i = 0; i < newTasks.length; i++) {
+                let groupKey: string;
+                switch (groupBy) {
+                    case "status":
+                        groupKey = newTasks[i].status || "Sem Status";
+                        break;
+                    case "priority":
+                        groupKey = newTasks[i].priority || "medium";
+                        break;
+                    case "assignee":
+                        groupKey = newTasks[i].assignees?.[0]?.name || "Não atribuído";
+                        break;
+                    default:
+                        groupKey = newTasks[i].status || "Sem Status";
+                }
+                if (groupKey === destinationGroupKey) {
+                    groupStartIndex = i;
+                    break;
+                }
+            }
+
+            // Remover tarefas do grupo antigo
+            const tasksOutsideGroup = newTasks.filter((t) => {
+                let groupKey: string;
+                switch (groupBy) {
+                    case "status":
+                        groupKey = t.status || "Sem Status";
+                        break;
+                    case "priority":
+                        groupKey = t.priority || "medium";
+                        break;
+                    case "assignee":
+                        groupKey = t.assignees?.[0]?.name || "Não atribuído";
+                        break;
+                    default:
+                        groupKey = t.status || "Sem Status";
+                }
+                return groupKey !== destinationGroupKey;
+            });
+
+            // Inserir tarefas reordenadas na posição correta
+            const finalTasks = [
+                ...tasksOutsideGroup.slice(0, groupStartIndex),
+                ...reorderedGroupTasks,
+                ...tasksOutsideGroup.slice(groupStartIndex),
+            ];
+
+            setLocalTasks(finalTasks);
+
+            // Persistir no backend
+            try {
+                const { updateTaskPosition } = await import("@/app/actions/tasks");
+                await updateTaskPosition({
+                    taskId: active.id as string,
+                    newPosition: newIndex + 1,
+                });
+            } catch (error) {
+                console.error("Erro ao atualizar posição:", error);
+                setLocalTasks(initialMockTasks);
+            }
+        } else {
+            // Mudando de grupo - atualizar status/priority/assignee
+            const newTasks = [...localTasks];
+            const taskToUpdate = newTasks.find((t) => t.id === active.id);
+
+            if (!taskToUpdate) {
+                return;
+            }
+
+            // Determinar o que atualizar baseado no groupBy
+            let updateData: { status?: string; priority?: "low" | "medium" | "high" | "urgent" } = {};
+
+            switch (groupBy) {
+                case "status":
+                    updateData.status = destinationGroupKey;
+                    break;
+                case "priority":
+                    const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
+                        urgent: "urgent",
+                        high: "high",
+                        medium: "medium",
+                        low: "low",
+                    };
+                    const priority = priorityMap[destinationGroupKey.toLowerCase()];
+                    if (priority) {
+                        updateData.priority = priority;
+                    }
+                    break;
+                case "assignee":
+                    // Para assignee, precisaríamos de uma lógica mais complexa
+                    // Por enquanto, apenas atualizamos a posição
+                    break;
+            }
+
+            // Atualizar tarefa localmente
+            Object.assign(taskToUpdate, updateData);
+
+            // O agrupamento será recalculado automaticamente pelo useMemo
+            // Apenas precisamos garantir que a tarefa está na posição correta
+            setLocalTasks(newTasks);
+
+            // Persistir no backend
+            try {
+                const { updateTaskPosition } = await import("@/app/actions/tasks");
+                const dbStatus = groupBy === "status" ? mapStatusToDb(destinationGroupKey) : undefined;
+                await updateTaskPosition({
+                    taskId: active.id as string,
+                    newPosition: 1, // Nova posição no grupo de destino
+                    newStatus: dbStatus,
+                });
+            } catch (error) {
+                console.error("Erro ao atualizar posição e status:", error);
+                setLocalTasks(initialMockTasks);
+            }
+        }
+    };
+
     const handleTaskClick = (taskId: string) => {
         setSelectedTaskId(taskId);
         setIsModalOpen(true);
@@ -239,7 +448,7 @@ export default function TasksPage() {
     const getTaskForModal = () => {
         if (!selectedTaskId) return undefined;
 
-        const task = mockTasks.find((t) => t.id === selectedTaskId);
+        const task = localTasks.find((t) => t.id === selectedTaskId);
 
         if (!task) return undefined;
 
@@ -271,40 +480,68 @@ export default function TasksPage() {
     };
 
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
-            {/* Header Unificado - Barra de Ferramentas */}
-            <div className="mb-6">
-                <div className="flex items-center justify-between">
-                    {/* Lado Esquerdo: Tabs de Contexto (Segmented Control) */}
+        <div className="min-h-screen bg-gray-50/50 pb-20">
+            {/* HEADER AREA - LINE 1 */}
+            <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
+                <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
+                        <p className="text-sm text-gray-500">Gerencie o trabalho do dia a dia.</p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        {/* Nova Tarefa - Dropdown Menu */}
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button className="bg-green-600 hover:bg-green-700 text-white">
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Novo
+                                    <ChevronDown className="w-3 h-3 ml-2" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        console.log("Abrir modal de criação de tarefa");
+                                        setIsModalOpen(true);
+                                    }}
+                                >
+                                    <CheckSquare className="w-4 h-4 mr-2" />
+                                    Nova Tarefa
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        console.log("Abrir modal de criação de grupo");
+                                        // TODO: Abrir modal/prompt para criar novo grupo
+                                    }}
+                                >
+                                    <FolderPlus className="w-4 h-4 mr-2" />
+                                    Novo Grupo
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
+                {/* NAVIGATION & FILTERS - LINE 2 */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    {/* Lado Esquerdo: Tabs de Contexto */}
                     <Tabs
                         value={activeTab}
                         onValueChange={(value) => setActiveTab(value as ContextTab)}
                         className="w-auto"
                     >
-                        <TabsList className="bg-gray-100 p-1 rounded-lg h-9">
-                            <TabsTrigger
-                                value="minhas"
-                                className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm font-medium px-4 py-1.5 transition-all"
-                            >
-                                Minhas
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="time"
-                                className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm font-medium px-4 py-1.5 transition-all"
-                            >
-                                Time
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="todas"
-                                className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm font-medium px-4 py-1.5 transition-all"
-                            >
-                                Todas
-                            </TabsTrigger>
+                        <TabsList className="bg-white border">
+                            <TabsTrigger value="minhas">Minhas</TabsTrigger>
+                            <TabsTrigger value="time">Time</TabsTrigger>
+                            <TabsTrigger value="todas">Todas</TabsTrigger>
                         </TabsList>
                     </Tabs>
 
-                    {/* Lado Direito: Ferramentas (todos h-9) */}
-                    <div className="flex items-center gap-2">
+                    {/* Lado Direito: Ferramentas */}
+                    <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
                         {/* Busca */}
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -321,69 +558,143 @@ export default function TasksPage() {
                         </Button>
 
                         {/* Agrupar por */}
-                        <div className="flex items-center gap-2">
-                            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
-                                <SelectTrigger className="w-[140px] h-9 bg-white">
-                                    <SelectValue placeholder="Agrupar por" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="status">Status</SelectItem>
-                                    <SelectItem value="priority">Prioridade</SelectItem>
-                                    <SelectItem value="assignee">Responsável</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
+                            <SelectTrigger className="w-[140px] h-9 bg-white">
+                                <SelectValue placeholder="Agrupar por" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="status">Status</SelectItem>
+                                <SelectItem value="priority">Prioridade</SelectItem>
+                                <SelectItem value="assignee">Responsável</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
 
                         {/* View Switcher */}
-                        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 h-9">
+                        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
                             <button
                                 onClick={() => setViewMode("list")}
                                 className={cn(
-                                    "px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 h-7",
+                                    "p-1.5 rounded-md transition-all",
                                     viewMode === "list"
                                         ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-600 hover:text-gray-900"
+                                        : "text-gray-500 hover:text-gray-900"
                                 )}
+                                title="Lista"
                             >
                                 <List className="w-4 h-4" />
-                                Lista
                             </button>
                             <button
                                 onClick={() => setViewMode("kanban")}
                                 className={cn(
-                                    "px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 h-7",
+                                    "p-1.5 rounded-md transition-all",
                                     viewMode === "kanban"
                                         ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-600 hover:text-gray-900"
+                                        : "text-gray-500 hover:text-gray-900"
                                 )}
+                                title="Kanban"
                             >
                                 <LayoutGrid className="w-4 h-4" />
-                                Kanban
                             </button>
                         </div>
-
-                        {/* Nova Tarefa */}
-                        <Button size="sm" className="h-9 bg-green-600 hover:bg-green-700">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Nova Tarefa
-                        </Button>
                     </div>
                 </div>
-            </div>
 
-            {/* Conteúdo: Lista ou Kanban */}
-            {viewMode === "list" ? (
-                <div className="space-y-0">
-                    {listGroups.map((group) => (
-                        <TaskGroup
-                            key={group.id}
-                            title={group.title}
-                            tasks={group.tasks}
-                            onTaskClick={handleTaskClick}
-                            onAddTask={() => console.log(`Adicionar tarefa em ${group.title}`)}
-                        />
-                    ))}
-                </div>
+                {/* Conteúdo Principal */}
+                {viewMode === "list" ? (
+                <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                >
+                    <div className="space-y-0">
+                        {listGroups.length === 0 && (
+                             <div className="h-[calc(100vh-200px)] flex items-center justify-center">
+                                <EmptyState
+                                    icon={CheckSquare}
+                                    title="Nenhuma tarefa encontrada"
+                                    description="Que tal criar sua primeira tarefa agora?"
+                                    actionLabel="Criar Tarefa"
+                                    onClick={() => setIsModalOpen(true)}
+                                />
+                            </div>
+                        )}
+                        {listGroups.map((group) => (
+                            <TaskGroup
+                                key={group.id}
+                                id={group.id}
+                                title={group.title}
+                                tasks={group.tasks}
+                                onTaskClick={handleTaskClick}
+                                onToggleComplete={async (taskId, completed) => {
+                                    try {
+                                        const result = await updateTask({
+                                            id: taskId,
+                                            is_complete: completed,
+                                        });
+
+                                        if (result.success && result.data) {
+                                            // Atualizar tarefa na lista local
+                                            const updatedTask = mapTaskFromDB(result.data);
+                                            setLocalTasks((prev) =>
+                                                prev.map((t) => (t.id === taskId ? updatedTask : t))
+                                            );
+                                        } else {
+                                            console.error("Erro ao atualizar tarefa:", result.error);
+                                        }
+                                    } catch (error) {
+                                        console.error("Erro ao atualizar tarefa:", error);
+                                    }
+                                }}
+                                onAddTask={async (title, context) => {
+                                    try {
+                                        // Mapear status customizável para status do banco
+                                        const statusMap: Record<string, "todo" | "in_progress" | "done"> = {
+                                            "Backlog": "todo",
+                                            "Triagem": "todo",
+                                            "Execução": "in_progress",
+                                            "Revisão": "done",
+                                        };
+                                        
+                                        const dbStatus = context.status 
+                                            ? statusMap[context.status] || "todo"
+                                            : undefined;
+
+                                        const result = await createTask({
+                                            title,
+                                            status: dbStatus,
+                                            priority: context.priority as any,
+                                            workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
+                                        });
+
+                                        if (result.success && result.data) {
+                                            // Adicionar nova tarefa à lista local
+                                            const newTask = mapTaskFromDB(result.data);
+                                            setLocalTasks((prev) => [...prev, newTask]);
+                                        } else {
+                                            console.error("Erro ao criar tarefa:", result.error);
+                                            if (result.error === "Usuário não autenticado") {
+                                                router.push("/login");
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error("Erro ao criar tarefa:", error);
+                                    }
+                                }}
+                                groupBy={groupBy}
+                            />
+                        ))}
+                    </div>
+                    <DragOverlay>
+                        {activeTask ? (
+                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
+                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                            </div>
+                        ) : null}
+                    </DragOverlay>
+                </DndContext>
             ) : (
                 <TaskBoard
                     columns={kanbanColumns}
@@ -399,5 +710,7 @@ export default function TasksPage() {
                 task={getTaskForModal()}
             />
         </div>
+    </div>
     );
 }
+

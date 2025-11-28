@@ -49,6 +49,10 @@ interface SubTask {
     id: string;
     title: string;
     completed: boolean;
+    assignee?: {
+        name: string;
+        avatar?: string;
+    };
 }
 
 interface Activity {
@@ -67,6 +71,7 @@ interface Activity {
 interface TaskDetailModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    mode?: "create" | "edit";
     task?: {
         id: string;
         title: string;
@@ -86,6 +91,7 @@ interface TaskDetailModalProps {
         subTasks: SubTask[];
         activities: Activity[];
     };
+    initialDueDate?: string; // Para pré-selecionar data no modo create
 }
 
 interface FileAttachment {
@@ -95,31 +101,92 @@ interface FileAttachment {
     size: string;
 }
 
-export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalProps) {
+export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initialDueDate }: TaskDetailModalProps) {
+    const isCreateMode = mode === "create";
     const [title, setTitle] = useState(task?.title || "");
     const [description, setDescription] = useState(task?.description || "");
     const [status, setStatus] = useState<"todo" | "in_progress" | "done">(task?.status || "todo");
-    const [dueDate, setDueDate] = useState(task?.dueDate || "");
+    const [dueDate, setDueDate] = useState(task?.dueDate || initialDueDate || "");
     const [subTasks, setSubTasks] = useState<SubTask[]>(task?.subTasks || []);
     const [newSubTask, setNewSubTask] = useState("");
+    const [newSubTaskAssignee, setNewSubTaskAssignee] = useState<string>("");
     const [comment, setComment] = useState("");
-    const [attachments, setAttachments] = useState<FileAttachment[]>([
-        { id: "1", name: "mockup-design.png", type: "image", size: "2.4 MB" },
-        { id: "2", name: "referencias.pdf", type: "pdf", size: "1.8 MB" },
-    ]);
+    
+    // Lista mock de usuários para atribuição (em produção viria de um contexto/API)
+    const availableUsers = [
+        { id: "1", name: "Você", avatar: undefined },
+        { id: "2", name: "João Silva", avatar: undefined },
+        { id: "3", name: "Maria Santos", avatar: undefined },
+        { id: "4", name: "Pedro Costa", avatar: undefined },
+    ];
+    const [attachments, setAttachments] = useState<FileAttachment[]>(
+        isCreateMode ? [] : [
+            { id: "1", name: "mockup-design.png", type: "image", size: "2.4 MB" },
+            { id: "2", name: "referencias.pdf", type: "pdf", size: "1.8 MB" },
+        ]
+    );
+    const [isCreating, setIsCreating] = useState(false);
 
     const handleAddSubTask = () => {
         if (newSubTask.trim()) {
+            const assignee = newSubTaskAssignee 
+                ? availableUsers.find(u => u.id === newSubTaskAssignee)
+                : undefined;
+            
             setSubTasks([
                 ...subTasks,
                 {
                     id: `subtask-${Date.now()}`,
                     title: newSubTask,
                     completed: false,
+                    assignee: assignee ? {
+                        name: assignee.name,
+                        avatar: assignee.avatar,
+                    } : undefined,
                 },
             ]);
             setNewSubTask("");
+            setNewSubTaskAssignee("");
         }
+    };
+    
+    const handleUpdateSubTaskAssignee = (subTaskId: string, assigneeName: string) => {
+        // Se o valor selecionado for o mesmo que já está, remove o responsável
+        const currentSubTask = subTasks.find(st => st.id === subTaskId);
+        if (currentSubTask?.assignee?.name === assigneeName) {
+            setSubTasks(
+                subTasks.map((st) =>
+                    st.id === subTaskId 
+                        ? { ...st, assignee: undefined }
+                        : st
+                )
+            );
+        } else {
+            const assignee = availableUsers.find(u => u.name === assigneeName);
+            setSubTasks(
+                subTasks.map((st) =>
+                    st.id === subTaskId 
+                        ? { 
+                            ...st, 
+                            assignee: assignee ? {
+                                name: assignee.name,
+                                avatar: assignee.avatar,
+                            } : undefined
+                        }
+                        : st
+                )
+            );
+        }
+    };
+    
+    const handleRemoveSubTaskAssignee = (subTaskId: string) => {
+        setSubTasks(
+            subTasks.map((st) =>
+                st.id === subTaskId 
+                    ? { ...st, assignee: undefined }
+                    : st
+            )
+        );
     };
 
     const handleToggleSubTask = (id: string) => {
@@ -137,7 +204,51 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
         }
     };
 
-    if (!task) return null;
+    const handleCreate = async () => {
+        if (!title.trim()) return;
+        
+        setIsCreating(true);
+        try {
+            // Importação dinâmica da Server Action
+            const { createTask } = await import("@/app/actions/tasks");
+            
+            // Converter dueDate para formato ISO se existir
+            let dueDateISO: string | undefined = undefined;
+            if (dueDate) {
+                const date = new Date(dueDate);
+                if (!isNaN(date.getTime())) {
+                    dueDateISO = date.toISOString();
+                }
+            }
+            
+            const result = await createTask({
+                title: title.trim(),
+                description: description || undefined,
+                due_date: dueDateISO,
+                workspace_id: null, // Por enquanto, tarefas pessoais
+                status: status,
+            });
+
+            if (result.success) {
+                onOpenChange(false);
+                // Resetar campos
+                setTitle("");
+                setDescription("");
+                setDueDate(initialDueDate || "");
+                setStatus("todo");
+                setSubTasks([]);
+            } else {
+                console.error("Erro ao criar tarefa:", result.error);
+                alert(`Erro ao criar tarefa: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Erro ao criar tarefa:", error);
+            const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+            alert(`Erro ao criar tarefa: ${errorMessage}`);
+        } finally {
+            setIsCreating(false);
+        }
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,23 +259,30 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
                 >
                 {/* DialogTitle para acessibilidade (oculto visualmente) */}
                 <DialogTitle className="sr-only">
-                    Detalhes da Tarefa: {task.title}
+                    {isCreateMode ? "Criar Nova Tarefa" : `Detalhes da Tarefa: ${task?.title || ""}`}
                 </DialogTitle>
                 
                 {/* Header */}
                 <DialogHeader className="px-6 py-4 border-b border-gray-100">
                     <div className="flex items-center justify-between">
                         {/* Breadcrumbs */}
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                            {task.breadcrumbs.map((crumb, index) => (
-                                <div key={index} className="flex items-center gap-2">
-                                    <span>{crumb}</span>
-                                    {index < task.breadcrumbs.length - 1 && (
-                                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                        {!isCreateMode && task?.breadcrumbs && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                {task.breadcrumbs.map((crumb, index) => (
+                                    <div key={index} className="flex items-center gap-2">
+                                        <span>{crumb}</span>
+                                        {index < task.breadcrumbs.length - 1 && (
+                                            <ChevronRight className="w-4 h-4 text-gray-400" />
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {isCreateMode && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <span>Nova Tarefa</span>
+                            </div>
+                        )}
 
                         {/* Botões de Ação */}
                         <div className="flex items-center gap-2">
@@ -206,7 +324,7 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 focus-visible:ring-offset-0 hover:border-b hover:border-gray-300 transition-colors bg-transparent"
-                                placeholder="Título da tarefa..."
+                                placeholder={isCreateMode ? "Digite o nome da tarefa..." : "Título da tarefa..."}
                             />
                             <Pencil className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                         </div>
@@ -241,7 +359,7 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
                                     Responsável
                                 </label>
                                 <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background">
-                                    {task.assignee?.avatar ? (
+                                    {task?.assignee?.avatar ? (
                                         <img
                                             src={task.assignee.avatar}
                                             alt={task.assignee.name}
@@ -250,7 +368,7 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
                                     ) : (
                                         <User className="w-4 h-4 text-gray-400" />
                                     )}
-                                    <span className="text-sm">{task.assignee?.name || "Não atribuído"}</span>
+                                    <span className="text-sm">{task?.assignee?.name || "Não atribuído"}</span>
                                 </div>
                             </div>
 
@@ -392,7 +510,7 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
                                 {subTasks.map((subTask) => (
                                     <div
                                         key={subTask.id}
-                                        className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50"
+                                        className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group"
                                     >
                                         <Checkbox
                                             checked={subTask.completed}
@@ -406,155 +524,302 @@ export function TaskDetailModal({ open, onOpenChange, task }: TaskDetailModalPro
                                         >
                                             {subTask.title}
                                         </span>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {subTask.assignee ? (
+                                                <>
+                                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-gray-100 text-gray-700">
+                                                        {subTask.assignee.avatar ? (
+                                                            <img
+                                                                src={subTask.assignee.avatar}
+                                                                alt={subTask.assignee.name}
+                                                                className="w-3 h-3 rounded-full"
+                                                            />
+                                                        ) : (
+                                                            <User className="w-3 h-3 text-gray-400" />
+                                                        )}
+                                                        <span className="text-xs">{subTask.assignee.name}</span>
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-6 w-6"
+                                                        onClick={() => handleRemoveSubTaskAssignee(subTask.id)}
+                                                        title="Remover responsável"
+                                                    >
+                                                        <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                                                    </Button>
+                                                </>
+                                            ) : (
+                                                <Select
+                                                    value={undefined}
+                                                    onValueChange={(value) => {
+                                                        handleUpdateSubTaskAssignee(subTask.id, value);
+                                                    }}
+                                                >
+                                                    <SelectTrigger className="h-7 w-[140px] text-xs border-gray-200">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <User className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                                            <SelectValue placeholder="Atribuir..." />
+                                                        </div>
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {availableUsers.map((user) => (
+                                                            <SelectItem key={user.id} value={user.name}>
+                                                                <div className="flex items-center gap-2">
+                                                                    {user.avatar ? (
+                                                                        <img
+                                                                            src={user.avatar}
+                                                                            alt={user.name}
+                                                                            className="w-4 h-4 rounded-full"
+                                                                        />
+                                                                    ) : (
+                                                                        <User className="w-4 h-4 text-gray-400" />
+                                                                    )}
+                                                                    {user.name}
+                                                                </div>
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
-                            <div className="flex gap-2">
-                                <Input
-                                    value={newSubTask}
-                                    onChange={(e) => setNewSubTask(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            handleAddSubTask();
-                                        }
-                                    }}
-                                    placeholder="Adicionar item..."
-                                    className="flex-1"
-                                />
-                                <Button
-                                    onClick={handleAddSubTask}
-                                    size="icon"
-                                    variant="outline"
-                                    className="h-10 w-10"
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
+                            <div className="space-y-2">
+                                <div className="flex gap-2">
+                                    <Input
+                                        value={newSubTask}
+                                        onChange={(e) => setNewSubTask(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                handleAddSubTask();
+                                            }
+                                        }}
+                                        placeholder="Adicionar item..."
+                                        className="flex-1"
+                                    />
+                                    <Button
+                                        onClick={handleAddSubTask}
+                                        size="icon"
+                                        variant="outline"
+                                        className="h-10 w-10"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                {newSubTask.trim() && (
+                                    <div className="flex items-center gap-2">
+                                        <User className="w-4 h-4 text-gray-400" />
+                                        <Select
+                                            value={newSubTaskAssignee || undefined}
+                                            onValueChange={(value) => {
+                                                // Se selecionar o mesmo valor, limpa a seleção
+                                                if (newSubTaskAssignee === value) {
+                                                    setNewSubTaskAssignee("");
+                                                } else {
+                                                    setNewSubTaskAssignee(value);
+                                                }
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-8 text-xs border-gray-200">
+                                                <SelectValue placeholder="Atribuir responsável (opcional)" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {availableUsers.map((user) => (
+                                                    <SelectItem key={user.id} value={user.id}>
+                                                        <div className="flex items-center gap-2">
+                                                            {user.avatar ? (
+                                                                <img
+                                                                    src={user.avatar}
+                                                                    alt={user.name}
+                                                                    className="w-4 h-4 rounded-full"
+                                                                />
+                                                            ) : (
+                                                                <User className="w-4 h-4 text-gray-400" />
+                                                            )}
+                                                            {user.name}
+                                                        </div>
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {newSubTaskAssignee && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => setNewSubTaskAssignee("")}
+                                                title="Remover responsável"
+                                            >
+                                                <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
 
                     {/* Coluna Direita - Contexto & Chat */}
                     <div className="bg-gray-50 p-6 flex flex-col overflow-hidden">
-                        {/* Header da Coluna */}
-                        <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                            Contexto Original (WhatsApp)
-                        </h3>
-
-                        {/* Card de Origem */}
-                        {task.contextMessage && (
-                            <div className="mb-6">
-                                <div className="bg-white rounded-lg border border-gray-200 border-l-4 border-l-green-500 p-4 shadow-sm">
-                                    <div className="flex items-start gap-3">
-                                        {task.contextMessage.type === "audio" ? (
-                                            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 flex-shrink-0">
-                                                <Play className="w-5 h-5 text-green-600 fill-green-600" />
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 flex-shrink-0">
-                                                <MessageSquare className="w-5 h-5 text-green-600" />
-                                            </div>
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm text-gray-700 mb-1">
-                                                {task.contextMessage.content}
-                                            </p>
-                                            <p className="text-xs text-gray-400">
-                                                {task.contextMessage.timestamp}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
+                        {isCreateMode ? (
+                            /* Empty State para modo create */
+                            <div className="flex-1 flex flex-col items-center justify-center text-center">
+                                <MessageSquare className="w-12 h-12 text-gray-300 mb-4" />
+                                <p className="text-sm text-gray-500 max-w-xs">
+                                    O histórico aparecerá aqui após criar a tarefa
+                                </p>
                             </div>
-                        )}
+                        ) : (
+                            <>
+                                {/* Header da Coluna */}
+                                <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                                    Contexto Original (WhatsApp)
+                                </h3>
 
-                        {/* Histórico/Comentários */}
-                        <div className="flex-1 flex flex-col min-h-0">
-                            <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">
-                                Histórico
-                            </h4>
-                            <div className="flex-1 overflow-y-auto mb-4 relative">
-                                {/* Linha vertical da timeline */}
-                                <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
-                                
-                                <div className="space-y-3 relative">
-                                    {task.activities.map((activity) => (
-                                        <div
-                                            key={activity.id}
-                                            className="flex gap-3 text-sm relative"
-                                        >
-                                            <div className="flex-shrink-0 relative z-10">
-                                                <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <p className="text-gray-700">
-                                                    <span className="font-medium">{activity.user}</span>{" "}
-                                                    {activity.type === "created" && "criou a tarefa"}
-                                                    {activity.type === "commented" && "comentou"}
-                                                    {activity.type === "updated" && "atualizou a tarefa"}
-                                                    {activity.type === "file_shared" && "enviou um arquivo"}
-                                                </p>
-                                                {activity.message && (
-                                                    <p className="text-gray-600 mt-1">{activity.message}</p>
-                                                )}
-                                                {activity.file && (
-                                                    <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
-                                                        {activity.file.type === "image" ? (
-                                                            <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                                        ) : activity.file.type === "pdf" ? (
-                                                            <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
-                                                        ) : (
-                                                            <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                        )}
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="text-xs font-medium text-gray-700 truncate">
-                                                                {activity.file.name}
-                                                            </p>
-                                                            <p className="text-xs text-gray-500">{activity.file.size}</p>
-                                                        </div>
+                                {/* Card de Origem */}
+                                {task?.contextMessage && (
+                                    <div className="mb-6">
+                                        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                                            <div className="flex items-start gap-3">
+                                                {task.contextMessage.type === "audio" ? (
+                                                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 flex-shrink-0">
+                                                        <Play className="w-5 h-5 text-green-600 fill-green-600" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 flex-shrink-0">
+                                                        <MessageSquare className="w-5 h-5 text-green-600" />
                                                     </div>
                                                 )}
-                                                <p className="text-xs text-gray-400 mt-1">
-                                                    {activity.timestamp}
-                                                </p>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm text-gray-700 mb-1">
+                                                        {task.contextMessage.content}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400">
+                                                        {task.contextMessage.timestamp}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
+                                    </div>
+                                )}
 
-                            {/* Input de Comentário */}
-                            <div className="flex gap-2 pt-4 border-t border-gray-200">
-                                <Input
-                                    value={comment}
-                                    onChange={(e) => setComment(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter" && !e.shiftKey) {
-                                            e.preventDefault();
-                                            handleSendComment();
-                                        }
-                                    }}
-                                    placeholder="Adicionar comentário..."
-                                    className="flex-1"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-10 w-10 text-gray-400 hover:text-green-600"
-                                    onClick={() => {}}
-                                >
-                                    <Paperclip className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    onClick={handleSendComment}
-                                    size="icon"
-                                    className="h-10 w-10 bg-green-600 hover:bg-green-700"
-                                >
-                                    <Send className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
+                                {/* Histórico/Comentários */}
+                                <div className="flex-1 flex flex-col min-h-0">
+                                    <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">
+                                        Histórico
+                                    </h4>
+                                    <div className="flex-1 overflow-y-auto mb-4 relative">
+                                        {/* Linha vertical da timeline */}
+                                        <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
+                                        
+                                        <div className="space-y-3 relative">
+                                            {task?.activities?.map((activity) => (
+                                                <div
+                                                    key={activity.id}
+                                                    className="flex gap-3 text-sm relative"
+                                                >
+                                                    <div className="flex-shrink-0 relative z-10">
+                                                        <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="text-gray-700">
+                                                            <span className="font-medium">{activity.user}</span>{" "}
+                                                            {activity.type === "created" && "criou a tarefa"}
+                                                            {activity.type === "commented" && "comentou"}
+                                                            {activity.type === "updated" && "atualizou a tarefa"}
+                                                            {activity.type === "file_shared" && "enviou um arquivo"}
+                                                        </p>
+                                                        {activity.message && (
+                                                            <p className="text-gray-600 mt-1">{activity.message}</p>
+                                                        )}
+                                                        {activity.file && (
+                                                            <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
+                                                                {activity.file.type === "image" ? (
+                                                                    <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                                ) : activity.file.type === "pdf" ? (
+                                                                    <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                                                ) : (
+                                                                    <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                                )}
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-xs font-medium text-gray-700 truncate">
+                                                                        {activity.file.name}
+                                                                    </p>
+                                                                    <p className="text-xs text-gray-500">{activity.file.size}</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            {activity.timestamp}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )) || []}
+                                        </div>
+                                    </div>
+
+                                    {/* Input de Comentário */}
+                                    <div className="flex gap-2 pt-4 border-t border-gray-200">
+                                        <Input
+                                            value={comment}
+                                            onChange={(e) => setComment(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSendComment();
+                                                }
+                                            }}
+                                            placeholder="Adicionar comentário..."
+                                            className="flex-1"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-10 w-10 text-gray-400 hover:text-green-600"
+                                            onClick={() => {}}
+                                        >
+                                            <Paperclip className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            onClick={handleSendComment}
+                                            size="icon"
+                                            className="h-10 w-10 bg-green-600 hover:bg-green-700"
+                                        >
+                                            <Send className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
+                </div>
+                
+                {/* Footer com Botão de Ação */}
+                <div className="border-t border-gray-100 px-6 py-4 flex justify-end">
+                    {isCreateMode ? (
+                        <Button
+                            onClick={handleCreate}
+                            disabled={!title.trim() || isCreating}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                            {isCreating ? "Criando..." : "Criar Tarefa"}
+                        </Button>
+                    ) : (
+                        <Button
+                            onClick={() => {
+                                // TODO: Implementar salvamento de edição
+                                onOpenChange(false);
+                            }}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                            Salvar
+                        </Button>
+                    )}
                 </div>
                 </DialogPrimitive.Content>
             </DialogPortal>
