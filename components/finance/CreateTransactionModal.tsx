@@ -84,39 +84,20 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
           <DialogTitle>Nova transação</DialogTitle>
         </DialogHeader>
         
-        {/* 1. SELETOR DE TIPO (SEGMENTED CONTROL) */}
-        <div className="px-6 pt-6 pb-2">
-          <Tabs 
-            value={type} 
-            onValueChange={(v) => setType(v as TransactionType)}
-            className="w-full"
-          >
-            <TabsList className="grid w-full grid-cols-2 h-10 bg-gray-100 p-1 rounded-lg">
-              <TabsTrigger 
-                value="income"
-                className="text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-green-600 data-[state=active]:shadow-sm transition-all"
-              >
-                Entrada
-              </TabsTrigger>
-              <TabsTrigger 
-                value="expense"
-                className="text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-red-600 data-[state=active]:shadow-sm transition-all"
-              >
-                Saída
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <div className="px-6 pt-8 pb-6">
+          {/* 1. TITULO DISCRETO */}
+          <h2 className="text-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+            Nova transação
+          </h2>
 
-        {/* 2. HERO INPUT (VALOR MONETÁRIO) - Calculadora Style */}
-        <div className="px-6 py-8">
-          <div className="relative flex items-center justify-center">
+          {/* 2. HERO INPUT (VALOR MONETÁRIO) - TOPO ABSOLUTO */}
+          <div className="relative flex items-center justify-center mb-4">
             <Input
               value={amount}
               onChange={handleAmountChange}
               placeholder="R$ 0,00"
               className={cn(
-                "h-auto py-4 text-center text-6xl font-bold tracking-tighter border-none shadow-none focus-visible:ring-0 placeholder:text-gray-300 bg-transparent",
+                "h-auto py-2 text-center text-[64px] font-bold tracking-tighter border-none shadow-none focus-visible:ring-0 placeholder:text-gray-300 bg-transparent p-0",
                 type === "income" ? "text-green-600 caret-green-600" : "text-red-600 caret-red-600"
               )}
               style={{
@@ -124,10 +105,32 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
               }}
             />
           </div>
-        </div>
 
-        {/* 3. BLOCO DE DETALHES (AGRUPAMENTO) */}
-        <div className="px-6 pb-6">
+          {/* 3. SELETOR DE TIPO (TABS) - ABAIXO DO VALOR */}
+          <div className="flex justify-center mb-8">
+             <Tabs 
+              value={type} 
+              onValueChange={(v) => setType(v as TransactionType)}
+              className="w-fit"
+            >
+              <TabsList className="grid grid-cols-2 h-9 bg-gray-100 p-1 rounded-lg w-[200px]">
+                <TabsTrigger 
+                  value="income"
+                  className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-green-600 data-[state=active]:shadow-sm transition-all"
+                >
+                  Entrada
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="expense"
+                  className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-red-600 data-[state=active]:shadow-sm transition-all"
+                >
+                  Saída
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          {/* 4. BLOCO DE DETALHES (AGRUPAMENTO) */}
           <div className="bg-gray-50 rounded-xl p-4 space-y-4">
             
             {/* Descrição */}
@@ -241,7 +244,7 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
           </div>
         </div>
 
-        {/* 4. RODAPÉ (AÇÕES) */}
+        {/* 5. RODAPÉ (AÇÕES) */}
         <div className="px-6 pb-6 space-y-2">
           <Button 
             className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium h-12 shadow-sm"

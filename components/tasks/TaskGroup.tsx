@@ -105,12 +105,66 @@ export function TaskGroup({
         return context;
     };
 
-    const handleQuickAddSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter" && quickAddValue.trim()) {
+    // Função auxiliar para processar texto e limpar marcadores de lista
+    const processBatchText = (text: string): string[] => {
+        // Dividir por quebras de linha (suporta \n e \r\n)
+        const lines = text.split(/\r?\n/);
+        
+        // Filtrar linhas vazias e processar cada linha
+        return lines
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .map(line => {
+                // Remover marcadores de lista comuns no início da linha
+                // Remove: "- ", "* ", "• ", números como "1. ", "2. ", etc.
+                return line.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+            })
+            .filter(line => line.length > 0);
+    };
+
+    const handleQuickAddSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter" && quickAddValue) {
+            const text = quickAddValue; // Não usar trim() aqui para preservar quebras de linha
+            if (!text.trim()) return;
+            
             const context = getGroupContext();
-            onAddTask?.(quickAddValue.trim(), context);
+            
+            // Verificar se o texto contém quebras de linha (batch create)
+            // Verificar tanto \n quanto \r\n (Windows)
+            const hasLineBreaks = text.includes('\n') || text.includes('\r\n');
+            
+            // Processar: se houver quebras, criar múltiplas tarefas; senão, criar uma única
+            const taskTitles = hasLineBreaks ? processBatchText(text) : [text.trim()];
+
+            if (taskTitles.length === 0) {
+                setQuickAddValue("");
+                setIsQuickAddActive(false);
+                return;
+            }
+
+            // Limite de segurança: se houver mais de 20 tarefas, pedir confirmação
+            const HARD_LIMIT = 20;
+            if (taskTitles.length > HARD_LIMIT) {
+                const confirmed = window.confirm(
+                    `Você está prestes a criar ${taskTitles.length} tarefas de uma vez. Tem certeza?`
+                );
+                if (!confirmed) {
+                    // Manter o texto no input se o usuário cancelar
+                    return;
+                }
+            }
+
+            // Limpar input imediatamente (Optimistic UI)
             setQuickAddValue("");
             setIsQuickAddActive(false);
+
+            // Criar todas as tarefas
+            // Usar Promise.all para criar em paralelo, mas aguardar todas completarem
+            const createPromises = taskTitles.map(title => 
+                onAddTask?.(title, context)
+            );
+            
+            await Promise.all(createPromises);
         } else if (e.key === "Escape") {
             setIsQuickAddActive(false);
             setQuickAddValue("");
@@ -252,6 +306,13 @@ export function TaskGroup({
                                 ref={inputRef}
                                 value={quickAddValue}
                                 onChange={(e) => setQuickAddValue(e.target.value)}
+                                onPaste={(e) => {
+                                    // Capturar texto colado e preservar quebras de linha
+                                    e.preventDefault();
+                                    const pastedText = e.clipboardData.getData('text/plain');
+                                    // Preservar quebras de linha no estado (substituir completamente o valor)
+                                    setQuickAddValue(pastedText);
+                                }}
                                 onKeyDown={handleQuickAddSubmit}
                                 onBlur={() => {
                                     if (!quickAddValue.trim()) {

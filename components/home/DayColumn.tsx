@@ -31,46 +31,93 @@ export function DayColumn({
   const [isQuickAddFocused, setIsQuickAddFocused] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
+  // Função auxiliar para processar texto e limpar marcadores de lista
+  const processBatchText = (text: string): string[] => {
+    // Dividir por quebras de linha (suporta \n e \r\n)
+    const lines = text.split(/\r?\n/);
+    
+    // Filtrar linhas vazias e processar cada linha
+    return lines
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => {
+        // Remover marcadores de lista comuns no início da linha
+        // Remove: "- ", "* ", "• ", números como "1. ", "2. ", etc.
+        return line.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+      })
+      .filter(line => line.length > 0);
+  };
+
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const title = quickAddValue.trim();
-    if (!title) return;
+    const text = quickAddValue; // Não usar trim() aqui para preservar quebras de linha
+    if (!text || !text.trim()) return;
 
     // Limpar input imediatamente (Optimistic UI)
     setQuickAddValue("");
 
-    // Criar tarefa no backend
+    // Converter data para ISO se dateObj estiver disponível
+    let dueDateISO: string | undefined = undefined;
+    if (dateObj) {
+      // Criar uma data com horário no início do dia (00:00:00)
+      const dueDate = new Date(dateObj);
+      dueDate.setHours(0, 0, 0, 0);
+      dueDateISO = dueDate.toISOString();
+    }
+
+    // Verificar se o texto contém quebras de linha (batch create)
+    // Verificar tanto \n quanto \r\n (Windows)
+    const hasLineBreaks = text.includes('\n') || text.includes('\r\n');
+    
+    // Processar: se houver quebras, criar múltiplas tarefas; senão, criar uma única
+    const taskTitles = hasLineBreaks ? processBatchText(text) : [text.trim()];
+
+    if (taskTitles.length === 0) return;
+
+    // Limite de segurança: se houver mais de 20 tarefas, pedir confirmação
+    const HARD_LIMIT = 20;
+    if (taskTitles.length > HARD_LIMIT) {
+      const confirmed = window.confirm(
+        `Você está prestes a criar ${taskTitles.length} tarefas de uma vez. Tem certeza?`
+      );
+      if (!confirmed) {
+        // Restaurar o texto no input se o usuário cancelar
+        setQuickAddValue(text);
+        return;
+      }
+    }
+
+    // Criar tarefas no backend
     setIsCreating(true);
     try {
-      // Converter data para ISO se dateObj estiver disponível
-      let dueDateISO: string | undefined = undefined;
-      if (dateObj) {
-        // Criar uma data com horário no início do dia (00:00:00)
-        const dueDate = new Date(dateObj);
-        dueDate.setHours(0, 0, 0, 0);
-        dueDateISO = dueDate.toISOString();
-      }
+      // Criar todas as tarefas em paralelo usando Promise.all
+      const createPromises = taskTitles.map(title =>
+        createTask({
+          title,
+          due_date: dueDateISO,
+          workspace_id: null, // Tarefas do Quick Add são pessoais
+          status: "todo",
+          is_personal: true,
+        })
+      );
 
-      const result = await createTask({
-        title,
-        due_date: dueDateISO,
-        workspace_id: null, // Tarefas do Quick Add são pessoais
-        status: "todo",
-        is_personal: true,
-      });
+      const results = await Promise.all(createPromises);
 
-      if (!result.success) {
-        console.error("Erro ao criar tarefa:", result.error);
-        if (result.error === "Usuário não autenticado") {
-           router.push("/login");
+      // Verificar se houve algum erro
+      const hasError = results.some(result => !result.success);
+      if (hasError) {
+        const errorResult = results.find(result => !result.success);
+        console.error("Erro ao criar tarefa(s):", errorResult?.error);
+        if (errorResult?.error === "Usuário não autenticado") {
+          router.push("/login");
         }
         // Em produção, você pode mostrar um toast de erro aqui
       } else {
-        // Recarregar a página para mostrar a nova tarefa
+        // Recarregar a página para mostrar as novas tarefas
         router.refresh();
       }
     } catch (error) {
-      console.error("Erro ao criar tarefa:", error);
+      console.error("Erro ao criar tarefa(s):", error);
     } finally {
       setIsCreating(false);
     }
@@ -129,6 +176,24 @@ export function DayColumn({
                   placeholder="+ Adicionar item..."
                   value={quickAddValue}
                   onChange={(e) => setQuickAddValue(e.target.value)}
+                  onPaste={(e) => {
+                    // Capturar texto colado e preservar quebras de linha
+                    e.preventDefault();
+                    const pastedText = e.clipboardData.getData('text/plain');
+                    // Preservar quebras de linha no estado (substituir completamente o valor)
+                    setQuickAddValue(prev => pastedText);
+                  }}
+                  onKeyDown={(e) => {
+                    // Permitir Enter para submeter, mas não permitir Enter dentro do texto
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      // Disparar submit manualmente
+                      const form = e.currentTarget.closest('form');
+                      if (form) {
+                        form.requestSubmit();
+                      }
+                    }
+                  }}
                   onFocus={() => setIsQuickAddFocused(true)}
                   onBlur={() => setIsQuickAddFocused(false)}
                   disabled={isCreating}
