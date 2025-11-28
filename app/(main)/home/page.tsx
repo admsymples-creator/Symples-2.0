@@ -79,7 +79,9 @@ export default async function HomePage(props: HomePageProps) {
   // Buscar tarefas da semana
   let tasks: Task[] = [];
   try {
-    tasks = await getWeekTasks(startDateISO, endDateISO);
+    const weekTasks = await getWeekTasks(startDateISO, endDateISO);
+    // Cast necessário pois getWeekTasks retorna tipo com campos opcionais (?) enquanto o banco define como nullable (| null)
+    tasks = weekTasks as unknown as Task[];
   } catch (error) {
     console.error("Erro ao carregar tarefas:", error);
     // Se houver erro de autenticação, redirect já foi feito na função
