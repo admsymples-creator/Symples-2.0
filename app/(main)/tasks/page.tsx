@@ -381,16 +381,21 @@ export default function TasksPage() {
                 });
             } catch (error) {
                 console.error("Erro ao atualizar posição:", error);
-                setLocalTasks(initialMockTasks);
+                // Reverter mudança otimista recarregando dados originais
+                const tasksFromDB = await getTasks(activeTab === "minhas" ? { workspaceId: null } : {});
+                const mappedTasks = tasksFromDB.map(mapTaskFromDB);
+                setLocalTasks(mappedTasks);
             }
         } else {
             // Mudando de grupo - atualizar status/priority/assignee
             const newTasks = [...localTasks];
             const taskToUpdate = newTasks.find((t) => t.id === active.id);
+            const previousTasksState = [...localTasks]; // Snapshot para rollback
 
             if (!taskToUpdate) {
                 return;
             }
+
 
             // Determinar o que atualizar baseado no groupBy
             let updateData: { status?: string; priority?: "low" | "medium" | "high" | "urgent" } = {};
@@ -435,7 +440,8 @@ export default function TasksPage() {
                 });
             } catch (error) {
                 console.error("Erro ao atualizar posição e status:", error);
-                setLocalTasks(initialMockTasks);
+                // Reverter para estado anterior ao erro
+                setLocalTasks(previousTasksState);
             }
         }
     };
