@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +60,7 @@ const BILLING_HISTORY = [
   { date: "01 Set 2025", amount: "R$ 97,00", status: "Pago" },
 ];
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const activeTab = searchParams.get("tab") || "general";
@@ -474,5 +474,21 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="container max-w-5xl py-10 mx-auto">
+        <div className="flex flex-col gap-2 mb-8">
+          <div className="h-9 w-64 bg-gray-200 animate-pulse rounded" />
+          <div className="h-5 w-96 bg-gray-100 animate-pulse rounded" />
+        </div>
+        <div className="h-96 bg-gray-50 animate-pulse rounded-lg" />
+      </div>
+    }>
+      <SettingsPageContent />
+    </Suspense>
   );
 }

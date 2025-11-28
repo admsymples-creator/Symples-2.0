@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -30,7 +30,7 @@ const workspaceItems: NavItem[] = [
     { label: "Financeiro", href: "/finance", icon: DollarSign },
 ];
 
-export function Sidebar() {
+function SidebarContent() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
@@ -190,6 +190,27 @@ export function Sidebar() {
                 </Link>
             </div>
         </aside>
+    );
+}
+
+export function Sidebar() {
+    return (
+        <Suspense fallback={
+            <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
+                <div className="p-4 border-b border-gray-200">
+                    <div className="h-8 w-32 bg-gray-200 animate-pulse rounded" />
+                </div>
+                <nav className="flex-1 overflow-y-auto p-4">
+                    <div className="space-y-2">
+                        {[1, 2, 3, 4].map((i) => (
+                            <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
+                        ))}
+                    </div>
+                </nav>
+            </aside>
+        }>
+            <SidebarContent />
+        </Suspense>
     );
 }
 
