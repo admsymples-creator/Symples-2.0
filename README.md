@@ -103,7 +103,11 @@ Consulte os arquivos em `.context/` para mais detalhes:
 
 ## 🚢 Deploy
 
-O projeto pode ser deployado na [Vercel](https://vercel.com) facilmente:
+**Status:** ✅ Deployado em Produção
+
+**URL de Produção:** https://symples-v2-g6vcpgjag-symples-s-projects.vercel.app
+
+O projeto está deployado na [Vercel](https://vercel.com) e configurado para deploy automático a cada push na branch `master`.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/admsymples-creator/Symples-2.0)
 
