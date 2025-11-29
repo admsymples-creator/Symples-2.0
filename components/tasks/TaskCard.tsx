@@ -1,11 +1,18 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { Avatar } from "./Avatar";
-import { Calendar } from "lucide-react";
+import { Calendar, MoreHorizontal, Paperclip, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Button } from "@/components/ui/button";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface TaskCardProps {
     id: string;
@@ -15,14 +22,29 @@ interface TaskCardProps {
     assignees?: Array<{ name: string; avatar?: string }>;
     dueDate?: string;
     tags?: string[];
+    checklistTotal?: number;
+    checklistCompleted?: number;
+    attachmentsCount?: number;
+    commentsCount?: number;
     onClick?: () => void;
+    onEdit?: () => void;
+    onDelete?: () => void;
 }
 
-const priorityColors = {
-    low: "bg-blue-500",
-    medium: "bg-yellow-500",
-    high: "bg-orange-500",
-    urgent: "bg-red-500",
+// Cores de prioridade para badge
+const priorityBadgeColors = {
+    low: "bg-blue-50 text-blue-600",
+    medium: "bg-yellow-50 text-yellow-600",
+    high: "bg-orange-50 text-orange-600",
+    urgent: "bg-red-50 text-red-600",
+};
+
+// Labels de prioridade
+const priorityLabels = {
+    low: "Baixa",
+    medium: "Média",
+    high: "Alta",
+    urgent: "Urgente",
 };
 
 export function TaskCard({
@@ -33,9 +55,19 @@ export function TaskCard({
     assignees = [],
     dueDate,
     tags = [],
+    checklistTotal = 0,
+    checklistCompleted = 0,
+    attachmentsCount = 0,
+    commentsCount = 0,
     onClick,
+    onEdit,
+    onDelete,
 }: TaskCardProps) {
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
+    const isToday = dueDate && new Date(dueDate).toDateString() === new Date().toDateString();
+
+    // Calcular progresso do checklist
+    const progress = checklistTotal > 0 ? (checklistCompleted / checklistTotal) * 100 : 0;
 
     // Hook do dnd-kit para tornar o card sortable
     const {
@@ -53,6 +85,12 @@ export function TaskCard({
         opacity: isDragging ? 0.5 : 1,
     };
 
+    // Primeira tag ou prioridade para o badge
+    const displayTag = tags.length > 0 ? tags[0] : priorityLabels[priority];
+    const displayTagColor = tags.length > 0 
+        ? "bg-gray-100 text-gray-600" 
+        : priorityBadgeColors[priority];
+
     return (
         <div
             ref={setNodeRef}
@@ -60,54 +98,139 @@ export function TaskCard({
             {...attributes}
             {...listeners}
             className={cn(
-                "bg-white rounded-lg border border-gray-200 shadow-sm p-3 cursor-pointer",
-                "hover:shadow-md transition-shadow",
-                "flex flex-col gap-3",
-                isDragging && "shadow-lg rotate-2"
+                "group bg-white rounded-xl p-4 border border-gray-200 shadow-sm",
+                "hover:border-green-400 hover:shadow-md cursor-grab active:cursor-grabbing transition-all",
+                "flex flex-col",
+                isDragging && "shadow-lg rotate-1"
             )}
             onClick={onClick}
         >
-            {/* Topo: Tags */}
-            {tags.length > 0 && (
-                <div className="flex items-center gap-1 flex-wrap">
-                    {tags.map((tag, index) => (
-                        <Badge
-                            key={index}
-                            variant="outline"
-                            className="text-xs px-2 py-0 bg-gray-100 text-gray-600 border-gray-200"
+            {/* 1. Header (Contexto) */}
+            <div className="flex justify-between items-start mb-2">
+                {/* Badge de Prioridade/Tag */}
+                <span
+                    className={cn(
+                        "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide",
+                        displayTagColor
+                    )}
+                >
+                    {displayTag}
+                </span>
+
+                {/* Menu "..." (visível no hover) */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-gray-300 hover:text-gray-600 hover:bg-gray-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            {tag}
-                        </Badge>
-                    ))}
-                </div>
-            )}
+                            <MoreHorizontal size={14} />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                        {onEdit && (
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+                                Editar
+                            </DropdownMenuItem>
+                        )}
+                        {onDelete && (
+                            <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                                    className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                                >
+                                    Excluir
+                                </DropdownMenuItem>
+                            </>
+                        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
 
-            {/* Meio: Título */}
-            <h4
-                className={cn(
-                    "font-medium text-gray-900 text-sm leading-snug",
-                    completed && "line-through text-gray-500"
+            {/* 2. Corpo (Conteúdo) */}
+            <div className="mb-3">
+                {/* Título */}
+                <h4
+                    className={cn(
+                        "font-semibold text-sm text-gray-900 mt-3 mb-1 line-clamp-2 leading-tight",
+                        completed && "line-through text-gray-500"
+                    )}
+                >
+                    {title}
+                </h4>
+
+                {/* Barra de Progresso (se tiver subtarefas) */}
+                {checklistTotal > 0 && (
+                    <div className="mt-2 mb-1">
+                        <div className="h-1 bg-gray-100 rounded-full overflow-hidden w-full">
+                            <div
+                                className="h-full bg-green-500 rounded-full transition-all duration-300 ease-out"
+                                style={{ width: `${progress}%` }}
+                            />
+                        </div>
+                    </div>
                 )}
-            >
-                {title}
-            </h4>
+            </div>
 
-            {/* Baixo: Data e Responsável */}
-            <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
-                {/* Data */}
-                <div className="flex items-center gap-1.5">
+            {/* 3. Rodapé (Meta Info) */}
+            <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-50">
+                {/* Esquerda: Avatar do Responsável */}
+                <div className="flex items-center">
+                    {assignees.length > 0 ? (
+                        <Avatar
+                            name={assignees[0].name}
+                            avatar={assignees[0].avatar}
+                            size="sm"
+                            className="size-6 border border-white"
+                        />
+                    ) : (
+                        <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center">
+                            <span className="text-[8px] text-gray-300">?</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Direita: Indicadores */}
+                <div className="flex items-center gap-3 text-gray-400 text-xs">
+                    {/* Ícone de Anexo */}
+                    {attachmentsCount > 0 && (
+                        <div className="flex items-center gap-1" title={`${attachmentsCount} anexo(s)`}>
+                            <Paperclip size={12} strokeWidth={2.5} />
+                        </div>
+                    )}
+
+                    {/* Ícone de Comentário + Contagem */}
+                    {commentsCount > 0 && (
+                        <div className="flex items-center gap-1" title={`${commentsCount} comentário(s)`}>
+                            <MessageSquare size={12} strokeWidth={2.5} />
+                            <span className="text-[10px] font-semibold">{commentsCount}</span>
+                        </div>
+                    )}
+
+                    {/* Data de Entrega */}
                     {dueDate && (
-                        <>
+                        <div className="flex items-center gap-1">
                             <Calendar
                                 className={cn(
-                                    "w-3.5 h-3.5",
-                                    isOverdue ? "text-red-600" : "text-gray-400"
+                                    "w-3 h-3",
+                                    isOverdue
+                                        ? "text-red-600"
+                                        : isToday
+                                        ? "text-green-600"
+                                        : "text-gray-400"
                                 )}
                             />
                             <span
                                 className={cn(
-                                    "text-xs",
-                                    isOverdue ? "text-red-600 font-medium" : "text-gray-500"
+                                    "text-[10px] font-medium",
+                                    isOverdue
+                                        ? "text-red-600"
+                                        : isToday
+                                        ? "text-green-600"
+                                        : "text-gray-500"
                                 )}
                             >
                                 {new Date(dueDate).toLocaleDateString("pt-BR", {
@@ -115,35 +238,10 @@ export function TaskCard({
                                     month: "short",
                                 })}
                             </span>
-                        </>
-                    )}
-                </div>
-
-                {/* Responsáveis */}
-                <div className="flex items-center gap-1">
-                    {assignees.length > 0 ? (
-                        assignees.slice(0, 2).map((assignee, index) => (
-                            <Avatar
-                                key={index}
-                                name={assignee.name}
-                                avatar={assignee.avatar}
-                                size="sm"
-                                className="border border-white"
-                            />
-                        ))
-                    ) : (
-                        <div className="w-6 h-6" />
-                    )}
-                    {assignees.length > 2 && (
-                        <div className="w-6 h-6 rounded-full bg-gray-100 border border-white flex items-center justify-center text-xs text-gray-600 font-medium">
-                            +{assignees.length - 2}
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* Linha de prioridade (opcional, sutil) */}
-            <div className={cn("h-0.5 rounded-full", priorityColors[priority])} />
         </div>
     );
 }

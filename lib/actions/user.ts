@@ -1,6 +1,6 @@
 "use server";
 
-import { createServerActionClient } from "@/lib/supabase";
+import { createServerActionClient } from "@/lib/supabase/server";
 import { Database } from "@/types/database.types";
 import { revalidatePath } from "next/cache";
 

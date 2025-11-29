@@ -1,6 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
+import { useFileUpload } from "@/hooks/use-file-upload";
+import { saveAttachment, deleteAttachment } from "@/lib/actions/attachments";
+import { 
+    getTaskDetails, 
+    addComment, 
+    updateTaskField, 
+    updateTaskFields,
+    updateTaskTags,
+    updateTaskSubtasks,
+    uploadAudioComment
+} from "@/lib/actions/task-details";
+import { getWorkspaceMembers } from "@/lib/actions/tasks";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 // Force rebuild due to runtime error
 import {
     Dialog,
@@ -23,6 +38,11 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import {
     X,
     Maximize2,
     MoreVertical,
@@ -43,8 +63,30 @@ import {
     FileImage,
     FileText,
     Trash2,
+    Mic,
+    Check,
+    Pause,
+    Tag,
+    ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AudioMessageBubble } from "./AudioMessageBubble";
+import { AttachmentCard } from "./AttachmentCard";
+
+// Funções auxiliares para arquivos
+const getFileTypeFromMime = (mimeType: string): "image" | "pdf" | "other" => {
+    if (mimeType.startsWith("image/")) return "image";
+    if (mimeType === "application/pdf") return "pdf";
+    return "other";
+};
+
+const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+};
 
 interface SubTask {
     id: string;
@@ -58,7 +100,7 @@ interface SubTask {
 
 interface Activity {
     id: string;
-    type: "created" | "commented" | "updated" | "file_shared";
+    type: "created" | "commented" | "updated" | "file_shared" | "audio";
     user: string;
     message?: string;
     timestamp: string;
@@ -66,6 +108,10 @@ interface Activity {
         name: string;
         type: "image" | "pdf" | "other";
         size: string;
+    };
+    audio?: {
+        url?: string;
+        duration?: number; // em segundos
     };
 }
 
@@ -85,6 +131,7 @@ interface TaskDetailModalProps {
             avatar?: string;
         };
         dueDate?: string;
+        tags?: string[];
         breadcrumbs: string[];
         contextMessage?: {
             type: "audio" | "text";
@@ -103,6 +150,7 @@ interface FileAttachment {
     name: string;
     type: "image" | "pdf" | "other";
     size: string;
+    url?: string;
 }
 
 export function TaskDetailModal({ 
@@ -123,24 +171,97 @@ export function TaskDetailModal({
     const [newSubTask, setNewSubTask] = useState("");
     const [newSubTaskAssignee, setNewSubTaskAssignee] = useState<string>("");
     const [comment, setComment] = useState("");
+    const [tags, setTags] = useState<string[]>(task?.tags || []);
+    const [newTagInput, setNewTagInput] = useState("");
+    const [isTagInputOpen, setIsTagInputOpen] = useState(false);
     const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [attachments, setAttachments] = useState<FileAttachment[]>(task?.attachments || []);
     const [activities, setActivities] = useState<Activity[]>(task?.activities || []);
     const [isCreating, setIsCreating] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+    const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+    const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
+    const [currentTaskId, setCurrentTaskId] = useState<string | null>(task?.id || null);
+    const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+    
+    // Hook de upload
+    const { uploadToStorage, progress, clearProgress } = useFileUpload();
+    
+    // Estados para gravação de áudio
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+    const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+    const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
 
-    // Atualizar estado quando task prop muda
+    // Buscar dados completos da tarefa quando modal abre
     useEffect(() => {
-        if (task) {
-            setTitle(task.title || "");
-            setDescription(task.description || "");
-            setStatus(task.status || "todo");
-            setDueDate(task.dueDate || initialDueDate || "");
-            setSubTasks(task.subTasks || []);
-            setAttachments(task.attachments || []);
-            setActivities(task.activities || []);
-        } else {
+        if (open && !isCreateMode && task?.id) {
+            const loadTaskDetails = async () => {
+                setIsLoadingDetails(true);
+                try {
+                    const taskDetails = await getTaskDetails(task.id);
+                    
+                    if (taskDetails) {
+                        setCurrentTaskId(taskDetails.id);
+                        setTitle(taskDetails.title || "");
+                        setDescription(taskDetails.description || "");
+                        setStatus(taskDetails.status as "todo" | "in_progress" | "done");
+                        setDueDate(taskDetails.due_date ? new Date(taskDetails.due_date).toISOString().split("T")[0] : "");
+                        
+                        // Mapear anexos
+                        const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
+                            id: att.id,
+                            name: att.file_name,
+                            type: (att.file_type || "other") as "image" | "pdf" | "other",
+                            size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                            url: att.file_url,
+                        }));
+                        setAttachments(mappedAttachments);
+                        
+                        // Mapear comentários para atividades
+                        const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
+                            id: comment.id,
+                            type: comment.type === "comment" ? "commented" : 
+                                  comment.type === "file" ? "file_shared" :
+                                  comment.type === "log" ? "updated" : "commented",
+                            user: comment.user.full_name || comment.user.email || "Sem nome",
+                            message: comment.content,
+                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
+                            audio: comment.metadata?.audio_url ? {
+                                url: comment.metadata.audio_url,
+                                duration: comment.metadata.duration,
+                            } : undefined,
+                        }));
+                        setActivities(mappedActivities);
+                        
+                        // Extrair tags do origin_context
+                        if (taskDetails.origin_context?.tags) {
+                            setTags(taskDetails.origin_context.tags);
+                        }
+                        
+                        // Carregar membros do workspace
+                        const members = await getWorkspaceMembers(taskDetails.workspace_id);
+                        setAvailableUsers(
+                            members.map((m: any) => ({
+                                id: m.id,
+                                name: m.full_name || m.email || "Sem nome",
+                                avatar: m.avatar_url || undefined,
+                            }))
+                        );
+                    }
+                } catch (error) {
+                    console.error("Erro ao carregar detalhes da tarefa:", error);
+                    toast.error("Erro ao carregar detalhes da tarefa");
+                } finally {
+                    setIsLoadingDetails(false);
+                }
+            };
+            
+            loadTaskDetails();
+        } else if (open && isCreateMode) {
+            // Modo create: resetar estados
             setTitle("");
             setDescription("");
             setStatus("todo");
@@ -148,45 +269,17 @@ export function TaskDetailModal({
             setSubTasks([]);
             setAttachments([]);
             setActivities([]);
-        }
-    }, [task, initialDueDate]);
-
-    // Buscar membros do workspace quando modal abre
-    useEffect(() => {
-        if (open && !isCreateMode && task?.id) {
-            const loadMembers = async () => {
-                setIsLoadingMembers(true);
-                try {
-                    const { getTaskById, getWorkspaceMembers } = await import("@/lib/actions/tasks");
-                    const taskData = await getTaskById(task.id);
-                    
-                    if (taskData) {
-                        const members = await getWorkspaceMembers(taskData.workspace_id || null);
-                        setAvailableUsers(
-                            members.map((m) => ({
-                                id: m.id,
-                                name: m.full_name || m.email,
-                                avatar: m.avatar_url || undefined,
-                            }))
-                        );
-                    }
-                } catch (error) {
-                    console.error("Erro ao carregar membros:", error);
-                } finally {
-                    setIsLoadingMembers(false);
-                }
-            };
-            loadMembers();
-        } else if (open && isCreateMode) {
-            // Para modo create, buscar apenas o usuário atual
+            setTags([]);
+            setCurrentTaskId(null);
+            
+            // Carregar apenas o usuário atual
             const loadCurrentUser = async () => {
                 try {
-                    const { getWorkspaceMembers } = await import("@/lib/actions/tasks");
                     const members = await getWorkspaceMembers(null);
                     setAvailableUsers(
-                        members.map((m) => ({
+                        members.map((m: any) => ({
                             id: m.id,
-                            name: m.full_name || m.email,
+                            name: m.full_name || m.email || "Usuário",
                             avatar: m.avatar_url || undefined,
                         }))
                     );
@@ -196,15 +289,133 @@ export function TaskDetailModal({
             };
             loadCurrentUser();
         }
-    }, [open, isCreateMode, task?.id]);
+    }, [open, isCreateMode, task?.id, initialDueDate]);
 
-    const handleAddSubTask = () => {
+    // Auto-save com debounce (500ms)
+    const triggerAutoSave = useCallback((field: string, value: any) => {
+        if (!currentTaskId || isCreateMode) return;
+        
+        // Limpar timeout anterior
+        if (autoSaveTimeout) {
+            clearTimeout(autoSaveTimeout);
+        }
+        
+        // Criar novo timeout
+        const timeout = setTimeout(async () => {
+            try {
+                const result = await updateTaskField(currentTaskId, field, value);
+                if (result.success) {
+                    // Silenciosamente salvo (sem toast para não poluir a UI)
+                } else {
+                    console.error(`Erro ao salvar ${field}:`, result.error);
+                }
+            } catch (error) {
+                console.error(`Erro ao salvar ${field}:`, error);
+            }
+        }, 500);
+        
+        setAutoSaveTimeout(timeout);
+    }, [currentTaskId, isCreateMode, autoSaveTimeout]);
+    
+    // Cleanup do timeout ao desmontar
+    useEffect(() => {
+        return () => {
+            if (autoSaveTimeout) {
+                clearTimeout(autoSaveTimeout);
+            }
+        };
+    }, [autoSaveTimeout]);
+
+    // Handler para upload de arquivos
+    const handleFileUpload = useCallback(async (files: File[]) => {
+        if (!task?.id || isCreateMode) {
+            console.error("Não é possível fazer upload: tarefa não criada ainda");
+            return;
+        }
+
+        for (const file of files) {
+            const fileKey = `${file.name}-${Date.now()}`;
+            setUploadingFiles((prev) => new Set(prev).add(fileKey));
+
+            try {
+                // 1. Fazer upload para o Storage
+                const uploadResult = await uploadToStorage(file, "attachments");
+
+                if (!uploadResult.success || !uploadResult.url) {
+                    throw new Error(uploadResult.error || "Erro ao fazer upload");
+                }
+
+                // 2. Salvar no banco de dados
+                const saveResult = await saveAttachment({
+                    taskId: task.id,
+                    fileUrl: uploadResult.url,
+                    fileName: file.name,
+                    fileType: getFileTypeFromMime(file.type || "other"),
+                    fileSize: file.size,
+                    filePath: uploadResult.path, // Salvar o path para facilitar deleção
+                });
+
+                if (!saveResult.success || !saveResult.data) {
+                    throw new Error(saveResult.error || "Erro ao salvar anexo");
+                }
+
+                // 3. Atualizar lista de anexos
+                setAttachments((prev) => [
+                    ...prev,
+                    {
+                        id: saveResult.data!.id,
+                        name: file.name,
+                        type: getFileTypeFromMime(file.type || "other"),
+                        size: formatFileSize(file.size),
+                        url: uploadResult.url!,
+                    },
+                ]);
+
+                // Limpar progresso após sucesso
+                clearProgress(file.name);
+            } catch (error) {
+                console.error("Erro ao fazer upload do arquivo:", error);
+                alert(`Erro ao fazer upload de ${file.name}: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
+            } finally {
+                setUploadingFiles((prev) => {
+                    const newSet = new Set(prev);
+                    newSet.delete(fileKey);
+                    return newSet;
+                });
+            }
+        }
+    }, [task?.id, isCreateMode, uploadToStorage, clearProgress]);
+
+    // Configuração do dropzone
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop: handleFileUpload,
+        disabled: isCreateMode || !task?.id,
+        multiple: true,
+    });
+
+    // Handler para deletar anexo
+    const handleDeleteAttachment = async (attachmentId: string) => {
+        try {
+            const result = await deleteAttachment(attachmentId);
+            if (result.success) {
+                setAttachments((prev) => prev.filter((att) => att.id !== attachmentId));
+                onTaskUpdated?.();
+            } else {
+                alert(`Erro ao deletar anexo: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Erro ao deletar anexo:", error);
+            alert("Erro ao deletar anexo. Tente novamente.");
+        }
+    };
+
+    const handleAddSubTask = async () => {
         if (newSubTask.trim()) {
             const assignee = newSubTaskAssignee 
                 ? availableUsers.find(u => u.id === newSubTaskAssignee)
                 : undefined;
             
-            setSubTasks([
+            const newSubTasks = [
                 ...subTasks,
                 {
                     id: `subtask-${Date.now()}`,
@@ -215,85 +426,234 @@ export function TaskDetailModal({
                         avatar: assignee.avatar,
                     } : undefined,
                 },
-            ]);
+            ];
+            setSubTasks(newSubTasks);
             setNewSubTask("");
             setNewSubTaskAssignee("");
+
+            if (currentTaskId && !isCreateMode) {
+                await updateTaskSubtasks(currentTaskId, newSubTasks);
+            }
         }
     };
     
-    const handleUpdateSubTaskAssignee = (subTaskId: string, assigneeId: string) => {
+    const handleUpdateSubTaskAssignee = async (subTaskId: string, assigneeId: string) => {
         // Se o valor selecionado for o mesmo que já está, remove o responsável
         const currentSubTask = subTasks.find(st => st.id === subTaskId);
         const selectedUser = availableUsers.find(u => u.id === assigneeId);
         
+        let newSubTasks;
+        
         if (currentSubTask?.assignee?.name === selectedUser?.name) {
-            setSubTasks(
-                subTasks.map((st) =>
-                    st.id === subTaskId 
-                        ? { ...st, assignee: undefined }
-                        : st
-                )
-            );
-        } else {
-            setSubTasks(
-                subTasks.map((st) =>
-                    st.id === subTaskId 
-                        ? { 
-                            ...st, 
-                            assignee: selectedUser ? {
-                                name: selectedUser.name,
-                                avatar: selectedUser.avatar,
-                            } : undefined
-                        }
-                        : st
-                )
-            );
-        }
-    };
-    
-    const handleRemoveSubTaskAssignee = (subTaskId: string) => {
-        setSubTasks(
-            subTasks.map((st) =>
+            newSubTasks = subTasks.map((st) =>
                 st.id === subTaskId 
                     ? { ...st, assignee: undefined }
                     : st
-            )
+            );
+        } else {
+            newSubTasks = subTasks.map((st) =>
+                st.id === subTaskId 
+                    ? { 
+                        ...st, 
+                        assignee: selectedUser ? {
+                            name: selectedUser.name,
+                            avatar: selectedUser.avatar,
+                        } : undefined
+                    }
+                    : st
+            );
+        }
+        setSubTasks(newSubTasks);
+        if (currentTaskId && !isCreateMode) {
+            await updateTaskSubtasks(currentTaskId, newSubTasks);
+        }
+    };
+    
+    const handleRemoveSubTaskAssignee = async (subTaskId: string) => {
+        const newSubTasks = subTasks.map((st) =>
+            st.id === subTaskId 
+                ? { ...st, assignee: undefined }
+                : st
         );
+        setSubTasks(newSubTasks);
+        if (currentTaskId && !isCreateMode) {
+            await updateTaskSubtasks(currentTaskId, newSubTasks);
+        }
     };
 
-    const handleToggleSubTask = (id: string) => {
-        setSubTasks(
-            subTasks.map((st) =>
-                st.id === id ? { ...st, completed: !st.completed } : st
-            )
+    const handleToggleSubTask = async (id: string) => {
+        const newSubTasks = subTasks.map((st) =>
+            st.id === id ? { ...st, completed: !st.completed } : st
         );
+        setSubTasks(newSubTasks);
+        if (currentTaskId && !isCreateMode) {
+            await updateTaskSubtasks(currentTaskId, newSubTasks);
+        }
     };
 
-    const handleSendComment = async () => {
-        if (!comment.trim() || !task?.id) return;
+    // Função para formatar tempo (MM:SS)
+    const formatTime = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    };
+
+    // Função para iniciar gravação
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            const chunks: Blob[] = [];
+
+            recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            };
+
+            recorder.onstop = () => {
+                const audioBlob = new Blob(chunks, { type: "audio/webm" });
+                setAudioChunks(chunks);
+                // Parar todas as tracks do stream
+                stream.getTracks().forEach((track) => track.stop());
+            };
+
+            recorder.start();
+            setMediaRecorder(recorder);
+            setMediaStream(stream);
+            setIsRecording(true);
+            setRecordingTime(0);
+        } catch (error) {
+            console.error("Erro ao iniciar gravação:", error);
+            alert("Não foi possível acessar o microfone. Verifique as permissões.");
+        }
+    };
+
+    // Função para parar gravação
+    const stopRecording = () => {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+            setIsRecording(false);
+        }
+    };
+
+    // Função para cancelar gravação
+    const cancelRecording = () => {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+        }
+        // Parar todas as tracks do stream
+        if (mediaStream) {
+            mediaStream.getTracks().forEach((track) => track.stop());
+            setMediaStream(null);
+        }
+        setIsRecording(false);
+        setRecordingTime(0);
+        setAudioChunks([]);
+        setMediaRecorder(null);
+    };
+
+    // Função para enviar áudio gravado
+    const handleUploadAudio = async (blob: Blob) => {
+        if (!currentTaskId) return;
 
         try {
-            const { createTaskComment } = await import("@/lib/actions/tasks");
-            const result = await createTaskComment(task.id, comment.trim());
+            const formData = new FormData();
+            formData.append("audio", blob, "audio.webm");
+            formData.append("duration", recordingTime.toString());
+
+            const result = await uploadAudioComment(currentTaskId, formData);
 
             if (result.success && result.data) {
-                // Adicionar comentário às atividades
+                // Adicionar à timeline (otimista ou via reload)
+                const audioData = result.data as any;
                 const newActivity: Activity = {
-                    id: result.data.id,
-                    type: "commented",
-                    user: result.data.user_name || "Usuário",
-                    message: result.data.content,
-                    timestamp: new Date(result.data.created_at).toLocaleString("pt-BR"),
+                    id: audioData.id,
+                    type: "audio",
+                    user: "Você", // Será atualizado no próximo fetch/realtime
+                    timestamp: new Date().toLocaleString("pt-BR"),
+                    audio: {
+                        url: audioData.metadata.url,
+                        duration: audioData.metadata.duration
+                    }
                 };
-                setActivities((prev) => [...prev, newActivity]);
+                setActivities((prev) => [newActivity, ...prev]);
+                toast.success("Áudio enviado");
+                onTaskUpdated?.();
+            } else {
+                console.error("Erro no upload de áudio:", result.error);
+                toast.error("Erro ao enviar áudio");
+            }
+        } catch (error) {
+            console.error("Erro ao enviar áudio:", error);
+            toast.error("Erro ao enviar áudio");
+        }
+        
+        // Resetar estados
+        setAudioChunks([]);
+        setMediaRecorder(null);
+    };
+
+    // Timer para gravação
+    useEffect(() => {
+        let interval: NodeJS.Timeout | null = null;
+        if (isRecording) {
+            interval = setInterval(() => {
+                setRecordingTime((prev) => prev + 1);
+            }, 1000);
+        } else {
+            if (interval) clearInterval(interval);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [isRecording]);
+
+    // Limpar ao fechar o modal
+    useEffect(() => {
+        if (!open) {
+            if (isRecording) {
+                cancelRecording();
+            }
+        }
+    }, [open]);
+
+    const handleSendComment = async () => {
+        if (!comment.trim() || !currentTaskId) return;
+
+        try {
+            const result = await addComment(currentTaskId, comment.trim(), null, "comment");
+
+            if (result.success) {
+                // Recarregar detalhes da tarefa para obter o comentário criado
+                const taskDetails = await getTaskDetails(currentTaskId);
+                if (taskDetails) {
+                    // Mapear comentários para atividades
+                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
+                        id: comment.id,
+                        type: comment.type === "comment" ? "commented" : 
+                              comment.type === "file" ? "file_shared" :
+                              comment.type === "log" ? "updated" : "commented",
+                        user: comment.user.full_name || comment.user.email || "Sem nome",
+                        message: comment.content,
+                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
+                        audio: comment.metadata?.audio_url ? {
+                            url: comment.metadata.audio_url,
+                            duration: comment.metadata.duration,
+                        } : undefined,
+                    }));
+                    setActivities(mappedActivities);
+                }
                 setComment("");
+                toast.success("Comentário adicionado");
+                onTaskUpdated?.();
             } else {
                 console.error("Erro ao criar comentário:", result.error);
-                alert(`Erro ao criar comentário: ${result.error}`);
+                toast.error(result.error || "Erro ao criar comentário");
             }
         } catch (error) {
             console.error("Erro ao criar comentário:", error);
-            alert("Erro ao criar comentário");
+            toast.error("Erro ao criar comentário");
         }
     };
 
@@ -324,6 +684,13 @@ export function TaskDetailModal({
             
             if (dueDateISO !== undefined) {
                 updateParams.due_date = dueDateISO || null;
+            }
+
+            // Salvar tags no origin_context
+            if (tags.length > 0) {
+                updateParams.origin_context = { tags };
+            } else {
+                updateParams.origin_context = null;
             }
 
             const result = await updateTask(updateParams);
@@ -361,13 +728,20 @@ export function TaskDetailModal({
                 }
             }
             
-            const result = await createTask({
+            const createParams: any = {
                 title: title.trim(),
                 description: description || undefined,
                 due_date: dueDateISO,
                 workspace_id: null, // Por enquanto, tarefas pessoais
                 status: status,
-            });
+            };
+
+            // Salvar tags no origin_context se houver
+            if (tags.length > 0) {
+                createParams.origin_context = { tags };
+            }
+
+            const result = await createTask(createParams);
 
             if (result.success) {
                 onOpenChange(false);
@@ -464,28 +838,50 @@ export function TaskDetailModal({
                         <div className="group relative mb-6">
                             <Input
                                 value={title}
-                                onChange={(e) => setTitle(e.target.value)}
+                                onChange={(e) => {
+                                    const newValue = e.target.value;
+                                    setTitle(newValue);
+                                    if (!isCreateMode && currentTaskId) {
+                                        triggerAutoSave("title", newValue);
+                                    }
+                                }}
                                 className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 focus-visible:ring-offset-0 hover:border-b hover:border-gray-300 transition-colors bg-transparent"
                                 placeholder={isCreateMode ? "Digite o nome da tarefa..." : "Título da tarefa..."}
                             />
                             <Pencil className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                         </div>
 
-                        {/* Metadados */}
-                        <div className="grid grid-cols-3 gap-4 mb-6">
+                        {/* Metadados - Properties Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                             {/* Status */}
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs font-medium text-gray-500 uppercase">
+                            <div className="flex flex-col">
+                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-1">
                                     Status
                                 </label>
                                 <Select
                                     value={status}
-                                    onValueChange={(value) =>
-                                        setStatus(value as "todo" | "in_progress" | "done")
-                                    }
+                                    onValueChange={async (value) => {
+                                        const newStatus = value as "todo" | "in_progress" | "done";
+                                        setStatus(newStatus);
+                                        if (!isCreateMode && currentTaskId) {
+                                            const result = await updateTaskField(currentTaskId, "status", newStatus);
+                                            if (result.success) {
+                                                onTaskUpdated?.();
+                                            } else {
+                                                toast.error(result.error || "Erro ao atualizar status");
+                                            }
+                                        }
+                                    }}
                                 >
-                                    <SelectTrigger className="h-9">
-                                        <SelectValue />
+                                    <SelectTrigger className="h-8 px-2 -ml-2 justify-start hover:bg-gray-100 border-0 bg-transparent [&>svg]:hidden">
+                                        <div className="flex items-center justify-between w-full gap-2">
+                                            <SelectValue>
+                                                {status === "done" && "Finalizado"}
+                                                {status === "in_progress" && "Em progresso"}
+                                                {status === "todo" && "Não iniciado"}
+                                            </SelectValue>
+                                            <ChevronDown className="h-3 w-3 text-gray-400 opacity-50" />
+                                        </div>
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="todo">Não iniciado</SelectItem>
@@ -496,37 +892,243 @@ export function TaskDetailModal({
                             </div>
 
                             {/* Responsável */}
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs font-medium text-gray-500 uppercase">
+                            <div className="flex flex-col">
+                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-1">
                                     Responsável
                                 </label>
-                                <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background">
-                                    {task?.assignee?.avatar ? (
-                                        <img
-                                            src={task.assignee.avatar}
-                                            alt={task.assignee.name}
-                                            className="w-5 h-5 rounded-full"
-                                        />
-                                    ) : (
-                                        <User className="w-4 h-4 text-gray-400" />
-                                    )}
-                                    <span className="text-sm">{task?.assignee?.name || "Não atribuído"}</span>
-                                </div>
+                                <Select
+                                    value={task?.assignee?.name ? availableUsers.find(u => u.name === task.assignee?.name)?.id || "none" : "none"}
+                                    onValueChange={async (userId) => {
+                                        if (!currentTaskId || userId === "loading" || isCreateMode) return;
+                                        
+                                        try {
+                                            const result = await updateTaskField(
+                                                currentTaskId,
+                                                "assignee_id",
+                                                userId === "none" ? null : userId
+                                            );
+                                            
+                                            if (result.success) {
+                                                // Atualizar estado local
+                                                if (userId === "none") {
+                                                    // Remover assignee
+                                                } else {
+                                                    const selectedUser = availableUsers.find(u => u.id === userId);
+                                                    // Atualizar visualmente se necessário
+                                                }
+                                                onTaskUpdated?.();
+                                                toast.success("Responsável atualizado");
+                                            } else {
+                                                toast.error(result.error || "Erro ao atualizar responsável");
+                                            }
+                                        } catch (error) {
+                                            console.error("Erro ao atualizar responsável:", error);
+                                            toast.error("Erro ao atualizar responsável");
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 px-2 -ml-2 justify-start hover:bg-gray-100 border-0 bg-transparent [&>svg]:hidden">
+                                        <SelectValue>
+                                            {task?.assignee ? (
+                                                <div className="flex items-center gap-2">
+                                                    {task.assignee.avatar ? (
+                                                        <img
+                                                            src={task.assignee.avatar}
+                                                            alt={task.assignee.name}
+                                                            className="w-6 h-6 rounded-full"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
+                                                            <User className="w-3.5 h-3.5 text-gray-500" />
+                                                        </div>
+                                                    )}
+                                                    <span className="text-sm">{task.assignee.name}</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 text-gray-400">
+                                                    <div className="w-6 h-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center">
+                                                        <Plus className="w-3 h-3" />
+                                                    </div>
+                                                    <span className="text-sm">Atribuir</span>
+                                                </div>
+                                            )}
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">Não atribuído</SelectItem>
+                                        {isLoadingMembers ? (
+                                            <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                                        ) : (
+                                            availableUsers.map((user) => (
+                                                <SelectItem key={user.id} value={user.id}>
+                                                    <div className="flex items-center gap-2">
+                                                        {user.avatar ? (
+                                                            <img
+                                                                src={user.avatar}
+                                                                alt={user.name}
+                                                                className="w-5 h-5 rounded-full"
+                                                            />
+                                                        ) : (
+                                                            <User className="w-4 h-4 text-gray-400" />
+                                                        )}
+                                                        <span>{user.name}</span>
+                                                    </div>
+                                                </SelectItem>
+                                            ))
+                                        )}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             {/* Data de Entrega */}
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs font-medium text-gray-500 uppercase">
+                            <div className="flex flex-col">
+                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-1">
                                     Data de Entrega
                                 </label>
-                                <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background">
-                                    <Calendar className="w-4 h-4 text-gray-400" />
-                                    <Input
-                                        type="date"
-                                        value={dueDate}
-                                        onChange={(e) => setDueDate(e.target.value)}
-                                        className="border-0 p-0 h-auto focus-visible:ring-0"
-                                    />
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            className="h-8 px-2 -ml-2 justify-start hover:bg-gray-100 border-0"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Calendar className="w-4 h-4 text-gray-400" />
+                                                <span
+                                                    className={cn(
+                                                        "text-sm",
+                                                        dueDate &&
+                                                            new Date(dueDate) < new Date() &&
+                                                            (!task?.status || task?.status !== "done")
+                                                            ? "text-red-500"
+                                                            : "text-gray-700"
+                                                    )}
+                                                >
+                                                    {dueDate
+                                                        ? new Date(dueDate).toLocaleDateString("pt-BR", {
+                                                              day: "numeric",
+                                                              month: "short",
+                                                          })
+                                                        : "Sem data"}
+                                                </span>
+                                            </div>
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-3" align="start">
+                                        <Input
+                                            type="date"
+                                            value={dueDate}
+                                            onChange={async (e) => {
+                                                const newValue = e.target.value;
+                                                setDueDate(newValue);
+                                                if (!isCreateMode && currentTaskId) {
+                                                    const result = await updateTaskField(
+                                                        currentTaskId,
+                                                        "due_date",
+                                                        newValue ? new Date(newValue).toISOString() : null
+                                                    );
+                                                    if (result.success) {
+                                                        onTaskUpdated?.();
+                                                    } else {
+                                                        toast.error(result.error || "Erro ao atualizar data");
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full"
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            {/* Tags */}
+                            <div className="flex flex-col">
+                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-1">
+                                    Tags
+                                </label>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                    {tags.map((tag, index) => {
+                                        // Gerar cor pastel baseada no nome da tag
+                                        const getTagColor = (tagName: string) => {
+                                            const hash = tagName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                            const hue = hash % 360;
+                                            return {
+                                                bg: `hsl(${hue}, 70%, 90%)`,
+                                                text: `hsl(${hue}, 50%, 40%)`,
+                                                border: `hsl(${hue}, 50%, 75%)`,
+                                            };
+                                        };
+                                        const colors = getTagColor(tag);
+                                        
+                                        return (
+                                            <Badge
+                                                key={index}
+                                                variant="outline"
+                                                className="text-xs px-2 py-0.5 h-6 font-normal flex items-center gap-1.5"
+                                                style={{
+                                                    backgroundColor: colors.bg,
+                                                    color: colors.text,
+                                                    borderColor: colors.border,
+                                                }}
+                                            >
+                                                {tag}
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        const newTags = tags.filter((_, i) => i !== index);
+                                                        setTags(newTags);
+                                                        if (currentTaskId && !isCreateMode) {
+                                                            await updateTaskTags(currentTaskId, newTags);
+                                                        }
+                                                    }}
+                                                    className="hover:bg-black/10 rounded-full p-0.5 transition-colors"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </Badge>
+                                        );
+                                    })}
+                                    <Popover open={isTagInputOpen} onOpenChange={setIsTagInputOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 rounded-full border border-dashed border-gray-300 hover:bg-gray-100 hover:border-gray-400"
+                                            >
+                                                <Plus className="h-3 w-3 text-gray-400" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-64 p-2" align="start">
+                                            <div className="flex flex-col gap-2">
+                                                <Input
+                                                    placeholder="Digite o nome da tag..."
+                                                    value={newTagInput}
+                                                    onChange={(e) => setNewTagInput(e.target.value)}
+                                                    onKeyDown={async (e) => {
+                                                        if (e.key === "Enter" && newTagInput.trim()) {
+                                                            const trimmed = newTagInput.trim();
+                                                            if (!tags.includes(trimmed)) {
+                                                                const newTags = [...tags, trimmed];
+                                                                setTags(newTags);
+                                                                setNewTagInput("");
+                                                                setIsTagInputOpen(false);
+                                                                if (currentTaskId && !isCreateMode) {
+                                                                    await updateTaskTags(currentTaskId, newTags);
+                                                                }
+                                                            }
+                                                        } else if (e.key === "Escape") {
+                                                            setIsTagInputOpen(false);
+                                                            setNewTagInput("");
+                                                        }
+                                                    }}
+                                                    className="h-8 text-sm"
+                                                    autoFocus
+                                                />
+                                                <div className="text-xs text-gray-500">
+                                                    Pressione Enter para adicionar
+                                                </div>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
                                 </div>
                             </div>
                         </div>
@@ -594,50 +1196,57 @@ export function TaskDetailModal({
                             </label>
                             
                             {/* Dropzone */}
-                            <div className="border-dashed border-2 border-gray-200 hover:border-green-400 transition-colors rounded-md p-6 mb-4 cursor-pointer group">
+                            <div
+                                {...getRootProps()}
+                                className={cn(
+                                    "border-dashed border-2 rounded-md p-6 mb-4 cursor-pointer group transition-colors",
+                                    isDragActive
+                                        ? "border-green-500 bg-green-50"
+                                        : "border-gray-200 hover:border-green-400",
+                                    (isCreateMode || !task?.id) && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                <input {...getInputProps()} />
                                 <div className="flex flex-col items-center justify-center gap-2">
-                                    <UploadCloud className="w-8 h-8 text-gray-400 group-hover:text-green-500 transition-colors" />
-                                    <p className="text-sm text-gray-600 group-hover:text-green-600 transition-colors">
-                                        Arraste arquivos ou clique para upload
-                                    </p>
+                                    {uploadingFiles.size > 0 ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                                            <p className="text-sm text-gray-600">
+                                                Fazendo upload... ({uploadingFiles.size} arquivo{uploadingFiles.size > 1 ? "s" : ""})
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <UploadCloud className={cn(
+                                                "w-8 h-8 transition-colors",
+                                                isDragActive
+                                                    ? "text-green-500"
+                                                    : "text-gray-400 group-hover:text-green-500"
+                                            )} />
+                                            <p className={cn(
+                                                "text-sm transition-colors",
+                                                isDragActive
+                                                    ? "text-green-600"
+                                                    : "text-gray-600 group-hover:text-green-600"
+                                            )}>
+                                                {isCreateMode || !task?.id
+                                                    ? "Crie a tarefa primeiro para adicionar arquivos"
+                                                    : "Arraste arquivos ou clique para upload"}
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Preview de Arquivos - Grid */}
                             {attachments.length > 0 && (
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                     {attachments.map((file) => (
-                                        <div
+                                        <AttachmentCard
                                             key={file.id}
-                                            className="flex items-center gap-2 p-2 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors"
-                                        >
-                                            <div className="flex-shrink-0">
-                                                {file.type === "image" ? (
-                                                    <FileImage className="w-4 h-4 text-blue-500" />
-                                                ) : file.type === "pdf" ? (
-                                                    <FileText className="w-4 h-4 text-red-500" />
-                                                ) : (
-                                                    <FileText className="w-4 h-4 text-gray-500" />
-                                                )}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-xs font-medium text-gray-700 truncate">
-                                                    {file.name}
-                                                </p>
-                                                <p className="text-xs text-gray-500">{file.size}</p>
-                                            </div>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-6 w-6 flex-shrink-0"
-                                                onClick={() => {
-                                                    setAttachments(attachments.filter((f) => f.id !== file.id));
-                                                }}
-                                            >
-                                                <Trash2 className="h-3 w-3 text-gray-400 hover:text-red-500" />
-                                            </Button>
-                                        </div>
+                                            file={file}
+                                            onDelete={handleDeleteAttachment}
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -700,10 +1309,7 @@ export function TaskDetailModal({
                                                     }}
                                                 >
                                                     <SelectTrigger className="h-7 w-[140px] text-xs border-gray-200">
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            <User className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                                            <SelectValue placeholder="Atribuir..." />
-                                                        </div>
+                                                        <SelectValue placeholder="Atribuir..." />
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {availableUsers.map((user) => (
@@ -879,9 +1485,22 @@ export function TaskDetailModal({
                                                                 {activity.type === "commented" && "comentou"}
                                                                 {activity.type === "updated" && "atualizou a tarefa"}
                                                                 {activity.type === "file_shared" && "enviou um arquivo"}
+                                                                {activity.type === "audio" && "enviou um áudio"}
                                                             </p>
-                                                            {activity.message && (
-                                                                <p className="text-gray-600 mt-1">{activity.message}</p>
+                                                            {activity.type === "audio" ? (
+                                                                <div className="mt-2">
+                                                                    <AudioMessageBubble
+                                                                        duration={activity.audio?.duration || 14}
+                                                                        isOwnMessage={false}
+                                                                        audioUrl={activity.audio?.url}
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    {activity.message && (
+                                                                        <p className="text-gray-600 mt-1">{activity.message}</p>
+                                                                    )}
+                                                                </>
                                                             )}
                                                             {activity.file && (
                                                                 <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
@@ -911,35 +1530,104 @@ export function TaskDetailModal({
                                     </div>
 
                                     {/* Input de Comentário */}
-                                    <div className="flex gap-2 pt-4 border-t border-gray-200">
-                                        <Input
-                                            value={comment}
-                                            onChange={(e) => setComment(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    handleSendComment();
-                                                }
-                                            }}
-                                            placeholder="Adicionar comentário..."
-                                            className="flex-1"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-10 w-10 text-gray-400 hover:text-green-600"
-                                            onClick={() => {}}
-                                        >
-                                            <Paperclip className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            onClick={handleSendComment}
-                                            size="icon"
-                                            className="h-10 w-10 bg-green-600 hover:bg-green-700"
-                                        >
-                                            <Send className="h-4 w-4" />
-                                        </Button>
+                                    <div className="pt-4 border-t border-gray-200">
+                                        {!isRecording ? (
+                                            <>
+                                                <div className="relative">
+                                                    <Input
+                                                        value={comment}
+                                                        onChange={(e) => setComment(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" && !e.shiftKey) {
+                                                                e.preventDefault();
+                                                                handleSendComment();
+                                                            }
+                                                        }}
+                                                        placeholder="Adicionar comentário..."
+                                                        className="pr-32"
+                                                    />
+                                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-gray-400 hover:text-green-600"
+                                                            onClick={() => {}}
+                                                        >
+                                                            <Paperclip className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-gray-400 hover:text-red-500"
+                                                            onClick={startRecording}
+                                                        >
+                                                            <Mic className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            onClick={handleSendComment}
+                                                            size="icon"
+                                                            className="h-8 w-8 bg-green-600 hover:bg-green-700"
+                                                            disabled={!comment.trim()}
+                                                        >
+                                                            <Send className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {/* Estado de Gravação */}
+                                                <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                                                        <span className="text-sm font-medium text-red-700">
+                                                            Gravando...
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex-1 flex items-center justify-center gap-2">
+                                                        {/* Visualização de onda fake */}
+                                                        <div className="flex items-end gap-1 h-6">
+                                                            <div className="w-1 bg-red-400 rounded-full animate-pulse" style={{ height: "40%" }} />
+                                                            <div className="w-1 bg-red-500 rounded-full animate-pulse" style={{ height: "70%" }} />
+                                                            <div className="w-1 bg-red-400 rounded-full animate-pulse" style={{ height: "50%" }} />
+                                                            <div className="w-1 bg-red-500 rounded-full animate-pulse" style={{ height: "80%" }} />
+                                                            <div className="w-1 bg-red-400 rounded-full animate-pulse" style={{ height: "60%" }} />
+                                                        </div>
+                                                        <span className="text-sm font-mono text-red-700 min-w-[50px] text-center">
+                                                            {formatTime(recordingTime)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-10 w-10 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                    onClick={cancelRecording}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="icon"
+                                                    className="h-10 w-10 bg-green-600 hover:bg-green-700"
+                                                    onClick={async () => {
+                                                        stopRecording();
+                                                        // Aguardar um pouco para o blob ser gerado
+                                                        setTimeout(() => {
+                                                            if (audioChunks.length > 0) {
+                                                                const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+                                                                handleUploadAudio(audioBlob);
+                                                            }
+                                                        }, 100);
+                                                    }}
+                                                >
+                                                    <Check className="h-4 w-4" />
+                                                </Button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </>

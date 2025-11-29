@@ -58,7 +58,6 @@ export function MonthSelector() {
   return (
     <Select value={selectedValue} onValueChange={handleValueChange}>
       <SelectTrigger className="w-[180px] bg-white">
-        <Calendar className="w-4 h-4 mr-2 text-gray-500" />
         <SelectValue placeholder="Selecione o mês" />
       </SelectTrigger>
       <SelectContent>
@@ -71,4 +70,6 @@ export function MonthSelector() {
     </Select>
   );
 }
+
+
 

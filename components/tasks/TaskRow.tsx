@@ -1,48 +1,28 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarGroup } from "./Avatar";
 import {
-    MoreVertical,
+    MoreHorizontal,
     GripVertical,
     Zap,
-    AlertCircle,
-    Maximize2,
-    MessageCircle,
-    Copy,
-    Trash2,
+    AlertTriangle,
     Calendar as CalendarIcon,
     User,
-    Plus,
 } from "lucide-react";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { TaskActionMenu } from "./TaskActionMenu";
+import { InlineTextEdit } from "@/components/ui/inline-text-edit";
 
 interface TaskRowProps {
     id: string;
@@ -51,13 +31,15 @@ interface TaskRowProps {
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    assigneeId?: string | null; // ID do responsável atual
     dueDate?: string;
     tags?: string[];
     hasUpdates?: boolean;
+    workspaceId?: string | null; // ID do workspace para buscar membros
     onClick?: () => void;
     onToggleComplete?: (id: string, completed: boolean) => void;
-    onUpdate?: (id: string, updates: { title?: string; dueDate?: string | null; assigneeId?: string | null }) => void;
-    workspaceId?: string | null;
+    onTaskUpdated?: () => void;
+    onTaskDeleted?: () => void;
     isLast?: boolean;
 }
 
@@ -68,24 +50,11 @@ const priorityColors = {
     urgent: "bg-red-500",
 };
 
-// Função para obter configuração de status baseado no valor
-const getStatusConfig = (status: string) => {
-    const statusLower = status.toLowerCase();
-    
-    // Mapeamento para status customizáveis
-    if (statusLower.includes("backlog") || statusLower === "todo" || statusLower === "não iniciado") {
-        return { label: status, color: "bg-gray-400", dotColor: "bg-gray-400" };
-    }
-    if (statusLower.includes("triagem") || statusLower.includes("execução") || statusLower === "in_progress" || statusLower === "em progresso") {
-        return { label: status, color: "bg-yellow-400", dotColor: "bg-yellow-400" };
-    }
-    if (statusLower.includes("revisão") || statusLower === "done" || statusLower === "finalizado") {
-        return { label: status, color: "bg-green-500", dotColor: "bg-green-500" };
-    }
-    
-    // Default
-    return { label: status, color: "bg-gray-400", dotColor: "bg-gray-400" };
-};
+import { TASK_CONFIG, getTaskStatusConfig, mapLabelToStatus } from "@/lib/config/tasks";
+import { TaskDatePicker } from "./pickers/TaskDatePicker";
+import { TaskAssigneePicker } from "./pickers/TaskAssigneePicker";
+import { updateTask } from "@/lib/actions/tasks";
+import { toast } from "sonner";
 
 // Função utilitária para verificar se a data é o próximo domingo
 const isNextSunday = (dateString?: string): boolean => {
@@ -141,123 +110,85 @@ export function TaskRow({
     priority = "medium",
     status,
     assignees = [],
+    assigneeId,
     dueDate,
     tags = [],
     hasUpdates = false,
+    workspaceId,
     onClick,
     onToggleComplete,
-    onUpdate,
-    workspaceId = null,
+    onTaskUpdated,
+    onTaskDeleted,
     isLast = false,
 }: TaskRowProps) {
-    // Estados para edição inline
-    const [editingTitle, setEditingTitle] = useState(false);
-    const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
-    const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
-    const [titleValue, setTitleValue] = useState(title);
-    const [selectedDate, setSelectedDate] = useState<Date | undefined>(dueDate ? new Date(dueDate) : undefined);
-    const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
-    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-    
-    const titleInputRef = useRef<HTMLInputElement>(null);
-
-    // Sincronizar valores quando props mudam
-    useEffect(() => {
-        setTitleValue(title);
-    }, [title]);
-
-    useEffect(() => {
-        setSelectedDate(dueDate ? new Date(dueDate) : undefined);
-    }, [dueDate]);
-
-    // Carregar usuários quando abrir popover de assignee
-    useEffect(() => {
-        if (isAssigneePopoverOpen && availableUsers.length === 0 && !isLoadingUsers) {
-            const loadUsers = async () => {
-                setIsLoadingUsers(true);
-                try {
-                    const { getWorkspaceMembers } = await import("@/lib/actions/tasks");
-                    const members = await getWorkspaceMembers(workspaceId);
-                    setAvailableUsers(
-                        members.map((m) => ({
-                            id: m.id,
-                            name: m.full_name || m.email || 'Usuário',
-                            avatar: m.avatar_url || undefined,
-                        }))
-                    );
-                } catch (error) {
-                    console.error("Erro ao carregar usuários:", error);
-                } finally {
-                    setIsLoadingUsers(false);
-                }
-            };
-            loadUsers();
-        }
-    }, [isAssigneePopoverOpen, workspaceId, availableUsers.length, isLoadingUsers]);
-
-    // Focar no input quando entrar em modo de edição
-    useEffect(() => {
-        if (editingTitle && titleInputRef.current) {
-            titleInputRef.current.focus();
-            titleInputRef.current.select();
-        }
-    }, [editingTitle]);
-
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
-    const statusInfo = getStatusConfig(status);
+    // Obter configuração do status (mapear label para status do banco se necessário)
+    const dbStatus = mapLabelToStatus(status);
+    const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
     
     // Lógica de Smart Triggers
     const isFocusActive = isNextSunday(dueDate);
     const isUrgentActive = isToday(dueDate) || priority === "high" || priority === "urgent";
 
-    // Handlers para salvar edições
-    const handleSaveTitle = async () => {
-        if (titleValue.trim() && titleValue.trim() !== title) {
-            const { updateTask } = await import("@/lib/actions/tasks");
+    // Handler para atualizar data
+    const handleDateSelect = async (date: Date | null) => {
+        try {
             const result = await updateTask({
                 id,
-                title: titleValue.trim(),
+                due_date: date ? date.toISOString() : null,
             });
-            if (result.success && onUpdate) {
-                onUpdate(id, { title: titleValue.trim() });
+
+            if (result.success) {
+                onTaskUpdated?.();
+            } else {
+                toast.error(result.error || "Erro ao atualizar data");
             }
+        } catch (error) {
+            toast.error("Erro ao atualizar data");
+            console.error(error);
         }
-        setEditingTitle(false);
     };
 
-    const handleDateSelect = async (date: Date | undefined) => {
-        setSelectedDate(date);
-        const newDate = date ? date.toISOString() : null;
-        const currentDate = dueDate ? new Date(dueDate).toISOString() : null;
-        
-        if (newDate !== currentDate) {
-            const { updateTask } = await import("@/lib/actions/tasks");
+    // Handler para atualizar responsável
+    const handleAssigneeSelect = async (newAssigneeId: string | null) => {
+        try {
             const result = await updateTask({
                 id,
-                due_date: newDate,
+                assignee_id: newAssigneeId,
             });
-            if (result.success && onUpdate) {
-                onUpdate(id, { dueDate: newDate });
+
+            if (result.success) {
+                onTaskUpdated?.();
+            } else {
+                toast.error(result.error || "Erro ao atualizar responsável");
             }
+        } catch (error) {
+            toast.error("Erro ao atualizar responsável");
+            console.error(error);
         }
-        setIsDatePopoverOpen(false);
     };
 
-    const handleAssigneeSelect = async (userId: string | null) => {
-        const currentAssigneeId = assignees[0]?.id || null;
-        
-        if (userId !== currentAssigneeId) {
-            const { updateTask } = await import("@/lib/actions/tasks");
+    // Handler para atualizar título
+    const handleTitleUpdate = async (newTitle: string) => {
+        try {
             const result = await updateTask({
                 id,
-                assignee_id: userId,
+                title: newTitle,
             });
-            if (result.success && onUpdate) {
-                onUpdate(id, { assigneeId: userId });
+
+            if (result.success) {
+                onTaskUpdated?.();
+            } else {
+                toast.error(result.error || "Erro ao atualizar título");
             }
+        } catch (error) {
+            toast.error("Erro ao atualizar título");
+            console.error(error);
         }
-        setIsAssigneePopoverOpen(false);
     };
+
+    // Converter dueDate string para Date
+    const dueDateObj = dueDate ? new Date(dueDate) : null;
 
     // Hook do dnd-kit para tornar a linha sortable
     const {
@@ -275,175 +206,182 @@ export function TaskRow({
         opacity: isDragging ? 0.5 : 1,
     };
 
-    // Determinar cor da borda esquerda baseada na prioridade/workspace
-    const borderColorClass = priorityColors[priority];
-    // Extrair a cor do Tailwind para usar no estilo inline
-    const borderColorMap: Record<string, string> = {
-        "bg-blue-500": "#3b82f6",
-        "bg-yellow-500": "#eab308",
-        "bg-orange-500": "#f97316",
-        "bg-red-500": "#ef4444",
+    // Preparar objeto da tarefa para o menu de ações
+    const taskForMenu = {
+        id,
+        title,
+        description: null,
+        status,
+        priority,
+        due_date: dueDate || null,
+        assignee_id: assigneeId || null,
+        workspace_id: workspaceId || null,
+        origin_context: {},
     };
-    const borderColorValue = borderColorMap[borderColorClass] || "#eab308";
 
     return (
         <TooltipProvider>
             <div
                 ref={setNodeRef}
-                style={{
-                    ...style,
-                    borderLeftColor: borderColorValue,
-                }}
+                style={style}
                 className={cn(
-                    "h-12 hover:bg-gray-50 transition-colors cursor-pointer group",
-                    "grid grid-cols-[20px_auto_1fr_auto_120px_100px_120px_40px] items-center gap-2 px-0",
-                    !isLast && "border-b border-gray-50",
-                    isDragging && "shadow-lg bg-white rounded-lg",
-                    // Border left colorida (4px) com padding para respiro
-                    "border-l-4 pl-3"
+                    "group flex items-center w-full border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors h-10 px-4 relative",
+                    isDragging && "shadow-lg bg-white rounded-lg z-50"
                 )}
                 onClick={onClick}
             >
-                {/* Drag Handle (estilo Linear - invisível até hover) */}
-                <div 
-                    {...attributes}
-                    {...listeners}
-                    className="flex items-center justify-center"
-                >
-                    <GripVertical className="w-4 h-4 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                </div>
+            {/* Barra Lateral Colorida (linha contínua) - Cor do Status */}
+            <div 
+                className={cn(
+                    "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
+                    statusConfig.color
+                )} 
+            />
 
-                {/* Checkbox Sutil */}
-                <div onClick={(e) => e.stopPropagation()} className="flex items-center">
-                    <Checkbox 
-                        checked={completed} 
-                        onCheckedChange={(checked) => {
-                            if (onToggleComplete) {
-                                onToggleComplete(id, checked === true);
-                            }
-                        }}
-                        className={cn(
-                            "h-4 w-4 rounded border-2 transition-colors",
-                            completed 
-                                ? "bg-green-500 border-green-500 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
-                                : "border-gray-200 hover:border-gray-400 bg-transparent"
-                        )}
-                    />
-                </div>
+            {/* Esquerda (Fluido) */}
+            {/* Drag Handle (invisível até hover) */}
+            <div 
+                {...attributes}
+                {...listeners}
+                className="flex items-center justify-center pr-2 z-10"
+            >
+                <GripVertical className="w-4 h-4 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            </div>
 
-                {/* Título com tags e indicador de atualização (alinhamento vertical preciso) */}
-                <div className="flex items-center gap-2 min-w-0">
-                    {/* Indicador de atualização não lida */}
-                    {hasUpdates && (
-                        <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                    )}
-                    
-                    {tags.length > 0 && (
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                            {tags.map((tag, index) => (
-                                <Badge
-                                    key={index}
-                                    variant="secondary"
-                                    className="text-[10px] px-1.5 py-0 font-medium bg-gray-100 text-gray-700"
-                                >
-                                    {tag}
-                                </Badge>
-                            ))}
-                        </div>
-                    )}
-                    {editingTitle ? (
-                        <Input
-                            ref={titleInputRef}
-                            value={titleValue}
-                            onChange={(e) => setTitleValue(e.target.value)}
-                            onBlur={handleSaveTitle}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleSaveTitle();
-                                } else if (e.key === 'Escape') {
-                                    setTitleValue(title);
-                                    setEditingTitle(false);
-                                }
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-7 text-sm font-medium border-gray-300 focus:border-green-500 focus:ring-1 focus:ring-green-500"
-                        />
-                    ) : (
-                        <span
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingTitle(true);
-                            }}
-                            className={cn(
-                                "text-sm text-gray-900 truncate leading-tight cursor-text hover:bg-gray-100 px-1 py-0.5 rounded transition-colors",
-                                hasUpdates ? "font-semibold" : "font-medium",
-                                completed && "line-through text-gray-500"
-                            )}
-                        >
-                            {title}
-                        </span>
-                    )}
-                </div>
+            {/* Checkbox */}
+            <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0 mr-3">
+                <Checkbox 
+                    checked={completed} 
+                    onCheckedChange={(checked) => {
+                        if (onToggleComplete) {
+                            onToggleComplete(id, checked === true);
+                        }
+                    }}
+                    className="border-gray-200 hover:border-gray-300 transition-colors duration-200 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
+                />
+            </div>
 
-                {/* Ações Rápidas (hierarquia visual - sutis quando inativos) */}
-                <div
+            {/* Título (Truncate, flex-1, mr-4) */}
+            <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
+                {/* Indicador de atualização não lida */}
+                {hasUpdates && (
+                    <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                )}
+                
+                <InlineTextEdit
+                    value={title}
+                    onSave={handleTitleUpdate}
                     className={cn(
-                        "flex items-center gap-1 transition-opacity pointer-events-none group-hover:pointer-events-auto",
-                        isFocusActive || isUrgentActive
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100"
+                        "text-sm text-gray-900 leading-tight",
+                        hasUpdates ? "font-semibold" : "font-medium",
+                        completed && "line-through text-gray-500"
                     )}
-                >
-                    {/* Botão: Atacar na Semana (Foco Semanal) */}
+                    inputClassName="text-sm font-medium text-gray-900"
+                />
+
+                {/* Tags (após o título, máximo 2 + "+1") */}
+                {tags.length > 0 && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        {tags.slice(0, 2).map((tag, index) => (
+                            <Badge
+                                key={index}
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 h-5 font-normal text-gray-500 border-gray-200 bg-gray-50"
+                            >
+                                {tag}
+                            </Badge>
+                        ))}
+                        {tags.length > 2 && (
+                            <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 h-5 font-normal text-gray-500 border-gray-200 bg-gray-50"
+                            >
+                                +{tags.length - 2}
+                            </Badge>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Direita (Fixo) - Container com dimensões fixas */}
+            <div className="flex items-center justify-center gap-3 shrink-0 min-w-[300px]">
+                {/* 1. Ações (Raio e Exclamação) */}
+                <div className="flex items-center gap-1">
+                    {/* Botão Raio (Foco Semanal) */}
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={cn(
-                                    "h-7 w-7 transition-all duration-200",
-                                    isFocusActive
-                                        ? "bg-yellow-50 text-yellow-600 rounded-md p-1 hover:bg-yellow-100"
-                                        : "text-gray-200 hover:text-gray-400"
-                                )}
-                                onClick={(e) => {
+                            <button
+                                onClick={async (e) => {
                                     e.stopPropagation();
-                                    const nextSunday = getNextSunday();
-                                    console.log("Foco Semanal: Definir due_date para", nextSunday.toISOString());
-                                    // TODO: Implementar ação no backend
+                                    try {
+                                        const nextSunday = getNextSunday();
+                                        const result = await updateTask({
+                                            id,
+                                            due_date: nextSunday.toISOString(),
+                                        });
+
+                                        if (result.success) {
+                                            toast.success("Tarefa movida para o próximo domingo");
+                                            onTaskUpdated?.();
+                                        } else {
+                                            toast.error(result.error || "Erro ao mover tarefa");
+                                        }
+                                    } catch (error) {
+                                        toast.error("Erro ao mover tarefa");
+                                        console.error(error);
+                                    }
                                 }}
+                                className={cn(
+                                    "rounded p-1 transition-all",
+                                    isFocusActive
+                                        ? "text-yellow-600 fill-yellow-100 bg-yellow-50 opacity-100"
+                                        : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                                )}
                             >
-                                <Zap className={cn("w-4 h-4", isFocusActive && "fill-current")} />
-                            </Button>
+                                <Zap className="w-4 h-4" />
+                            </button>
                         </TooltipTrigger>
                         <TooltipContent>
                             <p>{isFocusActive ? "Marcado para o próximo domingo" : "Mover para Minha Semana"}</p>
                         </TooltipContent>
                     </Tooltip>
 
-                    {/* Botão: Urgência */}
+                    {/* Botão Exclamação (Urgente) */}
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={cn(
-                                    "h-7 w-7 transition-all duration-200",
-                                    isUrgentActive
-                                        ? "bg-red-50 text-red-600 rounded-md p-1 hover:bg-red-100"
-                                        : "text-gray-200 hover:text-gray-400"
-                                )}
-                                onClick={(e) => {
+                            <button
+                                onClick={async (e) => {
                                     e.stopPropagation();
-                                    const today = new Date();
-                                    today.setHours(0, 0, 0, 0);
-                                    console.log("Urgente: Definir due_date para hoje e prioridade alta", today.toISOString());
-                                    // TODO: Implementar ação no backend
+                                    try {
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0);
+                                        
+                                        const result = await updateTask({
+                                            id,
+                                            priority: "urgent",
+                                            due_date: today.toISOString(),
+                                        });
+
+                                        if (result.success) {
+                                            toast.success("Tarefa marcada como urgente");
+                                            onTaskUpdated?.();
+                                        } else {
+                                            toast.error(result.error || "Erro ao marcar como urgente");
+                                        }
+                                    } catch (error) {
+                                        toast.error("Erro ao marcar como urgente");
+                                        console.error(error);
+                                    }
                                 }}
+                                className={cn(
+                                    "rounded p-1 transition-all",
+                                    isUrgentActive
+                                        ? "text-red-600 fill-red-50 bg-red-50 opacity-100"
+                                        : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500"
+                                )}
                             >
-                                <AlertCircle className={cn("w-4 h-4", isUrgentActive && "text-red-600")} />
-                            </Button>
+                                <AlertTriangle className="w-4 h-4" />
+                            </button>
                         </TooltipTrigger>
                         <TooltipContent>
                             <p>{isUrgentActive ? "Marcado como urgente" : "Marcar como Urgente"}</p>
@@ -451,179 +389,91 @@ export function TaskRow({
                     </Tooltip>
                 </div>
 
-                {/* Responsáveis - Empty State com círculo tracejado + Popover com lista */}
-                <div className="flex items-center justify-end min-w-[80px]">
-                    <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
-                        <PopoverTrigger asChild>
-                            <div
-                                onClick={(e) => e.stopPropagation()}
-                                className="cursor-pointer hover:opacity-80 transition-opacity"
+                {/* 2. Divisor Vertical Sutil */}
+                <div className="h-4 w-px bg-gray-200 mx-2" />
+
+                {/* 3. Responsável */}
+                <div className="flex items-center justify-center w-8" onClick={(e) => e.stopPropagation()}>
+                    <TaskAssigneePicker
+                        assigneeId={assigneeId || null}
+                        onSelect={handleAssigneeSelect}
+                        workspaceId={workspaceId}
+                        members={assignees.map(a => ({ id: a.id || "", name: a.name, avatar: a.avatar }))}
+                        trigger={
+                            <button
+                                type="button"
+                                className={cn(
+                                    "transition-all flex items-center justify-center",
+                                    assignees.length > 0 
+                                        ? "hover:opacity-80" 
+                                        : "size-6 rounded-full border border-dashed border-gray-300 hover:border-gray-400 cursor-pointer"
+                                )}
                             >
                                 {assignees.length > 0 ? (
                                     <AvatarGroup users={assignees} max={3} size="sm" />
                                 ) : (
-                                    <div className="size-6 rounded-full border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 transition-colors">
-                                        <User className="w-3 h-3 text-gray-300" />
-                                    </div>
+                                    <User className="w-3 h-3 text-gray-400" />
                                 )}
-                            </div>
-                        </PopoverTrigger>
-                        <PopoverContent 
-                            className="w-64 p-2" 
-                            align="end"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="space-y-1">
-                                <button
-                                    onClick={() => handleAssigneeSelect(null)}
-                                    className={cn(
-                                        "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-left",
-                                        assignees.length === 0
-                                            ? "bg-gray-100 text-gray-900"
-                                            : "hover:bg-gray-50 text-gray-700"
-                                    )}
-                                >
-                                    <div className="size-8 rounded-full border-dashed border-gray-300 flex items-center justify-center flex-shrink-0">
-                                        <User className="w-4 h-4 text-gray-400" />
-                                    </div>
-                                    <span className="font-medium">Sem responsável</span>
-                                </button>
-                                {isLoadingUsers ? (
-                                    <div className="px-3 py-2 text-sm text-gray-500">Carregando...</div>
+                            </button>
+                        }
+                    />
+                </div>
+
+                {/* 4. Data */}
+                <div className="flex items-center justify-center w-24" onClick={(e) => e.stopPropagation()}>
+                    <TaskDatePicker
+                        date={dueDateObj}
+                        onSelect={handleDateSelect}
+                        side="left"
+                        align="end"
+                        trigger={
+                            <button
+                                type="button"
+                                className={cn(
+                                    "text-xs transition-colors hover:opacity-80",
+                                    dueDate && isToday(dueDate) && "text-red-500 font-medium",
+                                    dueDate && isOverdue && !isToday(dueDate) && "text-red-500 font-medium",
+                                    dueDate && !isToday(dueDate) && !isOverdue && "text-gray-400",
+                                    !dueDate && "text-gray-300 hover:text-gray-500 cursor-pointer"
+                                )}
+                            >
+                                {dueDate ? (
+                                    <span>
+                                        {new Date(dueDate).toLocaleDateString("pt-BR", {
+                                            day: "2-digit",
+                                            month: "short",
+                                        })}
+                                    </span>
                                 ) : (
-                                    availableUsers.map((user) => (
-                                        <button
-                                            key={user.id}
-                                            onClick={() => handleAssigneeSelect(user.id)}
-                                            className={cn(
-                                                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-left",
-                                                assignees[0]?.id === user.id
-                                                    ? "bg-gray-100 text-gray-900"
-                                                    : "hover:bg-gray-50 text-gray-700"
-                                            )}
-                                        >
-                                            <Avatar
-                                                name={user.name}
-                                                avatar={user.avatar}
-                                                size="sm"
-                                            />
-                                            <span className="font-medium truncate">{user.name}</span>
-                                        </button>
-                                    ))
+                                    <CalendarIcon className="w-4 h-4" />
                                 )}
-                            </div>
-                        </PopoverContent>
-                    </Popover>
+                            </button>
+                        }
+                    />
                 </div>
 
-                {/* Data - Empty State com ícone no hover + Popover com Calendário */}
-                <div className="text-xs text-right flex items-center justify-end min-w-[100px]">
-                    <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
-                        <PopoverTrigger asChild>
-                            {dueDate ? (
-                                <span
-                                    onClick={(e) => e.stopPropagation()}
-                                    className={cn(
-                                        "text-gray-400 cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded transition-colors",
-                                        isToday(dueDate) && "text-red-500 font-medium",
-                                        isOverdue && !isToday(dueDate) && "text-red-500 font-medium"
-                                    )}
-                                >
-                                    {format(new Date(dueDate), "dd MMM", { locale: ptBR })}
-                                </span>
-                            ) : (
-                                <div
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="cursor-pointer"
-                                >
-                                    <CalendarIcon className="w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-400" />
-                                </div>
-                            )}
-                        </PopoverTrigger>
-                        <PopoverContent 
-                            className="w-auto p-0" 
-                            align="end"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <Calendar
-                                mode="single"
-                                selected={selectedDate}
-                                onSelect={handleDateSelect}
-                                initialFocus
-                                locale={ptBR}
-                            />
-                        </PopoverContent>
-                    </Popover>
+                {/* 5. Status */}
+                <div className={cn(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs whitespace-nowrap",
+                    statusConfig.lightColor
+                )}>
+                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusConfig.color)} />
+                    <span>{statusConfig.label}</span>
                 </div>
 
-                {/* Status Badge - Alinhado à direita */}
-                <div className="flex items-center gap-1.5 justify-end min-w-[120px]">
-                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusInfo.dotColor)} />
-                    <span className="text-xs text-gray-500 whitespace-nowrap">{statusInfo.label}</span>
-                </div>
-
-                {/* Menu de Ações da Tarefa */}
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                }}
-                            >
-                                <MoreVertical className="w-4 h-4 text-gray-500" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClick?.();
-                                }}
-                            >
-                                <Maximize2 className="w-4 h-4 mr-2" />
-                                Abrir Detalhes
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    console.log("Ver no WhatsApp:", id);
-                                    // TODO: Implementar visualização no WhatsApp
-                                }}
-                                className="text-green-600 focus:bg-green-50 focus:text-green-600"
-                            >
-                                <MessageCircle className="w-4 h-4 mr-2" />
-                                Ver no WhatsApp
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    console.log("Duplicar tarefa:", id);
-                                    // TODO: Implementar duplicação
-                                }}
-                            >
-                                <Copy className="w-4 h-4 mr-2" />
-                                Duplicar
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    console.log("Excluir tarefa:", id);
-                                    // TODO: Implementar exclusão
-                                }}
-                                className="text-red-600 focus:bg-red-50 focus:text-red-600"
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Excluir
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                {/* 6. Menu */}
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                    <TaskActionMenu
+                        task={taskForMenu}
+                        isFocused={isFocusActive}
+                        isUrgent={isUrgentActive}
+                        onOpenDetails={onClick}
+                        onTaskUpdated={onTaskUpdated}
+                        onTaskDeleted={onTaskDeleted}
+                    />
                 </div>
             </div>
+        </div>
         </TooltipProvider>
     );
 }

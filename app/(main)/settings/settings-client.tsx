@@ -25,43 +25,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Wifi, Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Monitor } from "lucide-react";
-import { useUI } from "@/components/providers/UIProvider";
-import { updateProfile, Profile } from "@/lib/actions/user";
-import { toast } from "sonner"; // Assuming sonner is used or I'll use alert if not sure. The code used alert. I'll stick to alert or use a simple toast if available.
-// The original code used alert(). I'll stick to that or standard window.alert for now to minimize dependencies, but prompt asked for "Entrega" so I'll try to be clean.
-
-// Mock Data for Members
-const INITIAL_MEMBERS = [
-  {
-    id: 1,
-    name: "Julio Silva",
-    email: "julio@example.com",
-    role: "Owner",
-    avatarUrl: null,
-  },
-  {
-    id: 2,
-    name: "Ana Costa",
-    email: "ana@example.com",
-    role: "Admin",
-    avatarUrl: null,
-  },
-  {
-    id: 3,
-    name: "Roberto Santos",
-    email: "roberto@example.com",
-    role: "Member",
-    avatarUrl: null,
-  },
-  {
-    id: 4,
-    name: "Ricardo Oliveira",
-    email: "ricardo@example.com",
-    role: "Viewer",
-    avatarUrl: null,
-  },
-];
+import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi } from "lucide-react";
+import { useUI } from "@/components/providers/UIScaleProvider";
+import { updateProfile, Profile, Workspace } from "@/lib/actions/user";
+import { inviteMember, revokeInvite, Member, Invite } from "@/lib/actions/members";
+import { toast } from "sonner";
+import { ConfirmModal } from "@/components/modals/confirm-modal";
+import { Slider } from "@/components/ui/slider";
 
 // Mock Data for Billing History
 const BILLING_HISTORY = [
@@ -72,16 +42,19 @@ const BILLING_HISTORY = [
 
 interface SettingsPageClientProps {
   user: Profile | null;
+  workspace: Workspace | null;
+  initialMembers: Member[];
+  initialInvites: Invite[];
 }
 
-export function SettingsPageClient({ user }: SettingsPageClientProps) {
+export function SettingsPageClient({ user, workspace, initialMembers, initialInvites }: SettingsPageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const activeTab = searchParams.get("tab") || "general";
 
   // General Settings State
-  const [workspaceName, setWorkspaceName] = useState("Minha Empresa Criativa");
-  const [slug, setSlug] = useState("minha-empresa");
+  const [workspaceName, setWorkspaceName] = useState(workspace?.name || "Minha Empresa");
+  const [slug, setSlug] = useState(workspace?.slug || "minha-empresa");
   const [isSaving, setIsSaving] = useState(false);
   const { scale, setScale } = useUI();
 
@@ -93,25 +66,39 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Update state if user prop changes
+  // Update state if props change
   useEffect(() => {
     if (user) {
       setProfileName(user.full_name || "");
       setProfileEmail(user.email || "");
     }
-  }, [user]);
+    if (workspace) {
+        setWorkspaceName(workspace.name);
+        setSlug(workspace.slug || "");
+    }
+  }, [user, workspace]);
 
-  // Members State
-  const [members, setMembers] = useState(INITIAL_MEMBERS);
+  // Members & Invites State
+  const [members, setMembers] = useState<Member[]>(initialMembers);
+  const [invites, setInvites] = useState<Invite[]>(initialInvites);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
-  const [newMember, setNewMember] = useState({ name: "", email: "", role: "Member" });
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [newMember, setNewMember] = useState({ email: "", role: "member" });
+
+  // Modal States
+  const [inviteToRevoke, setInviteToRevoke] = useState<string | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<string | null>(null); // Não implementado na API ainda, mas preparado
 
   const handleSaveSettings = () => {
     setIsSaving(true);
     // Simulating API call
     setTimeout(() => {
       setIsSaving(false);
-      alert("Configurações salvas com sucesso!");
+      toast.success("Configurações salvas!", {
+        description: "As alterações já estão valendo.",
+      });
     }, 1000);
   };
 
@@ -123,38 +110,69 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
       formData.append("job_title", jobTitle);
       
       await updateProfile(formData);
-      alert("Perfil atualizado com sucesso!");
+      toast.success("Perfil atualizado!", {
+          description: "Suas informações foram salvas com sucesso."
+      });
     } catch (error) {
       console.error(error);
-      alert("Erro ao atualizar perfil.");
+      toast.error("Erro ao atualizar perfil.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleRemoveMember = (id: number) => {
-    if (confirm("Tem certeza que deseja remover este membro?")) {
-      setMembers(members.filter((m) => m.id !== id));
+  const handleRemoveMember = (userId: string) => {
+      setMemberToRemove(userId);
+  };
+
+  const confirmRemoveMember = async () => {
+      // TODO: Implement server action for removing member
+      toast.info("Em breve", { description: "Funcionalidade de remover membro ainda não implementada na API." });
+      setMemberToRemove(null);
+  }
+
+  const handleInviteMember = async () => {
+    if (!newMember.email || !workspace) return;
+    
+    setIsInviting(true);
+    setInviteLink(null);
+
+    try {
+        const result = await inviteMember(workspace.id, newMember.email, newMember.role as "admin" | "member" | "viewer");
+        
+        if (result.inviteLink) {
+            setInviteLink(result.inviteLink);
+            toast.success("Convite criado!", {
+                description: "Copie o link para enviar ao usuário."
+            });
+        }
+        
+        setNewMember({ email: "", role: "member" });
+    } catch (error: any) {
+        toast.error("Erro ao enviar convite", { description: error.message });
+    } finally {
+        setIsInviting(false);
     }
   };
 
-  const handleInviteMember = () => {
-    if (!newMember.name || !newMember.email) return;
-    
-    const newId = Math.max(...members.map(m => m.id), 0) + 1;
-    setMembers([
-      ...members,
-      {
-        id: newId,
-        name: newMember.name,
-        email: newMember.email,
-        role: newMember.role,
-        avatarUrl: null,
+  const handleRevokeInvite = (inviteId: string) => {
+      setInviteToRevoke(inviteId);
+  }
+
+  const confirmRevokeInvite = async () => {
+      if (!inviteToRevoke) return;
+      setIsRevoking(true);
+      try {
+          await revokeInvite(inviteToRevoke);
+          setInvites(invites.filter(i => i.id !== inviteToRevoke));
+          toast.success("Convite cancelado", { description: "O link de acesso não funcionará mais." });
+      } catch (error) {
+          toast.error("Erro ao cancelar convite.");
+      } finally {
+          setIsRevoking(false);
+          setInviteToRevoke(null);
       }
-    ]);
-    setNewMember({ name: "", email: "", role: "Member" });
-    setIsInviteOpen(false);
-  };
+  }
 
   const getInitials = (name: string) => {
     return name
@@ -248,57 +266,38 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
           {/* Appearance Settings */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                 <div className="p-2 bg-blue-100 rounded-full">
-                    <Monitor className="h-5 w-5 text-blue-600" />
-                 </div>
-                 <div>
-                    <CardTitle>Aparência</CardTitle>
-                    <CardDescription>Personalize a densidade e tamanho da interface.</CardDescription>
-                 </div>
-              </div>
+              <CardTitle>Aparência</CardTitle>
+              <CardDescription>Personalize a densidade e tamanho da interface.</CardDescription>
             </CardHeader>
             <CardContent>
-               <div className="space-y-4">
-                  <div className="space-y-3">
-                     <Label>Escala da Interface</Label>
-                     <div className="grid grid-cols-3 gap-4 max-w-md">
-                        <button
-                           onClick={() => setScale(0.875)}
-                           className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                              scale === 0.875 
-                                 ? "border-green-500 bg-green-50/50 text-green-700" 
-                                 : "border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50"
-                           }`}
-                        >
-                           <Minimize2 className="w-6 h-6" />
-                           <span className="text-sm font-medium">Compacto</span>
-                        </button>
-
-                        <button
-                           onClick={() => setScale(1)}
-                           className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                              scale === 1 
-                                 ? "border-green-500 bg-green-50/50 text-green-700" 
-                                 : "border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50"
-                           }`}
-                        >
-                           <span className="text-xl font-bold leading-none">A</span>
-                           <span className="text-sm font-medium">Padrão</span>
-                        </button>
-
-                        <button
-                           onClick={() => setScale(1.125)}
-                           className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                              scale === 1.125 
-                                 ? "border-green-500 bg-green-50/50 text-green-700" 
-                                 : "border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50"
-                           }`}
-                        >
-                           <Maximize2 className="w-6 h-6" />
-                           <span className="text-sm font-medium">Expandido</span>
-                        </button>
+               <div className="space-y-6">
+                  <div className="space-y-4">
+                     <div className="flex items-center justify-between">
+                        <Label>Densidade da Interface</Label>
+                        <span className="text-sm text-muted-foreground">
+                           {scale === 0.85 ? "Mini" : scale === 0.925 ? "Compacto" : scale === 1 ? "Padrão" : "Expandido"}
+                        </span>
                      </div>
+                     
+                     <div className="pt-2">
+                        <Slider 
+                           defaultValue={[[0.85, 0.925, 1, 1.125].indexOf(scale)]} 
+                           max={3} 
+                           step={1} 
+                           value={[[0.85, 0.925, 1, 1.125].indexOf(scale)]}
+                           onValueChange={(vals: number[]) => {
+                              const levels: (0.85 | 0.925 | 1 | 1.125)[] = [0.85, 0.925, 1, 1.125];
+                              setScale(levels[vals[0]]);
+                           }}
+                        />
+                        <div className="flex justify-between mt-2">
+                           <span className="text-xs text-gray-500">Mini</span>
+                           <span className="text-xs text-gray-500">Compacto</span>
+                           <span className="text-xs text-gray-500">Padrão</span>
+                           <span className="text-xs text-gray-500">Expandido</span>
+                        </div>
+                     </div>
+
                      <p className="text-xs text-muted-foreground pt-1">
                         Ajusta o tamanho de fontes, botões e espaçamentos em todo o sistema.
                      </p>
@@ -308,14 +307,10 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
           </Card>
 
           {/* WhatsApp Integration */}
-          <Card className="border-green-100 overflow-hidden">
-            <div className="h-2 bg-green-500 w-full"></div>
+          <Card className="overflow-hidden">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <div className="p-2 bg-green-100 rounded-full">
-                    <Wifi className="h-5 w-5 text-green-600" />
-                  </div>
                   Integração WhatsApp
                 </CardTitle>
                 <Badge variant="outline" className="border-green-200 text-green-700 bg-green-50">
@@ -360,46 +355,72 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
                     Envie um convite por email para adicionar alguém ao seu time.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="name">Nome Completo</Label>
-                    <Input 
-                      id="name" 
-                      value={newMember.name}
-                      onChange={(e) => setNewMember({...newMember, name: e.target.value})}
-                      placeholder="Ex: João Silva" 
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input 
-                      id="email" 
-                      type="email"
-                      value={newMember.email}
-                      onChange={(e) => setNewMember({...newMember, email: e.target.value})}
-                      placeholder="joao@empresa.com" 
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="role">Função</Label>
-                    <Select 
-                      value={newMember.role} 
-                      onValueChange={(val) => setNewMember({...newMember, role: val})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma função" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Admin">Admin</SelectItem>
-                        <SelectItem value="Member">Member</SelectItem>
-                        <SelectItem value="Viewer">Viewer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                
+                {!inviteLink ? (
+                    <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="email">Email</Label>
+                        <Input 
+                        id="email" 
+                        type="email"
+                        value={newMember.email}
+                        onChange={(e) => setNewMember({...newMember, email: e.target.value})}
+                        placeholder="joao@empresa.com" 
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="role">Função</Label>
+                        <Select 
+                        value={newMember.role} 
+                        onValueChange={(val) => setNewMember({...newMember, role: val})}
+                        >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma função" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                        </SelectContent>
+                        </Select>
+                    </div>
+                    </div>
+                ) : (
+                    <div className="py-4 space-y-4">
+                        <div className="p-4 bg-green-50 border border-green-100 rounded-lg flex flex-col items-center text-center gap-2">
+                            <CheckCircle2 className="h-8 w-8 text-green-600" />
+                            <h3 className="font-medium text-green-900">Convite Criado!</h3>
+                            <p className="text-sm text-green-700">
+                                Em ambiente de desenvolvimento, use o link abaixo:
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 p-2 bg-slate-100 rounded-md border">
+                            <code className="text-xs flex-1 truncate">{inviteLink}</code>
+                            <Button size="sm" variant="ghost" onClick={() => {
+                                navigator.clipboard.writeText(inviteLink);
+                                toast.success("Link copiado!");
+                            }}>
+                                <Copy className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsInviteOpen(false)}>Cancelar</Button>
-                  <Button onClick={handleInviteMember}>Enviar Convite</Button>
+                  {inviteLink ? (
+                      <Button onClick={() => {
+                          setInviteLink(null);
+                          setIsInviteOpen(false);
+                          router.refresh();
+                      }}>Concluir</Button>
+                  ) : (
+                    <>
+                        <Button variant="outline" onClick={() => setIsInviteOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleInviteMember} disabled={isInviting}>
+                            {isInviting ? "Enviando..." : "Enviar Convite"}
+                        </Button>
+                    </>
+                  )}
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -416,41 +437,104 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {members.map((member) => (
-                    <tr key={member.id} className="bg-white hover:bg-gray-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
-                            {member.name.split(" ").map((n) => n[0]).join("").substring(0, 2)}
-                          </div>
-                          <div>
-                            <div className="font-medium text-gray-900">{member.name}</div>
-                            <div className="text-muted-foreground text-xs">{member.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <Badge variant={member.role === "Owner" ? "default" : member.role === "Admin" ? "secondary" : "outline"}>
-                          {member.role}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="text-muted-foreground hover:text-red-600 hover:bg-red-50" 
-                          disabled={member.role === "Owner"}
-                          onClick={() => handleRemoveMember(member.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {members.length === 0 && (
+                      <tr>
+                          <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
+                              Nenhum membro encontrado além de você.
+                          </td>
+                      </tr>
+                  )}
+                  {members.map((member) => {
+                    const name = member.profiles?.full_name || "Usuário";
+                    const email = member.profiles?.email || "";
+                    const initials = getInitials(name);
+                    
+                    return (
+                        <tr key={member.user_id} className="bg-white hover:bg-gray-50/50 transition-colors">
+                        <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
+                                {initials}
+                            </div>
+                            <div>
+                                <div className="font-medium text-gray-900">{name}</div>
+                                <div className="text-muted-foreground text-xs">{email}</div>
+                            </div>
+                            </div>
+                        </td>
+                        <td className="px-6 py-4">
+                            <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
+                            {member.role}
+                            </Badge>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                            <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-muted-foreground hover:text-red-600 hover:bg-red-50" 
+                            disabled={member.role === "owner" || member.user_id === user?.id} // Don't allow deleting self or owner
+                            onClick={() => handleRemoveMember(member.user_id)}
+                            >
+                            <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </td>
+                        </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </Card>
+
+          {invites.length > 0 && (
+              <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Convites Pendentes</h3>
+                  <Card>
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
+                        <tr>
+                            <th className="px-6 py-4 font-medium">Email</th>
+                            <th className="px-6 py-4 font-medium">Função</th>
+                            <th className="px-6 py-4 font-medium text-right">Ações</th>
+                        </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                        {invites.map((invite) => (
+                            <tr key={invite.id} className="bg-white hover:bg-gray-50/50 transition-colors">
+                            <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-bold text-xs">
+                                        <Mail className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-gray-700">{invite.email}</span>
+                                </div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                                    {invite.role} (Pendente)
+                                </Badge>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                                <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 gap-1" 
+                                onClick={() => handleRevokeInvite(invite.id)}
+                                >
+                                <X className="h-3 w-3" />
+                                Revogar
+                                </Button>
+                            </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                    </div>
+                </Card>
+              </div>
+          )}
+
         </TabsContent>
 
         {/* C. ABA FATURAMENTO (BILLING) */}
@@ -641,14 +725,32 @@ export function SettingsPageClient({ user }: SettingsPageClientProps) {
               </div>
             </CardContent>
             <CardFooter className="border-t px-6 py-4 bg-gray-50/50 flex justify-end">
-              <Button variant="outline" onClick={() => alert("Senha alterada com sucesso!")}>
+              <Button variant="outline" onClick={() => toast.success("Senha alterada com sucesso!")}>
                 Alterar Senha
               </Button>
             </CardFooter>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmModal 
+        open={!!inviteToRevoke}
+        onOpenChange={(open) => !open && setInviteToRevoke(null)}
+        title="Revogar Convite"
+        description="O usuário não poderá mais acessar o workspace usando este link. Tem certeza?"
+        onConfirm={confirmRevokeInvite}
+        isLoading={isRevoking}
+      />
+      
+      <ConfirmModal 
+        open={!!memberToRemove}
+        onOpenChange={(open) => !open && setMemberToRemove(null)}
+        title="Remover Membro"
+        description="O usuário perderá acesso a todas as tarefas e dados deste workspace. Esta ação não pode ser desfeita."
+        confirmText="Sim, remover membro"
+        onConfirm={confirmRemoveMember}
+        isLoading={false}
+      />
     </div>
   );
 }
-

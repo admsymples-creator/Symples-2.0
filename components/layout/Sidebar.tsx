@@ -4,15 +4,19 @@ import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus } from "lucide-react";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+    DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface NavItem {
     label: string;
@@ -120,45 +124,75 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                             );
                         })}
                     </ul>
+                    <div className="mt-4 border-b border-gray-100 mx-3" />
                 </div>
 
-                {/* Separator */}
-                <div className="mb-4">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
-                        ESPAÇO DE TRABALHO
-                    </h3>
+                {/* Separator - Removed old header */}
+                <div className="mb-2">
                     
                     {/* Workspace Selector */}
-                    <div className="px-3 mb-4">
+                    <div className="mb-2">
                         {hasWorkspaces ? (
-                            <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
-                                <SelectTrigger className="w-full h-9 text-sm" suppressHydrationWarning>
-                                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        {!selectedWorkspace && <Building2 className="w-4 h-4 text-gray-500 flex-shrink-0" />}
-                                        <SelectValue placeholder="Selecione o Workspace" className="truncate" />
-                                    </div>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {workspaces.map((workspace) => (
-                                        <SelectItem key={workspace.id} value={workspace.id}>
-                                            <div className="flex items-center gap-2">
-                                                <Building2 className="w-4 h-4 text-gray-500" />
-                                                {workspace.name}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button 
+                                        variant="ghost" 
+                                        className="w-full justify-start px-3 h-12 gap-3 hover:bg-gray-100/80 transition-colors group"
+                                    >
+                                        <div className="w-8 h-8 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow">
+                                            <Building2 className="w-4 h-4" />
+                                        </div>
+                                        
+                                        <div className="flex flex-col items-start text-left flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 w-full">
+                                                <span className="font-semibold text-sm text-gray-900 truncate">
+                                                    {workspaces.find(w => w.id === selectedWorkspace)?.name || "Selecione"}
+                                                </span>
+                                                {/* Trial Badge - Mocked Logic */}
+                                                <Badge variant="secondary" className="text-[10px] px-1.5 h-4 bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200 flex-shrink-0">
+                                                    14 dias
+                                                </Badge>
                                             </div>
-                                        </SelectItem>
+                                            <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors">
+                                                Plano Trial
+                                            </span>
+                                        </div>
+
+                                        <ChevronsUpDown className="w-4 h-4 text-gray-400 ml-auto opacity-50 group-hover:opacity-100" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-[220px]" align="start">
+                                    <DropdownMenuLabel className="text-xs text-gray-500 font-medium px-2 py-1.5">
+                                        Trocar Workspace
+                                    </DropdownMenuLabel>
+                                    {workspaces.map((workspace) => (
+                                        <DropdownMenuItem 
+                                            key={workspace.id} 
+                                            onClick={() => setSelectedWorkspace(workspace.id)}
+                                            className="gap-2 cursor-pointer"
+                                        >
+                                            <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center">
+                                                <Building2 className="w-3 h-3 text-gray-500" />
+                                            </div>
+                                            <span className="flex-1 truncate">{workspace.name}</span>
+                                            {workspace.id === selectedWorkspace && (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                            )}
+                                        </DropdownMenuItem>
                                     ))}
-                                    <div className="p-2 border-t mt-1">
-                                        <Link href="/onboarding" className="flex items-center gap-2 text-sm text-green-600 hover:text-green-700 font-medium px-2 py-1.5 rounded-sm hover:bg-green-50 transition-colors">
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem asChild className="cursor-pointer gap-2 text-green-600 focus:text-green-700 focus:bg-green-50">
+                                        <Link href="/onboarding">
                                             <Plus className="w-4 h-4" />
                                             Criar Novo Workspace
                                         </Link>
-                                    </div>
-                                </SelectContent>
-                            </Select>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                         ) : (
                             <Link 
                                 href="/onboarding" 
-                                className="flex items-center justify-center gap-2 w-full h-9 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-green-600 hover:border-green-500 hover:bg-green-50 transition-all"
+                                className="flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-green-600 hover:border-green-500 hover:bg-green-50 transition-all"
                             >
                                 <Plus className="w-4 h-4" />
                                 Criar Workspace
@@ -198,7 +232,18 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
             </nav>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 mt-auto">
+            <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
+                {/* Trial Upgrade Callout */}
+                <div className="bg-green-50 rounded-lg p-3 border border-green-100">
+                    <h4 className="font-semibold text-green-800 text-xs mb-1">Trial - 14 dias restantes</h4>
+                    <p className="text-[10px] text-green-700 mb-2 leading-snug">
+                        Aproveite todos os recursos Pro do Symples.
+                    </p>
+                    <Button size="sm" className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none">
+                        Assinar Agora
+                    </Button>
+                </div>
+
                 <Link
                     href="/settings"
                     className={cn(

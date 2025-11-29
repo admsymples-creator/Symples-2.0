@@ -31,27 +31,44 @@ export function DayColumn({
   const [isQuickAddFocused, setIsQuickAddFocused] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Função auxiliar para processar texto e limpar marcadores de lista
-  const processBatchText = (text: string): string[] => {
-    // Dividir por quebras de linha (suporta \n e \r\n)
+  /**
+   * Processa texto e detecta se há múltiplas linhas (batch create)
+   */
+  const processBatchInput = (text: string): string[] => {
+    if (!text.includes("\n") && !text.includes("\r")) {
+      return [text.trim()].filter(Boolean);
+    }
+
     const lines = text.split(/\r?\n/);
     
-    // Filtrar linhas vazias e processar cada linha
-    return lines
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => {
-        // Remover marcadores de lista comuns no início da linha
-        // Remove: "- ", "* ", "• ", números como "1. ", "2. ", etc.
-        return line.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
-      })
-      .filter(line => line.length > 0);
+    // Função para limpar marcadores de lista
+    const cleanListItem = (line: string): string => {
+      let cleaned = line.trim();
+      cleaned = cleaned.replace(/^[-*•]\s+/, ""); // Remove "- ", "* ", "• "
+      cleaned = cleaned.replace(/^\d+\.\s+/, ""); // Remove "1. ", "2. ", etc.
+      cleaned = cleaned.replace(/^[-\u2022\u2023\u25E6\u2043]\s+/, ""); // Remove outros bullets Unicode
+      return cleaned.trim();
+    };
+
+    const cleanedLines = lines
+      .map(cleanListItem)
+      .filter((line) => line.length > 0);
+
+    return cleanedLines;
   };
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const text = quickAddValue; // Não usar trim() aqui para preservar quebras de linha
-    if (!text || !text.trim()) return;
+    const trimmedValue = quickAddValue.trim();
+    if (!trimmedValue) return;
+
+    // Processar input (detectar batch ou single)
+    const tasks = processBatchInput(trimmedValue);
+
+    if (tasks.length === 0) {
+      setQuickAddValue("");
+      return;
+    }
 
     // Limpar input imediatamente (Optimistic UI)
     setQuickAddValue("");
@@ -59,64 +76,43 @@ export function DayColumn({
     // Converter data para ISO se dateObj estiver disponível
     let dueDateISO: string | undefined = undefined;
     if (dateObj) {
-      // Criar uma data com horário no início do dia (00:00:00)
       const dueDate = new Date(dateObj);
       dueDate.setHours(0, 0, 0, 0);
       dueDateISO = dueDate.toISOString();
     }
 
-    // Verificar se o texto contém quebras de linha (batch create)
-    // Verificar tanto \n quanto \r\n (Windows)
-    const hasLineBreaks = text.includes('\n') || text.includes('\r\n');
-    
-    // Processar: se houver quebras, criar múltiplas tarefas; senão, criar uma única
-    const taskTitles = hasLineBreaks ? processBatchText(text) : [text.trim()];
-
-    if (taskTitles.length === 0) return;
-
-    // Limite de segurança: se houver mais de 20 tarefas, pedir confirmação
-    const HARD_LIMIT = 20;
-    if (taskTitles.length > HARD_LIMIT) {
-      const confirmed = window.confirm(
-        `Você está prestes a criar ${taskTitles.length} tarefas de uma vez. Tem certeza?`
-      );
-      if (!confirmed) {
-        // Restaurar o texto no input se o usuário cancelar
-        setQuickAddValue(text);
-        return;
-      }
-    }
-
-    // Criar tarefas no backend
+    // Criar tarefas no backend (batch create)
     setIsCreating(true);
     try {
       // Criar todas as tarefas em paralelo usando Promise.all
-      const createPromises = taskTitles.map(title =>
+      const createPromises = tasks.map((title) =>
         createTask({
           title,
           due_date: dueDateISO,
           workspace_id: null, // Tarefas do Quick Add são pessoais
           status: "todo",
+          is_personal: true,
         })
       );
 
       const results = await Promise.all(createPromises);
 
-      // Verificar se houve algum erro
-      const hasError = results.some(result => !result.success);
-      if (hasError) {
-        const errorResult = results.find(result => !result.success);
-        console.error("Erro ao criar tarefa(s):", errorResult?.error);
-        if (errorResult?.error === "Usuário não autenticado") {
+      // Verificar se houve erros
+      const errors = results.filter((result) => !result.success);
+      if (errors.length > 0) {
+        console.error("Erros ao criar tarefas:", errors);
+        const authError = errors.find((e) => e.error === "Usuário não autenticado");
+        if (authError) {
           router.push("/login");
         }
-        // Em produção, você pode mostrar um toast de erro aqui
-      } else {
-        // Recarregar a página para mostrar as novas tarefas
+      }
+
+      // Recarregar a página para mostrar as novas tarefas
+      if (results.some((r) => r.success)) {
         router.refresh();
       }
     } catch (error) {
-      console.error("Erro ao criar tarefa(s):", error);
+      console.error("Erro ao criar tarefas:", error);
     } finally {
       setIsCreating(false);
     }
@@ -128,7 +124,7 @@ export function DayColumn({
   return (
     <div
       className={cn(
-        "h-[600px] rounded-xl flex flex-col relative overflow-hidden",
+        "h-[420px] rounded-xl flex flex-col relative overflow-hidden",
         isToday ? "border-2 border-green-500" : "border border-gray-200",
         bgColor
       )}
@@ -175,24 +171,6 @@ export function DayColumn({
                   placeholder="+ Adicionar item..."
                   value={quickAddValue}
                   onChange={(e) => setQuickAddValue(e.target.value)}
-                  onPaste={(e) => {
-                    // Capturar texto colado e preservar quebras de linha
-                    e.preventDefault();
-                    const pastedText = e.clipboardData.getData('text/plain');
-                    // Preservar quebras de linha no estado (substituir completamente o valor)
-                    setQuickAddValue(prev => pastedText);
-                  }}
-                  onKeyDown={(e) => {
-                    // Permitir Enter para submeter, mas não permitir Enter dentro do texto
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      // Disparar submit manualmente
-                      const form = e.currentTarget.closest('form');
-                      if (form) {
-                        form.requestSubmit();
-                      }
-                    }
-                  }}
                   onFocus={() => setIsQuickAddFocused(true)}
                   onBlur={() => setIsQuickAddFocused(false)}
                   disabled={isCreating}

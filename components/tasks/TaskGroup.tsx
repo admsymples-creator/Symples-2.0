@@ -4,15 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ChevronDown, ChevronRight, Plus, Circle, MoreHorizontal, Pencil, Palette, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { TaskRow } from "./TaskRow";
+import { TaskGroupEmpty } from "./TaskGroupEmpty";
+import { TaskSectionHeader } from "./TaskSectionHeader";
+import { QuickTaskAdd } from "./QuickTaskAdd";
+import { GroupActionMenu } from "./GroupActionMenu";
 import { cn } from "@/lib/utils";
 import {
     SortableContext,
@@ -26,11 +23,10 @@ interface Task {
     completed: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
-    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    assignees?: Array<{ name: string; avatar?: string }>;
     dueDate?: string;
     tags?: string[];
     hasUpdates?: boolean;
-    workspaceId?: string | null;
 }
 
 interface TaskGroupProps {
@@ -39,11 +35,17 @@ interface TaskGroupProps {
     icon?: string;
     tasks: Task[];
     onTaskClick?: (taskId: string) => void;
-    onAddTask?: (title: string, context: { status?: string; priority?: string; assignee?: string }) => void;
+    onAddTask?: (title: string, context: { status?: string; priority?: string; assignee?: string; dueDate?: Date | null; assigneeId?: string | null }) => Promise<void> | void;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
-    onTaskUpdate?: (taskId: string, updates: { title?: string; dueDate?: string | null; assigneeId?: string | null }) => void;
+    onTaskUpdated?: () => void; // Callback após atualização de tarefa
+    onTaskDeleted?: () => void; // Callback após exclusão de tarefa
     defaultCollapsed?: boolean;
     groupBy?: "status" | "priority" | "assignee";
+    members?: Array<{ id: string; name: string; avatar?: string }>;
+    groupColor?: string; // Cor atual do grupo
+    onRenameGroup?: (groupId: string, newTitle: string) => void;
+    onColorChange?: (groupId: string, color: string) => void;
+    onDeleteGroup?: (groupId: string) => void;
 }
 
 export function TaskGroup({
@@ -54,15 +56,19 @@ export function TaskGroup({
     onTaskClick,
     onAddTask,
     onToggleComplete,
-    onTaskUpdate,
+    onTaskUpdated,
+    onTaskDeleted,
     defaultCollapsed = false,
     groupBy = "status",
+    members = [],
+    groupColor,
+    onRenameGroup,
+    onColorChange,
+    onDeleteGroup,
 }: TaskGroupProps) {
     const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
     const [isHovered, setIsHovered] = useState(false);
     const [isQuickAddActive, setIsQuickAddActive] = useState(false);
-    const [quickAddValue, setQuickAddValue] = useState("");
-    const inputRef = useRef<HTMLInputElement>(null);
 
     const completedCount = tasks.filter((t) => t.completed).length;
     const totalCount = tasks.length;
@@ -72,12 +78,6 @@ export function TaskGroup({
         id: id,
     });
 
-    // Focar no input quando Quick Add é ativado
-    useEffect(() => {
-        if (isQuickAddActive && inputRef.current) {
-            inputRef.current.focus();
-        }
-    }, [isQuickAddActive]);
 
     // Função para determinar o contexto do grupo
     const getGroupContext = () => {
@@ -108,70 +108,15 @@ export function TaskGroup({
         return context;
     };
 
-    // Função auxiliar para processar texto e limpar marcadores de lista
-    const processBatchText = (text: string): string[] => {
-        // Dividir por quebras de linha (suporta \n e \r\n)
-        const lines = text.split(/\r?\n/);
-        
-        // Filtrar linhas vazias e processar cada linha
-        return lines
-            .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .map(line => {
-                // Remover marcadores de lista comuns no início da linha
-                // Remove: "- ", "* ", "• ", números como "1. ", "2. ", etc.
-                return line.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
-            })
-            .filter(line => line.length > 0);
-    };
-
-    const handleQuickAddSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter" && quickAddValue) {
-            const text = quickAddValue; // Não usar trim() aqui para preservar quebras de linha
-            if (!text.trim()) return;
-            
-            const context = getGroupContext();
-            
-            // Verificar se o texto contém quebras de linha (batch create)
-            // Verificar tanto \n quanto \r\n (Windows)
-            const hasLineBreaks = text.includes('\n') || text.includes('\r\n');
-            
-            // Processar: se houver quebras, criar múltiplas tarefas; senão, criar uma única
-            const taskTitles = hasLineBreaks ? processBatchText(text) : [text.trim()];
-
-            if (taskTitles.length === 0) {
-                setQuickAddValue("");
-                setIsQuickAddActive(false);
-                return;
-            }
-
-            // Limite de segurança: se houver mais de 20 tarefas, pedir confirmação
-            const HARD_LIMIT = 20;
-            if (taskTitles.length > HARD_LIMIT) {
-                const confirmed = window.confirm(
-                    `Você está prestes a criar ${taskTitles.length} tarefas de uma vez. Tem certeza?`
-                );
-                if (!confirmed) {
-                    // Manter o texto no input se o usuário cancelar
-                    return;
-                }
-            }
-
-            // Limpar input imediatamente (Optimistic UI)
-            setQuickAddValue("");
-            setIsQuickAddActive(false);
-
-            // Criar todas as tarefas
-            // Usar Promise.all para criar em paralelo, mas aguardar todas completarem
-            const createPromises = taskTitles.map(title => 
-                onAddTask?.(title, context)
-            );
-            
-            await Promise.all(createPromises);
-        } else if (e.key === "Escape") {
-            setIsQuickAddActive(false);
-            setQuickAddValue("");
+    const handleQuickAddSubmit = async (title: string, dueDate?: Date | null, assigneeId?: string | null) => {
+        const context = getGroupContext();
+        const result = onAddTask?.(title, { ...context, dueDate, assigneeId });
+        // Aguardar Promise se onAddTask retornar uma
+        if (result && typeof result === 'object' && 'then' in result) {
+            await result;
         }
+        // Não fechar o QuickAdd imediatamente para permitir criação em lote
+        // O QuickAdd será fechado quando o usuário clicar fora ou pressionar Escape
     };
 
     return (
@@ -185,85 +130,48 @@ export function TaskGroup({
             onMouseLeave={() => setIsHovered(false)}
         >
             {/* Header do Grupo */}
-            <div className="flex items-center gap-2 h-8 mb-2 px-1 group">
-                <button
-                    onClick={() => setIsCollapsed(!isCollapsed)}
-                    className="p-1 hover:bg-gray-100 rounded transition-colors"
-                >
-                    {isCollapsed ? (
-                        <ChevronRight className="w-4 h-4 text-gray-500" />
-                    ) : (
-                        <ChevronDown className="w-4 h-4 text-gray-500" />
-                    )}
-                </button>
-                <div className="flex items-center gap-2">
-                    {icon && <span className="text-xs">{icon}</span>}
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</h3>
-                    <Badge variant="outline" className="text-xs px-2 py-0 bg-gray-100 text-gray-600 border-gray-200">
-                        {completedCount}/{totalCount}
-                    </Badge>
-
-                    {/* Menu de Ações do Grupo */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                    }}
-                                >
-                                    <MoreHorizontal className="w-4 h-4 text-gray-500" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-48">
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        console.log("Editar grupo:", title);
-                                        // TODO: Implementar edição
-                                    }}
-                                >
-                                    <Pencil className="w-4 h-4 mr-2" />
-                                    Editar
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        console.log("Mudar cor do grupo:", title);
-                                        // TODO: Implementar mudança de cor
-                                    }}
-                                >
-                                    <Palette className="w-4 h-4 mr-2" />
-                                    Mudar Cor
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        console.log("Excluir grupo:", title);
-                                        // TODO: Implementar exclusão
-                                    }}
-                                    className="text-red-600 focus:bg-red-50 focus:text-red-600"
-                                >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Excluir Grupo
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
-                </div>
+            <div className="mb-4">
+                <TaskSectionHeader
+                title={title}
+                count={totalCount}
+                leftContent={
+                    <>
+                        <button
+                            onClick={() => setIsCollapsed(!isCollapsed)}
+                            className="p-1 hover:bg-gray-100 rounded transition-colors"
+                        >
+                            {isCollapsed ? (
+                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                            ) : (
+                                <ChevronDown className="w-4 h-4 text-gray-500" />
+                            )}
+                        </button>
+                        {icon && <span className="text-xs">{icon}</span>}
+                    </>
+                }
+                actions={
+                    <GroupActionMenu
+                        groupId={id}
+                        groupTitle={title}
+                        currentColor={groupColor}
+                        onRename={(newTitle) => onRenameGroup?.(id, newTitle)}
+                        onColorChange={(color) => onColorChange?.(id, color)}
+                        onDelete={() => onDeleteGroup?.(id)}
+                    />
+                }
+            />
             </div>
 
             {/* Lista de Tarefas */}
             {!isCollapsed && (
                 <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
                     {tasks.length === 0 ? (
-                        <div className="py-8 text-center text-sm text-gray-500">
-                            Nenhuma tarefa neste grupo
-                        </div>
+                        <TaskGroupEmpty
+                            groupTitle={title}
+                            onCreateClick={() => {
+                                setIsQuickAddActive(true);
+                            }}
+                        />
                     ) : (
                         <SortableContext
                             items={tasks.map((t) => t.id)}
@@ -275,73 +183,30 @@ export function TaskGroup({
                                     {...task}
                                     onClick={() => onTaskClick?.(task.id)}
                                     onToggleComplete={onToggleComplete}
-                                    onUpdate={onTaskUpdate}
-                                    workspaceId={task.workspaceId}
+                                    onTaskUpdated={onTaskUpdated}
+                                    onTaskDeleted={onTaskDeleted}
                                     isLast={index === tasks.length - 1}
                                 />
                             ))}
                         </SortableContext>
                     )}
 
-                    {/* Quick Add no rodapé - Ghost Row */}
-                    <div
-                        className={cn(
-                            "h-12 border-b border-gray-100 hover:bg-gray-50 transition-colors",
-                            "grid grid-cols-[20px_3px_auto_1fr_auto_120px_100px_120px_40px] items-center gap-2 px-4"
-                        )}
-                    >
-                        {/* Espaço do Drag Handle (vazio) */}
-                        <div />
-
-                        {/* Espaço da linha de prioridade (vazio) */}
-                        <div />
-
-                        {/* Ícone Plus/Circle (onde ficaria o checkbox) */}
-                        <div className="flex items-center justify-center">
-                            {isQuickAddActive ? (
-                                <Circle className="w-4 h-4 text-gray-400" />
-                            ) : (
-                                <Plus className="w-4 h-4 text-gray-300" />
-                            )}
-                        </div>
-
-                        {/* Texto/Input (onde ficaria o título) */}
+                    {/* Quick Add no rodapé */}
+                    <div className="p-3 border-t border-gray-100">
                         {isQuickAddActive ? (
-                            <Input
-                                ref={inputRef}
-                                value={quickAddValue}
-                                onChange={(e) => setQuickAddValue(e.target.value)}
-                                onPaste={(e) => {
-                                    // Capturar texto colado e preservar quebras de linha
-                                    e.preventDefault();
-                                    const pastedText = e.clipboardData.getData('text/plain');
-                                    // Preservar quebras de linha no estado (substituir completamente o valor)
-                                    setQuickAddValue(pastedText);
-                                }}
-                                onKeyDown={handleQuickAddSubmit}
-                                onBlur={() => {
-                                    if (!quickAddValue.trim()) {
-                                        setIsQuickAddActive(false);
-                                    }
-                                }}
+                            <QuickTaskAdd
                                 placeholder="Adicionar tarefa aqui..."
-                                className="h-auto text-sm text-gray-900 border-0 outline-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 px-0 bg-transparent placeholder:text-gray-400"
+                                onSubmit={handleQuickAddSubmit}
+                                members={members}
                             />
                         ) : (
                             <button
                                 onClick={() => setIsQuickAddActive(true)}
-                                className="w-full text-left text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                                className="w-full text-left text-sm text-gray-400 hover:text-gray-600 transition-colors py-1"
                             >
-                                Adicionar tarefa aqui...
+                                + Adicionar tarefa aqui...
                             </button>
                         )}
-
-                        {/* Espaços vazios para manter alinhamento com TaskRow */}
-                        <div />
-                        <div />
-                        <div />
-                        <div />
-                        <div />
                     </div>
                 </div>
             )}

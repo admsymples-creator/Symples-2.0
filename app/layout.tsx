@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { UIProvider } from "@/components/providers/UIProvider";
+import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { Toaster } from "sonner";
 
 const inter = Inter({
@@ -23,10 +23,26 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
-        <UIProvider>
+        <UIScaleProvider>
           {children}
-          <Toaster />
-        </UIProvider>
+          <Toaster 
+            theme="light"
+            className="font-sans"
+            toastOptions={{
+              classNames: {
+                toast: "bg-white border-gray-200 shadow-lg",
+                title: "text-gray-900 font-medium",
+                description: "text-gray-500",
+                actionButton: "bg-gray-900 text-white hover:bg-gray-800",
+                cancelButton: "bg-gray-100 text-gray-500 hover:bg-gray-200",
+                error: "text-red-600",
+                success: "text-green-600",
+                warning: "text-yellow-600",
+                info: "text-blue-600",
+              },
+            }}
+          />
+        </UIScaleProvider>
       </body>
     </html>
   );

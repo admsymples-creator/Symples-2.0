@@ -3,8 +3,18 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TaskCard } from "./TaskCard";
-import { Plus } from "lucide-react";
+import { KanbanCard } from "./KanbanCard";
+import { KanbanEmptyCard } from "./KanbanEmptyCard";
+import { TaskSectionHeader } from "./TaskSectionHeader";
+import { QuickTaskAdd } from "./QuickTaskAdd";
+import { MoreHorizontal } from "lucide-react";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
     DndContext,
     closestCenter,
@@ -35,6 +45,7 @@ interface Task {
     assignees?: Array<{ name: string; avatar?: string }>;
     dueDate?: string;
     tags?: string[];
+    workspaceId?: string | null;
 }
 
 interface Column {
@@ -46,23 +57,16 @@ interface Column {
 interface TaskBoardProps {
     columns: Column[];
     onTaskClick?: (taskId: string) => void;
-    onAddTask?: (columnId: string) => void;
-    onTasksChange?: () => void; // Callback para recarregar tarefas
+    onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    members?: Array<{ id: string; name: string; avatar?: string }>;
+    groupBy?: "status" | "priority" | "assignee";
 }
 
-// Mapear status customizáveis para status do banco
+import { mapLabelToStatus } from "@/lib/config/tasks";
+
+// Mapear status customizáveis para status do banco (usando config centralizado)
 const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archived" => {
-    const statusLower = status.toLowerCase();
-    if (statusLower.includes("backlog") || statusLower === "todo" || statusLower === "não iniciado") {
-        return "todo";
-    }
-    if (statusLower.includes("triagem") || statusLower.includes("execução") || statusLower === "in_progress") {
-        return "in_progress";
-    }
-    if (statusLower.includes("revisão") || statusLower === "done" || statusLower === "finalizado") {
-        return "done";
-    }
-    return "todo";
+    return mapLabelToStatus(status) as "todo" | "in_progress" | "done" | "archived";
 };
 
 // Componente de Coluna Droppable
@@ -70,10 +74,14 @@ function DroppableColumn({
     column,
     onTaskClick,
     onAddTask,
+    members,
+    groupBy,
 }: {
     column: Column;
     onTaskClick?: (taskId: string) => void;
-    onAddTask?: (columnId: string) => void;
+    onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    members?: Array<{ id: string; name: string; avatar?: string }>;
+    groupBy?: "status" | "priority" | "assignee";
 }) {
     const { setNodeRef, isOver } = useDroppable({
         id: column.id,
@@ -83,29 +91,40 @@ function DroppableColumn({
         <div
             ref={setNodeRef}
             className={cn(
-                "bg-gray-50/50 rounded-xl p-2 w-[300px] flex-none flex flex-col transition-colors",
+                "bg-gray-50/50 rounded-xl w-[300px] flex-none flex flex-col transition-colors",
                 isOver && "bg-blue-50/50 border-2 border-blue-300 border-dashed"
             )}
         >
             {/* Header da Coluna */}
-            <div className="flex items-center justify-between mb-3 px-2">
-                <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900">{column.title}</h3>
-                    <Badge
-                        variant="outline"
-                        className="text-xs px-2 py-0 bg-white text-gray-600 border-gray-200"
-                    >
-                        {column.tasks.length}
-                    </Badge>
-                </div>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-gray-500 hover:text-gray-900 hover:bg-white"
-                    onClick={() => onAddTask?.(column.id)}
-                >
-                    <Plus className="w-4 h-4" />
-                </Button>
+            <div className="px-2">
+                <TaskSectionHeader
+                    title={column.title}
+                    count={column.tasks.length}
+                    actions={
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onAddTask?.(column.id, "");
+                                    }}
+                                >
+                                    Adicionar Tarefa
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    }
+                />
             </div>
 
             {/* Corpo da Coluna (Scroll) */}
@@ -113,44 +132,69 @@ function DroppableColumn({
                 items={column.tasks.map((t) => t.id)}
                 strategy={verticalListSortingStrategy}
             >
-                <div className="flex-1 overflow-y-auto space-y-2 px-1 min-h-0">
+                <div className="flex-1 overflow-y-auto space-y-2 min-h-0 pb-2 scrollbar-thin">
                     {column.tasks.length === 0 ? (
-                        <div
-                            onClick={() => onAddTask?.(column.id)}
-                            className={cn(
-                                "h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all group",
-                                "bg-gray-50/50 border-gray-200",
-                                "hover:border-green-300 hover:bg-green-50/30",
-                                isOver && "bg-green-50 border-green-400 border-solid"
-                            )}
-                        >
-                            <Plus className={cn(
-                                "size-8 transition-colors",
-                                isOver ? "text-green-500" : "text-gray-300 group-hover:text-green-500"
-                            )} />
-                            <span className={cn(
-                                "text-xs font-medium mt-2 transition-colors",
-                                isOver ? "text-green-600" : "text-gray-400"
-                            )}>
-                                Adicionar em {column.title}
-                            </span>
-                        </div>
+                        <KanbanEmptyCard
+                            columnTitle={column.title}
+                            columnId={column.id}
+                            onClick={() => onAddTask?.(column.id, "")}
+                        />
                     ) : (
-                        column.tasks.map((task) => (
-                            <TaskCard
-                                key={task.id}
-                                {...task}
-                                onClick={() => onTaskClick?.(task.id)}
-                            />
-                        ))
+                        column.tasks.map((task) => {
+                            // Gerar cor do workspace baseada no ID
+                            const getWorkspaceColor = (workspaceId: string | null | undefined): string => {
+                                if (!workspaceId) return "#22C55E"; // Verde padrão
+                                let hash = 0;
+                                for (let i = 0; i < (workspaceId || "").length; i++) {
+                                    hash = (workspaceId || "").charCodeAt(i) + ((hash << 5) - hash);
+                                }
+                                const hue = Math.abs(hash % 360);
+                                const saturation = 60 + (Math.abs(hash) % 20);
+                                const lightness = 45 + (Math.abs(hash) % 15);
+                                return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                            };
+
+                            return (
+                                <KanbanCard
+                                    key={task.id}
+                                    id={task.id}
+                                    title={task.title}
+                                    completed={task.completed}
+                                    status={task.status}
+                                    priority={task.priority}
+                                    assignees={task.assignees}
+                                    dueDate={task.dueDate}
+                                    tags={task.tags}
+                                    workspaceColor={getWorkspaceColor(task.workspaceId)}
+                                    onClick={() => onTaskClick?.(task.id)}
+                                />
+                            );
+                        })
                     )}
                 </div>
             </SortableContext>
+
+            {/* Quick Add no rodapé (sempre visível quando há tarefas) */}
+            {column.tasks.length > 0 && (
+                <div className="p-3 border-t border-gray-100">
+                    <QuickTaskAdd
+                        placeholder="Adicionar tarefa aqui..."
+                        onSubmit={async (title, dueDate, assigneeId) => {
+                            const result = onAddTask?.(column.id, title, dueDate, assigneeId);
+                            // Aguardar Promise se onAddTask retornar uma
+                            if (result && typeof result === 'object' && 'then' in result) {
+                                await result;
+                            }
+                        }}
+                        members={members || []}
+                    />
+                </div>
+            )}
         </div>
     );
 }
 
-export function TaskBoard({ columns, onTaskClick, onAddTask, onTasksChange }: TaskBoardProps) {
+export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }: TaskBoardProps) {
     const [localColumns, setLocalColumns] = useState(columns);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
 
@@ -242,17 +286,10 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, onTasksChange }: Ta
             // Persistir no backend
             try {
                 const { updateTaskPosition } = await import("@/lib/actions/tasks");
-                const result = await updateTaskPosition({
+                await updateTaskPosition({
                     taskId: active.id as string,
                     newPosition: newIndex + 1,
                 });
-
-                if (result.success) {
-                    // Recarregar tarefas do banco
-                    onTasksChange?.();
-                } else {
-                    throw new Error(result.error);
-                }
             } catch (error) {
                 console.error("Erro ao atualizar posição:", error);
                 setLocalColumns(columns);
@@ -301,18 +338,11 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, onTasksChange }: Ta
             try {
                 const { updateTaskPosition } = await import("@/lib/actions/tasks");
                 const newStatus = mapStatusToDb(destinationColumn.title);
-                const result = await updateTaskPosition({
+                await updateTaskPosition({
                     taskId: active.id as string,
                     newPosition: insertIndex + 1,
                     newStatus,
                 });
-
-                if (result.success) {
-                    // Recarregar tarefas do banco
-                    onTasksChange?.();
-                } else {
-                    throw new Error(result.error);
-                }
             } catch (error) {
                 console.error("Erro ao atualizar posição e status:", error);
                 setLocalColumns(columns);
@@ -327,13 +357,15 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, onTasksChange }: Ta
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
-            <div className="flex h-[calc(100vh-200px)] overflow-x-auto gap-6 p-4">
+            <div className="flex h-[calc(100vh-200px)] overflow-x-auto gap-6 scrollbar-thin">
                 {localColumns.map((column) => (
                     <DroppableColumn
                         key={column.id}
                         column={column}
                         onTaskClick={onTaskClick}
                         onAddTask={onAddTask}
+                        members={members}
+                        groupBy={groupBy}
                     />
                 ))}
             </div>

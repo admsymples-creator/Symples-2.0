@@ -8,7 +8,7 @@ export default function DesignLabTasksPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Dados mock para teste
-    const mockTask = {
+const mockTask = {
         id: "task-1",
         title: "Redesign do Site da Agência V4",
         description: "Atualizar o design do site principal da agência, incluindo nova identidade visual e melhorias na experiência do usuário.",
@@ -18,6 +18,7 @@ export default function DesignLabTasksPage() {
             avatar: undefined,
         },
         dueDate: "2024-12-20",
+        tags: ["Design", "Urgente", "Cliente X"],
         breadcrumbs: ["Agência V4", "Projetos", "Redesign Site"],
         contextMessage: {
             type: "audio" as const,
@@ -57,6 +58,15 @@ export default function DesignLabTasksPage() {
             },
             {
                 id: "4",
+                type: "audio" as const,
+                user: "Maria Silva",
+                timestamp: "Hoje às 12:00",
+                audio: {
+                    duration: 14,
+                },
+            },
+            {
+                id: "5",
                 type: "updated" as const,
                 user: "João Santos",
                 timestamp: "Hoje às 14:30",

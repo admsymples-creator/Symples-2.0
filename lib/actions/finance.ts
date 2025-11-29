@@ -1,6 +1,6 @@
 "use server";
 
-import { createServerActionClient } from "@/lib/supabase";
+import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { startOfMonth, endOfMonth, parseISO, format } from "date-fns";
 

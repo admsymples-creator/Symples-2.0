@@ -1,8 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
-type UIScale = 0.875 | 1 | 1.125;
+type UIScale = 0.85 | 0.925 | 1 | 1.125;
 
 interface UIContextType {
   scale: UIScale;
@@ -13,21 +13,18 @@ const UIContext = createContext<UIContextType | undefined>(undefined);
 
 const STORAGE_KEY = "symples-ui-scale";
 
-export function UIProvider({ children }: { children: React.ReactNode }) {
+export function UIScaleProvider({ children }: { children: ReactNode }) {
   const [scale, setScaleState] = useState<UIScale>(1);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    // Initialize from localStorage on client mount
     const savedScale = localStorage.getItem(STORAGE_KEY);
     if (savedScale) {
       const parsed = parseFloat(savedScale) as UIScale;
-      if ([0.875, 1, 1.125].includes(parsed)) {
+      if ([0.85, 0.925, 1, 1.125].includes(parsed)) {
         setScaleState(parsed);
         document.documentElement.style.fontSize = `${parsed * 100}%`;
       }
     }
-    setIsInitialized(true);
   }, []);
 
   const setScale = (newScale: UIScale) => {
@@ -61,7 +58,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
 export function useUI() {
   const context = useContext(UIContext);
   if (context === undefined) {
-    throw new Error("useUI must be used within a UIProvider");
+    throw new Error("useUI must be used within a UIScaleProvider");
   }
   return context;
 }
