@@ -2,8 +2,8 @@
 **\*\*Versão:\*\* 2.0 (Full Scope: Business OS)**  
 **\*\*Visão:\*\* "O Hub de Soluções do Empreendedor Digital."**  
 **\*\*Slogan:\*\* "Gerir uma empresa tem que ser Symples."**  
-**\*\*Status:\*\* Pronto para Desenvolvimento (Cursor Ready)**  
-**\*\*Stack:\*\* Next.js 15, Supabase, n8n, OpenAI.**
+**\*\*Status:\*\* Em Desenvolvimento Ativo**  
+**\*\*Stack:\*\* Next.js 16.0.5, React 19, TypeScript, Supabase, Tailwind CSS, shadcn/ui, n8n, OpenAI.**
 
 **\---**
 
@@ -246,3 +246,32 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 ### 9.4. Inteligência Artificial (Assistente)
 - **Interação:** O chat não retorna apenas texto. Retorna JSON que o Frontend renderiza como **UI Components** (Cards de Tarefa, Gráficos).
 - **Empty State:** Exibir "Suggestion Chips" (atalhos rápidos) quando não houver histórico.
+
+## 10. FUNCIONALIDADES IMPLEMENTADAS (v2.1)
+
+### 10.1. Módulos Core Implementados
+- ✅ **Autenticação:** Sistema completo com Supabase Auth, callback routes e middleware
+- ✅ **Dashboard (Minha Semana):** Grid semanal com visualização de tarefas por dia
+- ✅ **Gestão de Tarefas:** Sistema completo com drag & drop, filtros, agrupamento e modal de detalhes
+- ✅ **Sistema de Comentários:** Tabela `task_comments` com suporte a comentários, logs e metadados
+- ✅ **Sistema de Anexos:** Tabela `task_attachments` para upload e gestão de arquivos
+- ✅ **Módulo Financeiro:** Dashboard com KPIs, extrato e modal de criação de transações
+- ✅ **Gestão de Time:** Sistema de membros, convites (`workspace_invites`) e permissões
+- ✅ **Assistente IA:** Página `/assistant` com componente AIOrb e interface de chat
+- ✅ **Configurações:** Página completa com abas para Geral, Membros e Faturamento
+- ✅ **Logs de Auditoria:** Tabela `audit_logs` para rastreamento de ações
+
+### 10.2. Componentes UI Implementados
+- ✅ **AIOrb:** Esfera escura com borda gradiente giratória para o assistente
+- ✅ **CreateTransactionModal:** Modal com hero input para valores monetários
+- ✅ **NotificationsPopover:** Sistema de notificações
+- ✅ **UserNav:** Navegação de usuário com dropdown
+- ✅ **TaskDetailModal:** Modal completo para edição de tarefas
+- ✅ **TaskBoard:** Board Kanban com drag & drop
+- ✅ **TaskGroup:** Agrupamento de tarefas por status, prioridade ou assignee
+
+### 10.3. Correções Técnicas Implementadas
+- ✅ **Suspense Boundaries:** `useSearchParams()` envolvido em Suspense em Sidebar e Settings
+- ✅ **Tipos TypeScript:** Definições completas para `task_comments`, `task_attachments`, `workspace_invites`, `audit_logs`
+- ✅ **Build Otimizado:** Projeto compila sem erros com Next.js 16.0.5
+- ✅ **Estrutura Supabase:** Clientes separados para browser, server e middleware

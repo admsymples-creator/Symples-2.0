@@ -1,7 +1,7 @@
 **\# SYMPLES — Design System & Tech Specs**  
-\*\*Versão:\*\* 2.0 (Visual Match MVP)  
+\*\*Versão:\*\* 2.1 (Atualizado - Dez 2024)  
 \*\*Source of Truth:\*\* Screenshots do MVP atual.  
-\*\*Stack:\*\* Next.js 15, Tailwind CSS, Lucide React, Shadcn UI (base).
+\*\*Stack:\*\* Next.js 16.0.5, React 19.2.0, TypeScript 5, Tailwind CSS 4, Lucide React, Shadcn UI (base).
 
 \---
 
@@ -235,3 +235,93 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Navegação:**
   - Sidebar: Item ativo com fundo `bg-green-50` e texto `text-green-700` (Brand Consistency).
   - Header: Padrão "Two-Row" (Título em cima, Ferramentas em baixo) unificado entre Dashboard, Tarefas e Financeiro.
+
+## 9. COMPONENTES IMPLEMENTADOS (v2.1)
+
+### 9.1. Componentes de Layout
+- **Sidebar (`components/layout/Sidebar.tsx`):**
+  - Navegação hierárquica (Pessoal no topo, Workspace abaixo)
+  - Suspense boundary para `useSearchParams()`
+  - Workspace switcher com dropdown
+  - Estados ativos com `bg-green-50 text-green-700`
+
+- **Header (`components/layout/Header.tsx`):**
+  - Padrão "Two-Row" consistente
+  - Controles de visualização (Tabs/Segmented Control)
+  - Integração com notificações
+
+- **UserNav (`components/layout/UserNav.tsx`):**
+  - Dropdown de usuário com avatar
+  - Menu de ações rápidas
+  - Integração com autenticação
+
+- **NotificationsPopover (`components/layout/NotificationsPopover.tsx`):**
+  - Sistema de notificações em tempo real
+  - Badge de contador
+  - Lista de notificações com ações
+
+### 9.2. Componentes de Tarefas
+- **TaskDetailModal (`components/tasks/TaskDetailModal.tsx`):**
+  - Modal widescreen (`max-w-6xl`)
+  - Split-screen: Editor (esquerda) + Contexto (direita)
+  - Rich text editor
+  - Timeline de comentários e logs
+  - Galeria de anexos
+
+- **TaskBoard (`components/tasks/TaskBoard.tsx`):**
+  - Board Kanban com drag & drop (@dnd-kit)
+  - Colunas com scroll interno
+  - Empty states com "Ghost Slot"
+
+- **TaskGroup (`components/tasks/TaskGroup.tsx`):**
+  - Agrupamento por status, prioridade ou assignee
+  - Accordion colapsável
+  - Quick Add no rodapé
+  - Ações de grupo (renomear, mudar cor, deletar)
+
+- **TaskRow (`components/tasks/TaskRow.tsx`):**
+  - Estilo "Clean Checklist"
+  - Barra vertical colorida para workspace
+  - Hover actions (drag handle, raio, exclamação)
+
+### 9.3. Componentes Financeiros
+- **CreateTransactionModal (`components/finance/CreateTransactionModal.tsx`):**
+  - Hero Input: Valor monetário gigante (`text-6xl`)
+  - Toggle Entrada/Saída (Verde/Vermelho)
+  - Bloco de detalhes agrupado
+  - Botão primário neutro (`bg-slate-900`)
+
+### 9.4. Componentes de IA
+- **AIOrb (`components/assistant/AIOrb.tsx`):**
+  - Esfera escura (`bg-slate-950`)
+  - Borda gradiente giratória (animação CSS)
+  - Ícone Sparkles centralizado
+  - Efeito de brilho pulsante
+
+### 9.5. Padrões de Código Implementados
+- **Suspense Boundaries:**
+  - Todos os componentes que usam `useSearchParams()` devem estar envolvidos em `<Suspense>`
+  - Fallbacks de loading minimalistas
+  - Exemplos: `Sidebar.tsx`, `settings/page.tsx`
+
+- **Server Actions:**
+  - Todas as ações de dados são Server Actions (`"use server"`)
+  - Revalidação de cache com `revalidatePath()`
+  - Tratamento de erros consistente
+
+- **TypeScript:**
+  - Tipos gerados do Supabase (`database.types.ts`)
+  - Interfaces explícitas para props de componentes
+  - Validação de tipos em runtime quando necessário
+
+## 10. DEPENDÊNCIAS PRINCIPAIS (v2.1)
+
+- **Next.js:** 16.0.5 (App Router, Server Components, Server Actions)
+- **React:** 19.2.0 (Concurrent Features, Server Components)
+- **TypeScript:** 5.x
+- **Supabase:** @supabase/ssr 0.8.0, @supabase/supabase-js 2.86.0
+- **UI:** shadcn/ui (Radix UI primitives), Tailwind CSS 4
+- **Animações:** framer-motion 12.23.24
+- **Drag & Drop:** @dnd-kit/core 6.3.1, @dnd-kit/sortable 10.0.0
+- **Ícones:** lucide-react 0.555.0
+- **Utilitários:** date-fns 4.1.0, clsx 2.1.1, tailwind-merge 3.4.0
