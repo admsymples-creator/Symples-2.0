@@ -48,9 +48,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  // Se estiver autenticado e tentar acessar /login ou /onboarding
+  // Se estiver autenticado e tentar acessar /login
   // Redirecionar para /home (exceto se estiver vindo do callback)
-  if (user && (pathname === '/login' || pathname === '/onboarding')) {
+  if (user && pathname === '/login') {
     // Verificar se não é um callback do auth
     if (!pathname.includes('/auth/callback')) {
       return NextResponse.redirect(new URL('/home', request.url))

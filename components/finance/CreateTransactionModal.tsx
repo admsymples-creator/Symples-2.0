@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { 
   Calendar as CalendarIcon,
   PenLine,
   Tag,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 
 import {
   Dialog,
@@ -32,6 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { createTransaction } from "@/lib/actions/finance";
 
 interface CreateTransactionModalProps {
   open: boolean;
@@ -41,6 +44,7 @@ interface CreateTransactionModalProps {
 type TransactionType = "income" | "expense";
 
 export function CreateTransactionModal({ open, onOpenChange }: CreateTransactionModalProps) {
+  const [isPending, startTransition] = useTransition();
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
@@ -71,10 +75,44 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
     }).format(numberValue));
   };
 
-  const handleSubmit = () => {
-    // TODO: Submit form
-    console.log({ type, amount, description, category, date, status, isRecurring });
-    onOpenChange(false);
+  const handleSubmit = async () => {
+    if (!amount || !description) {
+      toast.error("Preencha o valor e a descrição");
+      return;
+    }
+
+    // Convert formatted string back to number
+    const numericAmount = parseFloat(
+      amount
+        .replace("R$", "")
+        .replace(/\./g, "")
+        .replace(",", ".")
+        .trim()
+    );
+
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      toast.error("Valor inválido");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await createTransaction({
+        amount: numericAmount,
+        type,
+        description,
+        category: category || (type === "income" ? "Outros" : "Geral"),
+        date: date || new Date(),
+        status,
+        is_recurring: isRecurring,
+      });
+
+      if (result.success) {
+        toast.success("Transação criada com sucesso!");
+        onOpenChange(false);
+      } else {
+        toast.error(result.error || "Erro ao criar transação");
+      }
+    });
   };
 
   return (
@@ -249,13 +287,22 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
           <Button 
             className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium h-12 shadow-sm"
             onClick={handleSubmit}
+            disabled={isPending}
           >
-            Adicionar lançamento
+            {isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              "Adicionar lançamento"
+            )}
           </Button>
           <Button 
             variant="ghost"
             className="w-full h-9 text-xs text-gray-500 hover:text-gray-700"
             onClick={() => onOpenChange(false)}
+            disabled={isPending}
           >
             Cancelar
           </Button>

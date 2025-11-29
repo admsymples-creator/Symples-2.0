@@ -7,8 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { NotificationsPopover } from "@/components/layout/NotificationsPopover";
+import { UserNav } from "@/components/layout/UserNav";
 
-export function Header() {
+interface HeaderProps {
+    user?: {
+        name?: string | null;
+        email?: string | null;
+        avatarUrl?: string | null;
+    } | null;
+}
+
+export function Header({ user }: HeaderProps) {
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
 
@@ -71,15 +80,8 @@ export function Header() {
                     </Button>
                 </Link>
 
-                {/* Avatar do Usuário */}
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 rounded-full bg-gray-100 hover:bg-gray-200"
-                    aria-label="Perfil"
-                >
-                    <User className="w-5 h-5 text-gray-600" />
-                </Button>
+                {/* User Nav (Avatar & Menu) */}
+                <UserNav user={user} />
             </div>
         </header>
     );

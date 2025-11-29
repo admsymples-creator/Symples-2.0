@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+// Force rebuild due to runtime error
 import {
     Dialog,
     DialogHeader,
@@ -72,6 +73,8 @@ interface TaskDetailModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     mode?: "create" | "edit";
+    onTaskCreated?: () => void; // Callback após criar tarefa
+    onTaskUpdated?: () => void; // Callback após atualizar tarefa
     task?: {
         id: string;
         title: string;
@@ -90,6 +93,7 @@ interface TaskDetailModalProps {
         };
         subTasks: SubTask[];
         activities: Activity[];
+        attachments?: FileAttachment[];
     };
     initialDueDate?: string; // Para pré-selecionar data no modo create
 }
@@ -101,7 +105,15 @@ interface FileAttachment {
     size: string;
 }
 
-export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initialDueDate }: TaskDetailModalProps) {
+export function TaskDetailModal({ 
+    open, 
+    onOpenChange, 
+    mode = "edit", 
+    task, 
+    initialDueDate,
+    onTaskCreated,
+    onTaskUpdated,
+}: TaskDetailModalProps) {
     const isCreateMode = mode === "create";
     const [title, setTitle] = useState(task?.title || "");
     const [description, setDescription] = useState(task?.description || "");
@@ -111,21 +123,80 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
     const [newSubTask, setNewSubTask] = useState("");
     const [newSubTaskAssignee, setNewSubTaskAssignee] = useState<string>("");
     const [comment, setComment] = useState("");
-    
-    // Lista mock de usuários para atribuição (em produção viria de um contexto/API)
-    const availableUsers = [
-        { id: "1", name: "Você", avatar: undefined },
-        { id: "2", name: "João Silva", avatar: undefined },
-        { id: "3", name: "Maria Santos", avatar: undefined },
-        { id: "4", name: "Pedro Costa", avatar: undefined },
-    ];
-    const [attachments, setAttachments] = useState<FileAttachment[]>(
-        isCreateMode ? [] : [
-            { id: "1", name: "mockup-design.png", type: "image", size: "2.4 MB" },
-            { id: "2", name: "referencias.pdf", type: "pdf", size: "1.8 MB" },
-        ]
-    );
+    const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    const [attachments, setAttachments] = useState<FileAttachment[]>(task?.attachments || []);
+    const [activities, setActivities] = useState<Activity[]>(task?.activities || []);
     const [isCreating, setIsCreating] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+
+    // Atualizar estado quando task prop muda
+    useEffect(() => {
+        if (task) {
+            setTitle(task.title || "");
+            setDescription(task.description || "");
+            setStatus(task.status || "todo");
+            setDueDate(task.dueDate || initialDueDate || "");
+            setSubTasks(task.subTasks || []);
+            setAttachments(task.attachments || []);
+            setActivities(task.activities || []);
+        } else {
+            setTitle("");
+            setDescription("");
+            setStatus("todo");
+            setDueDate(initialDueDate || "");
+            setSubTasks([]);
+            setAttachments([]);
+            setActivities([]);
+        }
+    }, [task, initialDueDate]);
+
+    // Buscar membros do workspace quando modal abre
+    useEffect(() => {
+        if (open && !isCreateMode && task?.id) {
+            const loadMembers = async () => {
+                setIsLoadingMembers(true);
+                try {
+                    const { getTaskById, getWorkspaceMembers } = await import("@/lib/actions/tasks");
+                    const taskData = await getTaskById(task.id);
+                    
+                    if (taskData) {
+                        const members = await getWorkspaceMembers(taskData.workspace_id || null);
+                        setAvailableUsers(
+                            members.map((m) => ({
+                                id: m.id,
+                                name: m.full_name || m.email,
+                                avatar: m.avatar_url || undefined,
+                            }))
+                        );
+                    }
+                } catch (error) {
+                    console.error("Erro ao carregar membros:", error);
+                } finally {
+                    setIsLoadingMembers(false);
+                }
+            };
+            loadMembers();
+        } else if (open && isCreateMode) {
+            // Para modo create, buscar apenas o usuário atual
+            const loadCurrentUser = async () => {
+                try {
+                    const { getWorkspaceMembers } = await import("@/lib/actions/tasks");
+                    const members = await getWorkspaceMembers(null);
+                    setAvailableUsers(
+                        members.map((m) => ({
+                            id: m.id,
+                            name: m.full_name || m.email,
+                            avatar: m.avatar_url || undefined,
+                        }))
+                    );
+                } catch (error) {
+                    console.error("Erro ao carregar usuário:", error);
+                }
+            };
+            loadCurrentUser();
+        }
+    }, [open, isCreateMode, task?.id]);
 
     const handleAddSubTask = () => {
         if (newSubTask.trim()) {
@@ -150,10 +221,12 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
         }
     };
     
-    const handleUpdateSubTaskAssignee = (subTaskId: string, assigneeName: string) => {
+    const handleUpdateSubTaskAssignee = (subTaskId: string, assigneeId: string) => {
         // Se o valor selecionado for o mesmo que já está, remove o responsável
         const currentSubTask = subTasks.find(st => st.id === subTaskId);
-        if (currentSubTask?.assignee?.name === assigneeName) {
+        const selectedUser = availableUsers.find(u => u.id === assigneeId);
+        
+        if (currentSubTask?.assignee?.name === selectedUser?.name) {
             setSubTasks(
                 subTasks.map((st) =>
                     st.id === subTaskId 
@@ -162,15 +235,14 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
                 )
             );
         } else {
-            const assignee = availableUsers.find(u => u.name === assigneeName);
             setSubTasks(
                 subTasks.map((st) =>
                     st.id === subTaskId 
                         ? { 
                             ...st, 
-                            assignee: assignee ? {
-                                name: assignee.name,
-                                avatar: assignee.avatar,
+                            assignee: selectedUser ? {
+                                name: selectedUser.name,
+                                avatar: selectedUser.avatar,
                             } : undefined
                         }
                         : st
@@ -197,10 +269,78 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
         );
     };
 
-    const handleSendComment = () => {
-        if (comment.trim()) {
-            // Aqui você adicionaria o comentário ao histórico
-            setComment("");
+    const handleSendComment = async () => {
+        if (!comment.trim() || !task?.id) return;
+
+        try {
+            const { createTaskComment } = await import("@/lib/actions/tasks");
+            const result = await createTaskComment(task.id, comment.trim());
+
+            if (result.success && result.data) {
+                // Adicionar comentário às atividades
+                const newActivity: Activity = {
+                    id: result.data.id,
+                    type: "commented",
+                    user: result.data.user_name || "Usuário",
+                    message: result.data.content,
+                    timestamp: new Date(result.data.created_at).toLocaleString("pt-BR"),
+                };
+                setActivities((prev) => [...prev, newActivity]);
+                setComment("");
+            } else {
+                console.error("Erro ao criar comentário:", result.error);
+                alert(`Erro ao criar comentário: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Erro ao criar comentário:", error);
+            alert("Erro ao criar comentário");
+        }
+    };
+
+    const handleSave = async () => {
+        if (!task?.id) return;
+
+        setIsSaving(true);
+        try {
+            const { updateTask } = await import("@/lib/actions/tasks");
+            
+            // Converter dueDate para formato ISO se existir
+            let dueDateISO: string | null | undefined = undefined;
+            if (dueDate) {
+                const date = new Date(dueDate);
+                if (!isNaN(date.getTime())) {
+                    dueDateISO = date.toISOString();
+                }
+            } else {
+                dueDateISO = null;
+            }
+
+            const updateParams: any = {
+                id: task.id,
+                title: title.trim(),
+                description: description || null,
+                status: status,
+            };
+            
+            if (dueDateISO !== undefined) {
+                updateParams.due_date = dueDateISO || null;
+            }
+
+            const result = await updateTask(updateParams);
+
+            if (result.success) {
+                // Fechar modal e notificar componente pai para recarregar tarefas
+                onOpenChange(false);
+                onTaskUpdated?.();
+            } else {
+                console.error("Erro ao salvar tarefa:", result.error);
+                alert(`Erro ao salvar tarefa: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Erro ao salvar tarefa:", error);
+            alert("Erro ao salvar tarefa");
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -210,7 +350,7 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
         setIsCreating(true);
         try {
             // Importação dinâmica da Server Action
-            const { createTask } = await import("@/app/actions/tasks");
+            const { createTask } = await import("@/lib/actions/tasks");
             
             // Converter dueDate para formato ISO se existir
             let dueDateISO: string | undefined = undefined;
@@ -237,6 +377,8 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
                 setDueDate(initialDueDate || "");
                 setStatus("todo");
                 setSubTasks([]);
+                // Notificar componente pai para recarregar tarefas
+                onTaskCreated?.();
             } else {
                 console.error("Erro ao criar tarefa:", result.error);
                 alert(`Erro ao criar tarefa: ${result.error}`);
@@ -717,48 +859,54 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
                                         <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
                                         
                                         <div className="space-y-3 relative">
-                                            {task?.activities?.map((activity) => (
-                                                <div
-                                                    key={activity.id}
-                                                    className="flex gap-3 text-sm relative"
-                                                >
-                                                    <div className="flex-shrink-0 relative z-10">
-                                                        <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <p className="text-gray-700">
-                                                            <span className="font-medium">{activity.user}</span>{" "}
-                                                            {activity.type === "created" && "criou a tarefa"}
-                                                            {activity.type === "commented" && "comentou"}
-                                                            {activity.type === "updated" && "atualizou a tarefa"}
-                                                            {activity.type === "file_shared" && "enviou um arquivo"}
-                                                        </p>
-                                                        {activity.message && (
-                                                            <p className="text-gray-600 mt-1">{activity.message}</p>
-                                                        )}
-                                                        {activity.file && (
-                                                            <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
-                                                                {activity.file.type === "image" ? (
-                                                                    <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                                                ) : activity.file.type === "pdf" ? (
-                                                                    <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
-                                                                ) : (
-                                                                    <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                                )}
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-xs font-medium text-gray-700 truncate">
-                                                                        {activity.file.name}
-                                                                    </p>
-                                                                    <p className="text-xs text-gray-500">{activity.file.size}</p>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                        <p className="text-xs text-gray-400 mt-1">
-                                                            {activity.timestamp}
-                                                        </p>
-                                                    </div>
+                                            {activities.length === 0 ? (
+                                                <div className="text-center py-8 text-sm text-gray-400">
+                                                    Nenhuma atividade ainda
                                                 </div>
-                                            )) || []}
+                                            ) : (
+                                                activities.map((activity) => (
+                                                    <div
+                                                        key={activity.id}
+                                                        className="flex gap-3 text-sm relative"
+                                                    >
+                                                        <div className="flex-shrink-0 relative z-10">
+                                                            <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <p className="text-gray-700">
+                                                                <span className="font-medium">{activity.user}</span>{" "}
+                                                                {activity.type === "created" && "criou a tarefa"}
+                                                                {activity.type === "commented" && "comentou"}
+                                                                {activity.type === "updated" && "atualizou a tarefa"}
+                                                                {activity.type === "file_shared" && "enviou um arquivo"}
+                                                            </p>
+                                                            {activity.message && (
+                                                                <p className="text-gray-600 mt-1">{activity.message}</p>
+                                                            )}
+                                                            {activity.file && (
+                                                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
+                                                                    {activity.file.type === "image" ? (
+                                                                        <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                                    ) : activity.file.type === "pdf" ? (
+                                                                        <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                                                    ) : (
+                                                                        <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                                    )}
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-xs font-medium text-gray-700 truncate">
+                                                                            {activity.file.name}
+                                                                        </p>
+                                                                        <p className="text-xs text-gray-500">{activity.file.size}</p>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            <p className="text-xs text-gray-400 mt-1">
+                                                                {activity.timestamp}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
                                         </div>
                                     </div>
 
@@ -811,13 +959,11 @@ export function TaskDetailModal({ open, onOpenChange, mode = "edit", task, initi
                         </Button>
                     ) : (
                         <Button
-                            onClick={() => {
-                                // TODO: Implementar salvamento de edição
-                                onOpenChange(false);
-                            }}
+                            onClick={handleSave}
+                            disabled={isSaving}
                             className="bg-green-600 hover:bg-green-700 text-white"
                         >
-                            Salvar
+                            {isSaving ? "Salvando..." : "Salvar"}
                         </Button>
                     )}
                 </div>

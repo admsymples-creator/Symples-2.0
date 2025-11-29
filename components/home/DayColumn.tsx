@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FolderOpen } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
-import { createTask } from "@/app/actions/tasks";
+import { createTask } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
@@ -97,7 +97,6 @@ export function DayColumn({
           due_date: dueDateISO,
           workspace_id: null, // Tarefas do Quick Add são pessoais
           status: "todo",
-          is_personal: true,
         })
       );
 

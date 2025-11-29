@@ -139,6 +139,99 @@ export type Database = {
           },
         ]
       }
+      task_comments: {
+        Row: {
+          id: string
+          task_id: string
+          user_id: string
+          content: string
+          type: "comment" | "log" | "file" | "system"
+          metadata: Json | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          task_id: string
+          user_id: string
+          content: string
+          type?: "comment" | "log" | "file" | "system"
+          metadata?: Json | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          task_id?: string
+          user_id?: string
+          content?: string
+          type?: "comment" | "log" | "file" | "system"
+          metadata?: Json | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_comments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_attachments: {
+        Row: {
+          id: string
+          task_id: string
+          file_url: string
+          file_type: string | null
+          file_name: string
+          file_size: number | null
+          uploader_id: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          task_id: string
+          file_url: string
+          file_type?: string | null
+          file_name: string
+          file_size?: number | null
+          uploader_id?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          task_id?: string
+          file_url?: string
+          file_type?: string | null
+          file_name?: string
+          file_size?: number | null
+          uploader_id?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_attachments_uploader_id_fkey"
+            columns: ["uploader_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transactions: {
         Row: {
           amount: number

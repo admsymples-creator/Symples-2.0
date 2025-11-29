@@ -176,3 +176,62 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Ícone de categoria à esquerda (circular).
   - Valor alinhado à direita com cor semântica.
   - Data discreta abaixo do título.
+
+  ## 7. ATUALIZAÇÕES V4.0 (Consolidação UX/UI)
+
+### 7.1. Estrutura de Navegação Global
+- **Sidebar (Hierarquia Invertida):**
+  - **Topo:** "Minha Semana" (Visão Global/Pessoal).
+  - **Divisor:** "ESPAÇO DE TRABALHO".
+  - **Meio:** Seletor de Workspace (Dropdown) + Links de Contexto (Tarefas, Financeiro).
+  - **Rodapé:** Link "Configurações" isolado.
+  - **Estilo:** Item Ativo = `bg-green-50 text-green-700 font-semibold`.
+
+- **Page Headers (Padrão "Two-Row"):**
+  - **Linha 1:** Título H1 + Subtítulo (Esq) | Ação Primária Verde (Dir).
+  - **Linha 2:** Navegação (Tabs/Segmented Control) (Esq) | Filtros e Ferramentas (Dir).
+  - *Objetivo:* Consistência visual entre Dashboard, Tarefas e Financeiro.
+
+### 7.2. Componentes de Tarefas (Task System)
+- **Estilo "Clean Checklist" (Lista):**
+  - Visual de linha simples (`border-b`), sem sombras pesadas.
+  - **Diferenciação:** Barra vertical colorida na esquerda (`w-1 rounded-r`) para Workspaces. Sem barra para Pessoal.
+  - **Hover Actions:** Drag Handle (`::`), Botão Raio (⚡) e Exclamação (🔥) aparecem apenas no hover (Desktop).
+- **Estilo Kanban:**
+  - **Empty State:** "Ghost Slot" (Box tracejado com botão gigante "+ Adicionar").
+  - **Colunas:** Altura fixa com scroll interno.
+
+### 7.3. Módulo Financeiro
+- **Modal de Transação (Hero Input):**
+  - **Topo:** Valor Monetário Gigante (`text-6xl`) centralizado.
+  - **Meio:** Toggle Entrada (Verde)/Saída (Vermelho).
+  - **Baixo:** Bloco de detalhes agrupado em fundo cinza (`bg-gray-50`).
+  - **Ação:** Botões alinhados à direita (Cancelar Ghost + Salvar `bg-slate-900`).
+- **Dashboard:**
+  - Cards de Diagnóstico ("Saúde Financeira") com cor semântica de fundo.
+
+### 7.4. Identidade Visual (Refinamentos)
+- **Cor Primária:** `bg-green-600` (para melhor contraste em texto branco).
+- **Calendário:** Componente `Calendar` com dias arredondados (`rounded-full`) e seleção verde.
+- **AI Orb:** Componente "Dark Core" (Esfera escura com borda gradiente giratória).
+
+## 8. ATUALIZAÇÕES V4.0 (AI & Final Polish)
+
+### 8.1. Assistente IA (`/assistant`)
+- **Empty State (Boas-vindas):**
+  - **Hero:** Componente `AIOrb` (Esfera escura com borda gradiente giratória + Ícone Sparkles).
+  - **Chips:** Grid de 4 sugestões rápidas ("Criar tarefa", "Ver saldo") abaixo do Orb.
+- **Chat Interface:**
+  - **Respostas Ricas:** A IA não retorna apenas texto. Ela renderiza **Mini-Cards** (Tarefas/Transações) dentro do fluxo da conversa.
+  - **Input:** Barra flutuante com sombra forte (`shadow-xl`) na parte inferior.
+
+### 8.2. Refinamentos Globais de UX
+- **Input de Valor (Financeiro):**
+  - Estilo "Calculadora": Fonte gigante (`text-6xl`), centralizada, sem bordas.
+  - Hierarquia: Valor > Toggle (Entrada/Saída) > Detalhes.
+- **Drag & Drop (Tarefas):**
+  - Estilo "Linear": O *drag handle* (::) só aparece no hover da linha.
+  - Lista limpa, sem ruído visual excessivo.
+- **Navegação:**
+  - Sidebar: Item ativo com fundo `bg-green-50` e texto `text-green-700` (Brand Consistency).
+  - Header: Padrão "Two-Row" (Título em cima, Ferramentas em baixo) unificado entre Dashboard, Tarefas e Financeiro.

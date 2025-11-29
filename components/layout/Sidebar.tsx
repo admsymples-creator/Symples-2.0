@@ -4,7 +4,7 @@ import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles } from "lucide-react";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     Select,
@@ -30,7 +30,11 @@ const workspaceItems: NavItem[] = [
     { label: "Financeiro", href: "/finance", icon: DollarSign },
 ];
 
-function SidebarContent() {
+interface SidebarProps {
+    workspaces?: { id: string; name: string; slug: string | null }[];
+}
+
+function SidebarContent({ workspaces = [] }: SidebarProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
@@ -57,13 +61,19 @@ function SidebarContent() {
         return pathname?.startsWith(href);
     };
 
-    // Mock workspaces - em produção viria de um contexto/estado global
-    const workspaces = [
-        { id: "1", name: "Agência V4" },
-        { id: "2", name: "Consultoria Tech" },
-        { id: "3", name: "Startup Alpha" },
-    ];
-    const [selectedWorkspace, setSelectedWorkspace] = React.useState("1");
+    // Workspaces vindos via props
+    // Se não houver workspaces, podemos mostrar um estado vazio ou botão de criar
+    const hasWorkspaces = workspaces.length > 0;
+    const [selectedWorkspace, setSelectedWorkspace] = React.useState(
+        hasWorkspaces ? workspaces[0].id : ""
+    );
+
+    // Atualizar workspace selecionado se a lista mudar
+    React.useEffect(() => {
+        if (hasWorkspaces && !workspaces.find(w => w.id === selectedWorkspace)) {
+             setSelectedWorkspace(workspaces[0].id);
+        }
+    }, [workspaces, hasWorkspaces, selectedWorkspace]);
 
     return (
         <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
@@ -120,24 +130,40 @@ function SidebarContent() {
                     
                     {/* Workspace Selector */}
                     <div className="px-3 mb-4">
-                        <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
-                            <SelectTrigger className="w-full h-9 text-sm">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    {!selectedWorkspace && <Building2 className="w-4 h-4 text-gray-500 flex-shrink-0" />}
-                                    <SelectValue placeholder="Selecione o Workspace" className="truncate" />
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                {workspaces.map((workspace) => (
-                                    <SelectItem key={workspace.id} value={workspace.id}>
-                                        <div className="flex items-center gap-2">
-                                            <Building2 className="w-4 h-4 text-gray-500" />
-                                            {workspace.name}
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        {hasWorkspaces ? (
+                            <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
+                                <SelectTrigger className="w-full h-9 text-sm" suppressHydrationWarning>
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        {!selectedWorkspace && <Building2 className="w-4 h-4 text-gray-500 flex-shrink-0" />}
+                                        <SelectValue placeholder="Selecione o Workspace" className="truncate" />
+                                    </div>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {workspaces.map((workspace) => (
+                                        <SelectItem key={workspace.id} value={workspace.id}>
+                                            <div className="flex items-center gap-2">
+                                                <Building2 className="w-4 h-4 text-gray-500" />
+                                                {workspace.name}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                    <div className="p-2 border-t mt-1">
+                                        <Link href="/onboarding" className="flex items-center gap-2 text-sm text-green-600 hover:text-green-700 font-medium px-2 py-1.5 rounded-sm hover:bg-green-50 transition-colors">
+                                            <Plus className="w-4 h-4" />
+                                            Criar Novo Workspace
+                                        </Link>
+                                    </div>
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <Link 
+                                href="/onboarding" 
+                                className="flex items-center justify-center gap-2 w-full h-9 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-green-600 hover:border-green-500 hover:bg-green-50 transition-all"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Criar Workspace
+                            </Link>
+                        )}
                     </div>
                 </div>
 
@@ -193,7 +219,7 @@ function SidebarContent() {
     );
 }
 
-export function Sidebar() {
+export function Sidebar(props: SidebarProps) {
     return (
         <Suspense fallback={
             <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
@@ -209,7 +235,7 @@ export function Sidebar() {
                 </nav>
             </aside>
         }>
-            <SidebarContent />
+            <SidebarContent {...props} />
         </Suspense>
     );
 }

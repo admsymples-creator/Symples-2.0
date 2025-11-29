@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { createWorkspace } from "@/lib/actions/onboarding";
+import { useRouter } from "next/navigation";
 import {
     Select,
     SelectContent,
@@ -28,6 +29,7 @@ export function OnboardingWizard() {
     // Novos estados
     const [magicCode, setMagicCode] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+    const router = useRouter();
 
     const steps = [
         { number: 1, label: "Sua Empresa", icon: Building2 },
@@ -307,7 +309,7 @@ export function OnboardingWizard() {
                                 </div>
 
                                 <Button
-                                    onClick={() => console.log("Ir para Dashboard")}
+                                    onClick={() => router.push("/home")}
                                     className="w-full h-11 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg"
                                 >
                                     Ir para o Dashboard

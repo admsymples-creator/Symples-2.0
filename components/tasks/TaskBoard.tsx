@@ -47,6 +47,7 @@ interface TaskBoardProps {
     columns: Column[];
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string) => void;
+    onTasksChange?: () => void; // Callback para recarregar tarefas
 }
 
 // Mapear status customizáveis para status do banco
@@ -114,8 +115,25 @@ function DroppableColumn({
             >
                 <div className="flex-1 overflow-y-auto space-y-2 px-1 min-h-0">
                     {column.tasks.length === 0 ? (
-                        <div className="py-8 text-center text-sm text-gray-400">
-                            Nenhuma tarefa
+                        <div
+                            onClick={() => onAddTask?.(column.id)}
+                            className={cn(
+                                "h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all group",
+                                "bg-gray-50/50 border-gray-200",
+                                "hover:border-green-300 hover:bg-green-50/30",
+                                isOver && "bg-green-50 border-green-400 border-solid"
+                            )}
+                        >
+                            <Plus className={cn(
+                                "size-8 transition-colors",
+                                isOver ? "text-green-500" : "text-gray-300 group-hover:text-green-500"
+                            )} />
+                            <span className={cn(
+                                "text-xs font-medium mt-2 transition-colors",
+                                isOver ? "text-green-600" : "text-gray-400"
+                            )}>
+                                Adicionar em {column.title}
+                            </span>
                         </div>
                     ) : (
                         column.tasks.map((task) => (
@@ -132,7 +150,7 @@ function DroppableColumn({
     );
 }
 
-export function TaskBoard({ columns, onTaskClick, onAddTask }: TaskBoardProps) {
+export function TaskBoard({ columns, onTaskClick, onAddTask, onTasksChange }: TaskBoardProps) {
     const [localColumns, setLocalColumns] = useState(columns);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
 
@@ -223,11 +241,18 @@ export function TaskBoard({ columns, onTaskClick, onAddTask }: TaskBoardProps) {
 
             // Persistir no backend
             try {
-                const { updateTaskPosition } = await import("@/app/actions/tasks");
-                await updateTaskPosition({
+                const { updateTaskPosition } = await import("@/lib/actions/tasks");
+                const result = await updateTaskPosition({
                     taskId: active.id as string,
                     newPosition: newIndex + 1,
                 });
+
+                if (result.success) {
+                    // Recarregar tarefas do banco
+                    onTasksChange?.();
+                } else {
+                    throw new Error(result.error);
+                }
             } catch (error) {
                 console.error("Erro ao atualizar posição:", error);
                 setLocalColumns(columns);
@@ -274,13 +299,20 @@ export function TaskBoard({ columns, onTaskClick, onAddTask }: TaskBoardProps) {
 
             // Persistir no backend
             try {
-                const { updateTaskPosition } = await import("@/app/actions/tasks");
+                const { updateTaskPosition } = await import("@/lib/actions/tasks");
                 const newStatus = mapStatusToDb(destinationColumn.title);
-                await updateTaskPosition({
+                const result = await updateTaskPosition({
                     taskId: active.id as string,
                     newPosition: insertIndex + 1,
                     newStatus,
                 });
+
+                if (result.success) {
+                    // Recarregar tarefas do banco
+                    onTasksChange?.();
+                } else {
+                    throw new Error(result.error);
+                }
             } catch (error) {
                 console.error("Erro ao atualizar posição e status:", error);
                 setLocalColumns(columns);

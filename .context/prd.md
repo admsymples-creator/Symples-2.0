@@ -219,3 +219,30 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 ### 8.3. Categorização
 - **Categorias Padrão:** O sistema inicia com lista básica (Serviços, Software, Pessoal, Impostos).
 - **Customização:** Usuário pode criar novas categorias (tabela `categories` vinculada ao `workspace_id`).
+
+## 9. REGRAS DE NEGÓCIO V3.0 (Refinamento Lógico)
+
+### 9.1. Autenticação & Roteamento (Smart Auth)
+- **Métodos:** Google OAuth (Prioritário) + Magic Link.
+- **Fluxo de Redirecionamento (Callback):**
+  - Login Sucesso -> Verifica tabela `workspace_members`.
+  - Se usuário tem workspace -> Redirect `/home`.
+  - Se usuário NÃO tem workspace -> Redirect `/onboarding`.
+
+### 9.2. Onboarding (Funil de Ativação)
+- **Passo 2 (WhatsApp):**
+  - O usuário deve enviar ativamente o código `#START` para iniciar a janela de 24h.
+  - **Regra de Skip:** Deve haver um botão "Pular por enquanto" que permite acesso ao Dashboard com status "Desconectado".
+
+### 9.3. Gestão de Tarefas (Task Logic)
+- **Smart Triggers (Botões Rápidos):**
+  - **Raio (⚡):** Define `due_date` para o próximo Domingo.
+  - **Exclamação (🔥):** Define `due_date` para Hoje + Prioridade Alta.
+- **Batch Create:**
+  - O input "Quick Add" deve aceitar colar listas de texto. O sistema deve detectar quebras de linha e criar múltiplas tarefas automaticamente.
+- **Drag & Drop:**
+  - Persistência via campo `position` (float/double) no banco de dados.
+
+### 9.4. Inteligência Artificial (Assistente)
+- **Interação:** O chat não retorna apenas texto. Retorna JSON que o Frontend renderiza como **UI Components** (Cards de Tarefa, Gráficos).
+- **Empty State:** Exibir "Suggestion Chips" (atalhos rápidos) quando não houver histórico.

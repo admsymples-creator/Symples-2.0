@@ -13,7 +13,7 @@ import {
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus } from "lucide-react";
+import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -38,7 +38,13 @@ import {
     arrayMove,
     sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { getTasks, createTask, updateTask, type Task as TaskFromDB } from "@/lib/actions/tasks";
+import { 
+    getTasks, 
+    createTask, 
+    updateTask, 
+    getTaskById,
+    type Task as TaskFromDB 
+} from "@/lib/actions/tasks";
 import { useRouter } from "next/navigation";
 
 type ContextTab = "minhas" | "time" | "todas";
@@ -51,10 +57,11 @@ interface Task {
     completed: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
-    assignees?: Array<{ name: string; avatar?: string }>;
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
     dueDate?: string;
     tags?: string[];
     hasUpdates?: boolean;
+    workspaceId?: string | null;
 }
 
 export default function TasksPage() {
@@ -66,6 +73,9 @@ export default function TasksPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [localTasks, setLocalTasks] = useState<Task[]>([]);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
+    const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+    const [taskDetails, setTaskDetails] = useState<any>(null);
+    const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
 
     // Sensores para drag & drop
     const sensors = useSensors(
@@ -101,36 +111,43 @@ export default function TasksPage() {
             completed: task.status === "done",
             priority: task.priority,
             status: statusMap[task.status] || task.status,
-            assignees: task.assignee_id ? [{ name: "Usuário" }] : [], // TODO: Buscar nome real do usuário
+            assignees: task.assignee_name 
+                ? [{ name: task.assignee_name, avatar: task.assignee_avatar || undefined, id: task.assignee_id || undefined }] 
+                : [],
             dueDate: task.due_date || undefined,
             tags,
             hasUpdates: false, // TODO: Implementar lógica de atualizações
+            workspaceId: task.workspace_id || null,
         };
+    };
+
+    // Função para recarregar tarefas
+    const reloadTasks = async () => {
+        setIsLoadingTasks(true);
+        try {
+            // Determinar filtros baseado na aba ativa
+            let filters: { workspaceId?: string | null } = {};
+            
+            if (activeTab === "minhas") {
+                filters.workspaceId = null; // Tarefas pessoais
+            } else if (activeTab === "time") {
+                // TODO: Filtrar por workspace do time
+                // Por enquanto, buscar todas
+            }
+
+            const tasksFromDB = await getTasks(filters);
+            const mappedTasks = tasksFromDB.map(mapTaskFromDB);
+            setLocalTasks(mappedTasks);
+        } catch (error) {
+            console.error("Erro ao carregar tarefas:", error);
+        } finally {
+            setIsLoadingTasks(false);
+        }
     };
 
     // Buscar tarefas do banco
     useEffect(() => {
-        const loadTasks = async () => {
-            try {
-                // Determinar filtros baseado na aba ativa
-                let filters: { workspaceId?: string | null } = {};
-                
-                if (activeTab === "minhas") {
-                    filters.workspaceId = null; // Tarefas pessoais
-                } else if (activeTab === "time") {
-                    // TODO: Filtrar por workspace do time
-                    // Por enquanto, buscar todas
-                }
-
-                const tasksFromDB = await getTasks(filters);
-                const mappedTasks = tasksFromDB.map(mapTaskFromDB);
-                setLocalTasks(mappedTasks);
-            } catch (error) {
-                console.error("Erro ao carregar tarefas:", error);
-            }
-        };
-
-        loadTasks();
+        reloadTasks();
     }, [activeTab]);
 
     // Função de agrupamento dinâmico
@@ -374,17 +391,22 @@ export default function TasksPage() {
 
             // Persistir no backend
             try {
-                const { updateTaskPosition } = await import("@/app/actions/tasks");
-                await updateTaskPosition({
+                const { updateTaskPosition } = await import("@/lib/actions/tasks");
+                const result = await updateTaskPosition({
                     taskId: active.id as string,
                     newPosition: newIndex + 1,
                 });
+
+                if (result.success) {
+                    // Recarregar tarefas do banco para garantir sincronização
+                    await reloadTasks();
+                } else {
+                    throw new Error(result.error);
+                }
             } catch (error) {
                 console.error("Erro ao atualizar posição:", error);
                 // Reverter mudança otimista recarregando dados originais
-                const tasksFromDB = await getTasks(activeTab === "minhas" ? { workspaceId: null } : {});
-                const mappedTasks = tasksFromDB.map(mapTaskFromDB);
-                setLocalTasks(mappedTasks);
+                await reloadTasks();
             }
         } else {
             // Mudando de grupo - atualizar status/priority/assignee
@@ -398,11 +420,16 @@ export default function TasksPage() {
 
 
             // Determinar o que atualizar baseado no groupBy
-            let updateData: { status?: string; priority?: "low" | "medium" | "high" | "urgent" } = {};
+            let updateData: { 
+                status?: "todo" | "in_progress" | "done" | "archived";
+                priority?: "low" | "medium" | "high" | "urgent";
+                assignee_id?: string | null;
+            } = {};
 
             switch (groupBy) {
                 case "status":
-                    updateData.status = destinationGroupKey;
+                    // Mapear status customizável para status do banco
+                    updateData.status = mapStatusToDb(destinationGroupKey);
                     break;
                 case "priority":
                     const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
@@ -422,67 +449,172 @@ export default function TasksPage() {
                     break;
             }
 
-            // Atualizar tarefa localmente
-            Object.assign(taskToUpdate, updateData);
+            // Atualizar tarefa localmente com os valores mapeados
+            if (updateData.status) {
+                // Mapear status do banco de volta para status customizável
+                const statusMapReverse: Record<string, string> = {
+                    todo: "Backlog",
+                    in_progress: "Execução",
+                    done: "Revisão",
+                    archived: "Arquivado",
+                };
+                taskToUpdate.status = statusMapReverse[updateData.status] || taskToUpdate.status;
+            }
+            if (updateData.priority) {
+                taskToUpdate.priority = updateData.priority;
+            }
+            // Para assignee, precisaríamos buscar o ID do membro pelo nome
+            // Por enquanto, apenas atualizamos a posição
 
             // O agrupamento será recalculado automaticamente pelo useMemo
-            // Apenas precisamos garantir que a tarefa está na posição correta
             setLocalTasks(newTasks);
 
             // Persistir no backend
             try {
-                const { updateTaskPosition } = await import("@/app/actions/tasks");
-                const dbStatus = groupBy === "status" ? mapStatusToDb(destinationGroupKey) : undefined;
-                await updateTaskPosition({
-                    taskId: active.id as string,
-                    newPosition: 1, // Nova posição no grupo de destino
-                    newStatus: dbStatus,
+                // Usar updateTask para atualizar status/priority quando muda de grupo
+                const result = await updateTask({
+                    id: active.id as string,
+                    status: updateData.status,
+                    priority: updateData.priority,
+                    assignee_id: updateData.assignee_id,
+                    position: 1, // Nova posição no grupo de destino
                 });
+
+                if (result.success) {
+                    // Recarregar tarefas do banco para garantir sincronização
+                    await reloadTasks();
+                } else {
+                    throw new Error(result.error);
+                }
             } catch (error) {
                 console.error("Erro ao atualizar posição e status:", error);
                 // Reverter para estado anterior ao erro
                 setLocalTasks(previousTasksState);
+                await reloadTasks();
             }
         }
     };
 
-    const handleTaskClick = (taskId: string) => {
+    const handleTaskClick = async (taskId: string) => {
         setSelectedTaskId(taskId);
         setIsModalOpen(true);
-    };
+        setIsLoadingTaskDetails(true);
 
-    const getTaskForModal = () => {
-        if (!selectedTaskId) return undefined;
+        try {
+            // Buscar dados completos da tarefa
+            const taskFromDB = await getTaskById(taskId);
+            
+            if (!taskFromDB) {
+                console.error("Tarefa não encontrada");
+                setIsModalOpen(false);
+                return;
+            }
 
-        const task = localTasks.find((t) => t.id === selectedTaskId);
+            // Buscar comentários e anexos
+            const { getTaskComments, getTaskAttachments } = await import("@/lib/actions/tasks");
+            const [comments, attachments] = await Promise.all([
+                getTaskComments(taskId),
+                getTaskAttachments(taskId),
+            ]);
 
-        if (!task) return undefined;
+            // Converter status do banco para formato do modal
+            const statusMap: Record<string, "todo" | "in_progress" | "done"> = {
+                "todo": "todo",
+                "in_progress": "in_progress",
+                "done": "done",
+                "archived": "done",
+            };
+            const modalStatus = statusMap[taskFromDB.status] || "todo";
 
-        // Converter status customizável para formato do modal
-        const statusMap: Record<string, "todo" | "in_progress" | "done"> = {
-            "Backlog": "todo",
-            "Triagem": "todo",
-            "Execução": "in_progress",
-            "Revisão": "done",
-        };
-        const modalStatus = statusMap[task.status] || "todo";
+            // Mapear origin_context para contextMessage
+            let contextMessage: any = undefined;
+            if (taskFromDB.origin_context) {
+                const context = taskFromDB.origin_context;
+                if (context.audio_url) {
+                    contextMessage = {
+                        type: "audio" as const,
+                        content: context.message || "Mensagem de áudio",
+                        timestamp: context.timestamp || taskFromDB.created_at,
+                    };
+                } else if (context.message) {
+                    contextMessage = {
+                        type: "text" as const,
+                        content: context.message,
+                        timestamp: context.timestamp || taskFromDB.created_at,
+                    };
+                }
+            }
 
-        return {
-            id: task.id,
-            title: task.title,
-            description: "Descrição detalhada da tarefa será exibida aqui...",
-            status: modalStatus,
-            assignee: task.assignees?.[0],
-            dueDate: task.dueDate,
-            breadcrumbs: ["Workspace", "Tarefas", task.tags?.[0] || "Geral"],
-            contextMessage: {
-                type: "text" as const,
-                content: "Tarefa criada via WhatsApp",
-                timestamp: new Date().toISOString(),
-            },
-            subTasks: [],
-            activities: [],
-        };
+            // Mapear comentários para atividades
+            const activities = comments
+                .filter((c) => c.type === "log" || c.type === "comment")
+                .map((comment) => {
+                    let activityType: "created" | "commented" | "updated" | "file_shared" = "commented";
+                    if (comment.type === "log") {
+                        const action = comment.metadata?.action;
+                        if (action === "status_changed" || action === "updated") {
+                            activityType = "updated";
+                        } else if (action === "created") {
+                            activityType = "created";
+                        }
+                    } else if (comment.type === "file") {
+                        activityType = "file_shared";
+                    }
+
+                    return {
+                        id: comment.id,
+                        type: activityType,
+                        user: comment.user_name || "Usuário",
+                        message: comment.content,
+                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
+                    };
+                });
+
+            // Mapear anexos
+            const mappedAttachments = attachments.map((att) => ({
+                id: att.id,
+                name: att.file_name,
+                type: (att.file_type || "other") as "image" | "pdf" | "other",
+                size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+            }));
+
+            // Construir breadcrumbs
+            const breadcrumbs: string[] = [];
+            if (taskFromDB.workspace_name) {
+                breadcrumbs.push(taskFromDB.workspace_name);
+            }
+            breadcrumbs.push("Tarefas");
+            if (taskFromDB.origin_context?.tags?.[0]) {
+                breadcrumbs.push(taskFromDB.origin_context.tags[0]);
+            } else {
+                breadcrumbs.push("Geral");
+            }
+
+            setTaskDetails({
+                id: taskFromDB.id,
+                title: taskFromDB.title,
+                description: taskFromDB.description || "",
+                status: modalStatus,
+                assignee: taskFromDB.assignee_name
+                    ? {
+                          name: taskFromDB.assignee_name,
+                          avatar: taskFromDB.assignee_avatar || undefined,
+                      }
+                    : undefined,
+                dueDate: taskFromDB.due_date
+                    ? new Date(taskFromDB.due_date).toISOString().split("T")[0]
+                    : undefined,
+                breadcrumbs,
+                contextMessage,
+                subTasks: [], // Subtarefas não estão implementadas no schema ainda
+                activities,
+                attachments: mappedAttachments,
+            });
+        } catch (error) {
+            console.error("Erro ao carregar detalhes da tarefa:", error);
+        } finally {
+            setIsLoadingTaskDetails(false);
+        }
     };
 
     return (
@@ -508,7 +640,8 @@ export default function TasksPage() {
                             <DropdownMenuContent align="end" className="w-48">
                                 <DropdownMenuItem
                                     onClick={() => {
-                                        console.log("Abrir modal de criação de tarefa");
+                                        setSelectedTaskId(null);
+                                        setTaskDetails(null);
                                         setIsModalOpen(true);
                                     }}
                                 >
@@ -550,23 +683,27 @@ export default function TasksPage() {
                     <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
                         {/* Busca */}
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             <Input
                                 placeholder="Buscar tarefas..."
-                                className="pl-9 w-64 h-9 bg-white"
+                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
                             />
                         </div>
 
                         {/* Filtro */}
-                        <Button variant="outline" size="sm" className="h-9 bg-white">
-                            <Filter className="w-4 h-4 mr-2" />
+                        <Button 
+                            variant="outline" 
+                            className="h-9 px-3 rounded-lg border-solid border-gray-200 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700 shadow-sm"
+                        >
+                            <Filter className="w-4 h-4 mr-2 text-gray-500" />
                             Filtro
                         </Button>
 
                         {/* Agrupar por */}
                         <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
-                            <SelectTrigger className="w-[140px] h-9 bg-white">
-                                <SelectValue placeholder="Agrupar por" />
+                            <SelectTrigger className="w-[140px] h-9 bg-white rounded-lg border-solid border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm gap-2">
+                                <CircleDashed className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                <SelectValue placeholder="Agrupar por" className="flex-1" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="status">Status</SelectItem>
@@ -642,11 +779,25 @@ export default function TasksPage() {
                                         });
 
                                         if (result.success && result.data) {
-                                            // Atualizar tarefa na lista local
-                                            const updatedTask = mapTaskFromDB(result.data);
-                                            setLocalTasks((prev) =>
-                                                prev.map((t) => (t.id === taskId ? updatedTask : t))
-                                            );
+                                            // Recarregar tarefas do banco para garantir sincronização
+                                            await reloadTasks();
+                                        } else {
+                                            console.error("Erro ao atualizar tarefa:", result.error);
+                                        }
+                                    } catch (error) {
+                                        console.error("Erro ao atualizar tarefa:", error);
+                                    }
+                                }}
+                                onTaskUpdate={async (taskId, updates) => {
+                                    try {
+                                        const result = await updateTask({
+                                            id: taskId,
+                                            ...updates,
+                                        });
+
+                                        if (result.success && result.data) {
+                                            // Recarregar tarefas do banco para garantir sincronização
+                                            await reloadTasks();
                                         } else {
                                             console.error("Erro ao atualizar tarefa:", result.error);
                                         }
@@ -676,9 +827,8 @@ export default function TasksPage() {
                                         });
 
                                         if (result.success && result.data) {
-                                            // Adicionar nova tarefa à lista local
-                                            const newTask = mapTaskFromDB(result.data);
-                                            setLocalTasks((prev) => [...prev, newTask]);
+                                            // Recarregar tarefas do banco para garantir sincronização
+                                            await reloadTasks();
                                         } else {
                                             console.error("Erro ao criar tarefa:", result.error);
                                             if (result.error === "Usuário não autenticado") {
@@ -706,14 +856,24 @@ export default function TasksPage() {
                     columns={kanbanColumns}
                     onTaskClick={handleTaskClick}
                     onAddTask={(columnId) => console.log(`Adicionar tarefa em ${columnId}`)}
+                    onTasksChange={reloadTasks}
                 />
             )}
 
             {/* Modal de Detalhes */}
             <TaskDetailModal
                 open={isModalOpen}
-                onOpenChange={setIsModalOpen}
-                task={getTaskForModal()}
+                onOpenChange={(open) => {
+                    setIsModalOpen(open);
+                    if (!open) {
+                        setTaskDetails(null);
+                        setSelectedTaskId(null);
+                    }
+                }}
+                task={taskDetails}
+                mode={selectedTaskId ? "edit" : "create"}
+                onTaskCreated={reloadTasks}
+                onTaskUpdated={reloadTasks}
             />
         </div>
     </div>

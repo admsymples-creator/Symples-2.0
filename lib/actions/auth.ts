@@ -135,6 +135,10 @@ export async function signInWithGoogle() {
       provider: 'google',
       options: {
         redirectTo,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     })
 
@@ -156,6 +160,16 @@ export async function signInWithGoogle() {
       message: 'Redirecionando para Google...',
     }
   } catch (error) {
+    // O redirect lança um erro "NEXT_REDIRECT" que não deve ser capturado
+    if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+      throw error
+    }
+
+    // Em dev, o erro pode ter outra estrutura ou digest
+    if (typeof error === 'object' && error !== null && 'digest' in error && (error as any).digest?.startsWith('NEXT_REDIRECT')) {
+      throw error
+    }
+    
     console.error('Erro inesperado ao fazer login com Google:', error)
     return {
       success: false,

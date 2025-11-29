@@ -1,24 +1,37 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarGroup } from "./Avatar";
 import {
     MoreVertical,
     GripVertical,
     Zap,
-    CircleAlert,
+    AlertCircle,
     Maximize2,
     MessageCircle,
     Copy,
     Trash2,
+    Calendar as CalendarIcon,
+    User,
+    Plus,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -37,12 +50,14 @@ interface TaskRowProps {
     completed: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
-    assignees?: Array<{ name: string; avatar?: string }>;
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
     dueDate?: string;
     tags?: string[];
     hasUpdates?: boolean;
     onClick?: () => void;
     onToggleComplete?: (id: string, completed: boolean) => void;
+    onUpdate?: (id: string, updates: { title?: string; dueDate?: string | null; assigneeId?: string | null }) => void;
+    workspaceId?: string | null;
     isLast?: boolean;
 }
 
@@ -131,14 +146,118 @@ export function TaskRow({
     hasUpdates = false,
     onClick,
     onToggleComplete,
+    onUpdate,
+    workspaceId = null,
     isLast = false,
 }: TaskRowProps) {
+    // Estados para edição inline
+    const [editingTitle, setEditingTitle] = useState(false);
+    const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+    const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
+    const [titleValue, setTitleValue] = useState(title);
+    const [selectedDate, setSelectedDate] = useState<Date | undefined>(dueDate ? new Date(dueDate) : undefined);
+    const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+    
+    const titleInputRef = useRef<HTMLInputElement>(null);
+
+    // Sincronizar valores quando props mudam
+    useEffect(() => {
+        setTitleValue(title);
+    }, [title]);
+
+    useEffect(() => {
+        setSelectedDate(dueDate ? new Date(dueDate) : undefined);
+    }, [dueDate]);
+
+    // Carregar usuários quando abrir popover de assignee
+    useEffect(() => {
+        if (isAssigneePopoverOpen && availableUsers.length === 0 && !isLoadingUsers) {
+            const loadUsers = async () => {
+                setIsLoadingUsers(true);
+                try {
+                    const { getWorkspaceMembers } = await import("@/lib/actions/tasks");
+                    const members = await getWorkspaceMembers(workspaceId);
+                    setAvailableUsers(
+                        members.map((m) => ({
+                            id: m.id,
+                            name: m.full_name || m.email || 'Usuário',
+                            avatar: m.avatar_url || undefined,
+                        }))
+                    );
+                } catch (error) {
+                    console.error("Erro ao carregar usuários:", error);
+                } finally {
+                    setIsLoadingUsers(false);
+                }
+            };
+            loadUsers();
+        }
+    }, [isAssigneePopoverOpen, workspaceId, availableUsers.length, isLoadingUsers]);
+
+    // Focar no input quando entrar em modo de edição
+    useEffect(() => {
+        if (editingTitle && titleInputRef.current) {
+            titleInputRef.current.focus();
+            titleInputRef.current.select();
+        }
+    }, [editingTitle]);
+
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
     const statusInfo = getStatusConfig(status);
     
     // Lógica de Smart Triggers
     const isFocusActive = isNextSunday(dueDate);
     const isUrgentActive = isToday(dueDate) || priority === "high" || priority === "urgent";
+
+    // Handlers para salvar edições
+    const handleSaveTitle = async () => {
+        if (titleValue.trim() && titleValue.trim() !== title) {
+            const { updateTask } = await import("@/lib/actions/tasks");
+            const result = await updateTask({
+                id,
+                title: titleValue.trim(),
+            });
+            if (result.success && onUpdate) {
+                onUpdate(id, { title: titleValue.trim() });
+            }
+        }
+        setEditingTitle(false);
+    };
+
+    const handleDateSelect = async (date: Date | undefined) => {
+        setSelectedDate(date);
+        const newDate = date ? date.toISOString() : null;
+        const currentDate = dueDate ? new Date(dueDate).toISOString() : null;
+        
+        if (newDate !== currentDate) {
+            const { updateTask } = await import("@/lib/actions/tasks");
+            const result = await updateTask({
+                id,
+                due_date: newDate,
+            });
+            if (result.success && onUpdate) {
+                onUpdate(id, { dueDate: newDate });
+            }
+        }
+        setIsDatePopoverOpen(false);
+    };
+
+    const handleAssigneeSelect = async (userId: string | null) => {
+        const currentAssigneeId = assignees[0]?.id || null;
+        
+        if (userId !== currentAssigneeId) {
+            const { updateTask } = await import("@/lib/actions/tasks");
+            const result = await updateTask({
+                id,
+                assignee_id: userId,
+            });
+            if (result.success && onUpdate) {
+                onUpdate(id, { assigneeId: userId });
+            }
+        }
+        setIsAssigneePopoverOpen(false);
+    };
 
     // Hook do dnd-kit para tornar a linha sortable
     const {
@@ -156,16 +275,32 @@ export function TaskRow({
         opacity: isDragging ? 0.5 : 1,
     };
 
+    // Determinar cor da borda esquerda baseada na prioridade/workspace
+    const borderColorClass = priorityColors[priority];
+    // Extrair a cor do Tailwind para usar no estilo inline
+    const borderColorMap: Record<string, string> = {
+        "bg-blue-500": "#3b82f6",
+        "bg-yellow-500": "#eab308",
+        "bg-orange-500": "#f97316",
+        "bg-red-500": "#ef4444",
+    };
+    const borderColorValue = borderColorMap[borderColorClass] || "#eab308";
+
     return (
         <TooltipProvider>
             <div
                 ref={setNodeRef}
-                style={style}
+                style={{
+                    ...style,
+                    borderLeftColor: borderColorValue,
+                }}
                 className={cn(
                     "h-12 hover:bg-gray-50 transition-colors cursor-pointer group",
-                    "grid grid-cols-[20px_3px_auto_1fr_auto_120px_100px_120px_40px] items-center gap-2 px-4",
+                    "grid grid-cols-[20px_auto_1fr_auto_120px_100px_120px_40px] items-center gap-2 px-0",
                     !isLast && "border-b border-gray-50",
-                    isDragging && "shadow-lg bg-white rounded-lg"
+                    isDragging && "shadow-lg bg-white rounded-lg",
+                    // Border left colorida (4px) com padding para respiro
+                    "border-l-4 pl-3"
                 )}
                 onClick={onClick}
             >
@@ -173,16 +308,13 @@ export function TaskRow({
                 <div 
                     {...attributes}
                     {...listeners}
-                    className="flex items-center justify-center pr-2"
+                    className="flex items-center justify-center"
                 >
                     <GripVertical className="w-4 h-4 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                 </div>
 
-                {/* Barra de Workspace (sutil e elegante) */}
-                <div className={cn("w-[3px] h-4 rounded-full mr-3", priorityColors[priority])} />
-
-                {/* Checkbox */}
-                <div onClick={(e) => e.stopPropagation()}>
+                {/* Checkbox Sutil */}
+                <div onClick={(e) => e.stopPropagation()} className="flex items-center">
                     <Checkbox 
                         checked={completed} 
                         onCheckedChange={(checked) => {
@@ -190,6 +322,12 @@ export function TaskRow({
                                 onToggleComplete(id, checked === true);
                             }
                         }}
+                        className={cn(
+                            "h-4 w-4 rounded border-2 transition-colors",
+                            completed 
+                                ? "bg-green-500 border-green-500 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
+                                : "border-gray-200 hover:border-gray-400 bg-transparent"
+                        )}
                     />
                 </div>
 
@@ -213,15 +351,39 @@ export function TaskRow({
                             ))}
                         </div>
                     )}
-                    <span
-                        className={cn(
-                            "text-sm text-gray-900 truncate leading-tight",
-                            hasUpdates ? "font-semibold" : "font-medium",
-                            completed && "line-through text-gray-500"
-                        )}
-                    >
-                        {title}
-                    </span>
+                    {editingTitle ? (
+                        <Input
+                            ref={titleInputRef}
+                            value={titleValue}
+                            onChange={(e) => setTitleValue(e.target.value)}
+                            onBlur={handleSaveTitle}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveTitle();
+                                } else if (e.key === 'Escape') {
+                                    setTitleValue(title);
+                                    setEditingTitle(false);
+                                }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-7 text-sm font-medium border-gray-300 focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                        />
+                    ) : (
+                        <span
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingTitle(true);
+                            }}
+                            className={cn(
+                                "text-sm text-gray-900 truncate leading-tight cursor-text hover:bg-gray-100 px-1 py-0.5 rounded transition-colors",
+                                hasUpdates ? "font-semibold" : "font-medium",
+                                completed && "line-through text-gray-500"
+                            )}
+                        >
+                            {title}
+                        </span>
+                    )}
                 </div>
 
                 {/* Ações Rápidas (hierarquia visual - sutis quando inativos) */}
@@ -240,10 +402,10 @@ export function TaskRow({
                                 variant="ghost"
                                 size="icon"
                                 className={cn(
-                                    "h-7 w-7 transition-all duration-200 active:scale-110",
+                                    "h-7 w-7 transition-all duration-200",
                                     isFocusActive
-                                        ? "text-yellow-500 fill-yellow-400 opacity-100 hover:bg-yellow-50"
-                                        : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
+                                        ? "bg-yellow-50 text-yellow-600 rounded-md p-1 hover:bg-yellow-100"
+                                        : "text-gray-200 hover:text-gray-400"
                                 )}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -267,10 +429,10 @@ export function TaskRow({
                                 variant="ghost"
                                 size="icon"
                                 className={cn(
-                                    "h-7 w-7 transition-all duration-200 active:scale-110",
+                                    "h-7 w-7 transition-all duration-200",
                                     isUrgentActive
-                                        ? "text-red-500 fill-red-400 opacity-100 hover:bg-red-50"
-                                        : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                                        ? "bg-red-50 text-red-600 rounded-md p-1 hover:bg-red-100"
+                                        : "text-gray-200 hover:text-gray-400"
                                 )}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -280,7 +442,7 @@ export function TaskRow({
                                     // TODO: Implementar ação no backend
                                 }}
                             >
-                                <CircleAlert className={cn("w-4 h-4", isUrgentActive && "fill-current")} />
+                                <AlertCircle className={cn("w-4 h-4", isUrgentActive && "text-red-600")} />
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -289,37 +451,113 @@ export function TaskRow({
                     </Tooltip>
                 </div>
 
-                {/* Responsáveis */}
-                <div className="flex items-center justify-center min-w-[80px]">
-                    {assignees.length > 0 ? (
-                        <AvatarGroup users={assignees} max={3} size="sm" />
-                    ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                    )}
-                </div>
-
-                {/* Data (reduzido peso visual) */}
-                <div className="text-xs text-right">
-                    {dueDate ? (
-                        <span
-                            className={cn(
-                                "text-gray-400",
-                                isToday(dueDate) && "text-red-500 font-medium",
-                                isOverdue && !isToday(dueDate) && "text-red-500 font-medium"
-                            )}
+                {/* Responsáveis - Empty State com círculo tracejado + Popover com lista */}
+                <div className="flex items-center justify-end min-w-[80px]">
+                    <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="cursor-pointer hover:opacity-80 transition-opacity"
+                            >
+                                {assignees.length > 0 ? (
+                                    <AvatarGroup users={assignees} max={3} size="sm" />
+                                ) : (
+                                    <div className="size-6 rounded-full border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 transition-colors">
+                                        <User className="w-3 h-3 text-gray-300" />
+                                    </div>
+                                )}
+                            </div>
+                        </PopoverTrigger>
+                        <PopoverContent 
+                            className="w-64 p-2" 
+                            align="end"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            {new Date(dueDate).toLocaleDateString("pt-BR", {
-                                day: "2-digit",
-                                month: "short",
-                            })}
-                        </span>
-                    ) : (
-                        <span className="text-gray-400">—</span>
-                    )}
+                            <div className="space-y-1">
+                                <button
+                                    onClick={() => handleAssigneeSelect(null)}
+                                    className={cn(
+                                        "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-left",
+                                        assignees.length === 0
+                                            ? "bg-gray-100 text-gray-900"
+                                            : "hover:bg-gray-50 text-gray-700"
+                                    )}
+                                >
+                                    <div className="size-8 rounded-full border-dashed border-gray-300 flex items-center justify-center flex-shrink-0">
+                                        <User className="w-4 h-4 text-gray-400" />
+                                    </div>
+                                    <span className="font-medium">Sem responsável</span>
+                                </button>
+                                {isLoadingUsers ? (
+                                    <div className="px-3 py-2 text-sm text-gray-500">Carregando...</div>
+                                ) : (
+                                    availableUsers.map((user) => (
+                                        <button
+                                            key={user.id}
+                                            onClick={() => handleAssigneeSelect(user.id)}
+                                            className={cn(
+                                                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-left",
+                                                assignees[0]?.id === user.id
+                                                    ? "bg-gray-100 text-gray-900"
+                                                    : "hover:bg-gray-50 text-gray-700"
+                                            )}
+                                        >
+                                            <Avatar
+                                                name={user.name}
+                                                avatar={user.avatar}
+                                                size="sm"
+                                            />
+                                            <span className="font-medium truncate">{user.name}</span>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        </PopoverContent>
+                    </Popover>
                 </div>
 
-                {/* Status Badge */}
-                <div className="flex items-center gap-1.5">
+                {/* Data - Empty State com ícone no hover + Popover com Calendário */}
+                <div className="text-xs text-right flex items-center justify-end min-w-[100px]">
+                    <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
+                        <PopoverTrigger asChild>
+                            {dueDate ? (
+                                <span
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={cn(
+                                        "text-gray-400 cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded transition-colors",
+                                        isToday(dueDate) && "text-red-500 font-medium",
+                                        isOverdue && !isToday(dueDate) && "text-red-500 font-medium"
+                                    )}
+                                >
+                                    {format(new Date(dueDate), "dd MMM", { locale: ptBR })}
+                                </span>
+                            ) : (
+                                <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="cursor-pointer"
+                                >
+                                    <CalendarIcon className="w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-400" />
+                                </div>
+                            )}
+                        </PopoverTrigger>
+                        <PopoverContent 
+                            className="w-auto p-0" 
+                            align="end"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <Calendar
+                                mode="single"
+                                selected={selectedDate}
+                                onSelect={handleDateSelect}
+                                initialFocus
+                                locale={ptBR}
+                            />
+                        </PopoverContent>
+                    </Popover>
+                </div>
+
+                {/* Status Badge - Alinhado à direita */}
+                <div className="flex items-center gap-1.5 justify-end min-w-[120px]">
                     <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusInfo.dotColor)} />
                     <span className="text-xs text-gray-500 whitespace-nowrap">{statusInfo.label}</span>
                 </div>

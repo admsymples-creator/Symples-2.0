@@ -26,10 +26,11 @@ interface Task {
     completed: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
-    assignees?: Array<{ name: string; avatar?: string }>;
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
     dueDate?: string;
     tags?: string[];
     hasUpdates?: boolean;
+    workspaceId?: string | null;
 }
 
 interface TaskGroupProps {
@@ -40,6 +41,7 @@ interface TaskGroupProps {
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (title: string, context: { status?: string; priority?: string; assignee?: string }) => void;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
+    onTaskUpdate?: (taskId: string, updates: { title?: string; dueDate?: string | null; assigneeId?: string | null }) => void;
     defaultCollapsed?: boolean;
     groupBy?: "status" | "priority" | "assignee";
 }
@@ -52,6 +54,7 @@ export function TaskGroup({
     onTaskClick,
     onAddTask,
     onToggleComplete,
+    onTaskUpdate,
     defaultCollapsed = false,
     groupBy = "status",
 }: TaskGroupProps) {
@@ -272,6 +275,8 @@ export function TaskGroup({
                                     {...task}
                                     onClick={() => onTaskClick?.(task.id)}
                                     onToggleComplete={onToggleComplete}
+                                    onUpdate={onTaskUpdate}
+                                    workspaceId={task.workspaceId}
                                     isLast={index === tasks.length - 1}
                                 />
                             ))}

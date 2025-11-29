@@ -23,6 +23,43 @@ export interface Task {
   origin_context?: any;
   created_at: string;
   updated_at: string;
+  // Campos adicionais de joins
+  assignee_name?: string | null;
+  assignee_avatar?: string | null;
+  created_by_name?: string | null;
+  workspace_name?: string | null;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  content: string;
+  type: "comment" | "log" | "file" | "system";
+  metadata?: any;
+  created_at: string;
+  user_name?: string | null;
+  user_avatar?: string | null;
+}
+
+export interface TaskAttachment {
+  id: string;
+  task_id: string;
+  file_url: string;
+  file_type?: string | null;
+  file_name: string;
+  file_size?: number | null;
+  uploader_id?: string | null;
+  created_at: string;
+  uploader_name?: string | null;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  email: string;
+  role: string;
 }
 
 export interface TaskFilters {
@@ -53,10 +90,15 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
       return [];
     }
 
-    // Construir query base
+    // Construir query base com joins
     let query = supabase
       .from("tasks")
-      .select("*")
+      .select(`
+        *,
+        assignee:profiles!tasks_assignee_id_fkey(id, full_name, avatar_url),
+        creator:profiles!tasks_created_by_fkey(id, full_name, avatar_url),
+        workspace:workspaces!tasks_workspace_id_fkey(id, name)
+      `)
       .order("position", { ascending: true })
       .order("created_at", { ascending: false });
 
@@ -83,7 +125,14 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
       return [];
     }
 
-    return (tasks || []) as Task[];
+    // Mapear dados com joins
+    return (tasks || []).map((task: any) => ({
+      ...task,
+      assignee_name: task.assignee?.full_name || null,
+      assignee_avatar: task.assignee?.avatar_url || null,
+      created_by_name: task.creator?.full_name || null,
+      workspace_name: task.workspace?.name || null,
+    })) as Task[];
   } catch (error) {
     console.error("Erro inesperado ao buscar tarefas:", error);
     return [];
@@ -381,6 +430,381 @@ export async function deleteTask(
     return { success: true };
   } catch (error) {
     console.error("Erro inesperado ao deletar tarefa:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro desconhecido",
+    };
+  }
+}
+
+/**
+ * Busca uma tarefa completa por ID com todos os relacionamentos
+ * @param id - ID da tarefa
+ * @returns Tarefa completa ou null
+ */
+export async function getTaskById(id: string): Promise<Task | null> {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Erro de autenticação:", authError);
+      return null;
+    }
+
+    const { data: task, error } = await supabase
+      .from("tasks")
+      .select(`
+        *,
+        assignee:profiles!tasks_assignee_id_fkey(id, full_name, avatar_url),
+        creator:profiles!tasks_created_by_fkey(id, full_name, avatar_url),
+        workspace:workspaces!tasks_workspace_id_fkey(id, name)
+      `)
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      console.error("Erro ao buscar tarefa:", error);
+      return null;
+    }
+
+    if (!task) {
+      return null;
+    }
+
+    // Mapear dados com joins
+    return {
+      ...task,
+      assignee_name: task.assignee?.full_name || null,
+      assignee_avatar: task.assignee?.avatar_url || null,
+      created_by_name: task.creator?.full_name || null,
+      workspace_name: task.workspace?.name || null,
+    } as Task;
+  } catch (error) {
+    console.error("Erro inesperado ao buscar tarefa:", error);
+    return null;
+  }
+}
+
+/**
+ * Busca comentários de uma tarefa
+ * @param taskId - ID da tarefa
+ * @returns Array de comentários
+ */
+export async function getTaskComments(taskId: string): Promise<TaskComment[]> {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Erro de autenticação:", authError);
+      return [];
+    }
+
+    const { data: comments, error } = await supabase
+      .from("task_comments")
+      .select(`
+        *,
+        user:profiles!task_comments_user_id_fkey(id, full_name, avatar_url)
+      `)
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao buscar comentários:", error);
+      return [];
+    }
+
+    return (comments || []).map((comment: any) => ({
+      id: comment.id,
+      task_id: comment.task_id,
+      user_id: comment.user_id,
+      content: comment.content,
+      type: comment.type,
+      metadata: comment.metadata,
+      created_at: comment.created_at,
+      user_name: comment.user?.full_name || null,
+      user_avatar: comment.user?.avatar_url || null,
+    })) as TaskComment[];
+  } catch (error) {
+    console.error("Erro inesperado ao buscar comentários:", error);
+    return [];
+  }
+}
+
+/**
+ * Busca anexos de uma tarefa
+ * @param taskId - ID da tarefa
+ * @returns Array de anexos
+ */
+export async function getTaskAttachments(taskId: string): Promise<TaskAttachment[]> {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Erro de autenticação:", authError);
+      return [];
+    }
+
+    const { data: attachments, error } = await supabase
+      .from("task_attachments")
+      .select(`
+        *,
+        uploader:profiles!task_attachments_uploader_id_fkey(id, full_name)
+      `)
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao buscar anexos:", error);
+      return [];
+    }
+
+    return (attachments || []).map((attachment: any) => ({
+      id: attachment.id,
+      task_id: attachment.task_id,
+      file_url: attachment.file_url,
+      file_type: attachment.file_type,
+      file_name: attachment.file_name,
+      file_size: attachment.file_size,
+      uploader_id: attachment.uploader_id,
+      created_at: attachment.created_at,
+      uploader_name: attachment.uploader?.full_name || null,
+    })) as TaskAttachment[];
+  } catch (error) {
+    console.error("Erro inesperado ao buscar anexos:", error);
+    return [];
+  }
+}
+
+/**
+ * Cria um comentário em uma tarefa
+ * @param taskId - ID da tarefa
+ * @param content - Conteúdo do comentário
+ * @returns Comentário criado ou erro
+ */
+export async function createTaskComment(
+  taskId: string,
+  content: string
+): Promise<{ success: boolean; data?: TaskComment; error?: string }> {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Erro de autenticação:", authError);
+      return { success: false, error: "Usuário não autenticado" };
+    }
+
+    const { data, error } = await supabase
+      .from("task_comments")
+      .insert({
+        task_id: taskId,
+        user_id: user.id,
+        content: content.trim(),
+        type: "comment",
+      })
+      .select(`
+        *,
+        user:profiles!task_comments_user_id_fkey(id, full_name, avatar_url)
+      `)
+      .single();
+
+    if (error) {
+      console.error("Erro ao criar comentário:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+
+    const comment: TaskComment = {
+      id: data.id,
+      task_id: data.task_id,
+      user_id: data.user_id,
+      content: data.content,
+      type: data.type,
+      metadata: data.metadata,
+      created_at: data.created_at || new Date().toISOString(),
+      user_name: data.user?.full_name || null,
+      user_avatar: data.user?.avatar_url || null,
+    };
+
+    revalidatePath("/tasks");
+
+    return { success: true, data: comment };
+  } catch (error) {
+    console.error("Erro inesperado ao criar comentário:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro desconhecido",
+    };
+  }
+}
+
+/**
+ * Busca membros de um workspace para atribuição de tarefas
+ * @param workspaceId - ID do workspace (null para tarefas pessoais)
+ * @returns Array de membros do workspace
+ */
+export async function getWorkspaceMembers(
+  workspaceId: string | null
+): Promise<WorkspaceMember[]> {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Erro de autenticação:", authError);
+      return [];
+    }
+
+    // Se não há workspace, retornar apenas o usuário atual
+    if (!workspaceId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, full_name, avatar_url, email")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile) {
+        return [];
+      }
+
+      return [
+        {
+          id: profile.id,
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+          email: profile.email || "",
+          role: "owner",
+        },
+      ];
+    }
+
+    // Buscar membros do workspace
+    const { data: members, error } = await supabase
+      .from("workspace_members")
+      .select(`
+        role,
+        user:profiles!workspace_members_user_id_fkey(id, full_name, avatar_url, email)
+      `)
+      .eq("workspace_id", workspaceId);
+
+    if (error) {
+      console.error("Erro ao buscar membros do workspace:", error);
+      return [];
+    }
+
+    return (members || [])
+      .map((member: any): WorkspaceMember | null => {
+        if (!member.user?.id || !member.user?.email) return null;
+        return {
+          id: member.user.id,
+          full_name: member.user.full_name || null,
+          avatar_url: member.user.avatar_url || null,
+          email: member.user.email,
+          role: member.role || "member",
+        };
+      })
+      .filter((m): m is WorkspaceMember => m !== null);
+  } catch (error) {
+    console.error("Erro inesperado ao buscar membros:", error);
+    return [];
+  }
+}
+
+interface UpdateTaskPositionParams {
+  taskId: string;
+  newPosition: number;
+  newStatus?: "todo" | "in_progress" | "done" | "archived";
+}
+
+/**
+ * Atualiza a posição de uma tarefa (para drag & drop)
+ * Também pode atualizar o status se a tarefa mudou de coluna no Kanban
+ */
+export async function updateTaskPosition(
+  params: UpdateTaskPositionParams
+): Promise<{ success: boolean; data?: Task; error?: string }> {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Erro de autenticação:", authError);
+      return { success: false, error: "Usuário não autenticado" };
+    }
+
+    // Preparar dados de atualização
+    const updateData: {
+      position: number;
+      status?: "todo" | "in_progress" | "done" | "archived";
+    } = {
+      position: params.newPosition,
+    };
+
+    // Se newStatus foi fornecido, atualizar também
+    if (params.newStatus) {
+      updateData.status = params.newStatus;
+    }
+
+    // Atualizar tarefa
+    const { data, error } = await supabase
+      .from("tasks")
+      .update(updateData)
+      .eq("id", params.taskId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao atualizar posição da tarefa:", error);
+      if (
+        error.code === "PGRST301" ||
+        error.code === "42501" ||
+        error.message.includes("permission") ||
+        error.message.includes("policy") ||
+        error.message.includes("RLS")
+      ) {
+        return {
+          success: false,
+          error:
+            "Erro de permissão no banco de dados. Verifique as políticas RLS no Supabase.",
+        };
+      }
+      return { success: false, error: error.message };
+    }
+
+    revalidatePath("/tasks");
+
+    return { success: true, data: data as Task };
+  } catch (error) {
+    console.error("Erro inesperado ao atualizar posição da tarefa:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido",

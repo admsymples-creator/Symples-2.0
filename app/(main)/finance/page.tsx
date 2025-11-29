@@ -1,67 +1,38 @@
-"use client";
-
-import React, { useState } from "react";
+import React from "react";
 import { 
   TrendingUp, 
   AlertTriangle, 
   AlertOctagon, 
-  Calendar, 
   ArrowUpCircle, 
   ArrowDownCircle,
   Wallet,
   MoreHorizontal,
-  PlusCircle
+  Calendar
 } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { getFinanceMetrics, getTransactions } from "@/lib/actions/finance";
+import { startOfMonth, endOfMonth } from "date-fns";
+import { NewTransactionButton, MonthSelector } from "@/components/finance/FinanceClientComponents";
 
-// --- MOCKS & TYPES ---
+// --- TYPES ---
 
 type TransactionStatus = "paid" | "pending" | "overdue";
 
 interface Transaction {
   id: string;
-  date: string;
+  date: string; // Formatted for UI
   description: string;
   amount: number;
   status: TransactionStatus;
   category: string;
 }
-
-const MOCK_DATA = {
-  month: "Novembro 2025",
-  financialHealth: {
-    status: "healthy" as const, // 'healthy' | 'warning' | 'critical'
-    score: 85,
-    message: "Excelente! Seu saldo está positivo e suas reservas estão crescendo.",
-    balance: 12450.00,
-    projection: 15000.00
-  },
-  income: [
-    { id: "1", date: "05/11", description: "Salário Mensal", amount: 15000.00, status: "paid", category: "Salário" },
-    { id: "2", date: "15/11", description: "Freelance Design", amount: 2500.00, status: "paid", category: "Serviços" },
-    { id: "3", date: "20/11", description: "Reembolso", amount: 350.00, status: "pending", category: "Outros" },
-  ] as Transaction[],
-  expenses: [
-    { id: "1", date: "10/11", description: "Aluguel Escritório", amount: 2500.00, status: "paid", category: "Infraestrutura" },
-    { id: "2", date: "12/11", description: "Licença Software", amount: 450.00, status: "paid", category: "Software" },
-    { id: "3", date: "25/11", description: "Marketing Google Ads", amount: 1200.00, status: "pending", category: "Marketing" },
-    { id: "4", date: "28/11", description: "Servidor AWS", amount: 850.00, status: "pending", category: "Infraestrutura" },
-  ] as Transaction[],
-  categories: [
-    { name: "Infraestrutura", value: 3350.00, percent: 45, color: "bg-blue-500" },
-    { name: "Software", value: 450.00, percent: 10, color: "bg-indigo-500" },
-    { name: "Marketing", value: 1200.00, percent: 25, color: "bg-purple-500" },
-    { name: "Equipe", value: 1500.00, percent: 20, color: "bg-pink-500" },
-  ]
-};
-
-import { CreateTransactionModal } from "@/components/finance/CreateTransactionModal";
 
 // --- HELPER COMPONENTS ---
 
@@ -72,27 +43,30 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const StatusBadge = ({ status }: { status: TransactionStatus }) => {
-  const styles = {
+const StatusBadge = ({ status }: { status: string }) => {
+  const styles: Record<string, string> = {
     paid: "bg-green-100 text-green-700 hover:bg-green-100 border-green-200",
     pending: "bg-gray-100 text-gray-700 hover:bg-gray-100 border-gray-200",
     overdue: "bg-orange-100 text-orange-700 hover:bg-orange-100 border-orange-200",
   };
 
-  const labels = {
+  const labels: Record<string, string> = {
     paid: "Pago",
     pending: "Pendente",
     overdue: "Atrasado",
   };
 
+  // Fallback for unknown status
+  const safeStatus = styles[status] ? status : "pending";
+
   return (
-    <Badge variant="outline" className={`${styles[status]} border font-normal`}>
-      {labels[status]}
+    <Badge variant="outline" className={`${styles[safeStatus]} border font-normal`}>
+      {labels[safeStatus] || status}
     </Badge>
   );
 };
 
-const FinancialHealthCard = ({ data }: { data: typeof MOCK_DATA.financialHealth }) => {
+const FinancialHealthCard = ({ data }: { data: any }) => {
   const themes = {
     healthy: {
       bg: "bg-green-50",
@@ -100,6 +74,7 @@ const FinancialHealthCard = ({ data }: { data: typeof MOCK_DATA.financialHealth 
       text: "text-green-800",
       icon: TrendingUp,
       iconColor: "text-green-600",
+      message: "Excelente! Seu saldo está positivo.",
     },
     warning: {
       bg: "bg-yellow-50",
@@ -107,6 +82,7 @@ const FinancialHealthCard = ({ data }: { data: typeof MOCK_DATA.financialHealth 
       text: "text-yellow-800",
       icon: AlertTriangle,
       iconColor: "text-yellow-600",
+      message: "Atenção: Seu saldo está baixo.",
     },
     critical: {
       bg: "bg-red-50",
@@ -114,10 +90,12 @@ const FinancialHealthCard = ({ data }: { data: typeof MOCK_DATA.financialHealth 
       text: "text-red-800",
       icon: AlertOctagon,
       iconColor: "text-red-600",
+      message: "Crítico: Despesas superam as receitas.",
     },
   };
 
-  const theme = themes[data.status];
+  const status = (data.status as "healthy" | "warning" | "critical") || "healthy";
+  const theme = themes[status];
   const Icon = theme.icon;
 
   return (
@@ -131,7 +109,7 @@ const FinancialHealthCard = ({ data }: { data: typeof MOCK_DATA.financialHealth 
             <h3 className={`font-semibold text-lg ${theme.text}`}>Saúde Financeira</h3>
           </div>
           <p className={`${theme.text} text-sm mb-4 opacity-90 max-w-md`}>
-            {data.message}
+            {theme.message}
           </p>
         </div>
         <div className="text-right">
@@ -140,22 +118,17 @@ const FinancialHealthCard = ({ data }: { data: typeof MOCK_DATA.financialHealth 
         </div>
       </div>
       
-      {/* Mini Dashboard inside card */}
       <div className="mt-4 flex gap-4 border-t border-black/5 pt-4">
         <div>
-          <p className="text-xs uppercase tracking-wider opacity-60 font-semibold text-gray-600">Projeção Fim do Mês</p>
-          <p className="font-medium text-gray-800">{formatCurrency(data.projection)}</p>
-        </div>
-        <div>
-          <p className="text-xs uppercase tracking-wider opacity-60 font-semibold text-gray-600">Score</p>
-          <p className="font-medium text-gray-800">{data.score}/100</p>
+          <p className="text-xs uppercase tracking-wider opacity-60 font-semibold text-gray-600">Burn Rate (Fixo)</p>
+          <p className="font-medium text-gray-800">{formatCurrency(data.burnRate)}</p>
         </div>
       </div>
     </div>
   );
 };
 
-const CategoryProgressBar = ({ category }: { category: typeof MOCK_DATA.categories[0] }) => (
+const CategoryProgressBar = ({ category }: { category: any }) => (
   <div className="space-y-2">
     <div className="flex justify-between text-sm">
       <span className="font-medium text-gray-700">{category.name}</span>
@@ -173,13 +146,73 @@ const CategoryProgressBar = ({ category }: { category: typeof MOCK_DATA.categori
 
 // --- MAIN PAGE COMPONENT ---
 
-export default function FinancePage() {
-  const [selectedMonth, setSelectedMonth] = useState("nov-2025");
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+export default async function FinancePage(props: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const searchParams = await props.searchParams;
+  // Parse Date Params
+  const currentDate = new Date();
+  const monthParam = typeof searchParams.month === 'string' ? parseInt(searchParams.month) : currentDate.getMonth() + 1;
+  const yearParam = typeof searchParams.year === 'string' ? parseInt(searchParams.year) : currentDate.getFullYear();
+  
+  // Fetch Metrics
+  const metrics = await getFinanceMetrics(monthParam, yearParam);
 
-  // Calculate totals
-  const totalIncome = MOCK_DATA.income.reduce((acc, curr) => acc + curr.amount, 0);
-  const totalExpenses = MOCK_DATA.expenses.reduce((acc, curr) => acc + curr.amount, 0);
+  // Fetch Transactions for the period
+  const dateForRange = new Date(yearParam, monthParam - 1, 1);
+  const startDate = startOfMonth(dateForRange).toISOString();
+  const endDate = endOfMonth(dateForRange).toISOString();
+  
+  const rawTransactions = await getTransactions({ startDate, endDate });
+
+  // Process Transactions for UI
+  const incomeTransactions = rawTransactions
+    .filter(t => t.type === 'income')
+    .map(t => ({
+      id: t.id,
+      date: format(parseISO(t.date!), "dd/MM"),
+      description: t.description,
+      amount: t.amount,
+      status: (t.status as TransactionStatus) || 'pending',
+      category: t.category || 'Geral'
+    }));
+
+  const expenseTransactions = rawTransactions
+    .filter(t => t.type === 'expense')
+    .map(t => ({
+      id: t.id,
+      date: format(parseISO(t.date!), "dd/MM"),
+      description: t.description,
+      amount: t.amount,
+      status: (t.status as TransactionStatus) || 'pending',
+      category: t.category || 'Geral'
+    }));
+
+  // Process Categories
+  const categoryTotals = rawTransactions
+    .filter(t => t.type === 'expense')
+    .reduce((acc, curr) => {
+      const cat = curr.category || 'Outros';
+      acc[cat] = (acc[cat] || 0) + curr.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const totalExpensesVal = metrics.totalExpense || 1; // Avoid division by zero
+  const categories = Object.entries(categoryTotals)
+    .map(([name, value], index) => {
+      const colors = ["bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-pink-500", "bg-orange-500"];
+      return {
+        name,
+        value,
+        percent: Math.round((value / totalExpensesVal) * 100),
+        color: colors[index % colors.length]
+      };
+    })
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5); // Top 5
+
+  // Find max expense category
+  const topCategory = categories.length > 0 ? categories[0] : { name: "-", value: 0 };
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20">
@@ -193,22 +226,10 @@ export default function FinancePage() {
               <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
             </div>
             
-            <Button 
-              className="bg-green-600 hover:bg-green-700 text-white shadow-sm h-10"
-              onClick={() => setIsCreateModalOpen(true)}
-            >
-              <PlusCircle className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">Nova Transação</span>
-              <span className="sm:hidden">Novo</span>
-            </Button>
+            <NewTransactionButton />
           </div>
         </div>
       </div>
-
-      <CreateTransactionModal 
-        open={isCreateModalOpen} 
-        onOpenChange={setIsCreateModalOpen} 
-      />
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         
@@ -222,17 +243,7 @@ export default function FinancePage() {
             </TabsList>
 
             <div className="flex items-center gap-3 w-full sm:w-auto">
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="w-[180px] bg-white">
-                  <Calendar className="w-4 h-4 mr-2 text-gray-500" />
-                  <SelectValue placeholder="Selecione o mês" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="out-2025">Outubro 2025</SelectItem>
-                  <SelectItem value="nov-2025">Novembro 2025</SelectItem>
-                  <SelectItem value="dez-2025">Dezembro 2025</SelectItem>
-                </SelectContent>
-              </Select>
+              <MonthSelector />
               <Button variant="outline" size="icon">
                  <MoreHorizontal className="w-4 h-4" />
               </Button>
@@ -242,7 +253,7 @@ export default function FinancePage() {
           <TabsContent value="overview" className="space-y-8 mt-0">
             
             {/* DIAGNOSTIC SECTION */}
-            <FinancialHealthCard data={MOCK_DATA.financialHealth} />
+            <FinancialHealthCard data={metrics} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               
@@ -261,31 +272,30 @@ export default function FinancePage() {
                           Entradas
                         </CardTitle>
                         <span className="text-green-600 font-bold text-sm">
-                          {formatCurrency(totalIncome)}
+                          {formatCurrency(metrics.totalIncome)}
                         </span>
                       </div>
                     </CardHeader>
                     <CardContent className="pt-4 px-0">
                       <div className="space-y-1">
-                        {MOCK_DATA.income.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors group">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-gray-400 font-mono">{item.date}</span>
-                              <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                        {incomeTransactions.length === 0 ? (
+                          <p className="text-center text-gray-400 py-4 text-sm">Nenhuma entrada neste mês</p>
+                        ) : (
+                          incomeTransactions.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors group">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-gray-400 font-mono">{item.date}</span>
+                                <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="font-semibold text-sm text-green-600">
+                                  + {formatCurrency(item.amount)}
+                                </span>
+                                <StatusBadge status={item.status} />
+                              </div>
                             </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className="font-semibold text-sm text-green-600">
-                                + {formatCurrency(item.amount)}
-                              </span>
-                              <StatusBadge status={item.status} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="px-4 pt-4">
-                        <Button variant="ghost" className="w-full text-xs text-gray-500 hover:text-gray-900 h-8">
-                          Ver todas as entradas
-                        </Button>
+                          ))
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -301,31 +311,30 @@ export default function FinancePage() {
                           Saídas
                         </CardTitle>
                         <span className="text-red-600 font-bold text-sm">
-                          {formatCurrency(totalExpenses)}
+                          {formatCurrency(metrics.totalExpense)}
                         </span>
                       </div>
                     </CardHeader>
                     <CardContent className="pt-4 px-0">
                       <div className="space-y-1">
-                        {MOCK_DATA.expenses.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-gray-400 font-mono">{item.date}</span>
-                              <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                        {expenseTransactions.length === 0 ? (
+                          <p className="text-center text-gray-400 py-4 text-sm">Nenhuma saída neste mês</p>
+                        ) : (
+                          expenseTransactions.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-gray-400 font-mono">{item.date}</span>
+                                <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="font-semibold text-sm text-gray-900">
+                                  - {formatCurrency(item.amount)}
+                                </span>
+                                <StatusBadge status={item.status} />
+                              </div>
                             </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className="font-semibold text-sm text-gray-900">
-                                - {formatCurrency(item.amount)}
-                              </span>
-                              <StatusBadge status={item.status} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="px-4 pt-4">
-                        <Button variant="ghost" className="w-full text-xs text-gray-500 hover:text-gray-900 h-8">
-                          Ver todas as saídas
-                        </Button>
+                          ))
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -344,15 +353,19 @@ export default function FinancePage() {
                     <CardDescription>Distribuição dos seus gastos</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {MOCK_DATA.categories.map((cat) => (
-                      <CategoryProgressBar key={cat.name} category={cat} />
-                    ))}
+                    {categories.length === 0 ? (
+                      <p className="text-gray-400 text-sm text-center">Sem dados de categorias</p>
+                    ) : (
+                      categories.map((cat) => (
+                        <CategoryProgressBar key={cat.name} category={cat} />
+                      ))
+                    )}
                     
                     <Separator className="my-4" />
                     
                     <div className="rounded-lg bg-gray-50 p-4 text-center">
                       <p className="text-xs text-gray-500 mb-1">Maior gasto este mês</p>
-                      <p className="font-semibold text-gray-900">Infraestrutura</p>
+                      <p className="font-semibold text-gray-900">{topCategory.name}</p>
                     </div>
                   </CardContent>
                 </Card>
