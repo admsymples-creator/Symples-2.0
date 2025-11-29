@@ -105,7 +105,41 @@ Consulte os arquivos em `.context/` para mais detalhes:
 
 O projeto pode ser deployado na [Vercel](https://vercel.com) facilmente:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/seu-usuario/symples-v2)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/admsymples-creator/Symples-2.0)
+
+### Configuração na Vercel
+
+1. **Conectar Repositório:**
+   - Acesse [Vercel Dashboard](https://vercel.com/dashboard)
+   - Clique em "Add New Project"
+   - Conecte o repositório `admsymples-creator/Symples-2.0`
+
+2. **Variáveis de Ambiente:**
+   Configure as seguintes variáveis no painel da Vercel:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+
+3. **Build Settings:**
+   - Framework Preset: Next.js
+   - Build Command: `npm run build` (automático)
+   - Output Directory: `.next` (automático)
+   - Install Command: `npm install` (automático)
+
+4. **Deploy:**
+   - Clique em "Deploy"
+   - A Vercel fará o build automaticamente
+   - Após o deploy, você receberá uma URL de produção
+
+### Variáveis de Ambiente Necessárias
+
+| Variável | Descrição | Onde Obter |
+|----------|-----------|------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase | Supabase Dashboard > Settings > API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública anônima do Supabase | Supabase Dashboard > Settings > API |
+
+**Importante:** Nunca commite as variáveis de ambiente no repositório. Use sempre as configurações da Vercel.
 
 ## 📝 Licença
 
