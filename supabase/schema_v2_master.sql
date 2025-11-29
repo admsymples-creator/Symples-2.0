@@ -1,5 +1,5 @@
 -- ============================================
--- SYMPLES V2.1 - SCHEMA COMPLETO (PRODUÇÃO)
+-- SYMPLES V2.0 - MASTER SCHEMA (PRODUÇÃO)
 -- Versão: 2.1 (com Trial/Subscription + WhatsApp + Review Status)
 -- ============================================
 
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 CREATE TABLE IF NOT EXISTS public.workspaces (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name TEXT NOT NULL,
-    slug TEXT UNIQUE NOT NULL,
+    slug TEXT UNIQUE NOT NULL, -- Mantido como NOT NULL para consistência
     magic_code TEXT UNIQUE,
     owner_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
     trial_ends_at TIMESTAMPTZ DEFAULT (now() + interval '15 days'),
@@ -155,7 +155,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON public.tasks(due_date) WHERE du
 CREATE INDEX IF NOT EXISTS idx_tasks_is_personal ON public.tasks(is_personal, created_by) WHERE is_personal = true;
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status) WHERE status IS NOT NULL;
 
--- Índices para workspaces
+-- Índices para workspaces (novos)
 CREATE INDEX IF NOT EXISTS idx_workspaces_trial_ends_at ON public.workspaces(trial_ends_at) WHERE subscription_status = 'trial';
 CREATE INDEX IF NOT EXISTS idx_workspaces_subscription_status ON public.workspaces(subscription_status);
 
@@ -670,3 +670,4 @@ CREATE POLICY "System can insert audit logs"
 -- ============================================
 -- FIM DO SCHEMA
 -- ============================================
+
