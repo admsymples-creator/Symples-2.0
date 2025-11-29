@@ -105,7 +105,7 @@ Consulte os arquivos em `.context/` para mais detalhes:
 
 **Status:** ✅ Deployado em Produção
 
-**URL de Produção:** https://symples-v2-g6vcpgjag-symples-s-projects.vercel.app
+**URL de Produção:** https://app.symples.org
 
 O projeto está deployado na [Vercel](https://vercel.com) e configurado para deploy automático a cada push na branch `master`.
 
