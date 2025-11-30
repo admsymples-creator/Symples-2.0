@@ -325,3 +325,11 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Drag & Drop:** @dnd-kit/core 6.3.1, @dnd-kit/sortable 10.0.0
 - **Ícones:** lucide-react 0.555.0
 - **Utilitários:** date-fns 4.1.0, clsx 2.1.1, tailwind-merge 3.4.0
+
+## 11. STATUS DE DEPLOY (v2.1)
+
+- **Ambiente de Produção:** https://app.symples.org
+- **Plataforma:** Vercel
+- **Build Status:** ✅ Compilando sem erros
+- **Variáveis de Ambiente:** Configuradas (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+- **Deploy Automático:** Configurado para branch `master`

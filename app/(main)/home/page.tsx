@@ -1,9 +1,8 @@
-import { getWeekTasks } from "@/lib/actions/dashboard";
+import { getWeekTasks, getWorkspacesWeeklyStats, getUserWorkspaces } from "@/lib/actions/dashboard";
 import { WeeklyView } from "@/components/home/WeeklyView";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
-import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
 import { Database } from "@/types/database.types";
+import { FolderOpen } from "lucide-react";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -29,27 +28,14 @@ export default async function HomePage() {
   const startOfWeek = getStartOfWeek(today);
   const endOfWeek = getEndOfWeek(today);
 
-  // Converter para ISO strings
-  const startDateISO = startOfWeek.toISOString();
-  const endDateISO = endOfWeek.toISOString();
+  // Buscar dados em paralelo
+  const [tasks, workspaceStats, userWorkspaces] = await Promise.all([
+    getWeekTasks(startOfWeek, endOfWeek),
+    getWorkspacesWeeklyStats(startOfWeek, endOfWeek),
+    getUserWorkspaces()
+  ]);
 
-  // Buscar tarefas da semana
-  let tasks: Task[] = [];
-  try {
-    const startDate = new Date(startDateISO);
-    const endDate = new Date(endDateISO);
-    const weekTasks = await getWeekTasks(startDate, endDate);
-    // Cast necessário pois getWeekTasks retorna tipo com campos opcionais (?) enquanto o banco define como nullable (| null)
-    tasks = weekTasks as unknown as Task[];
-  } catch (error) {
-    console.error("Erro ao carregar tarefas:", error);
-  }
-
-  // Mock de workspaces (será substituído por dados reais depois)
-  const MOCK_WORKSPACES = [
-    { id: "1", name: "Agência V4", pendingCount: 5, totalCount: 12 },
-    { id: "2", name: "Consultoria Tech", pendingCount: 3, totalCount: 8 },
-  ];
+  const typedTasks = tasks as unknown as Task[];
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20">
@@ -64,37 +50,37 @@ export default async function HomePage() {
               Aqui está o panorama da sua semana.
             </p>
           </div>
-          <Button
-            className="bg-green-600 hover:bg-green-700 text-white"
-            asChild
-          >
-            <a href="/tasks?action=create">
-              <Plus className="w-4 h-4 mr-2" />
-              Nova Tarefa
-            </a>
-          </Button>
         </div>
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
         {/* Weekly View (Client Component) */}
-        <WeeklyView tasks={tasks} />
+        <WeeklyView tasks={typedTasks} workspaces={userWorkspaces} />
 
         {/* Workspaces Overview */}
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Visão por Workspace
           </h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {MOCK_WORKSPACES.map((workspace) => (
-              <WorkspaceCard
-                key={workspace.id}
-                name={workspace.name}
-                pendingCount={workspace.pendingCount}
-                totalCount={workspace.totalCount}
-              />
-            ))}
-          </div>
+          
+          {workspaceStats.length > 0 ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {workspaceStats.map((workspace) => (
+                <WorkspaceCard
+                  key={workspace.id}
+                  name={workspace.name}
+                  pendingCount={workspace.pendingCount}
+                  totalCount={workspace.totalCount}
+                />
+              ))}
+            </div>
+          ) : (
+             <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-200 border-dashed">
+                <FolderOpen className="w-12 h-12 text-gray-300 mb-3" />
+                <p className="text-gray-500 font-medium">Nenhum workspace encontrado</p>
+                <p className="text-sm text-gray-400 mt-1">Você ainda não participa de nenhum workspace.</p>
+             </div>
+          )}
         </div>
       </div>
     </div>

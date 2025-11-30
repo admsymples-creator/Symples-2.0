@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { getFinanceMetrics, getTransactions } from "@/lib/actions/finance";
 import { startOfMonth, endOfMonth } from "date-fns";
@@ -170,23 +171,29 @@ export default async function FinancePage(props: {
     .filter(t => t.type === 'income')
     .map(t => ({
       id: t.id,
-      date: format(parseISO(t.date!), "dd/MM"),
+      date: format(parseISO(t.date || new Date().toISOString()), "dd/MM"),
       description: t.description,
       amount: t.amount,
       status: (t.status as TransactionStatus) || 'pending',
-      category: t.category || 'Geral'
+      category: t.category || 'Geral',
+      type: t.type as 'income' | 'expense'
     }));
 
   const expenseTransactions = rawTransactions
     .filter(t => t.type === 'expense')
     .map(t => ({
       id: t.id,
-      date: format(parseISO(t.date!), "dd/MM"),
+      date: format(parseISO(t.date || new Date().toISOString()), "dd/MM"),
       description: t.description,
       amount: t.amount,
       status: (t.status as TransactionStatus) || 'pending',
-      category: t.category || 'Geral'
+      category: t.category || 'Geral',
+      type: t.type as 'income' | 'expense'
     }));
+
+  // Process Recurring Transactions
+  // TODO: Implementar campo is_recurring no schema quando necessário
+  const recurringTransactions: typeof incomeTransactions = [];
 
   // Process Categories
   const categoryTotals = rawTransactions
@@ -375,16 +382,52 @@ export default async function FinancePage(props: {
           </TabsContent>
 
           <TabsContent value="recurring">
-            <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-xl border border-dashed">
-               <div className="bg-gray-50 p-4 rounded-full mb-4">
-                  <Calendar className="w-8 h-8 text-gray-400" />
-               </div>
-               <h3 className="text-lg font-semibold text-gray-900">Gestão de Recorrentes</h3>
-               <p className="text-gray-500 max-w-sm">
-                 Visualize suas assinaturas e contas fixas em um só lugar. 
-                 (Feature em desenvolvimento)
-               </p>
-            </div>
+            <Card className="border-none shadow-sm ring-1 ring-gray-200">
+              <CardHeader>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <div className="p-1.5 bg-blue-100 rounded-full">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                  </div>
+                  Transações Recorrentes
+                </CardTitle>
+                <CardDescription>
+                  Lista de todas as receitas e despesas marcadas como recorrentes (mensais).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                <div className="space-y-1">
+                  {recurringTransactions.length === 0 ? (
+                     <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="bg-gray-50 p-4 rounded-full mb-4">
+                          <Calendar className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <p className="text-gray-500 max-w-sm text-sm">
+                          Nenhuma transação recorrente encontrada neste mês.
+                        </p>
+                     </div>
+                  ) : (
+                    recurringTransactions.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between py-3 px-6 hover:bg-gray-50 transition-colors group border-b border-gray-50 last:border-0">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs text-gray-400 font-mono">{item.date}</span>
+                          <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                          <span className="text-xs text-gray-400">{item.category}</span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={cn(
+                            "font-semibold text-sm",
+                            item.type === "income" ? "text-green-600" : "text-red-600"
+                          )}>
+                            {item.type === "income" ? "+" : "-"} {formatCurrency(item.amount)}
+                          </span>
+                          <StatusBadge status={item.status} />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

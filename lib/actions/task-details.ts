@@ -149,8 +149,8 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
       ...comment,
       created_at: comment.created_at || new Date().toISOString(),
     })),
-    tags: [],
-    subtasks: [],
+    tags: (task as any).tags || [],
+    subtasks: (task as any).subtasks || [],
   };
 }
 
@@ -343,7 +343,7 @@ export async function uploadAudioComment(
     const filePath = `audio/${taskId}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
-      .from("task_attachments")
+      .from("task-attachments")
       .upload(filePath, audioFile, {
         contentType: "audio/webm",
         upsert: false,
@@ -356,7 +356,7 @@ export async function uploadAudioComment(
 
     // 2. Obter URL pública
     const { data: { publicUrl } } = supabase.storage
-      .from("task_attachments")
+      .from("task-attachments")
       .getPublicUrl(filePath);
 
     // 3. Criar comentário do tipo 'audio'
@@ -366,7 +366,7 @@ export async function uploadAudioComment(
         task_id: taskId,
         user_id: user.id,
         content: "Mensagem de voz",
-        type: "comment",
+        type: "audio" as any, // TODO: Atualizar tipos do banco
         metadata: {
           url: publicUrl,
           duration: duration,

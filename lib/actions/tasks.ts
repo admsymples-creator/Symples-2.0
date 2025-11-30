@@ -18,6 +18,11 @@ export type TaskWithDetails = Task & {
   creator: {
     full_name: string | null;
   } | null;
+  group: {
+    id: string;
+    name: string;
+    color: string | null;
+  } | null;
 };
 
 /**
@@ -40,6 +45,11 @@ export async function getTasks(filters?: { workspaceId?: string | null }) {
       ),
       creator:created_by (
         full_name
+      ),
+      group:group_id (
+        id,
+        name,
+        color
       )
     `)
     .order("position", { ascending: true })
@@ -63,7 +73,30 @@ export async function getTasks(filters?: { workspaceId?: string | null }) {
     return [];
   }
 
-  return data as unknown as TaskWithDetails[];
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Buscar contagem de comentários para cada tarefa
+  const taskIds = data.map((t: any) => t.id);
+  const { data: commentsData } = await supabase
+    .from("task_comments")
+    .select("task_id")
+    .in("task_id", taskIds);
+
+  // Criar mapa de contagem de comentários
+  const commentCountMap: Record<string, number> = {};
+  if (commentsData) {
+    commentsData.forEach((comment: any) => {
+      commentCountMap[comment.task_id] = (commentCountMap[comment.task_id] || 0) + 1;
+    });
+  }
+
+  // Adicionar contagem de comentários a cada tarefa
+  return (data as any[]).map((task) => ({
+    ...task,
+    comment_count: commentCountMap[task.id] || 0,
+  })) as unknown as TaskWithDetails[];
 }
 
 /**
@@ -165,6 +198,8 @@ export async function createTask(data: {
   description?: string;
   is_personal?: boolean;
   origin_context?: any;
+  group_id?: string | null;
+  tags?: string[];
 }) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -185,6 +220,8 @@ export async function createTask(data: {
     assignee_id: data.assignee_id || null,
     due_date: data.due_date || null,
     origin_context: data.origin_context || null,
+    group_id: data.group_id || null,
+    tags: data.tags || [],
     // position será auto-gerado ou podemos calcular aqui se necessário
   }).select().single();
 
@@ -244,6 +281,7 @@ interface UpdateTaskPositionParams {
   assignee_id?: string | null;
   priority?: "low" | "medium" | "high" | "urgent";
   status?: "todo" | "in_progress" | "done" | "archived";
+  group_id?: string | null;
 }
 
 /**
@@ -258,6 +296,7 @@ export async function updateTaskPosition(params: UpdateTaskPositionParams) {
     if (params.status) updates.status = params.status;
     if (params.priority) updates.priority = params.priority;
     if (params.assignee_id !== undefined) updates.assignee_id = params.assignee_id;
+    if (params.group_id !== undefined) updates.group_id = params.group_id;
 
     const { data, error } = await supabase
         .from("tasks")

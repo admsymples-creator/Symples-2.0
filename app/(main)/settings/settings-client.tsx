@@ -28,6 +28,7 @@ import {
 import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi } from "lucide-react";
 import { useUI } from "@/components/providers/UIScaleProvider";
 import { updateProfile, Profile, Workspace } from "@/lib/actions/user";
+import { updateWorkspaceSettings } from "@/lib/actions/workspace-settings";
 import { inviteMember, revokeInvite, Member, Invite } from "@/lib/actions/members";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
@@ -57,6 +58,10 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
   const [slug, setSlug] = useState(workspace?.slug || "minha-empresa");
   const [isSaving, setIsSaving] = useState(false);
   const { scale, setScale } = useUI();
+  
+  const [workspaceLogoFile, setWorkspaceLogoFile] = useState<File | null>(null);
+  // Tipagem do workspace pode não ter logo_url ainda, então forçamos um cast ou usamos any por segurança
+  const [workspaceLogoPreview, setWorkspaceLogoPreview] = useState<string | null>((workspace as any)?.logo_url || null);
 
   // Profile State
   const [profileName, setProfileName] = useState(user?.full_name || "");
@@ -65,18 +70,39 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_url || null);
 
   // Update state if props change
   useEffect(() => {
     if (user) {
       setProfileName(user.full_name || "");
       setProfileEmail(user.email || "");
+      setAvatarPreview(user.avatar_url || null);
     }
     if (workspace) {
         setWorkspaceName(workspace.name);
         setSlug(workspace.slug || "");
+        setWorkspaceLogoPreview((workspace as any)?.logo_url || null);
     }
   }, [user, workspace]);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleWorkspaceLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setWorkspaceLogoFile(file);
+      setWorkspaceLogoPreview(URL.createObjectURL(file));
+    }
+  };
 
   // Members & Invites State
   const [members, setMembers] = useState<Member[]>(initialMembers);
@@ -91,15 +117,32 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
   const [isRevoking, setIsRevoking] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null); // Não implementado na API ainda, mas preparado
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
+    if (!workspace) return;
     setIsSaving(true);
-    // Simulating API call
-    setTimeout(() => {
-      setIsSaving(false);
-      toast.success("Configurações salvas!", {
-        description: "As alterações já estão valendo.",
-      });
-    }, 1000);
+    try {
+        const formData = new FormData();
+        formData.append("name", workspaceName);
+        formData.append("slug", slug);
+        
+        if (workspaceLogoFile) {
+            formData.append("logo", workspaceLogoFile);
+        }
+
+        await updateWorkspaceSettings(workspace.id, formData);
+        
+        toast.success("Configurações salvas!", {
+            description: "As alterações do workspace já estão valendo.",
+        });
+        
+        // Forçar refresh completo para atualizar a logo em outros componentes (Sidebar)
+        router.refresh();
+    } catch (error: any) {
+        console.error(error);
+        toast.error("Erro ao salvar configurações", { description: error.message });
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -109,10 +152,16 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
       formData.append("full_name", profileName);
       formData.append("job_title", jobTitle);
       
+      if (avatarFile) {
+        formData.append("avatar", avatarFile);
+      }
+      
       await updateProfile(formData);
       toast.success("Perfil atualizado!", {
           description: "Suas informações foram salvas com sucesso."
       });
+      
+      router.refresh();
     } catch (error) {
       console.error(error);
       toast.error("Erro ao atualizar perfil.");
@@ -214,13 +263,30 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
             <CardContent className="space-y-6">
               {/* Avatar Upload */}
               <div className="flex items-center gap-6">
-                <div className="h-20 w-20 bg-gray-100 rounded-lg flex items-center justify-center border border-dashed border-gray-300 text-gray-400">
-                  <Upload className="h-8 w-8" />
-                </div>
+                {workspaceLogoPreview ? (
+                   <img 
+                     src={workspaceLogoPreview} 
+                     alt="Logo" 
+                     className="h-20 w-20 rounded-lg object-cover border border-gray-200"
+                   />
+                ) : (
+                    <div className="h-20 w-20 bg-gray-100 rounded-lg flex items-center justify-center border border-dashed border-gray-300 text-gray-400">
+                    <Upload className="h-8 w-8" />
+                    </div>
+                )}
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium">Logo do Workspace</h3>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm">Alterar Logo</Button>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      id="workspace-logo-upload"
+                      onChange={handleWorkspaceLogoChange}
+                    />
+                    <Button variant="outline" size="sm" onClick={() => document.getElementById('workspace-logo-upload')?.click()}>
+                        Alterar Logo
+                    </Button>
                     <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50">Remover</Button>
                   </div>
                   <p className="text-[0.8rem] text-muted-foreground">Recomendado: 400x400px, .PNG ou .JPG</p>
@@ -624,9 +690,9 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
             <CardContent className="space-y-6">
               {/* Avatar Upload */}
               <div className="flex items-center gap-6">
-                {user?.avatar_url ? (
+                {avatarPreview ? (
                   <img 
-                    src={user.avatar_url} 
+                    src={avatarPreview} 
                     alt={profileName} 
                     className="h-20 w-20 rounded-full object-cover border-2 border-white shadow-sm"
                   />
@@ -638,7 +704,16 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium">Sua Foto</h3>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm">Carregar Nova</Button>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      id="avatar-upload"
+                      onChange={handleAvatarChange}
+                    />
+                    <Button variant="outline" size="sm" onClick={() => document.getElementById('avatar-upload')?.click()}>
+                      Carregar Nova
+                    </Button>
                     <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50">Remover</Button>
                   </div>
                 </div>
@@ -681,52 +756,6 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
             <CardFooter className="border-t px-6 py-4 bg-gray-50/50 flex justify-end">
               <Button onClick={handleSaveProfile} disabled={isSaving}>
                 {isSaving ? "Salvando..." : "Salvar Alterações"}
-              </Button>
-            </CardFooter>
-          </Card>
-
-          {/* Security Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Segurança</CardTitle>
-              <CardDescription>
-                Atualize sua senha e configurações de segurança.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Senha Atual</Label>
-                <Input 
-                  id="current-password" 
-                  type="password" 
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">Nova Senha</Label>
-                  <Input 
-                    id="new-password" 
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
-                  <Input 
-                    id="confirm-password" 
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter className="border-t px-6 py-4 bg-gray-50/50 flex justify-end">
-              <Button variant="outline" onClick={() => toast.success("Senha alterada com sucesso!")}>
-                Alterar Senha
               </Button>
             </CardFooter>
           </Card>

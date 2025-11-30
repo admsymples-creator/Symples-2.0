@@ -35,7 +35,7 @@ const workspaceItems: NavItem[] = [
 ];
 
 interface SidebarProps {
-    workspaces?: { id: string; name: string; slug: string | null }[];
+    workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
 }
 
 function SidebarContent({ workspaces = [] }: SidebarProps) {
@@ -139,8 +139,16 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                         variant="ghost" 
                                         className="w-full justify-start px-3 h-12 gap-3 hover:bg-gray-100/80 transition-colors group"
                                     >
-                                        <div className="w-8 h-8 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow">
-                                            <Building2 className="w-4 h-4" />
+                                        <div className="w-8 h-8 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow overflow-hidden">
+                                            {workspaces.find(w => w.id === selectedWorkspace)?.logo_url ? (
+                                                <img 
+                                                    src={workspaces.find(w => w.id === selectedWorkspace)?.logo_url!} 
+                                                    alt={workspaces.find(w => w.id === selectedWorkspace)?.name} 
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <Building2 className="w-4 h-4" />
+                                            )}
                                         </div>
                                         
                                         <div className="flex flex-col items-start text-left flex-1 min-w-0">
@@ -171,8 +179,16 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                             onClick={() => setSelectedWorkspace(workspace.id)}
                                             className="gap-2 cursor-pointer"
                                         >
-                                            <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center">
-                                                <Building2 className="w-3 h-3 text-gray-500" />
+                                            <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
+                                                {workspace.logo_url ? (
+                                                    <img 
+                                                        src={workspace.logo_url} 
+                                                        alt={workspace.name} 
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <Building2 className="w-3 h-3 text-gray-500" />
+                                                )}
                                             </div>
                                             <span className="flex-1 truncate">{workspace.name}</span>
                                             {workspace.id === selectedWorkspace && (

@@ -30,7 +30,7 @@ export function useFileUpload() {
    */
   const uploadToStorage = async (
     file: File,
-    bucket: string = "attachments"
+    bucket: string = "task-attachments"
   ): Promise<{ success: boolean; url?: string; path?: string; error?: string }> => {
     try {
       setUploading(true);

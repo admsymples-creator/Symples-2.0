@@ -442,7 +442,7 @@ export default function DesignSystemPage() {
                                             <TaskRowHome
                                                 task={taskRowHomeData}
                                                 onToggle={() => {}}
-                                                onEdit={() => {}}
+                                                onEdit={async () => {}}
                                                 onDelete={() => {}}
                                             />
                                         </div>

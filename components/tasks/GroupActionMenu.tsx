@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2, MoreHorizontal, Palette } from "lucide-react";
+import { Pencil, Trash2, MoreHorizontal, Palette, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -29,9 +29,10 @@ interface GroupActionMenuProps {
     groupId: string;
     groupTitle: string;
     currentColor?: string;
-    onRename?: (newTitle: string) => void;
-    onColorChange?: (color: string) => void;
-    onDelete?: () => void;
+    onRename?: (groupId: string, newTitle: string) => void;
+    onColorChange?: (groupId: string, color: string) => void;
+    onDelete?: (groupId: string) => void;
+    onClear?: (groupId: string) => void;
     className?: string;
 }
 
@@ -58,12 +59,15 @@ export function GroupActionMenu({
     onRename,
     onColorChange,
     onDelete,
+    onClear,
     className,
 }: GroupActionMenuProps) {
     const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
     const [newTitle, setNewTitle] = useState(groupTitle);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
     // Handler para renomear
     const handleRename = () => {
@@ -82,9 +86,8 @@ export function GroupActionMenu({
             return;
         }
 
-        onRename?.(newTitle.trim());
+        onRename?.(groupId, newTitle.trim());
         setIsRenameDialogOpen(false);
-        toast.success("Grupo renomeado com sucesso");
     };
 
     // Handler para mudar cor
@@ -96,16 +99,14 @@ export function GroupActionMenu({
         groupColors[groupId] = color;
         localStorage.setItem("taskGroupColors", JSON.stringify(groupColors));
 
-        onColorChange?.(color);
-        toast.success("Cor do grupo atualizada");
+        onColorChange?.(groupId, color);
     };
 
     // Handler para excluir
     const confirmDelete = async () => {
         setIsDeleting(true);
         try {
-            onDelete?.();
-            toast.success("Grupo excluído com sucesso");
+            onDelete?.(groupId);
         } catch (error) {
             toast.error("Erro ao excluir grupo");
             console.error(error);
@@ -113,6 +114,23 @@ export function GroupActionMenu({
             setIsDeleting(false);
             setIsDeleteModalOpen(false);
         }
+    };
+
+    const confirmClear = async () => {
+        setIsClearing(true);
+        try {
+            onClear?.(groupId);
+        } catch (error) {
+            toast.error("Erro ao limpar tarefas");
+            console.error(error);
+        } finally {
+            setIsClearing(false);
+            setIsClearModalOpen(false);
+        }
+    };
+
+    const handleClearClick = () => {
+        setIsClearModalOpen(true);
     };
 
     const handleDeleteClick = () => {
@@ -200,6 +218,21 @@ export function GroupActionMenu({
                         </DropdownMenuSub>
                     )}
 
+                    {/* Limpar Tarefas */}
+                    {onClear && (
+                        <DropdownMenuItem
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleClearClick();
+                            }}
+                            className="text-xs"
+                            disabled={isClearing}
+                        >
+                            <Eraser className="w-4 h-4 mr-2" />
+                            {isClearing ? "Limpando..." : "Limpar Tarefas"}
+                        </DropdownMenuItem>
+                    )}
+
                     <DropdownMenuSeparator />
 
                     {/* Excluir Grupo */}
@@ -228,6 +261,17 @@ export function GroupActionMenu({
                 confirmText="Excluir Grupo"
                 isLoading={isDeleting}
                 onConfirm={confirmDelete}
+            />
+
+            {/* Modal de Confirmação de Limpeza */}
+            <ConfirmModal
+                open={isClearModalOpen}
+                onOpenChange={setIsClearModalOpen}
+                title="Limpar Tarefas?"
+                description="Isso irá arquivar ou excluir todas as tarefas deste grupo. Esta ação não pode ser desfeita."
+                confirmText="Limpar Tudo"
+                isLoading={isClearing}
+                onConfirm={confirmClear}
             />
 
             {/* Dialog de Renomear */}

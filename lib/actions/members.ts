@@ -159,9 +159,13 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
   // Retornar o link do convite para teste (em produção, dispararia email)
   // O token será o próprio ID do convite neste caso simplificado, ou poderíamos gerar um hash
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "http://localhost:3000";
+  // Garantir protocolo se vier do VERCEL_URL (que geralmente vem sem https://)
+  const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
+  
   return { 
     success: true, 
-    inviteLink: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/invite/${newInvite.id}` 
+    inviteLink: `${finalUrl}/auth/invite?code=${newInvite.id}` 
   };
 }
 

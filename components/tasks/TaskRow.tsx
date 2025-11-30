@@ -17,6 +17,7 @@ import {
     AlertTriangle,
     Calendar as CalendarIcon,
     User,
+    MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
@@ -41,6 +42,9 @@ interface TaskRowProps {
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
     isLast?: boolean;
+    groupColor?: string;
+    hasComments?: boolean;
+    commentCount?: number;
 }
 
 const priorityColors = {
@@ -120,12 +124,35 @@ export function TaskRow({
     onTaskUpdated,
     onTaskDeleted,
     isLast = false,
+    groupColor,
+    hasComments = false,
+    commentCount = 0,
 }: TaskRowProps) {
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
-    // Obter configuração do status (mapear label para status do banco se necessário)
+    // Obter apenas o label do status (sem cores - cores vêm apenas do grupo)
     const dbStatus = mapLabelToStatus(status);
     const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
     
+    // Mapear cor do grupo se existir (ex: "red" -> "bg-red-500")
+    const getGroupColorClass = (colorName?: string) => {
+        if (!colorName) return null;
+        const colorMap: Record<string, string> = {
+            "red": "bg-red-500",
+            "blue": "bg-blue-500",
+            "green": "bg-green-500",
+            "yellow": "bg-yellow-500",
+            "purple": "bg-purple-500",
+            "pink": "bg-pink-500",
+            "orange": "bg-orange-500",
+            "slate": "bg-slate-500",
+            "cyan": "bg-cyan-500",
+            "indigo": "bg-indigo-500",
+        };
+        return colorMap[colorName] || null;
+    };
+    
+    const groupColorClass = getGroupColorClass(groupColor);
+
     // Lógica de Smart Triggers
     const isFocusActive = isNextSunday(dueDate);
     const isUrgentActive = isToday(dueDate) || priority === "high" || priority === "urgent";
@@ -228,15 +255,16 @@ export function TaskRow({
                     "group flex items-center w-full border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors h-10 px-4 relative",
                     isDragging && "shadow-lg bg-white rounded-lg z-50"
                 )}
-                onClick={onClick}
             >
-            {/* Barra Lateral Colorida (linha contínua) - Cor do Status */}
-            <div 
-                className={cn(
-                    "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
-                    statusConfig.color
-                )} 
-            />
+            {/* Barra Lateral Colorida (linha contínua) - APENAS Cor do Grupo */}
+            {groupColorClass && (
+                <div 
+                    className={cn(
+                        "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
+                        groupColorClass
+                    )} 
+                />
+            )}
 
             {/* Esquerda (Fluido) */}
             {/* Drag Handle (invisível até hover) */}
@@ -261,8 +289,11 @@ export function TaskRow({
                 />
             </div>
 
-            {/* Título (Truncate, flex-1, mr-4) */}
-            <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
+            {/* Título (Truncate, flex-1, mr-4) - Área clicável */}
+            <div 
+                className="flex items-center gap-2 min-w-0 flex-1 mr-4 cursor-pointer"
+                onClick={onClick}
+            >
                 {/* Indicador de atualização não lida */}
                 {hasUpdates && (
                     <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
@@ -278,6 +309,16 @@ export function TaskRow({
                     )}
                     inputClassName="text-sm font-medium text-gray-900"
                 />
+
+                {/* Indicador de comentários - mais sutil */}
+                {hasComments && commentCount > 0 && (
+                    <div className="ml-1 flex items-center gap-0.5 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors">
+                        <MessageSquare className="w-3 h-3" />
+                        {commentCount > 1 && (
+                            <span className="text-[10px] font-medium">{commentCount}</span>
+                        )}
+                    </div>
+                )}
 
                 {/* Tags (após o título, máximo 2 + "+1") */}
                 {tags.length > 0 && (
@@ -438,26 +479,26 @@ export function TaskRow({
                                 )}
                             >
                                 {dueDate ? (
-                                    <span>
+                                    <span className="uppercase">
                                         {new Date(dueDate).toLocaleDateString("pt-BR", {
                                             day: "2-digit",
                                             month: "short",
-                                        })}
+                                        }).replace(/ de /g, " ").replace(/\./g, "")}
                                     </span>
                                 ) : (
-                                    <CalendarIcon className="w-4 h-4" />
+                                    <CalendarIcon className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 )}
                             </button>
                         }
                     />
                 </div>
 
-                {/* 5. Status */}
+                {/* 5. Status (Badge com cor isolada) */}
                 <div className={cn(
                     "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs whitespace-nowrap",
                     statusConfig.lightColor
                 )}>
-                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusConfig.color)} />
+                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusConfig.color.replace("fill-", "bg-"))} />
                     <span>{statusConfig.label}</span>
                 </div>
 

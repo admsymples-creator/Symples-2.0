@@ -59,7 +59,7 @@ interface TaskBoardProps {
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
-    groupBy?: "status" | "priority" | "assignee";
+    groupBy?: string;
 }
 
 import { mapLabelToStatus } from "@/lib/config/tasks";
@@ -81,7 +81,7 @@ function DroppableColumn({
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
-    groupBy?: "status" | "priority" | "assignee";
+    groupBy?: string;
 }) {
     const { setNodeRef, isOver } = useDroppable({
         id: column.id,
@@ -337,12 +337,26 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
             // Persistir no backend
             try {
                 const { updateTaskPosition } = await import("@/lib/actions/tasks");
-                const newStatus = mapStatusToDb(destinationColumn.title);
-                await updateTaskPosition({
+                
+                let updateData: any = {
                     taskId: active.id as string,
                     newPosition: insertIndex + 1,
-                    newStatus,
-                });
+                };
+
+                if (groupBy === "status") {
+                    updateData.newStatus = mapStatusToDb(destinationColumn.title);
+                } else if (groupBy === "priority") {
+                    const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
+                        "Urgente": "urgent",
+                        "Alta": "high",
+                        "Média": "medium",
+                        "Baixa": "low",
+                    };
+                    updateData.priority = priorityMap[destinationColumn.title];
+                }
+                // TODO: Implementar para 'group' e 'date' se necessário
+
+                await updateTaskPosition(updateData);
             } catch (error) {
                 console.error("Erro ao atualizar posição e status:", error);
                 setLocalColumns(columns);

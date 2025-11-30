@@ -24,6 +24,12 @@ export function TaskSectionHeader({
             {/* Esquerda (Info) */}
             <div className="flex items-center gap-2">
                 {leftContent}
+                {color && (
+                    <div 
+                        className="w-2 h-2 rounded-full mr-0.5" 
+                        style={{ backgroundColor: color }}
+                    />
+                )}
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                     {title}
                 </h3>
@@ -33,10 +39,12 @@ export function TaskSectionHeader({
                 >
                     {count}
                 </Badge>
+                {/* Actions next to title */}
+                {actions && <div className="ml-1">{actions}</div>}
             </div>
 
-            {/* Direita (Ações) */}
-            {actions && <div>{actions}</div>}
+            {/* Direita (Espaçador se necessário) */}
+            <div></div>
         </div>
     );
 }

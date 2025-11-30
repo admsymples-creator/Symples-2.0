@@ -10,6 +10,8 @@
 export const TASK_STATUS = {
   TODO: 'todo',
   IN_PROGRESS: 'in_progress',
+  REVIEW: 'review',
+  CORRECTION: 'correction',
   DONE: 'done',
   ARCHIVED: 'archived',
 } as const;
@@ -18,31 +20,41 @@ export type TaskStatus = typeof TASK_STATUS[keyof typeof TASK_STATUS];
 
 export interface TaskStatusConfig {
   label: string;
-  color: string; // Cor da barra lateral/borda
-  lightColor: string; // Cor do Badge/Fundo
+  color: string; // Cor do dot/ícone (fill-*, text-*, bg-*)
+  lightColor: string; // Cor do fundo do badge (bg-* text-*)
   icon?: string; // Ícone opcional
 }
 
 export const TASK_CONFIG: Record<string, TaskStatusConfig> = {
   [TASK_STATUS.TODO]: { 
-    label: 'Backlog', 
-    color: 'bg-slate-500', // Cor da barra lateral
-    lightColor: 'bg-slate-100 text-slate-600' // Cor do Badge/Fundo
+    label: 'Não iniciada',
+    color: 'fill-gray-500',
+    lightColor: 'bg-gray-100 text-gray-600',
   },
   [TASK_STATUS.IN_PROGRESS]: { 
-    label: 'Execução', 
-    color: 'bg-blue-500', 
-    lightColor: 'bg-blue-50 text-blue-700' 
+    label: 'Em progresso',
+    color: 'fill-amber-500',
+    lightColor: 'bg-amber-100 text-amber-700',
+  },
+  [TASK_STATUS.REVIEW]: { 
+    label: 'Revisão',
+    color: 'fill-blue-500',
+    lightColor: 'bg-blue-100 text-blue-700',
+  },
+  [TASK_STATUS.CORRECTION]: { 
+    label: 'Correção',
+    color: 'fill-orange-500',
+    lightColor: 'bg-orange-100 text-orange-700',
   },
   [TASK_STATUS.DONE]: { 
-    label: 'Revisão', 
-    color: 'bg-green-500', 
-    lightColor: 'bg-green-50 text-green-700' 
+    label: 'Finalizado',
+    color: 'fill-green-500',
+    lightColor: 'bg-green-100 text-green-700',
   },
   [TASK_STATUS.ARCHIVED]: { 
-    label: 'Arquivado', 
-    color: 'bg-gray-500', 
-    lightColor: 'bg-gray-50 text-gray-700' 
+    label: 'Arquivado',
+    color: 'fill-gray-400',
+    lightColor: 'bg-gray-100 text-gray-500',
   },
 };
 
@@ -50,27 +62,32 @@ export const TASK_CONFIG: Record<string, TaskStatusConfig> = {
 export const ORDERED_STATUSES: TaskStatus[] = [
   TASK_STATUS.TODO,
   TASK_STATUS.IN_PROGRESS,
+  TASK_STATUS.REVIEW,
+  TASK_STATUS.CORRECTION,
   TASK_STATUS.DONE,
-  TASK_STATUS.ARCHIVED,
 ];
 
 // Mapeamento reverso: Label da UI -> Status do banco
 export const LABEL_TO_STATUS: Record<string, TaskStatus> = {
+  'Não iniciada': TASK_STATUS.TODO,
+  'Em progresso': TASK_STATUS.IN_PROGRESS,
+  'Revisão': TASK_STATUS.REVIEW,
+  'Correção': TASK_STATUS.CORRECTION,
+  'Finalizado': TASK_STATUS.DONE,
+  'Arquivado': TASK_STATUS.ARCHIVED,
+  // Aliases para compatibilidade
   'Backlog': TASK_STATUS.TODO,
   'Execução': TASK_STATUS.IN_PROGRESS,
-  'Revisão': TASK_STATUS.DONE,
-  'Arquivado': TASK_STATUS.ARCHIVED,
-  // Aliases
-  'Triagem': TASK_STATUS.IN_PROGRESS,
-  'Finalizado': TASK_STATUS.DONE,
   'Não iniciado': TASK_STATUS.TODO,
 };
 
 // Mapeamento: Status do banco -> Label da UI
 export const STATUS_TO_LABEL: Record<TaskStatus, string> = {
-  [TASK_STATUS.TODO]: 'Backlog',
-  [TASK_STATUS.IN_PROGRESS]: 'Execução',
-  [TASK_STATUS.DONE]: 'Revisão',
+  [TASK_STATUS.TODO]: 'Não iniciada',
+  [TASK_STATUS.IN_PROGRESS]: 'Em progresso',
+  [TASK_STATUS.REVIEW]: 'Revisão',
+  [TASK_STATUS.CORRECTION]: 'Correção',
+  [TASK_STATUS.DONE]: 'Finalizado',
   [TASK_STATUS.ARCHIVED]: 'Arquivado',
 };
 
@@ -78,6 +95,12 @@ export const STATUS_TO_LABEL: Record<TaskStatus, string> = {
 export function getTaskStatusConfig(status: string): TaskStatusConfig {
   const dbStatus = LABEL_TO_STATUS[status] || status as TaskStatus;
   return TASK_CONFIG[dbStatus] || TASK_CONFIG[TASK_STATUS.TODO];
+}
+
+// Helper para obter apenas o label do status (sem cores)
+export function getTaskStatusLabel(status: string): string {
+  const config = getTaskStatusConfig(status);
+  return config.label;
 }
 
 // Helper para mapear status do banco para label da UI

@@ -36,6 +36,8 @@ interface QuickTaskAddProps {
     members?: Member[];
     defaultDueDate?: Date | null;
     defaultAssigneeId?: string | null;
+    className?: string;
+    variant?: "default" | "ghost";
 }
 
 export function QuickTaskAdd({
@@ -44,6 +46,8 @@ export function QuickTaskAdd({
     members = [],
     defaultDueDate,
     defaultAssigneeId,
+    className,
+    variant = "default",
 }: QuickTaskAddProps) {
     const [value, setValue] = useState("");
     const [selectedDate, setSelectedDate] = useState<Date | null>(defaultDueDate || null);
@@ -227,12 +231,38 @@ export function QuickTaskAdd({
         }
     };
 
+    const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+        const pastedText = e.clipboardData.getData("text");
+        if (pastedText.includes("\n")) {
+            e.preventDefault();
+            setValue(pastedText);
+            // Opcional: submeter automaticamente se desejar, mas o usuário pode querer revisar
+            // handleSubmit(); 
+        }
+    };
+
     return (
         <>
             <div className={cn(
-                "flex items-center bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300 transition-all",
-                isCreatingBatch && "opacity-50 pointer-events-none"
+                "flex items-center transition-all relative",
+                variant === "default" && "bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
+                variant === "ghost" && "h-10 px-4 border-b border-transparent hover:bg-gray-50",
+                isCreatingBatch && "opacity-50 pointer-events-none",
+                className
             )}>
+                {/* Ghost Mode Elements */}
+                {variant === "ghost" && (
+                    <>
+                        {/* Ghost Drag Handle (Invisible placeholder) */}
+                        <div className="w-[26px] flex-shrink-0" />
+                        
+                        {/* Ghost Checkbox */}
+                        <div className="flex-shrink-0 mr-3">
+                            <div className="w-4 h-4 rounded border border-gray-200 bg-transparent" />
+                        </div>
+                    </>
+                )}
+
                 {isCreatingBatch && (
                     <Loader2 className="size-4 text-gray-400 animate-spin mr-2" />
                 )}
@@ -241,9 +271,13 @@ export function QuickTaskAdd({
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
                     placeholder={placeholder}
                     disabled={isCreatingBatch}
-                    className="flex-1 bg-transparent border-none focus-visible:ring-0 p-0 text-sm placeholder:text-gray-400"
+                    className={cn(
+                        "flex-1 bg-transparent border-none focus-visible:ring-0 p-0 text-sm placeholder:text-gray-400",
+                        variant === "ghost" && "h-full"
+                    )}
                 />
 
             {/* Área de Ações */}

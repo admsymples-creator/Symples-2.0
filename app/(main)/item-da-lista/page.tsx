@@ -144,7 +144,7 @@ export default function ItemDaListaPage() {
                             <TaskRowHome
                                 task={taskRowHomeData}
                                 onToggle={(id, checked) => console.log("Toggle", id, checked)}
-                                onEdit={(id) => console.log("Edit", id)}
+                                onEdit={async (id, newTitle) => console.log("Edit", id, newTitle)}
                                 onDelete={(id) => console.log("Delete", id)}
                             />
                         </div>
@@ -255,4 +255,5 @@ export default function ItemDaListaPage() {
         </div>
     );
 }
+
 

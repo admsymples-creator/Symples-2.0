@@ -56,7 +56,7 @@ export async function createTransaction(data: TransactionData) {
       type: data.type,
       description: data.description,
       category: data.category,
-      date: data.date.toISOString(),
+      due_date: data.date.toISOString(),
       status: data.status,
       workspace_id: workspaceId,
       // @ts-ignore: Campo pode não existir nos tipos ainda
@@ -90,8 +90,8 @@ export async function getFinanceMetrics(month: number, year: number) {
   const { data: transactions, error } = await supabase
     .from("transactions")
     .select("*")
-    .gte("date", startDate)
-    .lte("date", endDate);
+    .gte("due_date", startDate)
+    .lte("due_date", endDate);
 
   if (error) {
     console.error("Erro ao buscar métricas:", error);
@@ -145,14 +145,14 @@ export async function getTransactions(filters?: { limit?: number; startDate?: st
   let query = supabase
     .from("transactions")
     .select("*")
-    .order("date", { ascending: false });
+    .order("due_date", { ascending: false });
 
   if (filters?.startDate) {
-    query = query.gte("date", filters.startDate);
+    query = query.gte("due_date", filters.startDate);
   }
   
   if (filters?.endDate) {
-    query = query.lte("date", filters.endDate);
+    query = query.lte("due_date", filters.endDate);
   }
 
   if (filters?.limit) {

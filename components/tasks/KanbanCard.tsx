@@ -93,18 +93,9 @@ export function KanbanCard({
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
     const isToday = dueDate && new Date(dueDate).toDateString() === new Date().toDateString();
     
-    // Obter configuração do status
+    // Obter configuração do status (apenas label, sem cores)
     const dbStatus = mapLabelToStatus(status);
     const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
-    
-    // Mapear cores Tailwind para valores hex para uso em style inline
-    const statusColorMap: Record<string, string> = {
-        'bg-slate-500': '#64748b',
-        'bg-blue-500': '#3b82f6',
-        'bg-green-500': '#22c55e',
-        'bg-gray-500': '#6b7280',
-    };
-    const statusBorderColor = statusColorMap[statusConfig.color] || '#64748b';
 
     // Hook do dnd-kit para tornar o card sortable
     const {
@@ -133,10 +124,7 @@ export function KanbanCard({
     return (
         <div
             ref={setNodeRef}
-            style={{
-                ...dragStyle,
-                '--status-border-color': statusBorderColor,
-            } as React.CSSProperties & { '--status-border-color': string }}
+            style={dragStyle}
             {...attributes}
             {...listeners}
             className={cn(
@@ -145,15 +133,9 @@ export function KanbanCard({
                 "flex flex-col h-[140px]",
                 isDragging && "shadow-lg rotate-1"
             )}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = statusBorderColor;
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = '';
-            }}
             onClick={onClick}
         >
-            {/* Badge de Status no topo */}
+            {/* Badge de Status no topo (com cor isolada) */}
             <div className="flex items-center justify-between mb-2">
                 <Badge
                     variant="outline"
@@ -162,7 +144,7 @@ export function KanbanCard({
                         statusConfig.lightColor
                     )}
                 >
-                    <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color)} />
+                    <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
                     {statusConfig.label}
                 </Badge>
                 

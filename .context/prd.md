@@ -275,3 +275,5 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **Tipos TypeScript:** Definições completas para `task_comments`, `task_attachments`, `workspace_invites`, `audit_logs`
 - ✅ **Build Otimizado:** Projeto compila sem erros com Next.js 16.0.5
 - ✅ **Estrutura Supabase:** Clientes separados para browser, server e middleware
+- ✅ **Correções de Tipos:** Ajustes em `TaskRow` (`onEdit` retorna Promise), `finance/page.tsx` (campo `date` ao invés de `due_date`), `workspace-settings.ts` (tratamento de `role` nullable)
+- ✅ **Deploy em Produção:** Aplicação deployada em https://app.symples.org via Vercel

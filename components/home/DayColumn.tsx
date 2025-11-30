@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FolderOpen } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
-import { createTask } from "@/lib/actions/tasks";
+import { createTask, deleteTask, updateTask } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
@@ -15,6 +15,7 @@ interface DayColumnProps {
   dateObj?: Date; // Data completa para conversão ISO
   tasks: Task[];
   isToday?: boolean;
+  workspaces?: { id: string; name: string }[];
 }
 
 import { useRouter } from "next/navigation";
@@ -25,6 +26,7 @@ export function DayColumn({
   dateObj,
   tasks,
   isToday,
+  workspaces = [],
 }: DayColumnProps) {
   const router = useRouter();
   const [quickAddValue, setQuickAddValue] = useState("");
@@ -59,33 +61,43 @@ export function DayColumn({
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedValue = quickAddValue.trim();
-    if (!trimmedValue) return;
+    const trimmedValue = quickAddValue; // Don't trim here to preserve line breaks
+    if (!trimmedValue.trim()) return;
 
     // Processar input (detectar batch ou single)
-    const tasks = processBatchInput(trimmedValue);
+    const tasksToCreate = processBatchInput(trimmedValue);
 
-    if (tasks.length === 0) {
+    if (tasksToCreate.length === 0) {
       setQuickAddValue("");
       return;
     }
 
-    // Limpar input imediatamente (Optimistic UI)
-    setQuickAddValue("");
-
-    // Converter data para ISO se dateObj estiver disponível
-    let dueDateISO: string | undefined = undefined;
-    if (dateObj) {
-      const dueDate = new Date(dateObj);
-      dueDate.setHours(0, 0, 0, 0);
-      dueDateISO = dueDate.toISOString();
+    // Limite de segurança para criação em lote
+    const HARD_LIMIT = 20;
+    if (tasksToCreate.length > HARD_LIMIT) {
+      const confirmed = window.confirm(
+        `Você está prestes a criar ${tasksToCreate.length} tarefas de uma vez. O limite recomendado é ${HARD_LIMIT}. Deseja continuar?`
+      );
+      if (!confirmed) {
+        return;
+      }
     }
 
+    // Limpar input imediatamente (Optimistic UI)
+    setQuickAddValue("");
+    
     // Criar tarefas no backend (batch create)
     setIsCreating(true);
     try {
+      let dueDateISO: string | undefined = undefined;
+      if (dateObj) {
+        const dueDate = new Date(dateObj);
+        dueDate.setHours(0, 0, 0, 0);
+        dueDateISO = dueDate.toISOString();
+      }
+
       // Criar todas as tarefas em paralelo usando Promise.all
-      const createPromises = tasks.map((title) =>
+      const createPromises = tasksToCreate.map((title) =>
         createTask({
           title,
           due_date: dueDateISO,
@@ -107,7 +119,7 @@ export function DayColumn({
         }
       }
 
-      // Recarregar a página para mostrar as novas tarefas
+      // Recarregar a página para mostrar as novas tarefas se pelo menos uma funcionou
       if (results.some((r) => r.success)) {
         router.refresh();
       }
@@ -117,6 +129,53 @@ export function DayColumn({
       setIsCreating(false);
     }
   };
+
+  const handleToggle = async (id: string, checked: boolean) => {
+      try {
+          await updateTask({
+              id,
+              status: checked ? "done" : "todo"
+          });
+          router.refresh();
+      } catch (error) {
+          console.error("Erro ao atualizar status:", error);
+      }
+  };
+
+  const handleDelete = async (id: string) => {
+      if (!confirm("Tem certeza que deseja excluir esta tarefa?")) return;
+      try {
+          await deleteTask(id);
+          router.refresh();
+      } catch (error) {
+          console.error("Erro ao excluir tarefa:", error);
+      }
+  };
+
+  const handleEdit = async (id: string, newTitle: string) => {
+      try {
+          await updateTask({
+              id,
+              title: newTitle
+          });
+          router.refresh();
+      } catch (error) {
+          console.error("Erro ao editar tarefa:", error);
+      }
+  };
+
+  const handleMoveToWorkspace = async (id: string, workspaceId: string) => {
+      try {
+          await updateTask({
+              id,
+              workspace_id: workspaceId,
+              is_personal: false
+          });
+          router.refresh();
+      } catch (error) {
+          console.error("Erro ao mover tarefa:", error);
+      }
+  }
 
   // Determinar cor de fundo baseada no estado
   const bgColor = isToday ? "bg-green-50/20" : "bg-gray-50/50";
@@ -136,14 +195,19 @@ export function DayColumn({
       </div>
 
       {/* Tasks List - Flex-1 (Ocupa espaço restante) com Scroll */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 flex flex-col px-3">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0 flex flex-col px-3">
         <div className="flex-1">
           {tasks.length > 0 ? (
-            <div className="px-2">
+            <div className="px-2 space-y-0"> 
               {tasks.map((task) => (
                 <TaskRow
                   key={task.id}
                   task={task}
+                  workspaces={workspaces}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onEdit={handleEdit}
+                  onMoveToWorkspace={handleMoveToWorkspace}
                 />
               ))}
             </div>
@@ -166,15 +230,26 @@ export function DayColumn({
             >
               <div className="flex items-center gap-3 pl-2">
                 <div className="w-4 h-4 flex-shrink-0" />
-                <input
-                  type="text"
+                {/* Textarea para suportar múltiplas linhas ao colar */}
+                <textarea
                   placeholder="+ Adicionar item..."
                   value={quickAddValue}
                   onChange={(e) => setQuickAddValue(e.target.value)}
                   onFocus={() => setIsQuickAddFocused(true)}
                   onBlur={() => setIsQuickAddFocused(false)}
+                  onKeyDown={(e) => {
+                    // Permitir Enter para enviar (se não for Shift+Enter)
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      // Disparar submit manualmente
+                      const form = e.currentTarget.closest('form');
+                      if (form) form.requestSubmit();
+                    }
+                  }}
                   disabled={isCreating}
-                  className="text-sm h-8 flex-1 bg-transparent border-0 outline-none placeholder:text-gray-400 text-gray-700 focus:placeholder:text-gray-300 disabled:opacity-50"
+                  rows={1}
+                  className="text-sm h-8 flex-1 bg-transparent border-0 outline-none placeholder:text-gray-400 text-gray-700 focus:placeholder:text-gray-300 disabled:opacity-50 resize-none overflow-hidden py-1.5"
+                  style={{ minHeight: '2rem' }}
                 />
               </div>
             </div>

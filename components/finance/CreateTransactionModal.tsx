@@ -35,6 +35,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createTransaction } from "@/lib/actions/finance";
+import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
 
 interface CreateTransactionModalProps {
   open: boolean;
@@ -213,8 +214,12 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
                 <CalendarIcon className="w-3.5 h-3.5 text-gray-400" />
                 <Label className="text-xs font-medium text-gray-400">Data</Label>
               </div>
-              <Popover>
-                <PopoverTrigger asChild>
+              <TaskDatePicker
+                date={date || null}
+                onSelect={(d) => setDate(d || undefined)}
+                align="start"
+                side="bottom"
+                trigger={
                   <Button
                     variant={"ghost"}
                     className={cn(
@@ -224,17 +229,8 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
                   >
                     {date ? format(date, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecione</span>}
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    initialFocus
-                    locale={ptBR}
-                  />
-                </PopoverContent>
-              </Popover>
+                }
+              />
             </div>
 
             {/* Status */}

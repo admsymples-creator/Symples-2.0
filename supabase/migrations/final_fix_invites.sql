@@ -89,3 +89,4 @@ CREATE POLICY "Users can accept invites for own email"
         email = (SELECT email FROM public.profiles WHERE id = auth.uid())
     );
 
+

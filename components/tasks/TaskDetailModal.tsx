@@ -16,6 +16,7 @@ import {
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL } from "@/lib/config/tasks";
 // Force rebuild due to runtime error
 import {
     Dialog,
@@ -339,7 +340,7 @@ export function TaskDetailModal({
 
             try {
                 // 1. Fazer upload para o Storage
-                const uploadResult = await uploadToStorage(file, "attachments");
+                const uploadResult = await uploadToStorage(file, "task-attachments");
 
                 if (!uploadResult.success || !uploadResult.url) {
                     throw new Error(uploadResult.error || "Erro ao fazer upload");
@@ -446,21 +447,21 @@ export function TaskDetailModal({
         
         if (currentSubTask?.assignee?.name === selectedUser?.name) {
             newSubTasks = subTasks.map((st) =>
-                st.id === subTaskId 
-                    ? { ...st, assignee: undefined }
-                    : st
+                    st.id === subTaskId 
+                        ? { ...st, assignee: undefined }
+                        : st
             );
         } else {
             newSubTasks = subTasks.map((st) =>
-                st.id === subTaskId 
-                    ? { 
-                        ...st, 
+                    st.id === subTaskId 
+                        ? { 
+                            ...st, 
                         assignee: selectedUser ? {
                             name: selectedUser.name,
                             avatar: selectedUser.avatar,
-                        } : undefined
-                    }
-                    : st
+                            } : undefined
+                        }
+                        : st
             );
         }
         setSubTasks(newSubTasks);
@@ -471,9 +472,9 @@ export function TaskDetailModal({
     
     const handleRemoveSubTaskAssignee = async (subTaskId: string) => {
         const newSubTasks = subTasks.map((st) =>
-            st.id === subTaskId 
-                ? { ...st, assignee: undefined }
-                : st
+                st.id === subTaskId 
+                    ? { ...st, assignee: undefined }
+                    : st
         );
         setSubTasks(newSubTasks);
         if (currentTaskId && !isCreateMode) {
@@ -483,7 +484,7 @@ export function TaskDetailModal({
 
     const handleToggleSubTask = async (id: string) => {
         const newSubTasks = subTasks.map((st) =>
-            st.id === id ? { ...st, completed: !st.completed } : st
+                st.id === id ? { ...st, completed: !st.completed } : st
         );
         setSubTasks(newSubTasks);
         if (currentTaskId && !isCreateMode) {
@@ -644,7 +645,7 @@ export function TaskDetailModal({
                     }));
                     setActivities(mappedActivities);
                 }
-                setComment("");
+            setComment("");
                 toast.success("Comentário adicionado");
                 onTaskUpdated?.();
             } else {
@@ -876,17 +877,15 @@ export function TaskDetailModal({
                                     <SelectTrigger className="h-8 px-2 -ml-2 justify-start hover:bg-gray-100 border-0 bg-transparent [&>svg]:hidden">
                                         <div className="flex items-center justify-between w-full gap-2">
                                             <SelectValue>
-                                                {status === "done" && "Finalizado"}
-                                                {status === "in_progress" && "Em progresso"}
-                                                {status === "todo" && "Não iniciado"}
+                                                {mapStatusToLabel(status)}
                                             </SelectValue>
                                             <ChevronDown className="h-3 w-3 text-gray-400 opacity-50" />
                                         </div>
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="todo">Não iniciado</SelectItem>
-                                        <SelectItem value="in_progress">Em progresso</SelectItem>
-                                        <SelectItem value="done">Finalizado</SelectItem>
+                                        <SelectItem value="todo">{STATUS_TO_LABEL.todo}</SelectItem>
+                                        <SelectItem value="in_progress">{STATUS_TO_LABEL.in_progress}</SelectItem>
+                                        <SelectItem value="done">{STATUS_TO_LABEL.done}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -932,9 +931,9 @@ export function TaskDetailModal({
                                             {task?.assignee ? (
                                                 <div className="flex items-center gap-2">
                                                     {task.assignee.avatar ? (
-                                                        <img
-                                                            src={task.assignee.avatar}
-                                                            alt={task.assignee.name}
+                                        <img
+                                            src={task.assignee.avatar}
+                                            alt={task.assignee.name}
                                                             className="w-6 h-6 rounded-full"
                                                         />
                                                     ) : (
@@ -966,13 +965,13 @@ export function TaskDetailModal({
                                                             <img
                                                                 src={user.avatar}
                                                                 alt={user.name}
-                                                                className="w-5 h-5 rounded-full"
-                                                            />
-                                                        ) : (
-                                                            <User className="w-4 h-4 text-gray-400" />
-                                                        )}
+                                            className="w-5 h-5 rounded-full"
+                                        />
+                                    ) : (
+                                        <User className="w-4 h-4 text-gray-400" />
+                                    )}
                                                         <span>{user.name}</span>
-                                                    </div>
+                                </div>
                                                 </SelectItem>
                                             ))
                                         )}
@@ -992,7 +991,7 @@ export function TaskDetailModal({
                                             className="h-8 px-2 -ml-2 justify-start hover:bg-gray-100 border-0"
                                         >
                                             <div className="flex items-center gap-2">
-                                                <Calendar className="w-4 h-4 text-gray-400" />
+                                    <Calendar className="w-4 h-4 text-gray-400" />
                                                 <span
                                                     className={cn(
                                                         "text-sm",
@@ -1014,9 +1013,9 @@ export function TaskDetailModal({
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-auto p-3" align="start">
-                                        <Input
-                                            type="date"
-                                            value={dueDate}
+                                    <Input
+                                        type="date"
+                                        value={dueDate}
                                             onChange={async (e) => {
                                                 const newValue = e.target.value;
                                                 setDueDate(newValue);
@@ -1309,7 +1308,7 @@ export function TaskDetailModal({
                                                     }}
                                                 >
                                                     <SelectTrigger className="h-7 w-[140px] text-xs border-gray-200">
-                                                        <SelectValue placeholder="Atribuir..." />
+                                                            <SelectValue placeholder="Atribuir..." />
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {availableUsers.map((user) => (
@@ -1471,20 +1470,20 @@ export function TaskDetailModal({
                                                 </div>
                                             ) : (
                                                 activities.map((activity) => (
-                                                    <div
-                                                        key={activity.id}
-                                                        className="flex gap-3 text-sm relative"
-                                                    >
-                                                        <div className="flex-shrink-0 relative z-10">
-                                                            <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <p className="text-gray-700">
-                                                                <span className="font-medium">{activity.user}</span>{" "}
-                                                                {activity.type === "created" && "criou a tarefa"}
-                                                                {activity.type === "commented" && "comentou"}
-                                                                {activity.type === "updated" && "atualizou a tarefa"}
-                                                                {activity.type === "file_shared" && "enviou um arquivo"}
+                                                <div
+                                                    key={activity.id}
+                                                    className="flex gap-3 text-sm relative"
+                                                >
+                                                    <div className="flex-shrink-0 relative z-10">
+                                                        <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="text-gray-700">
+                                                            <span className="font-medium">{activity.user}</span>{" "}
+                                                            {activity.type === "created" && "criou a tarefa"}
+                                                            {activity.type === "commented" && "comentou"}
+                                                            {activity.type === "updated" && "atualizou a tarefa"}
+                                                            {activity.type === "file_shared" && "enviou um arquivo"}
                                                                 {activity.type === "audio" && "enviou um áudio"}
                                                             </p>
                                                             {activity.type === "audio" ? (
@@ -1497,33 +1496,33 @@ export function TaskDetailModal({
                                                                 </div>
                                                             ) : (
                                                                 <>
-                                                                    {activity.message && (
-                                                                        <p className="text-gray-600 mt-1">{activity.message}</p>
+                                                        {activity.message && (
+                                                            <p className="text-gray-600 mt-1">{activity.message}</p>
                                                                     )}
                                                                 </>
-                                                            )}
-                                                            {activity.file && (
-                                                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
-                                                                    {activity.file.type === "image" ? (
-                                                                        <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                                                    ) : activity.file.type === "pdf" ? (
-                                                                        <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
-                                                                    ) : (
-                                                                        <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                                    )}
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <p className="text-xs font-medium text-gray-700 truncate">
-                                                                            {activity.file.name}
-                                                                        </p>
-                                                                        <p className="text-xs text-gray-500">{activity.file.size}</p>
-                                                                    </div>
+                                                        )}
+                                                        {activity.file && (
+                                                            <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
+                                                                {activity.file.type === "image" ? (
+                                                                    <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                                ) : activity.file.type === "pdf" ? (
+                                                                    <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                                                ) : (
+                                                                    <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                                )}
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-xs font-medium text-gray-700 truncate">
+                                                                        {activity.file.name}
+                                                                    </p>
+                                                                    <p className="text-xs text-gray-500">{activity.file.size}</p>
                                                                 </div>
-                                                            )}
-                                                            <p className="text-xs text-gray-400 mt-1">
-                                                                {activity.timestamp}
-                                                            </p>
-                                                        </div>
+                                                            </div>
+                                                        )}
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            {activity.timestamp}
+                                                        </p>
                                                     </div>
+                                                </div>
                                                 ))
                                             )}
                                         </div>
@@ -1534,28 +1533,28 @@ export function TaskDetailModal({
                                         {!isRecording ? (
                                             <>
                                                 <div className="relative">
-                                                    <Input
-                                                        value={comment}
-                                                        onChange={(e) => setComment(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter" && !e.shiftKey) {
-                                                                e.preventDefault();
-                                                                handleSendComment();
-                                                            }
-                                                        }}
-                                                        placeholder="Adicionar comentário..."
+                                        <Input
+                                            value={comment}
+                                            onChange={(e) => setComment(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSendComment();
+                                                }
+                                            }}
+                                            placeholder="Adicionar comentário..."
                                                         className="pr-32"
-                                                    />
+                                        />
                                                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
                                                             className="h-8 w-8 text-gray-400 hover:text-green-600"
-                                                            onClick={() => {}}
-                                                        >
-                                                            <Paperclip className="h-4 w-4" />
-                                                        </Button>
+                                            onClick={() => {}}
+                                        >
+                                            <Paperclip className="h-4 w-4" />
+                                        </Button>
                                                         <Button
                                                             type="button"
                                                             variant="ghost"
@@ -1565,14 +1564,14 @@ export function TaskDetailModal({
                                                         >
                                                             <Mic className="h-4 w-4" />
                                                         </Button>
-                                                        <Button
-                                                            onClick={handleSendComment}
-                                                            size="icon"
+                                        <Button
+                                            onClick={handleSendComment}
+                                            size="icon"
                                                             className="h-8 w-8 bg-green-600 hover:bg-green-700"
                                                             disabled={!comment.trim()}
-                                                        >
-                                                            <Send className="h-4 w-4" />
-                                                        </Button>
+                                        >
+                                            <Send className="h-4 w-4" />
+                                        </Button>
                                                     </div>
                                                 </div>
                                             </>

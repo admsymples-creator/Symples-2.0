@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
-    status TEXT DEFAULT 'todo' NOT NULL CHECK (status IN ('todo', 'in_progress', 'review', 'done', 'archived')),
+    status TEXT DEFAULT 'todo' NOT NULL CHECK (status IN ('todo', 'in_progress', 'review', 'correction', 'done', 'archived')),
     priority TEXT DEFAULT 'medium' NOT NULL CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
     position DOUBLE PRECISION DEFAULT 0,
     due_date TIMESTAMPTZ,
@@ -375,8 +375,11 @@ DROP POLICY IF EXISTS "Users can view workspace if member" ON public.workspaces;
 CREATE POLICY "Users can view workspace if member"
     ON public.workspaces FOR SELECT
     USING (
-        (owner_id = auth.uid() OR is_workspace_member(id))
-        AND has_active_subscription(id) -- Verificar subscription ativa
+        -- Owner sempre pode ver seu workspace, mesmo sem subscription ativa
+        (owner_id = auth.uid())
+        OR
+        -- Membros precisam ter subscription ativa
+        (is_workspace_member(id) AND has_active_subscription(id))
     );
 
 DROP POLICY IF EXISTS "Owners can update workspace" ON public.workspaces;
@@ -407,7 +410,18 @@ CREATE POLICY "Members can view workspace members"
 DROP POLICY IF EXISTS "Admins can add workspace members" ON public.workspace_members;
 CREATE POLICY "Admins can add workspace members"
     ON public.workspace_members FOR INSERT
-    WITH CHECK (is_workspace_admin(workspace_id));
+    WITH CHECK (
+        -- Owner pode se adicionar como membro durante criação do workspace
+        EXISTS (
+            SELECT 1 FROM public.workspaces
+            WHERE workspaces.id = workspace_members.workspace_id
+            AND workspaces.owner_id = auth.uid()
+            AND workspace_members.user_id = auth.uid()
+        )
+        OR
+        -- Admin pode adicionar outros membros
+        is_workspace_admin(workspace_id)
+    );
 
 DROP POLICY IF EXISTS "Admins can update workspace member roles" ON public.workspace_members;
 CREATE POLICY "Admins can update workspace member roles"
