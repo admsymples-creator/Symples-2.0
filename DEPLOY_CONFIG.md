@@ -2,7 +2,7 @@
 
 ## Estrutura de Branches
 
-- **`main`**: Branch de desenvolvimento (dev)
+- **`develop`**: Branch de desenvolvimento (dev)
   - Deploy automático para ambiente Preview na Vercel
   - Usado para testar features antes de ir para produção
   
@@ -21,7 +21,7 @@
 ### 2. Configurar Preview Branches
 
 1. Na mesma página de configurações Git
-2. Em **Preview Branches**, certifique-se de que `main` está incluído
+2. Em **Preview Branches**, certifique-se de que `develop` está incluído
 3. Todas as outras branches também gerarão previews automaticamente
 
 ### 3. Variáveis de Ambiente
@@ -33,14 +33,14 @@ As variáveis de ambiente já estão configuradas para ambos os ambientes:
 
 ## Fluxo de Trabalho
 
-1. **Desenvolvimento**: Trabalhe na branch `main`
+1. **Desenvolvimento**: Trabalhe na branch `develop`
    ```bash
-   git checkout main
-   git pull origin main
+   git checkout develop
+   git pull origin develop
    # Faça suas alterações
    git add .
    git commit -m "feat: nova feature"
-   git push origin main
+   git push origin develop
    ```
    - Isso gerará um deploy Preview automaticamente
 
@@ -48,7 +48,7 @@ As variáveis de ambiente já estão configuradas para ambos os ambientes:
    ```bash
    git checkout master
    git pull origin master
-   git merge main
+   git merge develop
    git push origin master
    ```
    - Isso gerará um deploy Production automaticamente
@@ -56,6 +56,6 @@ As variáveis de ambiente já estão configuradas para ambos os ambientes:
 ## URLs
 
 - **Produção**: https://app.symples.org (branch `master`)
-- **Preview**: URLs geradas automaticamente para cada commit em `main` ou PRs
+- **Preview**: URLs geradas automaticamente para cada commit em `develop` ou PRs
 
 

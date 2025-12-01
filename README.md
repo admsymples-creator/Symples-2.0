@@ -110,7 +110,7 @@ Consulte os arquivos em `.context/` para mais detalhes:
 O projeto está deployado na [Vercel](https://vercel.com) com a seguinte configuração de branches:
 
 - **`master`**: Branch de produção → Deploy automático em https://app.symples.org
-- **`main`**: Branch de desenvolvimento → Deploy automático em Preview
+- **`develop`**: Branch de desenvolvimento → Deploy automático em Preview
 
 Veja `DEPLOY_CONFIG.md` para detalhes completos da configuração.
 
