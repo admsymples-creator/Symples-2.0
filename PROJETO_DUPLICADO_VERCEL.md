@@ -70,3 +70,4 @@ Para linkar ao projeto correto:
 vercel link --project symples-2-0 --yes
 ```
 
+

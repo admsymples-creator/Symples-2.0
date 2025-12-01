@@ -58,3 +58,4 @@ As variáveis de ambiente já estão configuradas para ambos os ambientes:
 - **Produção**: https://app.symples.org (branch `master`)
 - **Preview**: URLs geradas automaticamente para cada commit em `main` ou PRs
 
+

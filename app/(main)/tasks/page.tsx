@@ -2117,6 +2117,7 @@ export default function TasksPage() {
 
             {/* Modal de Detalhes */}
             <TaskDetailModal
+                key={selectedTaskId}
                 open={isModalOpen}
                 onOpenChange={(open) => {
                     setIsModalOpen(open);

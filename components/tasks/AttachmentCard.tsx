@@ -67,8 +67,22 @@ export function AttachmentCard({ file, onDelete, onPreview }: AttachmentCardProp
                         onError={() => setImageError(true)}
                     />
                     
-                    {/* Overlay no Hover */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                    {/* Botão de exclusão no canto superior direito */}
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-1 right-1 h-6 w-6 bg-black/50 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(file.id);
+                        }}
+                    >
+                        <X className="h-3 w-3" />
+                    </Button>
+
+                    {/* Overlay no Hover para preview */}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                         <Button
                             type="button"
                             variant="ghost"
@@ -80,18 +94,6 @@ export function AttachmentCard({ file, onDelete, onPreview }: AttachmentCardProp
                             }}
                         >
                             <Maximize2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 bg-white/90 hover:bg-red-500 hover:text-white text-gray-700"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete(file.id);
-                            }}
-                        >
-                            <Trash2 className="h-4 w-4" />
                         </Button>
                     </div>
 
@@ -107,7 +109,7 @@ export function AttachmentCard({ file, onDelete, onPreview }: AttachmentCardProp
 
     // Layout padrão para PDF e outros arquivos
     return (
-        <div className="h-32 flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors group/item">
+        <div className="relative h-32 flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors group/item">
             <div className="flex-shrink-0">
                 {file.type === "pdf" ? (
                     <FileText className="w-5 h-5 text-red-500" />
@@ -134,17 +136,17 @@ export function AttachmentCard({ file, onDelete, onPreview }: AttachmentCardProp
                 )}
                 <p className="text-xs text-gray-500">{file.size}</p>
             </div>
+            {/* Botão de exclusão no canto superior direito */}
             <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                className="absolute top-1 right-1 h-6 w-6 bg-gray-200/80 hover:bg-red-500 text-gray-600 hover:text-white opacity-0 group-hover/item:opacity-100 transition-opacity z-10"
                 onClick={() => onDelete(file.id)}
             >
-                <Trash2 className="h-3 w-3 text-gray-400 hover:text-red-500" />
+                <X className="h-3 w-3" />
             </Button>
         </div>
     );
 }
-
 

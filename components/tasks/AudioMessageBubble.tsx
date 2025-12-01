@@ -27,27 +27,56 @@ export function AudioMessageBubble({
         return `${mins}:${secs.toString().padStart(2, "0")}`;
     };
 
-    // Inicializar elemento de áudio se houver URL
+    // Validar se a URL é "tocável"
+    const isPlayableUrl = (url?: string) => {
+        return url && (url.startsWith("http") || url.startsWith("blob:")); // Aceita HTTP e Blob URLs
+    };
+
+    // Inicializar elemento de áudio se houver URL válida
     useEffect(() => {
-        if (audioUrl) {
+        console.log("AudioMessageBubble - audioUrl recebido:", audioUrl, "isPlayable:", isPlayableUrl(audioUrl));
+        
+        if (isPlayableUrl(audioUrl)) {
+            console.log("Criando elemento de áudio com URL:", audioUrl);
             const audio = new Audio(audioUrl);
+            
             audio.addEventListener("timeupdate", () => {
                 setCurrentTime(audio.currentTime);
             });
+            
             audio.addEventListener("ended", () => {
                 setIsPlaying(false);
                 setCurrentTime(0);
             });
+            
+            audio.addEventListener("error", (e) => {
+                console.error("Erro ao carregar áudio:", e, "URL:", audioUrl);
+                setAudioElement(null); // Fallback
+            });
+            
+            audio.addEventListener("loadeddata", () => {
+                console.log("Áudio carregado com sucesso. Duração:", audio.duration);
+            });
+            
             setAudioElement(audio);
+            
             return () => {
+                audio.pause();
                 audio.removeEventListener("timeupdate", () => {});
                 audio.removeEventListener("ended", () => {});
+                audio.removeEventListener("error", () => {});
+                audio.removeEventListener("loadeddata", () => {});
             };
+        } else {
+            console.log("URL não é tocável, usando simulação visual");
+            setAudioElement(null);
         }
     }, [audioUrl]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout | null = null;
+        // Se estiver tocando e (não tiver elemento de áudio OU tiver elemento tocando)
+        // A lógica aqui é: se tem elemento, ele controla o tempo. Se não tem (simulação), o intervalo controla.
         if (isPlaying && !audioElement) {
             // Simulação sem áudio real
             interval = setInterval(() => {
@@ -66,18 +95,46 @@ export function AudioMessageBubble({
     }, [isPlaying, audioElement, duration]);
 
     const handlePlayPause = () => {
+        console.log("handlePlayPause chamado. audioElement:", !!audioElement, "isPlaying:", isPlaying, "audioUrl:", audioUrl);
+        
         if (audioElement) {
+            // Tentar tocar áudio real
             if (isPlaying) {
+                console.log("Pausando áudio");
                 audioElement.pause();
+                setIsPlaying(false);
             } else {
-                audioElement.play();
+                console.log("Tentando tocar áudio. Estado do elemento:", {
+                    readyState: audioElement.readyState,
+                    duration: audioElement.duration,
+                    src: audioElement.src
+                });
+                
+                const playPromise = audioElement.play();
+                if (playPromise !== undefined) {
+                    playPromise
+                        .then(() => {
+                            console.log("Áudio começou a tocar com sucesso");
+                            setIsPlaying(true);
+                        })
+                        .catch((error) => {
+                            console.error("Erro ao reproduzir áudio:", error);
+                            // Fallback para simulação visual se falhar (ex: NotSupportedError)
+                            setAudioElement(null);
+                            setIsPlaying(true);
+                        });
+                }
             }
-            setIsPlaying(!isPlaying);
         } else {
-            // Simulação sem áudio real
-            setIsPlaying(!isPlaying);
-            if (!isPlaying) {
-                setCurrentTime(0);
+            console.log("Sem audioElement, usando simulação visual");
+            // Simulação visual apenas
+            if (isPlaying) {
+                setIsPlaying(false);
+            } else {
+                setIsPlaying(true);
+                if (currentTime >= duration) {
+                    setCurrentTime(0);
+                }
             }
         }
     };
@@ -152,4 +209,3 @@ export function AudioMessageBubble({
         </div>
     );
 }
-

@@ -3,6 +3,7 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useTaskPreload } from "@/hooks/use-task-preload";
 import {
     Tooltip,
     TooltipContent,
@@ -128,6 +129,7 @@ export function TaskRow({
     hasComments = false,
     commentCount = 0,
 }: TaskRowProps) {
+    const { preloadTask, cancelPreload } = useTaskPreload();
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
     // Obter apenas o label do status (sem cores - cores vêm apenas do grupo)
     const dbStatus = mapLabelToStatus(status);
@@ -259,6 +261,8 @@ export function TaskRow({
                     "group flex items-center w-full border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors h-10 px-4 relative",
                     isDragging && "shadow-lg bg-white rounded-lg z-50"
                 )}
+                onMouseEnter={() => preloadTask(id, workspaceId)}
+                onMouseLeave={cancelPreload}
             >
             {/* Barra Lateral Colorida (linha contínua) - APENAS Cor do Grupo */}
             {(groupColorClass || isHexColor) && (

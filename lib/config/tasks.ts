@@ -27,7 +27,7 @@ export interface TaskStatusConfig {
 
 export const TASK_CONFIG: Record<string, TaskStatusConfig> = {
   [TASK_STATUS.TODO]: { 
-    label: 'Não iniciada',
+    label: 'Não iniciado',
     color: 'fill-gray-500',
     lightColor: 'bg-gray-100 text-gray-600',
   },
@@ -47,7 +47,7 @@ export const TASK_CONFIG: Record<string, TaskStatusConfig> = {
     lightColor: 'bg-orange-100 text-orange-700',
   },
   [TASK_STATUS.DONE]: { 
-    label: 'Finalizado',
+    label: 'Concluido',
     color: 'fill-green-500',
     lightColor: 'bg-green-100 text-green-700',
   },
@@ -69,25 +69,26 @@ export const ORDERED_STATUSES: TaskStatus[] = [
 
 // Mapeamento reverso: Label da UI -> Status do banco
 export const LABEL_TO_STATUS: Record<string, TaskStatus> = {
-  'Não iniciada': TASK_STATUS.TODO,
+  'Não iniciado': TASK_STATUS.TODO,
   'Em progresso': TASK_STATUS.IN_PROGRESS,
   'Revisão': TASK_STATUS.REVIEW,
   'Correção': TASK_STATUS.CORRECTION,
-  'Finalizado': TASK_STATUS.DONE,
+  'Concluido': TASK_STATUS.DONE,
   'Arquivado': TASK_STATUS.ARCHIVED,
   // Aliases para compatibilidade
   'Backlog': TASK_STATUS.TODO,
+  'Não iniciada': TASK_STATUS.TODO,
   'Execução': TASK_STATUS.IN_PROGRESS,
-  'Não iniciado': TASK_STATUS.TODO,
+  'Finalizado': TASK_STATUS.DONE,
 };
 
 // Mapeamento: Status do banco -> Label da UI
 export const STATUS_TO_LABEL: Record<TaskStatus, string> = {
-  [TASK_STATUS.TODO]: 'Não iniciada',
+  [TASK_STATUS.TODO]: 'Não iniciado',
   [TASK_STATUS.IN_PROGRESS]: 'Em progresso',
   [TASK_STATUS.REVIEW]: 'Revisão',
   [TASK_STATUS.CORRECTION]: 'Correção',
-  [TASK_STATUS.DONE]: 'Finalizado',
+  [TASK_STATUS.DONE]: 'Concluido',
   [TASK_STATUS.ARCHIVED]: 'Arquivado',
 };
 
@@ -116,4 +117,3 @@ export function mapStatusToLabel(status: TaskStatus | string): string {
 export function mapLabelToStatus(label: string): TaskStatus {
   return LABEL_TO_STATUS[label] || TASK_STATUS.TODO;
 }
-

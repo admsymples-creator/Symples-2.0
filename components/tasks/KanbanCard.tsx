@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { MoreHorizontal, Calendar as CalendarIcon, GitPullRequest, MessageSquare, User, X, Zap, AlertTriangle } from "lucide-react";
+import { useTaskPreload } from "@/hooks/use-task-preload";
 import { Avatar } from "./Avatar";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
@@ -136,6 +137,7 @@ export function KanbanCard({
     onToggleComplete,
     members,
 }: KanbanCardProps) {
+    const { preloadTask, cancelPreload } = useTaskPreload();
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
     const isToday = dueDate && new Date(dueDate).toDateString() === new Date().toDateString();
     
@@ -310,6 +312,8 @@ export function KanbanCard({
                 isDragging && "shadow-lg rotate-1"
             )}
             onClick={onClick}
+            onMouseEnter={() => preloadTask(id, null)}
+            onMouseLeave={cancelPreload}
         >
             {/* Menu de Ações Fixo no Canto Superior Direito */}
             <div 

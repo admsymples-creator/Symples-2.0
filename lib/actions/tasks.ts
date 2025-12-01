@@ -4,6 +4,7 @@ import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { Database } from "@/types/database.types";
 
+// Re-exporting types
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
 export type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
@@ -221,6 +222,7 @@ export async function createTask(data: {
   origin_context?: any;
   group_id?: string | null;
   tags?: string[];
+  subtasks?: any[];
 }) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -229,6 +231,9 @@ export async function createTask(data: {
 
   // Define se é pessoal ou de workspace
   const is_personal = data.is_personal ?? (!data.workspace_id);
+
+  // Garantir que subtasks seja um JSON válido
+  const subtasks = data.subtasks ? JSON.parse(JSON.stringify(data.subtasks)) : [];
 
   const { data: newTask, error } = await supabase.from("tasks").insert({
     title: data.title,
@@ -243,6 +248,7 @@ export async function createTask(data: {
     origin_context: data.origin_context || null,
     group_id: data.group_id || null,
     tags: data.tags || [],
+    subtasks: subtasks,
     // position será auto-gerado ou podemos calcular aqui se necessário
   }).select().single();
 

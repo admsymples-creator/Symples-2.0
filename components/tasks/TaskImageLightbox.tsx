@@ -80,6 +80,8 @@ export function TaskImageLightbox({
             {/* Conteúdo */}
             <Dialog.Content asChild>
               <div className="fixed inset-0 z-[101] flex items-center justify-center outline-none">
+                <Dialog.Title className="sr-only">{currentImage.name}</Dialog.Title>
+                
                 {/* Header: Nome e Fechar */}
                 <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/50 to-transparent">
                   <span className="text-white/90 text-sm font-medium truncate max-w-md">

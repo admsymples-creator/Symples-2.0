@@ -69,3 +69,4 @@ O erro "RLS policies não configuradas" deve ser resolvido e você conseguirá c
 **🚀 Execute agora em PROD e teste a criação de workspace!**
 
 
+

@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -5,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 interface StatePageProps {
-  icon: LucideIcon;
+  icon: React.ReactNode;
   title: string;
   description: string;
   actionLabel?: string;
@@ -16,7 +18,7 @@ interface StatePageProps {
 }
 
 export function StatePage({
-  icon: Icon,
+  icon,
   title,
   description,
   actionLabel,
@@ -48,7 +50,9 @@ export function StatePage({
   return (
     <div className={cn("flex flex-col items-center justify-center min-h-[60vh] text-center px-4", className)}>
       <div className={cn("p-4 rounded-full mb-6", styles.bg)}>
-        <Icon className={cn("size-16", styles.icon)} />
+        <div className={cn("size-16 flex items-center justify-center", styles.icon)}>
+          {icon}
+        </div>
       </div>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>

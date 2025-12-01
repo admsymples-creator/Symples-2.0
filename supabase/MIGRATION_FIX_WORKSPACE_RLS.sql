@@ -50,3 +50,4 @@ CREATE POLICY "Admins can add workspace members"
 SELECT '✅ RLS Policies corrigidas! Agora é possível criar workspaces.' as resultado;
 
 
+

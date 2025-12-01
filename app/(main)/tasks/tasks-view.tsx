@@ -507,6 +507,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             {/* Modal de Detalhes */}
             <TaskDetailModal
+                key={selectedTaskId}
                 open={isModalOpen}
                 onOpenChange={(open) => {
                     setIsModalOpen(open);
