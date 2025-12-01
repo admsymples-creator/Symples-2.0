@@ -255,6 +255,11 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **Gestão de Tarefas:** Sistema completo com drag & drop, filtros, agrupamento e modal de detalhes
 - ✅ **Sistema de Comentários:** Tabela `task_comments` com suporte a comentários, logs e metadados
 - ✅ **Sistema de Anexos:** Tabela `task_attachments` para upload e gestão de arquivos
+  - ✅ Upload de arquivos via drag & drop (`react-dropzone`)
+  - ✅ Upload de áudio com gravação em tempo real (`MediaRecorder API`)
+  - ✅ Preview de imagens e documentos
+  - ✅ Integração com Supabase Storage via hook `useFileUpload`
+  - ✅ Componentes `AttachmentCard` e `AudioMessageBubble` para exibição
 - ✅ **Módulo Financeiro:** Dashboard com KPIs, extrato e modal de criação de transações
 - ✅ **Gestão de Time:** Sistema de membros, convites (`workspace_invites`) e permissões
 - ✅ **Assistente IA:** Página `/assistant` com componente AIOrb e interface de chat
@@ -267,8 +272,17 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **NotificationsPopover:** Sistema de notificações
 - ✅ **UserNav:** Navegação de usuário com dropdown
 - ✅ **TaskDetailModal:** Modal completo para edição de tarefas
+  - ✅ Editor de texto rico (`Editor` component)
+  - ✅ Upload de arquivos com drag & drop
+  - ✅ Gravação e upload de áudio
+  - ✅ Timeline de atividades e comentários
+  - ✅ Gestão de subtarefas
+  - ✅ Sistema de tags
+  - ✅ Auto-save de campos
 - ✅ **TaskBoard:** Board Kanban com drag & drop
 - ✅ **TaskGroup:** Agrupamento de tarefas por status, prioridade ou assignee
+- ✅ **AttachmentCard:** Card para exibição de anexos com preview
+- ✅ **AudioMessageBubble:** Componente para playback de mensagens de áudio
 
 ### 10.3. Correções Técnicas Implementadas
 - ✅ **Suspense Boundaries:** `useSearchParams()` envolvido em Suspense em Sidebar e Settings

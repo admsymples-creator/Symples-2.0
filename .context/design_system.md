@@ -264,9 +264,14 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **TaskDetailModal (`components/tasks/TaskDetailModal.tsx`):**
   - Modal widescreen (`max-w-6xl`)
   - Split-screen: Editor (esquerda) + Contexto (direita)
-  - Rich text editor
+  - Rich text editor (`Editor` component)
   - Timeline de comentários e logs
-  - Galeria de anexos
+  - Galeria de anexos com drag & drop
+  - Upload de arquivos múltiplos via `react-dropzone`
+  - Gravação de áudio em tempo real (`MediaRecorder API`)
+  - Auto-save de campos com debounce
+  - Preview de imagens e documentos
+  - Estados de upload (loading, success, error)
 
 - **TaskBoard (`components/tasks/TaskBoard.tsx`):**
   - Board Kanban com drag & drop (@dnd-kit)
@@ -283,6 +288,18 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Estilo "Clean Checklist"
   - Barra vertical colorida para workspace
   - Hover actions (drag handle, raio, exclamação)
+
+- **AttachmentCard (`components/tasks/AttachmentCard.tsx`):**
+  - Card compacto para exibição de anexos
+  - Preview de imagens
+  - Ícones por tipo de arquivo
+  - Ações de download/remover
+
+- **AudioMessageBubble (`components/tasks/AudioMessageBubble.tsx`):**
+  - Player de áudio compacto
+  - Controles de play/pause
+  - Indicador de duração
+  - Waveform visual (quando disponível)
 
 ### 9.3. Componentes Financeiros
 - **CreateTransactionModal (`components/finance/CreateTransactionModal.tsx`):**
