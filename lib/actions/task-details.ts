@@ -681,7 +681,7 @@ export async function updateAudioTranscription(
 
     // Atualizar o metadata com a transcrição
     const updatedMetadata = {
-      ...comment.metadata,
+      ...(comment.metadata && typeof comment.metadata === 'object' ? comment.metadata : {}),
       transcription: transcription
     };
 

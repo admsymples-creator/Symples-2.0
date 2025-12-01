@@ -75,6 +75,8 @@ import {
     Share2,
     Globe,
     Lock,
+    Monitor,
+    Loader2,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -116,10 +118,15 @@ interface SubTask {
 
 interface Activity {
     id: string;
-    type: "created" | "commented" | "updated" | "file_shared" | "audio";
+    type: "created" | "commented" | "updated" | "file_shared" | "audio" | "origin";
     user: string;
     message?: string;
     timestamp: string;
+    origin?: {
+        type: string;
+        content: string;
+        source?: "whatsapp" | "web";
+    };
     file?: {
         name: string;
         type: "image" | "pdf" | "other";
@@ -128,7 +135,14 @@ interface Activity {
     audio?: {
         url?: string;
         duration?: number; // em segundos
+        transcription?: string; // transcrição do áudio
     };
+    attachedFiles?: Array<{
+        name: string;
+        url: string;
+        type: string;
+        size: string;
+    }>;
 }
 
 interface TaskDetailModalProps {

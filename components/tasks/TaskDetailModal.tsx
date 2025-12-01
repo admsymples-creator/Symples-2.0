@@ -19,7 +19,7 @@ import {
     generateTaskShareLink
 } from "@/lib/actions/task-details";
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
-import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG } from "@/lib/config/tasks";
+import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
     DialogHeader,
@@ -177,9 +177,9 @@ interface TaskDetailModalProps {
 
 const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const animationRef = useRef<number>();
-    const analyserRef = useRef<AnalyserNode>();
-    const sourceRef = useRef<MediaStreamAudioSourceNode>();
+    const animationRef = useRef<number | undefined>(undefined);
+    const analyserRef = useRef<AnalyserNode | undefined>(undefined);
+    const sourceRef = useRef<MediaStreamAudioSourceNode | undefined>(undefined);
 
     useEffect(() => {
         if (!stream || !canvasRef.current) return;
@@ -262,7 +262,7 @@ export function TaskDetailModal({
     // State - Inicializar vazios para evitar flash de conteúdo antigo
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [status, setStatus] = useState<any>("todo");
+    const [status, setStatus] = useState<TaskStatus>("todo");
     const [dueDate, setDueDate] = useState(initialDueDate || "");
     const [assignee, setAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
     const [subTasks, setSubTasks] = useState<SubTask[]>([]);
@@ -458,7 +458,7 @@ export function TaskDetailModal({
     
     // Memoizar lista de atividades renderizadas para melhor performance
     const renderedActivities = useMemo(() => {
-        return activities.map((act) => (
+        return activities.map((act: Activity) => (
             <div key={act.id} className="flex gap-3 text-sm relative group">
                 <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
                     <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
@@ -577,7 +577,7 @@ export function TaskDetailModal({
                                 </div>
                             )}
 
-                            {act.type !== "origin" && (
+                            {(act.type as Activity["type"]) !== "origin" && (
                                 <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
                             )}
                         </>
@@ -1003,9 +1003,9 @@ export function TaskDetailModal({
     const handleStatusChange = async (newStatus: string) => {
         if (status === newStatus) return;
         const oldLabel = STATUS_TO_LABEL[status];
-        const newLabel = STATUS_TO_LABEL[newStatus];
+        const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
         
-        setStatus(newStatus);
+        setStatus(newStatus as TaskStatus);
         
         if (currentTaskId && !isCreateMode) {
             const result = await updateTaskField(currentTaskId, "status", newStatus);
@@ -1280,7 +1280,13 @@ export function TaskDetailModal({
                 if (currentTaskId) {
                     const result = await uploadToStorage(file, "task-files");
                     if (result.success && result.url) {
-                        await saveAttachment(currentTaskId, result.url, file.name, file.type, file.size);
+                        await saveAttachment({
+                            taskId: currentTaskId,
+                            fileUrl: result.url,
+                            fileName: file.name,
+                            fileType: file.type,
+                            fileSize: file.size,
+                        });
                         
                         const newFile: FileAttachment = {
                             id: `f-${Date.now()}`,
