@@ -379,7 +379,7 @@ export function TaskDetailModal({
 
             try {
                 // 1. Fazer upload para o Storage
-                const uploadResult = await uploadToStorage(file, "task-attachments");
+                const uploadResult = await uploadToStorage(file, "task-files");
 
                 if (!uploadResult.success || !uploadResult.url) {
                     throw new Error(uploadResult.error || "Erro ao fazer upload");

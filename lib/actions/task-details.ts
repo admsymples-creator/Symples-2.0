@@ -350,7 +350,7 @@ export async function uploadAudioComment(
     const filePath = `audio/${taskId}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
-      .from("task-attachments")
+      .from("task-files")
       .upload(filePath, audioFile, {
         contentType: "audio/webm",
         upsert: false,
@@ -363,7 +363,7 @@ export async function uploadAudioComment(
 
     // 2. Obter URL pública
     const { data: { publicUrl } } = supabase.storage
-      .from("task-attachments")
+      .from("task-files")
       .getPublicUrl(filePath);
 
     // 3. Criar comentário do tipo 'audio'

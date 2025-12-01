@@ -108,7 +108,7 @@ export default function TasksPage() {
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
     const [groupOrder, setGroupOrder] = useState<string[]>([]); // Ordem dos grupos quando viewOption === "group"
-    const { activeWorkspaceId } = useWorkspace();
+    const { activeWorkspaceId, isLoaded } = useWorkspace();
 
     // Sensores para drag & drop
     const sensors = useSensors(
@@ -230,8 +230,11 @@ export default function TasksPage() {
                 dueDateEnd?: string;
             } = {};
 
-            if (activeWorkspaceId) {
-                filters.workspaceId = activeWorkspaceId;
+            // Aplicar filtro de workspace (ou pessoal) se não estiver na aba "minhas"
+            // Se activeWorkspaceId for undefined (carregando) ou null (pessoal), usamos null para buscar tarefas pessoais
+            // Isso evita buscar TODAS as tarefas globais durante o carregamento inicial
+            if (activeTab !== "minhas") {
+                filters.workspaceId = activeWorkspaceId || null;
             }
             
             if (activeTab === "minhas") {

@@ -30,7 +30,7 @@ export function useFileUpload() {
    */
   const uploadToStorage = async (
     file: File,
-    bucket: string = "task-attachments"
+    bucket: string = "task-files"
   ): Promise<{ success: boolean; url?: string; path?: string; error?: string }> => {
     try {
       setUploading(true);
@@ -95,7 +95,7 @@ export function useFileUpload() {
         // Mensagem de erro mais amigável
         let errorMessage = error.message;
         if (error.message.includes("Bucket not found") || error.message.includes("bucket not found")) {
-          errorMessage = "Bucket 'attachments' não encontrado. Por favor, crie o bucket no Supabase Dashboard (Storage > New bucket). Veja docs/STORAGE_SETUP.md para instruções.";
+          errorMessage = `Bucket '${bucket}' não encontrado. Por favor, crie o bucket no Supabase Dashboard (Storage > New bucket). Veja docs/STORAGE_SETUP.md para instruções.`;
         } else if (error.message.includes("new row violates row-level security") || error.message.includes("RLS")) {
           errorMessage = "Permissão negada. Verifique as políticas RLS do Storage. Veja supabase/storage_setup.sql para configurar.";
         }
@@ -160,7 +160,7 @@ export function useFileUpload() {
    */
   const uploadMultiple = async (
     files: File[],
-    bucket: string = "attachments"
+    bucket: string = "task-files"
   ): Promise<Array<{ success: boolean; url?: string; path?: string; error?: string; fileName: string }>> => {
     const results = await Promise.all(
       files.map(async (file) => {

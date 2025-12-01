@@ -28,7 +28,12 @@ export type TaskWithDetails = Task & {
 /**
  * Busca tarefas de um workspace ou pessoais
  */
-export async function getTasks(filters?: { workspaceId?: string | null }) {
+export async function getTasks(filters?: { 
+  workspaceId?: string | null;
+  assigneeId?: string | null | "current";
+  dueDateStart?: string;
+  dueDateEnd?: string;
+}) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -61,9 +66,25 @@ export async function getTasks(filters?: { workspaceId?: string | null }) {
   } else if (filters?.workspaceId === null) {
     // Tarefas Pessoais (sem workspace e criadas pelo usuário)
     query = query.is("workspace_id", null).eq("created_by", user.id);
-  } else {
-      // Se não especificado, busca todas as tarefas que o usuário tem acesso
-      // (RLS já filtra, mas podemos ser explícitos se necessário)
+  }
+
+  // Filtro de Responsável
+  if (filters?.assigneeId) {
+      if (filters.assigneeId === "current") {
+          query = query.eq("assignee_id", user.id);
+      } else {
+          query = query.eq("assignee_id", filters.assigneeId);
+      }
+  }
+
+  // Filtro de Data (Início)
+  if (filters?.dueDateStart) {
+      query = query.gte("due_date", filters.dueDateStart);
+  }
+  
+  // Filtro de Data (Fim)
+  if (filters?.dueDateEnd) {
+      query = query.lte("due_date", filters.dueDateEnd);
   }
 
   const { data, error } = await query;

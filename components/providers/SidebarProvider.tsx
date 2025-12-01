@@ -7,6 +7,7 @@ type AppContextType = {
     toggleSidebar: () => void;
     activeWorkspaceId: string | null;
     setActiveWorkspaceId: (id: string) => void;
+    isLoaded: boolean;
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -52,7 +53,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
             isCollapsed, 
             toggleSidebar, 
             activeWorkspaceId, 
-            setActiveWorkspaceId: handleSetWorkspace 
+            setActiveWorkspaceId: handleSetWorkspace,
+            isLoaded: isMounted
         }}>
             {children}
         </AppContext.Provider>
@@ -74,6 +76,7 @@ export function useWorkspace() {
     }
     return {
         activeWorkspaceId: context.activeWorkspaceId,
-        setActiveWorkspaceId: context.setActiveWorkspaceId
+        setActiveWorkspaceId: context.setActiveWorkspaceId,
+        isLoaded: context.isLoaded
     };
 }
