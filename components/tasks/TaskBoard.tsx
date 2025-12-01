@@ -26,6 +26,7 @@ import {
     DragOverEvent,
     DragStartEvent,
     DragOverlay,
+    pointerWithin,
 } from "@dnd-kit/core";
 import {
     arrayMove,
@@ -42,24 +43,29 @@ interface Task {
     completed: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
-    assignees?: Array<{ name: string; avatar?: string }>;
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
     dueDate?: string;
     tags?: string[];
     workspaceId?: string | null;
+    group?: { id: string; name: string; color?: string };
+    [key: string]: any;
 }
 
 interface Column {
     id: string;
     title: string;
     tasks: Task[];
+    color?: string; // Cor opcional para a coluna/grupo
 }
 
 interface TaskBoardProps {
     columns: Column[];
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    onTaskMoved?: () => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
     groupBy?: string;
+    onToggleComplete?: (taskId: string, completed: boolean) => void;
 }
 
 import { mapLabelToStatus } from "@/lib/config/tasks";
@@ -74,18 +80,27 @@ function DroppableColumn({
     column,
     onTaskClick,
     onAddTask,
+    onTaskMoved,
     members,
     groupBy,
+    onToggleComplete,
 }: {
     column: Column;
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    onTaskMoved?: () => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
     groupBy?: string;
+    onToggleComplete?: (taskId: string, completed: boolean) => void;
 }) {
     const { setNodeRef, isOver } = useDroppable({
         id: column.id,
     });
+    
+    const [isAdding, setIsAdding] = useState(false);
+
+    // Garantir que tasks seja sempre um array
+    const tasks = column.tasks || [];
 
     return (
         <div
@@ -99,7 +114,8 @@ function DroppableColumn({
             <div className="px-2">
                 <TaskSectionHeader
                     title={column.title}
-                    count={column.tasks.length}
+                    count={tasks.length}
+                    color={column.color}
                     actions={
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -116,7 +132,7 @@ function DroppableColumn({
                                 <DropdownMenuItem
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onAddTask?.(column.id, "");
+                                        setIsAdding(true);
                                     }}
                                 >
                                     Adicionar Tarefa
@@ -129,31 +145,18 @@ function DroppableColumn({
 
             {/* Corpo da Coluna (Scroll) */}
             <SortableContext
-                items={column.tasks.map((t) => t.id)}
+                items={tasks.map((t) => t.id)}
                 strategy={verticalListSortingStrategy}
             >
-                <div className="flex-1 overflow-y-auto space-y-2 min-h-0 pb-2 scrollbar-thin">
-                    {column.tasks.length === 0 ? (
+                <div className="flex-1 overflow-y-auto space-y-2 min-h-0 pb-2 scrollbar-thin p-1">
+                    {tasks.length === 0 && !isAdding ? (
                         <KanbanEmptyCard
                             columnTitle={column.title}
                             columnId={column.id}
-                            onClick={() => onAddTask?.(column.id, "")}
+                            onClick={() => setIsAdding(true)}
                         />
                     ) : (
-                        column.tasks.map((task) => {
-                            // Gerar cor do workspace baseada no ID
-                            const getWorkspaceColor = (workspaceId: string | null | undefined): string => {
-                                if (!workspaceId) return "#22C55E"; // Verde padrão
-                                let hash = 0;
-                                for (let i = 0; i < (workspaceId || "").length; i++) {
-                                    hash = (workspaceId || "").charCodeAt(i) + ((hash << 5) - hash);
-                                }
-                                const hue = Math.abs(hash % 360);
-                                const saturation = 60 + (Math.abs(hash) % 20);
-                                const lightness = 45 + (Math.abs(hash) % 15);
-                                return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-                            };
-
+                        tasks.map((task) => {
                             return (
                                 <KanbanCard
                                     key={task.id}
@@ -165,36 +168,43 @@ function DroppableColumn({
                                     assignees={task.assignees}
                                     dueDate={task.dueDate}
                                     tags={task.tags}
-                                    workspaceColor={getWorkspaceColor(task.workspaceId)}
+                                    groupColor={task.group?.color}
                                     onClick={() => onTaskClick?.(task.id)}
+                                    onTaskUpdated={onTaskMoved}
+                                    onDelete={onTaskMoved}
+                                    members={members}
+                                    onToggleComplete={onToggleComplete}
                                 />
                             );
                         })
                     )}
+
+                    {/* Quick Add logo abaixo do último card */}
+                    {(tasks.length > 0 || isAdding) && (
+                        <div className="px-0 mt-1">
+                            <QuickTaskAdd
+                                placeholder="Adicionar tarefa aqui..."
+                                autoFocus={isAdding}
+                                onCancel={() => setIsAdding(false)}
+                                onSubmit={async (title, dueDate, assigneeId) => {
+                                    const result = onAddTask?.(column.id, title, dueDate, assigneeId);
+                                    // Manter o input aberto para adicionar mais tarefas
+                                    // Aguardar Promise se onAddTask retornar uma
+                                    if (result && typeof result === 'object' && 'then' in result) {
+                                        await result;
+                                    }
+                                }}
+                                members={members || []}
+                            />
+                        </div>
+                    )}
                 </div>
             </SortableContext>
-
-            {/* Quick Add no rodapé (sempre visível quando há tarefas) */}
-            {column.tasks.length > 0 && (
-                <div className="p-3 border-t border-gray-100">
-                    <QuickTaskAdd
-                        placeholder="Adicionar tarefa aqui..."
-                        onSubmit={async (title, dueDate, assigneeId) => {
-                            const result = onAddTask?.(column.id, title, dueDate, assigneeId);
-                            // Aguardar Promise se onAddTask retornar uma
-                            if (result && typeof result === 'object' && 'then' in result) {
-                                await result;
-                            }
-                        }}
-                        members={members || []}
-                    />
-                </div>
-            )}
         </div>
     );
 }
 
-export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }: TaskBoardProps) {
+export function TaskBoard({ columns, onTaskClick, onAddTask, onTaskMoved, members, groupBy, onToggleComplete }: TaskBoardProps) {
     const [localColumns, setLocalColumns] = useState(columns);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
 
@@ -244,8 +254,6 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
         }
 
         // Verificar se está arrastando para uma coluna (drop zone) ou para uma tarefa
-        // Se over.id é o ID de uma coluna, usar diretamente
-        // Se over.id é o ID de uma tarefa, encontrar a coluna que contém essa tarefa
         let destinationColumnId: string | undefined;
         
         const isColumnId = localColumns.some((col) => col.id === over.id);
@@ -353,10 +361,17 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
                         "Baixa": "low",
                     };
                     updateData.priority = priorityMap[destinationColumn.title];
+                } else if (groupBy === "group") {
+                    if (destinationColumn.id === "inbox" || destinationColumn.id === "Inbox") {
+                        updateData.group_id = null;
+                    } else {
+                        updateData.group_id = destinationColumn.id;
+                    }
                 }
-                // TODO: Implementar para 'group' e 'date' se necessário
+                // TODO: Implementar para 'date' se necessário
 
                 await updateTaskPosition(updateData);
+                onTaskMoved?.();
             } catch (error) {
                 console.error("Erro ao atualizar posição e status:", error);
                 setLocalColumns(columns);
@@ -367,7 +382,7 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
     return (
         <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={pointerWithin}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
@@ -378,8 +393,10 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
                         column={column}
                         onTaskClick={onTaskClick}
                         onAddTask={onAddTask}
+                        onTaskMoved={onTaskMoved}
                         members={members}
                         groupBy={groupBy}
+                        onToggleComplete={onToggleComplete}
                     />
                 ))}
             </div>
@@ -387,7 +404,7 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
             {/* Drag Overlay para feedback visual */}
             <DragOverlay>
                 {activeTask ? (
-                    <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
+                    <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90 w-[300px]">
                         <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
                     </div>
                 ) : null}
@@ -395,4 +412,3 @@ export function TaskBoard({ columns, onTaskClick, onAddTask, members, groupBy }:
         </DndContext>
     );
 }
-

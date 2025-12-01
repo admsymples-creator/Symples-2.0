@@ -4,6 +4,7 @@ import "./globals.css";
 import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { Toaster } from "sonner";
 
+// Root layout component
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",

@@ -61,6 +61,7 @@ import { getTaskDetails } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
 import { useRouter } from "next/navigation";
 import { getUserWorkspaces } from "@/lib/actions/user";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 
 type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
@@ -107,6 +108,7 @@ export default function TasksPage() {
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
     const [groupOrder, setGroupOrder] = useState<string[]>([]); // Ordem dos grupos quando viewOption === "group"
+    const { activeWorkspaceId } = useWorkspace();
 
     // Sensores para drag & drop
     const sensors = useSensors(
@@ -173,14 +175,9 @@ export default function TasksPage() {
         setIsCreatingGroup(true);
         
         try {
-            let targetWorkspaceId: string | null = null;
+            let targetWorkspaceId: string | null = activeWorkspaceId;
             
-            // Sempre tentar buscar workspace (mesmo para "minhas")
-            // Tentar primeiro das tarefas existentes
-            const sampleTask = localTasks.find(t => t.workspaceId);
-            targetWorkspaceId = sampleTask?.workspaceId || null;
-            
-            // Se não encontrou, buscar do primeiro workspace do usuário
+            // Se não encontrou (improvável com o novo Sidebar), buscar do primeiro workspace do usuário
             if (!targetWorkspaceId) {
                 try {
                     const workspaces = await getUserWorkspaces();
@@ -232,6 +229,10 @@ export default function TasksPage() {
                 dueDateStart?: string;
                 dueDateEnd?: string;
             } = {};
+
+            if (activeWorkspaceId) {
+                filters.workspaceId = activeWorkspaceId;
+            }
             
             if (activeTab === "minhas") {
                 // Minhas: Tudo que eu estou atribuído
@@ -304,22 +305,18 @@ export default function TasksPage() {
     // Função para carregar grupos
     const loadGroups = async () => {
         try {
-            // Determinar workspace_id
-            let targetWorkspaceId: string | null = null;
+            // Usar workspace ativo do contexto
+            let targetWorkspaceId: string | null = activeWorkspaceId;
             
-            if (activeTab !== "minhas") {
-                const sampleTask = localTasks.find(t => t.workspaceId);
-                targetWorkspaceId = sampleTask?.workspaceId || null;
-                
-                if (!targetWorkspaceId) {
-                    try {
-                        const workspaces = await getUserWorkspaces();
-                        if (workspaces.length > 0) {
-                            targetWorkspaceId = workspaces[0].id;
-                        }
-                    } catch (err) {
-                        console.error("Erro ao buscar workspaces:", err);
+            // Se não tiver workspace ativo, tentar buscar o primeiro (fallback)
+            if (!targetWorkspaceId) {
+                try {
+                    const workspaces = await getUserWorkspaces();
+                    if (workspaces.length > 0) {
+                        targetWorkspaceId = workspaces[0].id;
                     }
+                } catch (err) {
+                    console.error("Erro ao buscar workspaces:", err);
                 }
             }
 
@@ -356,13 +353,13 @@ export default function TasksPage() {
     useEffect(() => {
         reloadTasks();
         loadGroups();
-    }, [activeTab]);
+    }, [activeTab, activeWorkspaceId]);
 
     // Buscar membros do workspace
     useEffect(() => {
         const loadMembers = async () => {
             try {
-                const members = await getWorkspaceMembers(null);
+                const members = await getWorkspaceMembers(activeWorkspaceId);
                 const mappedMembers = members.map((m: any) => ({
                     id: m.id || m.email || "",
                     name: m.full_name || m.email || "Usuário",
@@ -374,7 +371,7 @@ export default function TasksPage() {
             }
         };
         loadMembers();
-    }, []);
+    }, [activeWorkspaceId]);
 
     // Filtrar tarefas por busca
     // Função para alternar status de conclusão
@@ -473,9 +470,16 @@ export default function TasksPage() {
             switch (viewOption) {
                 case "group":
                     // Usar ID do grupo como chave para permitir edição
-                    groupKey = task.group?.id || "inbox";
-                    // Garantir que o grupo existe (caso não tenha sido inicializado)
+                    if (task.group && task.group.id) {
+                        groupKey = task.group.id;
+                    } else {
+                        groupKey = "inbox";
+                    }
+                    
+                    // Garantir que o grupo existe (caso não tenha sido inicializado ou seja um novo grupo)
                     if (!groups[groupKey]) {
+                        // Se for um ID de grupo válido do banco que não estava em availableGroups
+                        // (pode acontecer se availableGroups estiver desatualizado)
                         groups[groupKey] = [];
                     }
                     break;
@@ -530,22 +534,32 @@ export default function TasksPage() {
 
     // Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
-        if (viewOption !== "group" || groupOrder.length === 0) {
+        if (viewOption !== "group") {
             return groupedData;
         }
         
+        const groups = { ...groupedData }; // Copia para manipular
         const ordered: Record<string, Task[]> = {};
-        // Adicionar grupos na ordem especificada
-        groupOrder.forEach((groupId) => {
-            if (groupedData[groupId]) {
-                ordered[groupId] = groupedData[groupId];
-            }
-        });
-        // Adicionar grupos que não estão na ordem (caso algum seja criado depois)
-        Object.keys(groupedData).forEach((groupId) => {
-            if (!ordered[groupId]) {
-                ordered[groupId] = groupedData[groupId];
-            }
+        
+        // 1. Adicionar grupos que estão em groupOrder e existem em groupedData
+        if (groupOrder && groupOrder.length > 0) {
+            groupOrder.forEach((groupId) => {
+                if (groups[groupId]) {
+                    ordered[groupId] = groups[groupId];
+                    delete groups[groupId]; // Marcar como processado
+                }
+            });
+        }
+        
+        // 2. Adicionar Inbox se existir e ainda não foi processado
+        if (groups["inbox"]) {
+            ordered["inbox"] = groups["inbox"];
+            delete groups["inbox"];
+        }
+        
+        // 3. Adicionar o restante (novos grupos ou sem ordem)
+        Object.keys(groups).forEach((groupId) => {
+            ordered[groupId] = groups[groupId];
         });
         
         return ordered;

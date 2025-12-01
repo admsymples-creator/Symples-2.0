@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { saveAttachment, deleteAttachment } from "@/lib/actions/attachments";
@@ -46,6 +46,7 @@ import {
 import {
     X,
     Maximize2,
+    Minimize2,
     MoreVertical,
     ChevronRight,
     Play,
@@ -59,6 +60,7 @@ import {
     Italic,
     List,
     Link as LinkIcon,
+    Copy,
     Paperclip,
     UploadCloud,
     FileImage,
@@ -70,9 +72,17 @@ import {
     Tag,
     ChevronDown,
 } from "lucide-react";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "./AudioMessageBubble";
 import { AttachmentCard } from "./AttachmentCard";
+import { Editor } from "@/components/ui/editor";
 
 // Funções auxiliares para arquivos
 const getFileTypeFromMime = (mimeType: string): "image" | "pdf" | "other" => {
@@ -134,6 +144,7 @@ interface TaskDetailModalProps {
         dueDate?: string;
         tags?: string[];
         breadcrumbs: string[];
+        workspaceId?: string | null; // ID do workspace para otimização
         contextMessage?: {
             type: "audio" | "text";
             content: string;
@@ -166,6 +177,7 @@ export function TaskDetailModal({
     const isCreateMode = mode === "create";
     const [title, setTitle] = useState(task?.title || "");
     const [description, setDescription] = useState(task?.description || "");
+    const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [status, setStatus] = useState<"todo" | "in_progress" | "done">(task?.status || "todo");
     const [dueDate, setDueDate] = useState(task?.dueDate || initialDueDate || "");
     const [subTasks, setSubTasks] = useState<SubTask[]>(task?.subTasks || []);
@@ -184,7 +196,8 @@ export function TaskDetailModal({
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
     const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
     const [currentTaskId, setCurrentTaskId] = useState<string | null>(task?.id || null);
-    const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+    const [isMaximized, setIsMaximized] = useState(false);
+    const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     
     // Hook de upload
     const { uploadToStorage, progress, clearProgress } = useFileUpload();
@@ -198,18 +211,37 @@ export function TaskDetailModal({
 
     // Buscar dados completos da tarefa quando modal abre
     useEffect(() => {
+        let active = true; // Flag para controle de concorrência
+
         if (open && !isCreateMode && task?.id) {
-            const loadTaskDetails = async () => {
-                setIsLoadingDetails(true);
+            // 1. Reset Imediato (UI Otimista)
+            setCurrentTaskId(task.id);
+            setTitle(task.title || "");
+            setDescription(task.description || "");
+            setStatus(task.status as "todo" | "in_progress" | "done");
+            setDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "");
+            setTags(task.tags || []);
+            setSubTasks(task.subTasks || []); // Se subTasks vierem vazias, serão carregadas depois
+            
+            // 2. Limpeza de Listas para estado de carregamento
+            setAttachments([]);
+            setActivities([]);
+            setIsLoadingDetails(true);
+
+            const loadData = async () => {
                 try {
-                    const taskDetails = await getTaskDetails(task.id);
+                    // 3. Busca Paralela
+                    const [taskDetails, members] = await Promise.all([
+                        getTaskDetails(task.id),
+                        getWorkspaceMembers(task.workspaceId || null)
+                    ]);
                     
+                    if (!active) return; // Ignorar se o componente desmontou ou tarefa mudou
+
                     if (taskDetails) {
-                        setCurrentTaskId(taskDetails.id);
-                        setTitle(taskDetails.title || "");
+                        // Atualizar estados apenas se necessário (já fizemos reset otimista)
+                        // Mas a descrição completa pode vir do backend se estiver truncada na lista
                         setDescription(taskDetails.description || "");
-                        setStatus(taskDetails.status as "todo" | "in_progress" | "done");
-                        setDueDate(taskDetails.due_date ? new Date(taskDetails.due_date).toISOString().split("T")[0] : "");
                         
                         // Mapear anexos
                         const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
@@ -237,13 +269,12 @@ export function TaskDetailModal({
                         }));
                         setActivities(mappedActivities);
                         
-                        // Extrair tags do origin_context
+                        // Extrair tags do origin_context (prioridade backend)
                         if (taskDetails.origin_context?.tags) {
                             setTags(taskDetails.origin_context.tags);
                         }
-                        
-                        // Carregar membros do workspace
-                        const members = await getWorkspaceMembers(taskDetails.workspace_id);
+
+                        // Atualizar membros disponíveis
                         setAvailableUsers(
                             members.map((m: any) => ({
                                 id: m.id,
@@ -253,14 +284,18 @@ export function TaskDetailModal({
                         );
                     }
                 } catch (error) {
-                    console.error("Erro ao carregar detalhes da tarefa:", error);
-                    toast.error("Erro ao carregar detalhes da tarefa");
+                    if (active) {
+                        console.error("Erro ao carregar detalhes da tarefa:", error);
+                        toast.error("Erro ao carregar detalhes da tarefa");
+                    }
                 } finally {
-                    setIsLoadingDetails(false);
+                    if (active) {
+                        setIsLoadingDetails(false);
+                    }
                 }
             };
             
-            loadTaskDetails();
+            loadData();
         } else if (open && isCreateMode) {
             // Modo create: resetar estados
             setTitle("");
@@ -277,32 +312,38 @@ export function TaskDetailModal({
             const loadCurrentUser = async () => {
                 try {
                     const members = await getWorkspaceMembers(null);
-                    setAvailableUsers(
-                        members.map((m: any) => ({
-                            id: m.id,
-                            name: m.full_name || m.email || "Usuário",
-                            avatar: m.avatar_url || undefined,
-                        }))
-                    );
+                    if (active) {
+                        setAvailableUsers(
+                            members.map((m: any) => ({
+                                id: m.id,
+                                name: m.full_name || m.email || "Usuário",
+                                avatar: m.avatar_url || undefined,
+                            }))
+                        );
+                    }
                 } catch (error) {
                     console.error("Erro ao carregar usuário:", error);
                 }
             };
             loadCurrentUser();
         }
-    }, [open, isCreateMode, task?.id, initialDueDate]);
+
+        return () => {
+            active = false; // Cleanup para evitar race conditions
+        };
+    }, [open, isCreateMode, task?.id, initialDueDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auto-save com debounce (500ms)
     const triggerAutoSave = useCallback((field: string, value: any) => {
         if (!currentTaskId || isCreateMode) return;
         
         // Limpar timeout anterior
-        if (autoSaveTimeout) {
-            clearTimeout(autoSaveTimeout);
+        if (autoSaveTimeoutRef.current) {
+            clearTimeout(autoSaveTimeoutRef.current);
         }
         
         // Criar novo timeout
-        const timeout = setTimeout(async () => {
+        autoSaveTimeoutRef.current = setTimeout(async () => {
             try {
                 const result = await updateTaskField(currentTaskId, field, value);
                 if (result.success) {
@@ -314,18 +355,16 @@ export function TaskDetailModal({
                 console.error(`Erro ao salvar ${field}:`, error);
             }
         }, 500);
-        
-        setAutoSaveTimeout(timeout);
-    }, [currentTaskId, isCreateMode, autoSaveTimeout]);
+    }, [currentTaskId, isCreateMode]);
     
     // Cleanup do timeout ao desmontar
     useEffect(() => {
         return () => {
-            if (autoSaveTimeout) {
-                clearTimeout(autoSaveTimeout);
+            if (autoSaveTimeoutRef.current) {
+                clearTimeout(autoSaveTimeoutRef.current);
             }
         };
-    }, [autoSaveTimeout]);
+    }, []);
 
     // Handler para upload de arquivos
     const handleFileUpload = useCallback(async (files: File[]) => {
@@ -772,7 +811,12 @@ export function TaskDetailModal({
             <DialogPortal>
                 <DialogOverlay className="bg-black/50" />
                 <DialogPrimitive.Content
-                    className="fixed left-[50%] top-[50%] z-50 w-[90vw] max-w-6xl h-[80vh] translate-x-[-50%] translate-y-[-50%] rounded-xl border bg-background shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] p-0 flex flex-col overflow-hidden"
+                    className={cn(
+                        "fixed z-50 bg-background duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 p-0 flex flex-col overflow-hidden shadow-lg",
+                        isMaximized 
+                            ? "left-0 top-0 w-screen h-screen translate-x-0 translate-y-0 rounded-none border-0"
+                            : "left-[50%] top-[50%] w-[90vw] max-w-6xl h-[80vh] translate-x-[-50%] translate-y-[-50%] rounded-xl border data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]"
+                    )}
                 >
                 {/* DialogTitle para acessibilidade (oculto visualmente) */}
                 <DialogTitle className="sr-only">
@@ -780,11 +824,11 @@ export function TaskDetailModal({
                 </DialogTitle>
                 
                 {/* Header */}
-                <DialogHeader className="px-6 py-4 border-b border-gray-100">
+                <DialogHeader className="px-6 py-4 border-b border-gray-100 shrink-0">
                     <div className="flex items-center justify-between">
                         {/* Breadcrumbs */}
                         {!isCreateMode && task?.breadcrumbs && (
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <div className="flex items-center gap-2 text-sm text-gray-600 min-h-[20px]">
                                 {task.breadcrumbs.map((crumb, index) => (
                                     <div key={index} className="flex items-center gap-2">
                                         <span>{crumb}</span>
@@ -796,34 +840,73 @@ export function TaskDetailModal({
                             </div>
                         )}
                         {isCreateMode && (
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <div className="flex items-center gap-2 text-sm text-gray-600 min-h-[20px]">
                                 <span>Nova Tarefa</span>
                             </div>
                         )}
 
                         {/* Botões de Ação */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 ml-auto">
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                onClick={() => {}}
+                                onClick={() => setIsMaximized(!isMaximized)}
+                                title={isMaximized ? "Restaurar" : "Maximizar"}
                             >
-                                <Maximize2 className="h-4 w-4" />
+                                {isMaximized ? (
+                                    <Minimize2 className="h-4 w-4" />
+                                ) : (
+                                    <Maximize2 className="h-4 w-4" />
+                                )}
                             </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => {}}
-                            >
-                                <MoreVertical className="h-4 w-4" />
-                            </Button>
+                            
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                    >
+                                        <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem 
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(window.location.href);
+                                            toast.success("Link copiado para a área de transferência");
+                                        }}
+                                    >
+                                        <Copy className="w-4 h-4 mr-2" />
+                                        Copiar Link
+                                    </DropdownMenuItem>
+                                    {!isCreateMode && (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem 
+                                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                                onClick={() => {
+                                                    if (confirm("Tem certeza que deseja excluir esta tarefa?")) {
+                                                        // TODO: Implementar exclusão real
+                                                        toast.error("Funcionalidade de exclusão em breve");
+                                                    }
+                                                }}
+                                            >
+                                                <Trash2 className="w-4 h-4 mr-2" />
+                                                Excluir Tarefa
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
                                 onClick={() => onOpenChange(false)}
+                                title="Fechar (Esc)"
                             >
                                 <X className="h-4 w-4" />
                             </Button>
@@ -1132,60 +1215,61 @@ export function TaskDetailModal({
                             </div>
                         </div>
 
-                        {/* Descrição - Rich Editor Simulado */}
-                        <div className="mb-6">
-                            <label className="text-xs font-medium text-gray-500 uppercase mb-2 block">
-                                Descrição
-                            </label>
-                            <div className="border border-gray-200 rounded-md overflow-hidden">
-                                {/* Toolbar */}
-                                <div className="bg-gray-50 border-b border-gray-200 p-2 flex items-center gap-2">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => {}}
+                        {/* Descrição - Rich Editor */}
+                        <div className="mb-6 group/desc">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs font-medium text-gray-500 uppercase block">
+                                    Descrição
+                                </label>
+                                {!isEditingDescription && !isCreateMode && (
+                                    <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="h-6 text-xs opacity-0 group-hover/desc:opacity-100 transition-opacity" 
+                                        onClick={() => setIsEditingDescription(true)}
                                     >
-                                        <Bold className="h-3.5 w-3.5" />
+                                        <Pencil className="w-3 h-3 mr-1" />
+                                        Editar
                                     </Button>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => {}}
-                                    >
-                                        <Italic className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <div className="w-px h-4 bg-gray-300 mx-1" />
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => {}}
-                                    >
-                                        <List className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => {}}
-                                    >
-                                        <LinkIcon className="h-3.5 w-3.5" />
-                                    </Button>
-                                </div>
-                                {/* Área de Texto */}
-                                <Textarea
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    placeholder="Adicione uma descrição..."
-                                    className="min-h-[150px] resize-none border-0 rounded-t-none focus-visible:ring-0"
-                                />
+                                )}
                             </div>
+
+                            {isEditingDescription || isCreateMode ? (
+                                <div>
+                                    <Editor 
+                                        value={description} 
+                                        onChange={(html) => {
+                                            setDescription(html);
+                                            if (!isCreateMode && currentTaskId) {
+                                                triggerAutoSave("description", html);
+                                            }
+                                        }}
+                                        placeholder="Adicione uma descrição..."
+                                    />
+                                    {!isCreateMode && (
+                                        <div className="flex justify-end mt-2">
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => setIsEditingDescription(false)}
+                                            >
+                                                Concluir Edição
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div 
+                                    className="min-h-[100px] p-3 rounded-md border border-transparent hover:border-gray-200 hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700"
+                                    onClick={() => setIsEditingDescription(true)}
+                                >
+                                    {description && description !== "<p></p>" ? (
+                                        <div dangerouslySetInnerHTML={{ __html: description }} />
+                                    ) : (
+                                        <p className="text-gray-400 italic">Sem descrição. Clique para adicionar.</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Anexos */}
@@ -1238,16 +1322,24 @@ export function TaskDetailModal({
                             </div>
 
                             {/* Preview de Arquivos - Grid */}
-                            {attachments.length > 0 && (
+                            {isLoadingDetails ? (
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    {attachments.map((file) => (
-                                        <AttachmentCard
-                                            key={file.id}
-                                            file={file}
-                                            onDelete={handleDeleteAttachment}
-                                        />
+                                    {[1, 2].map((i) => (
+                                        <div key={i} className="h-24 bg-gray-100 rounded-lg animate-pulse border border-gray-200" />
                                     ))}
                                 </div>
+                            ) : (
+                                attachments.length > 0 && (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                        {attachments.map((file) => (
+                                            <AttachmentCard
+                                                key={file.id}
+                                                file={file}
+                                                onDelete={handleDeleteAttachment}
+                                            />
+                                        ))}
+                                    </div>
+                                )
                             )}
                         </div>
 
@@ -1256,84 +1348,92 @@ export function TaskDetailModal({
                             <label className="text-xs font-medium text-gray-500 uppercase mb-3 block">
                                 Sub-tarefas
                             </label>
-                            <div className="space-y-2 mb-3">
-                                {subTasks.map((subTask) => (
-                                    <div
-                                        key={subTask.id}
-                                        className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group"
-                                    >
-                                        <Checkbox
-                                            checked={subTask.completed}
-                                            onCheckedChange={() => handleToggleSubTask(subTask.id)}
-                                        />
-                                        <span
-                                            className={cn(
-                                                "flex-1 text-sm",
-                                                subTask.completed && "line-through text-gray-400"
-                                            )}
+                            {isLoadingDetails ? (
+                                <div className="space-y-2 mb-3">
+                                    {[1, 2].map((i) => (
+                                        <div key={i} className="h-9 bg-gray-100 rounded-md animate-pulse" />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="space-y-2 mb-3">
+                                    {subTasks.map((subTask) => (
+                                        <div
+                                            key={subTask.id}
+                                            className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group"
                                         >
-                                            {subTask.title}
-                                        </span>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {subTask.assignee ? (
-                                                <>
-                                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-gray-100 text-gray-700">
-                                                        {subTask.assignee.avatar ? (
-                                                            <img
-                                                                src={subTask.assignee.avatar}
-                                                                alt={subTask.assignee.name}
-                                                                className="w-3 h-3 rounded-full"
-                                                            />
-                                                        ) : (
-                                                            <User className="w-3 h-3 text-gray-400" />
-                                                        )}
-                                                        <span className="text-xs">{subTask.assignee.name}</span>
-                                                    </div>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-6 w-6"
-                                                        onClick={() => handleRemoveSubTaskAssignee(subTask.id)}
-                                                        title="Remover responsável"
+                                            <Checkbox
+                                                checked={subTask.completed}
+                                                onCheckedChange={() => handleToggleSubTask(subTask.id)}
+                                            />
+                                            <span
+                                                className={cn(
+                                                    "flex-1 text-sm",
+                                                    subTask.completed && "line-through text-gray-400"
+                                                )}
+                                            >
+                                                {subTask.title}
+                                            </span>
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {subTask.assignee ? (
+                                                    <>
+                                                        <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-gray-100 text-gray-700">
+                                                            {subTask.assignee.avatar ? (
+                                                                <img
+                                                                    src={subTask.assignee.avatar}
+                                                                    alt={subTask.assignee.name}
+                                                                    className="w-3 h-3 rounded-full"
+                                                                />
+                                                            ) : (
+                                                                <User className="w-3 h-3 text-gray-400" />
+                                                            )}
+                                                            <span className="text-xs">{subTask.assignee.name}</span>
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6"
+                                                            onClick={() => handleRemoveSubTaskAssignee(subTask.id)}
+                                                            title="Remover responsável"
+                                                        >
+                                                            <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <Select
+                                                        value={undefined}
+                                                        onValueChange={(value) => {
+                                                            handleUpdateSubTaskAssignee(subTask.id, value);
+                                                        }}
                                                     >
-                                                        <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
-                                                    </Button>
-                                                </>
-                                            ) : (
-                                                <Select
-                                                    value={undefined}
-                                                    onValueChange={(value) => {
-                                                        handleUpdateSubTaskAssignee(subTask.id, value);
-                                                    }}
-                                                >
-                                                    <SelectTrigger className="h-7 w-[140px] text-xs border-gray-200">
-                                                            <SelectValue placeholder="Atribuir..." />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {availableUsers.map((user) => (
-                                                            <SelectItem key={user.id} value={user.name}>
-                                                                <div className="flex items-center gap-2">
-                                                                    {user.avatar ? (
-                                                                        <img
-                                                                            src={user.avatar}
-                                                                            alt={user.name}
-                                                                            className="w-4 h-4 rounded-full"
-                                                                        />
-                                                                    ) : (
-                                                                        <User className="w-4 h-4 text-gray-400" />
-                                                                    )}
-                                                                    {user.name}
-                                                                </div>
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            )}
+                                                        <SelectTrigger className="h-7 w-[140px] text-xs border-gray-200">
+                                                                <SelectValue placeholder="Atribuir..." />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {availableUsers.map((user) => (
+                                                                <SelectItem key={user.id} value={user.name}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        {user.avatar ? (
+                                                                            <img
+                                                                                src={user.avatar}
+                                                                                alt={user.name}
+                                                                                className="w-4 h-4 rounded-full"
+                                                                            />
+                                                                        ) : (
+                                                                            <User className="w-4 h-4 text-gray-400" />
+                                                                        )}
+                                                                        {user.name}
+                                                                    </div>
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 <div className="flex gap-2">
                                     <Input
@@ -1464,66 +1564,83 @@ export function TaskDetailModal({
                                         <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
                                         
                                         <div className="space-y-3 relative">
-                                            {activities.length === 0 ? (
-                                                <div className="text-center py-8 text-sm text-gray-400">
-                                                    Nenhuma atividade ainda
+                                            {isLoadingDetails ? (
+                                                <div className="space-y-4 py-2">
+                                                    {[1, 2, 3].map((i) => (
+                                                        <div key={i} className="flex gap-3 relative z-10">
+                                                            <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0 animate-pulse" />
+                                                            <div className="flex-1 space-y-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-24 h-4 bg-gray-100 rounded animate-pulse" />
+                                                                    <div className="w-16 h-3 bg-gray-100 rounded animate-pulse" />
+                                                                </div>
+                                                                <div className="w-full h-10 bg-gray-50 rounded-lg animate-pulse border border-gray-100" />
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             ) : (
-                                                activities.map((activity) => (
-                                                <div
-                                                    key={activity.id}
-                                                    className="flex gap-3 text-sm relative"
-                                                >
-                                                    <div className="flex-shrink-0 relative z-10">
-                                                        <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
+                                                activities.length === 0 ? (
+                                                    <div className="text-center py-8 text-sm text-gray-400">
+                                                        Nenhuma atividade ainda
                                                     </div>
-                                                    <div className="flex-1">
-                                                        <p className="text-gray-700">
-                                                            <span className="font-medium">{activity.user}</span>{" "}
-                                                            {activity.type === "created" && "criou a tarefa"}
-                                                            {activity.type === "commented" && "comentou"}
-                                                            {activity.type === "updated" && "atualizou a tarefa"}
-                                                            {activity.type === "file_shared" && "enviou um arquivo"}
-                                                                {activity.type === "audio" && "enviou um áudio"}
-                                                            </p>
-                                                            {activity.type === "audio" ? (
-                                                                <div className="mt-2">
-                                                                    <AudioMessageBubble
-                                                                        duration={activity.audio?.duration || 14}
-                                                                        isOwnMessage={false}
-                                                                        audioUrl={activity.audio?.url}
-                                                                    />
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                        {activity.message && (
-                                                            <p className="text-gray-600 mt-1">{activity.message}</p>
-                                                                    )}
-                                                                </>
-                                                        )}
-                                                        {activity.file && (
-                                                            <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
-                                                                {activity.file.type === "image" ? (
-                                                                    <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                                                ) : activity.file.type === "pdf" ? (
-                                                                    <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                                ) : (
+                                                    activities.map((activity) => (
+                                                    <div
+                                                        key={activity.id}
+                                                        className="flex gap-3 text-sm relative"
+                                                    >
+                                                        <div className="flex-shrink-0 relative z-10">
+                                                            <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <p className="text-gray-700">
+                                                                <span className="font-medium">{activity.user}</span>{" "}
+                                                                {activity.type === "created" && "criou a tarefa"}
+                                                                {activity.type === "commented" && "comentou"}
+                                                                {activity.type === "updated" && "atualizou a tarefa"}
+                                                                {activity.type === "file_shared" && "enviou um arquivo"}
+                                                                    {activity.type === "audio" && "enviou um áudio"}
+                                                                </p>
+                                                                {activity.type === "audio" ? (
+                                                                    <div className="mt-2">
+                                                                        <AudioMessageBubble
+                                                                            duration={activity.audio?.duration || 14}
+                                                                            isOwnMessage={false}
+                                                                            audioUrl={activity.audio?.url}
+                                                                        />
+                                                                    </div>
                                                                 ) : (
-                                                                    <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                                )}
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-xs font-medium text-gray-700 truncate">
-                                                                        {activity.file.name}
-                                                                    </p>
-                                                                    <p className="text-xs text-gray-500">{activity.file.size}</p>
+                                                                    <>
+                                                                {activity.message && (
+                                                                    <p className="text-gray-600 mt-1">{activity.message}</p>
+                                                                        )}
+                                                                    </>
+                                                            )}
+                                                            {activity.file && (
+                                                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2">
+                                                                    {activity.file.type === "image" ? (
+                                                                        <FileImage className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                                    ) : activity.file.type === "pdf" ? (
+                                                                        <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                                                    ) : (
+                                                                        <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                                    )}
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-xs font-medium text-gray-700 truncate">
+                                                                            {activity.file.name}
+                                                                        </p>
+                                                                        <p className="text-xs text-gray-500">{activity.file.size}</p>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        )}
-                                                        <p className="text-xs text-gray-400 mt-1">
-                                                            {activity.timestamp}
-                                                        </p>
+                                                            )}
+                                                            <p className="text-xs text-gray-400 mt-1">
+                                                                {activity.timestamp}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                ))
+                                                    ))
+                                                )
                                             )}
                                         </div>
                                     </div>

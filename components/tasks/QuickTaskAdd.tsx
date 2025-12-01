@@ -33,21 +33,25 @@ interface Member {
 interface QuickTaskAddProps {
     placeholder?: string;
     onSubmit: (title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    onCancel?: () => void;
     members?: Member[];
     defaultDueDate?: Date | null;
     defaultAssigneeId?: string | null;
     className?: string;
     variant?: "default" | "ghost";
+    autoFocus?: boolean;
 }
 
 export function QuickTaskAdd({
     placeholder = "Adicionar tarefa aqui...",
     onSubmit,
+    onCancel,
     members = [],
     defaultDueDate,
     defaultAssigneeId,
     className,
     variant = "default",
+    autoFocus = false,
 }: QuickTaskAddProps) {
     const [value, setValue] = useState("");
     const [selectedDate, setSelectedDate] = useState<Date | null>(defaultDueDate || null);
@@ -224,6 +228,9 @@ export function QuickTaskAdd({
             e.preventDefault();
             handleSubmit();
         } else if (e.key === "Escape") {
+            if (!value) {
+                onCancel?.();
+            }
             setValue("");
             setSelectedDate(null);
             setSelectedAssigneeId(null);
@@ -244,8 +251,8 @@ export function QuickTaskAdd({
     return (
         <>
             <div className={cn(
-                "flex items-center transition-all relative",
-                variant === "default" && "bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
+                "flex items-center transition-all relative w-full",
+                variant === "default" && "bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
                 variant === "ghost" && "h-10 px-4 border-b border-transparent hover:bg-gray-50",
                 isCreatingBatch && "opacity-50 pointer-events-none",
                 className
@@ -268,6 +275,7 @@ export function QuickTaskAdd({
                 )}
                 <Input
                     ref={inputRef}
+                    autoFocus={autoFocus}
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={handleKeyDown}

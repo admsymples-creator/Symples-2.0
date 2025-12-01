@@ -75,60 +75,67 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // Buscar tarefa com todos os relacionamentos
-  const { data: task, error: taskError } = await supabase
-    .from("tasks")
-    .select(`
-      *,
-      assignee:profiles!tasks_assignee_id_fkey (
-        id,
-        full_name,
-        email,
-        avatar_url
-      ),
-      creator:profiles!tasks_created_by_fkey (
-        id,
-        full_name,
-        email
-      ),
-      workspace:workspaces!tasks_workspace_id_fkey (
-        id,
-        name
-      )
-    `)
-    .eq("id", taskId)
-    .single();
+  // Buscar dados em paralelo
+  const [taskResult, attachmentsResult, commentsResult] = await Promise.all([
+    // Buscar tarefa com todos os relacionamentos
+    supabase
+      .from("tasks")
+      .select(`
+        *,
+        assignee:profiles!tasks_assignee_id_fkey (
+          id,
+          full_name,
+          email,
+          avatar_url
+        ),
+        creator:profiles!tasks_created_by_fkey (
+          id,
+          full_name,
+          email
+        ),
+        workspace:workspaces!tasks_workspace_id_fkey (
+          id,
+          name
+        )
+      `)
+      .eq("id", taskId)
+      .single(),
+
+    // Buscar anexos
+    supabase
+      .from("task_attachments")
+      .select("*")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: false }),
+
+    // Buscar comentários
+    supabase
+      .from("task_comments")
+      .select(`
+        *,
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
+      `)
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true })
+  ]);
+
+  const { data: task, error: taskError } = taskResult;
+  const { data: attachments, error: attachmentsError } = attachmentsResult;
+  const { data: comments, error: commentsError } = commentsResult;
 
   if (taskError || !task) {
     console.error("Erro ao buscar tarefa:", taskError);
     return null;
   }
 
-  // Buscar anexos
-  const { data: attachments, error: attachmentsError } = await supabase
-    .from("task_attachments")
-    .select("*")
-    .eq("task_id", taskId)
-    .order("created_at", { ascending: false });
-
   if (attachmentsError) {
     console.error("Erro ao buscar anexos:", attachmentsError);
   }
-
-  // Buscar comentários
-  const { data: comments, error: commentsError } = await supabase
-    .from("task_comments")
-    .select(`
-      *,
-      user:user_id (
-        id,
-        full_name,
-        email,
-        avatar_url
-      )
-    `)
-    .eq("task_id", taskId)
-    .order("created_at", { ascending: true });
 
   if (commentsError) {
     console.error("Erro ao buscar comentários:", commentsError);

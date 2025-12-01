@@ -186,6 +186,7 @@ export function TaskGroup({
                             <div
                                 {...attributes}
                                 {...listeners}
+                                suppressHydrationWarning
                                 className="p-1 hover:bg-gray-100 rounded transition-colors cursor-grab active:cursor-grabbing"
                             >
                                 <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

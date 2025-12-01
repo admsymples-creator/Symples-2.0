@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { TaskActionMenu } from "./TaskActionMenu";
+import { TaskActionsMenu } from "./TaskActionsMenu";
 import { InlineTextEdit } from "@/components/ui/inline-text-edit";
 
 interface TaskRowProps {
@@ -136,6 +136,9 @@ export function TaskRow({
     // Mapear cor do grupo se existir (ex: "red" -> "bg-red-500")
     const getGroupColorClass = (colorName?: string) => {
         if (!colorName) return null;
+        // Se for hex, retorna null para não aplicar classe, vamos tratar com style
+        if (colorName.startsWith("#")) return null;
+
         const colorMap: Record<string, string> = {
             "red": "bg-red-500",
             "blue": "bg-blue-500",
@@ -152,6 +155,7 @@ export function TaskRow({
     };
     
     const groupColorClass = getGroupColorClass(groupColor);
+    const isHexColor = groupColor?.startsWith("#");
 
     // Lógica de Smart Triggers
     const isFocusActive = isNextSunday(dueDate);
@@ -257,12 +261,13 @@ export function TaskRow({
                 )}
             >
             {/* Barra Lateral Colorida (linha contínua) - APENAS Cor do Grupo */}
-            {groupColorClass && (
+            {(groupColorClass || isHexColor) && (
                 <div 
                     className={cn(
                         "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
                         groupColorClass
-                    )} 
+                    )}
+                    style={isHexColor ? { backgroundColor: groupColor } : undefined}
                 />
             )}
 
@@ -504,13 +509,14 @@ export function TaskRow({
 
                 {/* 6. Menu */}
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                    <TaskActionMenu
+                    <TaskActionsMenu
                         task={taskForMenu}
                         isFocused={isFocusActive}
                         isUrgent={isUrgentActive}
                         onOpenDetails={onClick}
                         onTaskUpdated={onTaskUpdated}
                         onTaskDeleted={onTaskDeleted}
+                        members={assignees.map(a => ({ id: a.id || "", name: a.name, avatar: a.avatar }))}
                     />
                 </div>
             </div>

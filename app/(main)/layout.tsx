@@ -1,7 +1,6 @@
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Header } from "@/components/layout/Header";
 import { getUserProfile, getUserWorkspaces } from "@/lib/actions/user";
 import { redirect } from "next/navigation";
+import { AppShell } from "@/components/layout/AppShell";
 
 export default async function MainLayout({
     children,
@@ -30,14 +29,8 @@ export default async function MainLayout({
     } : null;
 
     return (
-        <div className="flex min-h-screen bg-gray-50">
-            <Sidebar workspaces={workspaces} />
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <Header user={uiUser} />
-                <main className="flex-1 overflow-auto">
-                    {children}
-                </main>
-            </div>
-        </div>
+        <AppShell user={uiUser} workspaces={workspaces}>
+            {children}
+        </AppShell>
     )
 }
