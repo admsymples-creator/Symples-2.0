@@ -170,7 +170,6 @@ export default function ItemDaListaPage() {
                             <KanbanCard
                                 {...kanbanCardData}
                                 onClick={() => console.log("Click")}
-                                onEdit={() => console.log("Edit")}
                                 onDelete={() => console.log("Delete")}
                             />
                         </div>

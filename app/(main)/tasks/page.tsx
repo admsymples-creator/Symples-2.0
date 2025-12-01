@@ -80,7 +80,7 @@ interface Task {
     tags?: string[];
     hasUpdates?: boolean;
     workspaceId?: string | null;
-    group?: { id: string; name: string; color: string | null };
+    group?: { id: string; name: string; color?: string }; // compatível com TaskBoard
     hasComments?: boolean;
     commentCount?: number;
 }
@@ -150,7 +150,13 @@ export default function TasksPage() {
             tags,
             hasUpdates: false,
             workspaceId: task.workspace_id || null,
-            group: (task as any).group ? { id: (task as any).group.id, name: (task as any).group.name, color: (task as any).group.color } : undefined,
+            group: (task as any).group
+                ? {
+                    id: (task as any).group.id,
+                    name: (task as any).group.name,
+                    color: (task as any).group.color || undefined,
+                }
+                : undefined,
             // Contar comentários
             hasComments: ((task as any).comment_count || 0) > 0,
             commentCount: (task as any).comment_count || 0,
@@ -371,6 +377,58 @@ export default function TasksPage() {
     }, []);
 
     // Filtrar tarefas por busca
+    // Função para alternar status de conclusão
+    const handleToggleComplete = async (taskId: string, completed: boolean) => {
+        // Atualização otimista no estado local
+        setLocalTasks((prevTasks) =>
+            prevTasks.map((task) =>
+                task.id === taskId
+                    ? { ...task, completed }
+                    : task
+            )
+        );
+
+        // Persistir no backend de forma assíncrona
+        try {
+            const result = await updateTask({
+                id: taskId,
+                status: completed ? "done" : "todo",
+            });
+
+            if (!result.success) {
+                // Reverter em caso de erro
+                setLocalTasks((prevTasks) =>
+                    prevTasks.map((task) =>
+                        task.id === taskId
+                            ? { ...task, completed: !completed }
+                            : task
+                    )
+                );
+                console.error("Erro ao atualizar tarefa:", result.error);
+                toast.error("Erro ao atualizar tarefa");
+            } else if (result.data) {
+                // Atualizar com dados do servidor para garantir sincronização
+                const updatedTask = mapTaskFromDB(result.data);
+                setLocalTasks((prevTasks) =>
+                    prevTasks.map((task) =>
+                        task.id === taskId ? updatedTask : task
+                    )
+                );
+            }
+        } catch (error) {
+            // Reverter em caso de erro
+            setLocalTasks((prevTasks) =>
+                prevTasks.map((task) =>
+                    task.id === taskId
+                        ? { ...task, completed: !completed }
+                        : task
+                )
+            );
+            console.error("Erro ao atualizar tarefa:", error);
+            toast.error("Erro ao atualizar tarefa");
+        }
+    };
+
     const filteredTasks = useMemo(() => {
         if (!searchQuery.trim()) {
             return localTasks;
@@ -498,32 +556,42 @@ export default function TasksPage() {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
         const columns = Object.entries(dataToUse).map(([key, tasks]) => {
             let title = key;
+            let color: string | undefined;
             
             // Recuperar título real se a chave for um ID (modo group)
             if (viewOption === "group") {
                 if (key === "inbox") {
                     title = "Inbox";
+                    color = "#64748b"; // Slate 500 para Inbox
                 } else {
                     // Tentar primeiro das tarefas
                     const groupFromTask = tasks[0]?.group;
                     if (groupFromTask) {
                         title = groupFromTask.name || "Sem Nome";
+                        color = groupFromTask.color || undefined;
                     } else {
                         // Se não há tarefas, buscar do availableGroups
                         const groupFromDB = availableGroups.find(g => g.id === key);
                         if (groupFromDB) {
                             title = groupFromDB.name || "Sem Nome";
+                            color = groupFromDB.color || undefined;
                         } else {
                             title = "Sem Nome";
                         }
+                    }
+                    
+                    // Fallback para cor do mapa de cores se disponível
+                    if (groupColors[key] && groupColors[key] !== color) {
+                         color = groupColors[key];
                     }
                 }
             }
 
             return {
-            id: key,
+                id: key,
                 title,
-            tasks,
+                tasks,
+                color,
             };
         });
 
@@ -1587,9 +1655,10 @@ export default function TasksPage() {
                                                 ? statusMap[context.status] || "todo"
                                                 : undefined;
 
-                                            // Se viewOption for "group", tentar criar com group_id?
-                                            // Por enquanto não temos como resolver group name -> ID facilmente sem mais dados
-                                            // TODO: Implementar lógica para resolver grupo se estivermos na view "group"
+                                            // Se viewOption for "group", usar o ID do grupo atual
+                                            const groupId = viewOption === "group" && group.id !== "inbox" && group.id !== "Inbox" 
+                                                ? group.id 
+                                                : undefined;
 
                                             const result = await createTask({
                                                 title,
@@ -1598,6 +1667,7 @@ export default function TasksPage() {
                                                 workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
                                                 assignee_id: context.assigneeId,
                                                 due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
+                                                group_id: groupId,
                                             });
 
                                         if (result.success && result.data) {
@@ -1903,9 +1973,10 @@ export default function TasksPage() {
                                                 ? statusMap[context.status] || "todo"
                                                 : undefined;
 
-                                            // Se viewOption for "group", tentar criar com group_id?
-                                            // Por enquanto não temos como resolver group name -> ID facilmente sem mais dados
-                                            // TODO: Implementar lógica para resolver grupo se estivermos na view "group"
+                                            // Se viewOption for "group", usar o ID do grupo atual
+                                            const groupId = viewOption === "group" && group.id !== "inbox" && group.id !== "Inbox" 
+                                                ? group.id 
+                                                : undefined;
 
                                             const result = await createTask({
                                                 title,
@@ -1914,6 +1985,7 @@ export default function TasksPage() {
                                                 workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
                                                 assignee_id: context.assigneeId,
                                                 due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
+                                                group_id: groupId,
                                             });
 
                                         if (result.success && result.data) {
@@ -1955,6 +2027,8 @@ export default function TasksPage() {
                                 <TaskBoard
                                     columns={kanbanColumns}
                                     onTaskClick={handleTaskClick}
+                                    onTaskMoved={reloadTasks}
+                                    onToggleComplete={handleToggleComplete}
                                     onAddTask={async (columnId, title, dueDate, assigneeId) => {
                                         try {
                                             // Mapear status/priority baseado no viewOption e columnId
@@ -1972,11 +2046,22 @@ export default function TasksPage() {
 
                                             let dbStatus: "todo" | "in_progress" | "review" | "correction" | "done" | undefined;
                                             let priority: "low" | "medium" | "high" | "urgent" | undefined;
+                                            let groupId: string | null | undefined;
 
                                             if (viewOption === "status") {
                                                 dbStatus = statusMap[columnId] || "todo";
                                             } else if (viewOption === "priority") {
                                                 priority = columnId as "low" | "medium" | "high" | "urgent";
+                                            } else if (viewOption === "group") {
+                                                // Se estiver na visão de grupos, o columnId é o ID do grupo
+                                                // Se for "inbox", groupId é null (explicitamente)
+                                                if (columnId === "inbox" || columnId === "Inbox") {
+                                                    groupId = null;
+                                                } else {
+                                                    groupId = columnId;
+                                                }
+                                                // Status padrão para novas tarefas em grupos
+                                                dbStatus = "todo";
                                             }
 
                                             const result = await createTask({
@@ -1986,6 +2071,7 @@ export default function TasksPage() {
                                                 assignee_id: assigneeId || undefined,
                                                 due_date: dueDate ? dueDate.toISOString() : undefined,
                                                 workspace_id: activeTab === "minhas" ? null : undefined,
+                                                group_id: groupId,
                                             });
 
                                             if (result.success && result.data) {

@@ -467,7 +467,6 @@ export default function DesignSystemPage() {
                                                 assignees={[{ name: "Ana Costa", avatar: undefined }]}
                                                 dueDate="2024-12-15"
                                                 tags={["Backend", "Urgente"]}
-                                                workspaceColor="#3B82F6"
                                                 subtasksCount={5}
                                                 commentsCount={3}
                                                 onClick={() => {}}
