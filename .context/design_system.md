@@ -333,3 +333,52 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Build Status:** ✅ Compilando sem erros
 - **Variáveis de Ambiente:** Configuradas (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - **Deploy Automático:** Configurado para branch `master`
+
+## 12. PRÓXIMOS PASSOS (FOCO DE UX/UI)
+
+1. **Detalhes de Tarefas 100% (Arquivos, Áudio, etc.)**  
+   - Refinar o layout do `TaskDetailModal` para acomodar:
+     - Galeria de arquivos com preview em grid (`grid-cols-2`/`grid-cols-3`, zoom em modal secundário).  
+     - Player de áudio compacto (waveform ou barra linear) com estados de reprodução claros.  
+     - Separação visual entre “Origem do WhatsApp” (mensagem original) e “Arquivos adicionados pelo time”.
+   - Padrões visuais:
+     - Ícones de tipo de arquivo (documento, imagem, áudio) com cor semântica.  
+     - Estados de upload (carregando, sucesso, erro) com feedback discreto (badges, tooltips, skeletons).
+
+2. **Gestão de Usuários (UI de Administração)**  
+   - Criar telas dedicadas para gestão de usuários:
+     - Tabela com colunas: Nome, Email, Role, Último Acesso, Status.  
+     - Dropdown de ações por linha (Alterar Role, Remover, Reenviar Convite).  
+   - Padrões de feedback:
+     - Dialogs de confirmação para ações destrutivas.  
+     - Toasts (sonner) para sucesso/erro em operações.
+
+3. **E-mails Transacionais (Resend) — Padrões Visuais**  
+   - Definir templates base:
+     - Layout “Symples” com header escuro, conteúdo claro e call-to-action verde.  
+     - Componentes reutilizáveis de e-mail (botão primário, lista de itens, blocos de destaque).  
+   - Garantir consistência entre:
+     - Mensagens mostradas na UI (convites, alertas) e o conteúdo dos e-mails.  
+     - Branding (cores, tipografia) entre app web e emails.
+
+4. **Playbook (Onboarding Guiado na Interface)**  
+   - Traduzir o playbook operacional em elementos de interface:
+     - Banners contextuais nas primeiras sessões (ex: “Passo 1: Conecte o WhatsApp”).  
+     - Checklists interativos no Dashboard (cards com progresso).  
+     - Empty states orientados por caso de uso (“Você ainda não conectou o WhatsApp. Clique aqui para começar.”).
+
+5. **Assistente com IA (Interação Guiada Visualmente)**  
+   - Padronizar blocos de resposta do Assistente:
+     - Cards de resumo de tarefas (lista compacta com CTA “Ver todas”).  
+     - Cards financeiros (KPI com variação, trend e botão “Ver detalhes”).  
+   - Padrões de entrada:
+     - Chips de sugestão destacados abaixo do `AIOrb`.  
+     - Histórico visual com separadores de sessão e data.
+
+6. **Integração WhatsApp + Symples + n8n (Feedback Visual)**  
+   - Criar telas de “Status de Integração”:
+     - Card com estado da conexão (Conectado / Desconectado / Atenção).  
+     - Timeline visual de eventos recentes (mensagens recebidas, tarefas criadas).  
+   - Indicadores na UI:
+     - Badge “Origem WhatsApp” em tarefas/transações vindas do fluxo de automação.  
+     - Tooltips explicando automatizações ativas (ex: “Esta tarefa foi criada via fluxo n8n X”).

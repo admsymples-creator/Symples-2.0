@@ -277,3 +277,49 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **Estrutura Supabase:** Clientes separados para browser, server e middleware
 - ✅ **Correções de Tipos:** Ajustes em `TaskRow` (`onEdit` retorna Promise), `finance/page.tsx` (campo `date` ao invés de `due_date`), `workspace-settings.ts` (tratamento de `role` nullable)
 - ✅ **Deploy em Produção:** Aplicação deployada em https://app.symples.org via Vercel
+
+---
+
+## 11. Próximos Passos (Roadmap Imediato)
+
+1. **Detalhes de Tarefas 100% (Arquivos, Áudio, etc.)**  
+   - Expandir o módulo de detalhes de tarefa (`TaskDetailModal`) para suportar totalmente:
+     - Upload múltiplo de arquivos (documentos, imagens) com preview e gerenciamento (renomear, remover).  
+     - Upload e playback de áudios (áudio do usuário e áudios vindos do WhatsApp/n8n).  
+     - Sincronização completa com `task_attachments` e Supabase Storage, incluindo estados de upload e tratamento de erro.
+
+2. **Gestão de Usuários (User Management Completo)**  
+   - Evoluir o módulo de membros/time para:
+     - Gerenciar roles detalhadas (owner, admin, member, viewer) com permissões claras por módulo (Tasks, Finance, Settings, Billing).  
+     - Interface de administração de usuários (ativar/desativar acesso, reset de permissões).  
+     - Logs de auditoria dedicados para ações sensíveis (remoção de membros, mudança de role, etc.).
+
+3. **E-mails Transacionais com Resend**  
+   - Integrar Resend para envio de:
+     - Convites de workspace (`workspace_invites`).  
+     - Notificações de tarefa (atribuição, mudança de status, comentários).  
+     - E-mails de onboarding e reset de senha (quando aplicável).  
+   - Criar camada de abstração (`lib/email/`) para centralizar templates e chamadas ao Resend.
+
+4. **Playbook Operacional (Onboarding & Sucesso do Cliente)**  
+   - Definir e documentar um playbook de uso do Symples:
+     - Fluxo recomendado para novos clientes (primeiros 7 dias).  
+     - Sequência de ações guiadas dentro do produto (checklist in-app).  
+     - Templates de mensagens para suporte/concierge via WhatsApp.  
+   - Parte desse playbook deve ser refletida na UI (empty states, tooltips e sugestões do Assistente IA).
+
+5. **Assistente com IA (Versão 2.0)**  
+   - Evoluir a página `/assistant` para:
+     - Suportar comandos estruturados (ex: “resuma minha semana”, “mostre minhas despesas acima de 1k”).  
+     - Responder com componentes ricos (cards de tarefa, gráficos financeiros, atalhos de ação).  
+     - Contextualizar respostas com base no workspace atual, perfil do usuário e histórico de uso.  
+   - Integrar melhor com n8n para automações disparadas pelo Assistente (ex: criar fluxos automáticos a partir de prompts).
+
+6. **Integração WhatsApp + Symples + n8n (Ciclo Fechado)**  
+   - Consolidar o fluxo ponta-a-ponta:
+     - WhatsApp → n8n → Symples (criação/atualização de tarefas, transações, comentários).  
+     - Symples → n8n → WhatsApp (confirmações, lembretes, alertas inteligentes).  
+   - Garantir rastreabilidade completa:
+     - Cada item vindo do WhatsApp deve ter origem claramente marcada no `origin_context`.  
+     - Logs de auditoria registrando cenários críticos (ex: falhas de parsing, mensagens ignoradas).  
+   - Documentar o fluxo em um diagrama (n8n + Supabase + Symples) e em um guia técnico (`docs/INTEGRACAO_WHATSAPP.md`).
