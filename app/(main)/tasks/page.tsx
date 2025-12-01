@@ -230,10 +230,10 @@ export default function TasksPage() {
                 dueDateEnd?: string;
             } = {};
 
-            // Aplicar filtro de workspace (ou pessoal) se não estiver na aba "minhas"
-            // Se activeWorkspaceId for undefined (carregando) ou null (pessoal), usamos null para buscar tarefas pessoais
-            // Isso evita buscar TODAS as tarefas globais durante o carregamento inicial
-            if (activeTab !== "minhas") {
+            // Aplicar filtro de workspace (ou pessoal) apenas na aba "time"
+            // "Minhas" e "Todas" devem mostrar tarefas globais (de todos os contextos)
+            // "Time" deve respeitar o workspace ativo (tarefas da equipe neste contexto)
+            if (activeTab === "time") {
                 filters.workspaceId = activeWorkspaceId || null;
             }
             
@@ -354,9 +354,13 @@ export default function TasksPage() {
 
     // Buscar tarefas e grupos do banco
     useEffect(() => {
+        // Aguardar o carregamento do contexto do workspace para evitar "blink"
+        // Se não estiver carregado, não fazemos nada, pois activeWorkspaceId pode estar incorreto (null inicial)
+        if (!isLoaded) return;
+
         reloadTasks();
         loadGroups();
-    }, [activeTab, activeWorkspaceId]);
+    }, [activeTab, activeWorkspaceId, isLoaded]);
 
     // Buscar membros do workspace
     useEffect(() => {

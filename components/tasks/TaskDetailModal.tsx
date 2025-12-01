@@ -83,6 +83,7 @@ import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "./AudioMessageBubble";
 import { AttachmentCard } from "./AttachmentCard";
 import { Editor } from "@/components/ui/editor";
+import { TaskImageLightbox } from "./TaskImageLightbox";
 
 // Funções auxiliares para arquivos
 const getFileTypeFromMime = (mimeType: string): "image" | "pdf" | "other" => {
@@ -208,6 +209,18 @@ export function TaskDetailModal({
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+
+    // Estado do Lightbox
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    
+    // Filtrar imagens para o Lightbox
+    const imageAttachments = attachments
+        .filter(att => att.type === "image")
+        .map(att => ({
+            id: att.id,
+            url: att.url || "",
+            name: att.name
+        }));
 
     // Buscar dados completos da tarefa quando modal abre
     useEffect(() => {
@@ -1336,12 +1349,25 @@ export function TaskDetailModal({
                                                 key={file.id}
                                                 file={file}
                                                 onDelete={handleDeleteAttachment}
+                                                onPreview={() => {
+                                                    if (file.type === "image") {
+                                                        const index = imageAttachments.findIndex(img => img.id === file.id);
+                                                        if (index !== -1) setLightboxIndex(index);
+                                                    }
+                                                }}
                                             />
                                         ))}
                                     </div>
                                 )
                             )}
                         </div>
+                        
+                        <TaskImageLightbox
+                            images={imageAttachments}
+                            initialIndex={lightboxIndex || 0}
+                            isOpen={lightboxIndex !== null}
+                            onClose={() => setLightboxIndex(null)}
+                        />
 
                         {/* Sub-tarefas */}
                         <div>

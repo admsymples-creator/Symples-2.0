@@ -3,12 +3,6 @@
 import { useState } from "react";
 import { FileImage, FileText, Trash2, Maximize2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 interface AttachmentCardProps {
@@ -20,6 +14,7 @@ interface AttachmentCardProps {
         url?: string;
     };
     onDelete: (id: string) => void;
+    onPreview?: () => void;
 }
 
 // Função para verificar se é imagem baseado no tipo ou extensão
@@ -52,24 +47,24 @@ const getOriginalUrl = (url: string | undefined): string | undefined => {
     return url.split("?")[0];
 };
 
-export function AttachmentCard({ file, onDelete }: AttachmentCardProps) {
-    const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+export function AttachmentCard({ file, onDelete, onPreview }: AttachmentCardProps) {
     const [imageError, setImageError] = useState(false);
     const isImage = isImageFile(file);
     const thumbnailUrl = isImage ? getThumbnailUrl(file.url) : undefined;
-    const originalUrl = isImage ? getOriginalUrl(file.url) : undefined;
 
     if (isImage && thumbnailUrl) {
         return (
             <>
-                <div className="relative h-32 rounded-lg border border-gray-100 overflow-hidden group cursor-pointer bg-gray-50">
+                <div 
+                    className="relative h-32 rounded-lg border border-gray-100 overflow-hidden group cursor-pointer bg-gray-50"
+                    onClick={() => onPreview?.()}
+                >
                     {/* Preview da Imagem */}
                     <img
                         src={thumbnailUrl}
                         alt={file.name}
                         className="w-full h-full object-cover"
                         onError={() => setImageError(true)}
-                        onClick={() => setIsLightboxOpen(true)}
                     />
                     
                     {/* Overlay no Hover */}
@@ -81,7 +76,7 @@ export function AttachmentCard({ file, onDelete }: AttachmentCardProps) {
                             className="h-8 w-8 bg-white/90 hover:bg-white text-gray-700"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setIsLightboxOpen(true);
+                                onPreview?.();
                             }}
                         >
                             <Maximize2 className="h-4 w-4" />
@@ -106,64 +101,6 @@ export function AttachmentCard({ file, onDelete }: AttachmentCardProps) {
                         <p className="text-xs text-white/80">{file.size}</p>
                     </div>
                 </div>
-
-                {/* Lightbox Dialog */}
-                <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
-                    <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-                        <DialogHeader className="px-6 py-4 border-b">
-                            <div className="flex items-center justify-between">
-                                <DialogTitle className="text-sm font-medium truncate">
-                                    {file.name}
-                                </DialogTitle>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => setIsLightboxOpen(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </DialogHeader>
-                        <div className="flex items-center justify-center p-6 bg-gray-50">
-                            {originalUrl && (
-                                <img
-                                    src={originalUrl}
-                                    alt={file.name}
-                                    className="max-w-full max-h-[70vh] object-contain rounded-lg"
-                                />
-                            )}
-                        </div>
-                        <div className="px-6 py-4 border-t flex items-center justify-between">
-                            <p className="text-sm text-gray-600">{file.size}</p>
-                            <div className="flex gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                        if (originalUrl) {
-                                            window.open(originalUrl, "_blank");
-                                        }
-                                    }}
-                                >
-                                    Abrir em nova aba
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="destructive"
-                                    onClick={() => {
-                                        onDelete(file.id);
-                                        setIsLightboxOpen(false);
-                                    }}
-                                >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Excluir
-                                </Button>
-                            </div>
-                        </div>
-                    </DialogContent>
-                </Dialog>
             </>
         );
     }

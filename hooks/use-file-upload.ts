@@ -46,27 +46,10 @@ export function useFileUpload() {
       // Criar cliente Supabase
       const supabase = createBrowserClient();
 
-      // Verificar se o bucket existe (tentando listar)
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-      
-      if (listError) {
-        console.warn("Erro ao listar buckets:", listError);
-      } else {
-        const bucketExists = buckets?.some((b) => b.name === bucket);
-        if (!bucketExists) {
-          const errorMsg = `Bucket '${bucket}' não encontrado. Buckets disponíveis: ${buckets?.map((b) => b.name).join(", ") || "nenhum"}. Por favor, crie o bucket '${bucket}' no Supabase Dashboard (Storage > New bucket).`;
-          setProgress((prev) => ({
-            ...prev,
-            [file.name]: {
-              fileName: file.name,
-              progress: 0,
-              status: "error",
-              error: errorMsg,
-            },
-          }));
-          return { success: false, error: errorMsg };
-        }
-      }
+      // NOTA: Removemos a verificação explícita de buckets (listBuckets)
+      // porque requer permissões de listagem globais, o que muitas vezes
+      // é bloqueado por RLS. Vamos confiar que se o bucket não existir,
+      // o upload falhará com um erro claro.
 
       // Determinar tipo de arquivo
       const fileType = getFileType(file.type || file.name);
