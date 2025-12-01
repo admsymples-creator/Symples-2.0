@@ -301,6 +301,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Indicador de duração
   - Waveform visual (quando disponível)
 
+- **Editor (`components/ui/editor.tsx`):**
+  - Editor de texto rico baseado em Tiptap
+  - Toolbar com formatação
+  - Suporte a markdown
+  - Integração com upload de imagens
+
 ### 9.3. Componentes Financeiros
 - **CreateTransactionModal (`components/finance/CreateTransactionModal.tsx`):**
   - Hero Input: Valor monetário gigante (`text-6xl`)
@@ -315,7 +321,61 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Ícone Sparkles centralizado
   - Efeito de brilho pulsante
 
-### 9.5. Padrões de Código Implementados
+### 9.5. Hooks Customizados Implementados
+- **useTaskCache (`hooks/use-task-cache.ts`):**
+  - Sistema de cache em memória para tarefas
+  - TTL configurável (5min para básicos, 2min para estendidos)
+  - Invalidação automática por tempo
+  - Métodos: `getCachedBasic`, `getCachedExtended`, `setCachedBasic`, `setCachedExtended`, `invalidate`
+
+- **useTaskPreload (`hooks/use-task-preload.ts`):**
+  - Pré-carregamento inteligente de tarefas
+  - Otimização de performance com preload de dados relacionados
+  - Integração com sistema de cache
+
+### 9.6. Componentes de IA e Áudio
+- **CreateTaskFromAudioModal (`components/tasks/CreateTaskFromAudioModal.tsx`):**
+  - Modal para criação de tarefas a partir de áudio
+  - Transcrição automática via API
+  - Extração de informações usando IA (título, data)
+  - Resumo automático da transcrição
+  - Interface otimizada com estados de loading
+
+- **TaskImageLightbox (`components/tasks/TaskImageLightbox.tsx`):**
+  - Visualizador de imagens em lightbox
+  - Navegação entre imagens
+  - Zoom e controles de imagem
+  - Integração com galeria de anexos
+
+### 9.7. APIs Implementadas
+- **API de Transcrição (`app/api/audio/transcribe/route.ts`):**
+  - Integração com OpenAI Whisper
+  - Processamento de arquivos de áudio
+  - Retorno de transcrição em texto
+
+- **API de Extração de Informações (`app/api/ai/extract-task-info/route.ts`):**
+  - Uso de GPT-4o-mini para extrair título e data
+  - Processamento de texto de transcrições
+  - Retorno estruturado em JSON
+
+- **API de Resumo (`app/api/ai/summarize/route.ts`):**
+  - Geração de resumos usando IA
+  - Processamento de texto longo
+  - Retorno de resumo conciso
+
+### 9.8. Sistema de Compartilhamento
+- **Página de Compartilhamento (`app/(main)/tasks/share/[token]/page.tsx`):**
+  - Visualização pública de tarefas compartilhadas
+  - Verificação de tokens
+  - Validação de expiração
+  - Integração com TaskDetailModal em modo público
+
+- **Página de Erro (`app/(main)/tasks/error/page.tsx`):**
+  - Tratamento de erros específicos para tarefas
+  - Mensagens de erro amigáveis
+  - Navegação de retorno
+
+### 9.9. Padrões de Código Implementados
 - **Suspense Boundaries:**
   - Todos os componentes que usam `useSearchParams()` devem estar envolvidos em `<Suspense>`
   - Fallbacks de loading minimalistas
@@ -330,6 +390,11 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Tipos gerados do Supabase (`database.types.ts`)
   - Interfaces explícitas para props de componentes
   - Validação de tipos em runtime quando necessário
+
+- **Cache e Performance:**
+  - Uso de hooks de cache para reduzir requisições
+  - Preload de dados relacionados
+  - TTL configurável para diferentes tipos de dados
 
 ## 10. DEPENDÊNCIAS PRINCIPAIS (v2.1)
 
