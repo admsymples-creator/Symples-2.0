@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
     MoreHorizontal, 
     Maximize2, 
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { createTask, updateTask, deleteTask, duplicateTask } from "@/lib/actions/tasks";
+import { createTask, updateTask, deleteTask, duplicateTask, getWorkspaceMembers } from "@/lib/actions/tasks";
 import { useRouter } from "next/navigation";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, STATUS_TO_LABEL } from "@/lib/config/tasks";
@@ -109,12 +109,48 @@ export function TaskActionsMenu({
     onTaskUpdated,
     onTaskDeleted,
     className,
-    members = [],
+    members: providedMembers = [],
 }: TaskActionsMenuProps) {
     const router = useRouter();
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [members, setMembers] = useState<Member[]>(providedMembers);
+
+    // Buscar membros automaticamente se não foram fornecidos
+    useEffect(() => {
+        // Se membros foram fornecidos, usar eles e não buscar
+        if (providedMembers.length > 0) {
+            setMembers(providedMembers);
+            return;
+        }
+
+        // Buscar membros apenas se não foram fornecidos
+        let cancelled = false;
+        const loadMembers = async () => {
+            try {
+                const workspaceMembers = await getWorkspaceMembers(task.workspace_id || null);
+                if (cancelled) return;
+                
+                const mappedMembers: Member[] = workspaceMembers.map((m: any) => ({
+                    id: m.id,
+                    name: m.full_name || m.email || "Usuário",
+                    avatar: m.avatar_url || undefined,
+                }));
+                setMembers(mappedMembers);
+            } catch (error) {
+                if (!cancelled) {
+                    console.error("Erro ao carregar membros:", error);
+                }
+            }
+        };
+
+        loadMembers();
+        
+        return () => {
+            cancelled = true;
+        };
+    }, [task.workspace_id]); // Apenas workspace_id como dependência
 
     // Verificar se tem contexto do WhatsApp
     const hasWhatsAppContext = task.origin_context && (

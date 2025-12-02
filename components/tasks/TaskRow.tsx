@@ -55,9 +55,10 @@ const priorityColors = {
     urgent: "bg-red-500",
 };
 
-import { TASK_CONFIG, getTaskStatusConfig, mapLabelToStatus } from "@/lib/config/tasks";
+import { TASK_CONFIG, getTaskStatusConfig, mapLabelToStatus, TaskStatus } from "@/lib/config/tasks";
 import { TaskDatePicker } from "./pickers/TaskDatePicker";
 import { TaskAssigneePicker } from "./pickers/TaskAssigneePicker";
+import { TaskStatusPicker } from "./pickers/TaskStatusPicker";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 
@@ -197,6 +198,25 @@ export function TaskRow({
             }
         } catch (error) {
             toast.error("Erro ao atualizar responsável");
+            console.error(error);
+        }
+    };
+
+    // Handler para atualizar status
+    const handleStatusSelect = async (newStatus: TaskStatus) => {
+        try {
+            const result = await updateTask({
+                id,
+                status: newStatus,
+            });
+
+            if (result.success) {
+                onTaskUpdated?.();
+            } else {
+                toast.error(result.error || "Erro ao atualizar status");
+            }
+        } catch (error) {
+            toast.error("Erro ao atualizar status");
             console.error(error);
         }
     };
@@ -448,7 +468,6 @@ export function TaskRow({
                         assigneeId={assigneeId || null}
                         onSelect={handleAssigneeSelect}
                         workspaceId={workspaceId}
-                        members={assignees.map(a => ({ id: a.id || "", name: a.name, avatar: a.avatar }))}
                         trigger={
                             <button
                                 type="button"
@@ -502,13 +521,14 @@ export function TaskRow({
                     />
                 </div>
 
-                {/* 5. Status (Badge com cor isolada) */}
-                <div className={cn(
-                    "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs whitespace-nowrap",
-                    statusConfig.lightColor
-                )}>
-                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusConfig.color.replace("fill-", "bg-"))} />
-                    <span>{statusConfig.label}</span>
+                {/* 5. Status (Badge editável) */}
+                <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                    <TaskStatusPicker
+                        status={status}
+                        onSelect={handleStatusSelect}
+                        side="bottom"
+                        align="end"
+                    />
                 </div>
 
                 {/* 6. Menu */}
@@ -520,7 +540,6 @@ export function TaskRow({
                         onOpenDetails={onClick}
                         onTaskUpdated={onTaskUpdated}
                         onTaskDeleted={onTaskDeleted}
-                        members={assignees.map(a => ({ id: a.id || "", name: a.name, avatar: a.avatar }))}
                     />
                 </div>
             </div>

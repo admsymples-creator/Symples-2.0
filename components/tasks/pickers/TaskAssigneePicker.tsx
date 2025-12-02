@@ -46,15 +46,21 @@ export function TaskAssigneePicker({
 
     // Buscar membros se não foram fornecidos
     useEffect(() => {
-        if (providedMembers) {
+        // Se membros foram fornecidos, usar eles e não buscar
+        if (providedMembers && providedMembers.length > 0) {
             setMembers(providedMembers);
+            setIsLoading(false);
             return;
         }
 
+        // Buscar membros apenas se não foram fornecidos
+        let cancelled = false;
         const loadMembers = async () => {
             setIsLoading(true);
             try {
                 const workspaceMembers = await getWorkspaceMembers(workspaceId);
+                if (cancelled) return;
+                
                 const mappedMembers: Member[] = workspaceMembers.map((m: any) => ({
                     id: m.id,
                     name: m.full_name || m.email || "Usuário",
@@ -62,14 +68,22 @@ export function TaskAssigneePicker({
                 }));
                 setMembers(mappedMembers);
             } catch (error) {
-                console.error("Erro ao carregar membros:", error);
+                if (!cancelled) {
+                    console.error("Erro ao carregar membros:", error);
+                }
             } finally {
-                setIsLoading(false);
+                if (!cancelled) {
+                    setIsLoading(false);
+                }
             }
         };
 
         loadMembers();
-    }, [workspaceId, providedMembers]);
+        
+        return () => {
+            cancelled = true;
+        };
+    }, [workspaceId]); // Apenas workspaceId como dependência para evitar loops
 
     const selectedMember = members.find((m) => m.id === assigneeId);
 

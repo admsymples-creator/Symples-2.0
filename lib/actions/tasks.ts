@@ -489,6 +489,10 @@ export async function getTaskAttachments(taskId: string) {
 
 /**
  * Busca membros do workspace
+ *
+ * Regra importante:
+ *  - A lista de members **sempre** deve incluir o usuário logado (currentUser),
+ *    mesmo que ele ainda não esteja registrado em `workspace_members`.
  */
 export async function getWorkspaceMembers(workspaceId: string | null) {
     const supabase = await createServerActionClient();
@@ -496,14 +500,14 @@ export async function getWorkspaceMembers(workspaceId: string | null) {
 
     if (!user) return [];
 
+    // Caso de tarefas pessoais (sem workspace): retornamos somente o próprio usuário
     if (!workspaceId) {
-        // Se não tem workspace (tarefa pessoal), retorna apenas o próprio usuário
         const { data: profile } = await supabase
             .from("profiles")
             .select("*")
             .eq("id", user.id)
             .single();
-            
+
         return profile ? [profile] : [];
     }
 
@@ -525,5 +529,24 @@ export async function getWorkspaceMembers(workspaceId: string | null) {
         return [];
     }
 
-    return data.map((member: any) => member.user).filter(Boolean);
+    const members = (data || [])
+        .map((member: any) => member.user)
+        .filter(Boolean);
+
+    // Garante que o usuário logado esteja presente na lista de membros
+    const hasCurrentUser = members.some((m: any) => m.id === user.id);
+
+    if (!hasCurrentUser) {
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .single();
+
+        if (profile) {
+            members.push(profile);
+        }
+    }
+
+    return members;
 }
