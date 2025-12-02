@@ -416,7 +416,49 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Variáveis de Ambiente:** Configuradas (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - **Deploy Automático:** Configurado para branch `master`
 
-## 12. PRÓXIMOS PASSOS (FOCO DE UX/UI)
+## 12. ESTADOS DE LOADING E FEEDBACK VISUAL (v2.2)
+
+### 12.1. Feedback de Carregamento na Troca de Workspace
+- **Overlay de Loading:**
+  - Aparece durante a troca de workspace na página de tarefas
+  - Estilo: Card centralizado com fundo branco (`bg-white`), sombra suave (`shadow-lg`)
+  - Conteúdo: Ícone `Loader2` animado (`animate-spin`) + texto "Atualizando tarefas..."
+  - Posicionamento: Sobre o conteúdo anterior com leve blur (`backdrop-blur-sm`) e opacidade (`bg-white/60`)
+  - Objetivo: Evitar "piscar" de tela vazia e manter contexto visual durante o carregamento
+
+- **Indicador no Título:**
+  - Spinner discreto (`Loader2` com `w-4 h-4`) ao lado do título "Identidade do Workspace" em configurações
+  - Cor: `text-gray-400`
+  - Aparece apenas durante o carregamento do workspace ativo
+
+- **Campos Desabilitados:**
+  - Durante o carregamento, campos de formulário ficam desabilitados (`disabled`)
+  - Estilo: `opacity-50 cursor-not-allowed`
+  - Previne edições em dados incorretos durante a transição
+
+### 12.2. Padrões de Performance
+- **Carregamento Paralelo:**
+  - Tarefas e grupos são carregados simultaneamente usando `Promise.all()`
+  - Reduz tempo percebido de carregamento
+  - Aplicado em: Troca de workspace, mudança de aba
+
+- **Otimização de Requisições:**
+  - Guard clauses para evitar chamadas ao backend quando não há dados necessários
+  - Exemplo: Não buscar membros se `activeWorkspaceId` for `null`
+  - Limpeza de estados ao trocar de contexto
+
+### 12.3. Estados de Loading por Componente
+- **TasksPage:**
+  - `isLoadingTasks`: Controla overlay de loading principal
+  - Feedback visual: Overlay centralizado com spinner e mensagem
+  - Mantém conteúdo anterior visível (não limpa a tela)
+
+- **SettingsPageClient:**
+  - `isLoadingWorkspace`: Controla loading do workspace ativo
+  - Feedback visual: Spinner no título + campos desabilitados
+  - Recarrega membros e convites automaticamente ao trocar workspace
+
+## 13. PRÓXIMOS PASSOS (FOCO DE UX/UI)
 
 1. **Detalhes de Tarefas 100% (Arquivos, Áudio, etc.)**  
    - Refinar o layout do `TaskDetailModal` para acomodar:

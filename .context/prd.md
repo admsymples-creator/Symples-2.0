@@ -327,6 +327,27 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **Deploy em Produção:** Aplicação deployada em https://app.symples.org via Vercel
 - ✅ **Estratégia de Branches:** `develop` para desenvolvimento (Preview) e `master` para produção
 
+### 10.8. Correções de Isolamento de Workspace (v2.2)
+- ✅ **Isolamento de Tarefas por Workspace:**
+  - Correção do filtro de `workspace_id` nas abas "Todas" e "Time" da página de tarefas
+  - Tarefas agora são filtradas corretamente quando o usuário troca de workspace
+  - Inbox (tarefas sem grupo) também isolado por workspace
+  - Criação de novas tarefas agora usa o `workspace_id` ativo automaticamente
+- ✅ **Sincronização de Configurações com Workspace Ativo:**
+  - Página de configurações agora sincroniza com o workspace selecionado no contexto
+  - Dados do workspace (nome, slug, logo) são recarregados automaticamente ao trocar de workspace
+  - Membros e convites são atualizados dinamicamente conforme o workspace ativo
+  - Função `getWorkspaceById()` criada para buscar dados específicos de um workspace
+- ✅ **Otimização de Performance na Troca de Workspace:**
+  - Carregamento paralelo de tarefas e grupos usando `Promise.all()`
+  - Redução de chamadas desnecessárias ao backend (guard para membros quando não há workspace ativo)
+  - Feedback visual de carregamento durante a troca de workspace (overlay com spinner)
+  - Estados de loading consistentes em toda a interface
+- ✅ **Correções de TypeScript no Build:**
+  - Correção de `result.data` possivelmente `undefined` em `loadGroups()`
+  - Tratamento seguro de `logo_url` que pode não existir na tabela `workspaces`
+  - Build passa sem erros de TypeScript
+
 ---
 
 ## 11. Próximos Passos (Roadmap Imediato)
