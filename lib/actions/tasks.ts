@@ -363,6 +363,81 @@ export async function deleteTask(id: string) {
 }
 
 /**
+ * Duplica uma tarefa (copia todos os dados exceto ID e created_at)
+ */
+export async function duplicateTask(taskId: string) {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Buscar a tarefa original completa
+  const { data: originalTask, error: fetchError } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("id", taskId)
+    .single();
+
+  if (fetchError || !originalTask) {
+    console.error("Erro ao buscar tarefa:", fetchError);
+    return { success: false, error: "Tarefa não encontrada" };
+  }
+
+  // Preparar dados para a nova tarefa
+  // Copia todos os campos exceto: id, created_at, updated_at
+  // E redefine created_by para o usuário atual
+  const taskData: any = {
+    title: `${originalTask.title} (Cópia)`,
+    description: originalTask.description,
+    status: originalTask.status || "todo",
+    priority: originalTask.priority || "medium",
+    position: originalTask.position || 0,
+    due_date: originalTask.due_date,
+    is_personal: originalTask.is_personal ?? false,
+    workspace_id: originalTask.workspace_id,
+    assignee_id: originalTask.assignee_id,
+    created_by: user.id, // Usuário atual é o criador da cópia
+    origin_context: originalTask.origin_context,
+    group_id: originalTask.group_id || null,
+    // Campos que podem não existir em todas as versões do schema
+    tags: (originalTask as any).tags || [],
+    subtasks: (originalTask as any).subtasks || [],
+  };
+
+  // Inserir a nova tarefa
+  const { data: newTask, error: insertError } = await supabase
+    .from("tasks")
+    .insert(taskData)
+    .select()
+    .single();
+
+  if (insertError) {
+    console.error("Erro ao duplicar tarefa:", insertError);
+    
+    if (
+      insertError.code === "PGRST301" ||
+      insertError.code === "42501" ||
+      insertError.message.includes("permission") ||
+      insertError.message.includes("policy") ||
+      insertError.message.includes("RLS")
+    ) {
+      return {
+        success: false,
+        error: "Erro de permissão no banco de dados. Verifique as políticas RLS no Supabase.",
+      };
+    }
+
+    return { success: false, error: insertError.message };
+  }
+
+  revalidatePath("/tasks");
+  revalidatePath("/home");
+  return { success: true, data: newTask };
+}
+
+/**
  * Busca comentários de uma tarefa
  */
 export async function getTaskComments(taskId: string) {

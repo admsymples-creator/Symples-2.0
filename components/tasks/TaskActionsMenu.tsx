@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { createTask, updateTask, deleteTask } from "@/lib/actions/tasks";
+import { createTask, updateTask, deleteTask, duplicateTask } from "@/lib/actions/tasks";
 import { useRouter } from "next/navigation";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, STATUS_TO_LABEL } from "@/lib/config/tasks";
@@ -310,15 +310,7 @@ export function TaskActionsMenu({
         if (isProcessing) return;
         setIsProcessing(true);
         try {
-            const result = await createTask({
-                title: `${task.title} (Cópia)`,
-                description: task.description || undefined,
-                status: task.status as any,
-                priority: task.priority,
-                assignee_id: task.assignee_id || undefined,
-                workspace_id: task.workspace_id || undefined,
-                due_date: task.due_date || undefined,
-            });
+            const result = await duplicateTask(task.id);
 
             if (result.success) {
                 toast.success("Tarefa duplicada com sucesso");
@@ -327,7 +319,8 @@ export function TaskActionsMenu({
                 toast.error(result.error || "Erro ao duplicar tarefa");
             }
         } catch (error) {
-            toast.error("Erro inesperado");
+            console.error("Erro ao duplicar tarefa:", error);
+            toast.error("Erro inesperado ao duplicar tarefa");
         } finally {
             setIsProcessing(false);
         }

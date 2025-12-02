@@ -348,6 +348,15 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
   - Tratamento seguro de `logo_url` que pode não existir na tabela `workspaces`
   - Build passa sem erros de TypeScript
 
+### 10.9. Correções de Ações de Tarefas (v2.3)
+- ✅ **Duplicação de Tarefas:**
+  - Server Action `duplicateTask()` implementada em `lib/actions/tasks.ts`
+  - Copia todos os campos da tarefa original (exceto `id`, `created_at`, `updated_at`)
+  - Preserva: título (com sufixo "(Cópia)"), descrição, status, prioridade, data de vencimento, responsável, workspace, tags, subtarefas, grupo e contexto de origem
+  - Define o usuário atual como criador da cópia
+  - Integrada ao `TaskActionsMenu` com feedback visual e tratamento de erros
+  - Revalidação automática dos caminhos `/tasks` e `/home` após duplicação
+
 ---
 
 ## 11. Próximos Passos (Roadmap Imediato)
