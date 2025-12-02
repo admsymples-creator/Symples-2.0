@@ -83,7 +83,7 @@ export async function getWorkspaceById(workspaceId: string): Promise<Workspace |
   // Buscar dados do workspace
   const { data: workspace, error } = await supabase
     .from("workspaces")
-    .select("id, name, slug, logo_url")
+    .select("id, name, slug")
     .eq("id", workspaceId)
     .single();
 
@@ -92,7 +92,23 @@ export async function getWorkspaceById(workspaceId: string): Promise<Workspace |
     return null;
   }
 
-  return workspace as Workspace;
+  // Buscar logo_url separadamente (pode não existir na tabela ainda)
+  let logo_url: string | null = null;
+  try {
+    const { data: workspaceWithLogo } = await supabase
+      .from("workspaces")
+      .select("logo_url")
+      .eq("id", workspaceId)
+      .single();
+    logo_url = (workspaceWithLogo as any)?.logo_url || null;
+  } catch {
+    // Se logo_url não existir, ignora o erro
+  }
+
+  return {
+    ...workspace,
+    logo_url,
+  } as Workspace;
 }
 
 export async function updateProfile(formData: FormData) {

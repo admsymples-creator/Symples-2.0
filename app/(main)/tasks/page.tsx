@@ -326,7 +326,8 @@ export default function TasksPage() {
 
             const result = await getTaskGroups(targetWorkspaceId);
             if (result.success && result.data) {
-                setAvailableGroups(result.data);
+                const groupsData = result.data;
+                setAvailableGroups(groupsData);
                 
                 // Inicializar ordem dos grupos se não existir
                 // Usar função de callback do setState para acessar o valor atual de groupOrder
@@ -340,11 +341,11 @@ export default function TasksPage() {
                             } catch (e) {
                                 console.error("Erro ao carregar ordem dos grupos:", e);
                                 // Ordem padrão: inbox primeiro, depois grupos do banco
-                                return ["inbox", ...result.data.map((g: any) => g.id)];
+                                return ["inbox", ...groupsData.map((g: any) => g.id)];
                             }
                         } else {
                             // Ordem padrão: inbox primeiro, depois grupos do banco
-                            return ["inbox", ...result.data.map((g: any) => g.id)];
+                            return ["inbox", ...groupsData.map((g: any) => g.id)];
                         }
                     }
                     return currentOrder;
