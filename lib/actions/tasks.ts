@@ -400,8 +400,8 @@ export async function duplicateTask(taskId: string) {
     assignee_id: originalTask.assignee_id,
     created_by: user.id, // Usuário atual é o criador da cópia
     origin_context: originalTask.origin_context,
-    group_id: originalTask.group_id || null,
     // Campos que podem não existir em todas as versões do schema
+    group_id: (originalTask as any).group_id || null,
     tags: (originalTask as any).tags || [],
     subtasks: (originalTask as any).subtasks || [],
   };
