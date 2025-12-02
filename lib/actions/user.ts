@@ -60,6 +60,41 @@ export async function getUserWorkspaces() {
   return workspaces;
 }
 
+export async function getWorkspaceById(workspaceId: string): Promise<Workspace | null> {
+  const supabase = await createServerActionClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // Verificar se o usuário é membro do workspace
+  const { data: member, error: memberError } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (memberError || !member) {
+    return null;
+  }
+
+  // Buscar dados do workspace
+  const { data: workspace, error } = await supabase
+    .from("workspaces")
+    .select("id, name, slug, logo_url")
+    .eq("id", workspaceId)
+    .single();
+
+  if (error || !workspace) {
+    console.error("Erro ao buscar workspace:", error);
+    return null;
+  }
+
+  return workspace as Workspace;
+}
+
 export async function updateProfile(formData: FormData) {
   const supabase = await createServerActionClient();
   const {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown } from "lucide-react";
+import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -219,7 +219,7 @@ export default function TasksPage() {
     };
 
     // Função para recarregar tarefas
-    const reloadTasks = async () => {
+    const reloadTasks = useCallback(async () => {
         setIsLoadingTasks(true);
         try {
             // Determinar filtros baseado na aba ativa
@@ -230,30 +230,31 @@ export default function TasksPage() {
                 dueDateEnd?: string;
             } = {};
 
-            // Aplicar filtro de workspace (ou pessoal) apenas na aba "time"
-            // "Minhas" e "Todas" devem mostrar tarefas globais (de todos os contextos)
-            // "Time" deve respeitar o workspace ativo (tarefas da equipe neste contexto)
-            if (activeTab === "time") {
-                filters.workspaceId = activeWorkspaceId || null;
-            }
-            
+            // Aplicar filtro de workspace baseado na aba ativa
+            // "Minhas": Tarefas atribuídas ao usuário (global, sem filtro de workspace)
+            // "Time": Tarefas do workspace ativo da semana
+            // "Todas": Tarefas do workspace ativo (incluindo inbox isolado por workspace)
             if (activeTab === "minhas") {
-                // Minhas: Tudo que eu estou atribuído
+                // Minhas: Tudo que eu estou atribuído (sem filtro de workspace)
                 filters.assigneeId = "current";
-            } else if (activeTab === "time") {
-                // Time: Tarefas da semana (até o próximo domingo)
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const nextSunday = new Date(today);
-                const dayOfWeek = today.getDay();
-                const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
-                nextSunday.setDate(today.getDate() + daysUntilSunday);
-                nextSunday.setHours(23, 59, 59, 999);
+            } else {
+                // Time e Todas: Filtrar por workspace ativo (inbox também é isolado por workspace)
+                filters.workspaceId = activeWorkspaceId || null;
                 
-                filters.dueDateStart = today.toISOString();
-                filters.dueDateEnd = nextSunday.toISOString();
+                if (activeTab === "time") {
+                    // Time: Tarefas da semana (até o próximo domingo)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const nextSunday = new Date(today);
+                    const dayOfWeek = today.getDay();
+                    const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
+                    nextSunday.setDate(today.getDate() + daysUntilSunday);
+                    nextSunday.setHours(23, 59, 59, 999);
+                    
+                    filters.dueDateStart = today.toISOString();
+                    filters.dueDateEnd = nextSunday.toISOString();
+                }
             }
-            // Todas: Sem filtros (buscar todas as tarefas)
 
             const tasksFromDB = await getTasks(filters);
             // Filtrar tarefas arquivadas para não aparecerem na lista principal
@@ -265,7 +266,7 @@ export default function TasksPage() {
         } finally {
             setIsLoadingTasks(false);
         }
-    };
+    }, [activeTab, activeWorkspaceId]);
 
     // Carregar cores dos grupos do localStorage
     useEffect(() => {
@@ -306,7 +307,7 @@ export default function TasksPage() {
     }, [viewOption]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Função para carregar grupos
-    const loadGroups = async () => {
+    const loadGroups = useCallback(async () => {
         try {
             // Usar workspace ativo do contexto
             let targetWorkspaceId: string | null = activeWorkspaceId;
@@ -328,43 +329,70 @@ export default function TasksPage() {
                 setAvailableGroups(result.data);
                 
                 // Inicializar ordem dos grupos se não existir
-                if (viewOption === "group" && groupOrder.length === 0) {
-                    const savedOrder = localStorage.getItem("taskGroupOrder");
-                    if (savedOrder) {
-                        try {
-                            const parsed = JSON.parse(savedOrder);
-                            setGroupOrder(parsed);
-                        } catch (e) {
-                            console.error("Erro ao carregar ordem dos grupos:", e);
+                // Usar função de callback do setState para acessar o valor atual de groupOrder
+                setGroupOrder((currentOrder) => {
+                    if (viewOption === "group" && currentOrder.length === 0) {
+                        const savedOrder = localStorage.getItem("taskGroupOrder");
+                        if (savedOrder) {
+                            try {
+                                const parsed = JSON.parse(savedOrder);
+                                return parsed;
+                            } catch (e) {
+                                console.error("Erro ao carregar ordem dos grupos:", e);
+                                // Ordem padrão: inbox primeiro, depois grupos do banco
+                                return ["inbox", ...result.data.map((g: any) => g.id)];
+                            }
+                        } else {
                             // Ordem padrão: inbox primeiro, depois grupos do banco
-                            const defaultOrder = ["inbox", ...result.data.map((g: any) => g.id)];
-                            setGroupOrder(defaultOrder);
+                            return ["inbox", ...result.data.map((g: any) => g.id)];
                         }
-                    } else {
-                        // Ordem padrão: inbox primeiro, depois grupos do banco
-                        const defaultOrder = ["inbox", ...result.data.map((g: any) => g.id)];
-                        setGroupOrder(defaultOrder);
                     }
-                }
+                    return currentOrder;
+                });
             }
         } catch (error) {
             console.error("Erro ao carregar grupos:", error);
         }
-    };
+    }, [activeWorkspaceId, viewOption]);
 
-    // Buscar tarefas e grupos do banco
+    // Buscar tarefas e grupos do banco (troca de workspace / aba)
     useEffect(() => {
         // Aguardar o carregamento do contexto do workspace para evitar "blink"
         // Se não estiver carregado, não fazemos nada, pois activeWorkspaceId pode estar incorreto (null inicial)
         if (!isLoaded) return;
 
-        reloadTasks();
-        loadGroups();
-    }, [activeTab, activeWorkspaceId, isLoaded]);
+        let cancelled = false;
+
+        const loadWorkspaceData = async () => {
+            try {
+                // Carregar tarefas e grupos em paralelo
+                await Promise.all([
+                    reloadTasks(),
+                    loadGroups(),
+                ]);
+            } catch (error) {
+                if (!cancelled) {
+                    console.error("Erro ao carregar dados do workspace:", error);
+                }
+            }
+        };
+
+        loadWorkspaceData();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, activeWorkspaceId, isLoaded, reloadTasks, loadGroups]);
 
     // Buscar membros do workspace
     useEffect(() => {
         const loadMembers = async () => {
+            // Se não houver workspace ativo, limpar lista e não buscar
+            if (!activeWorkspaceId) {
+                setWorkspaceMembers([]);
+                return;
+            }
+
             try {
                 const members = await getWorkspaceMembers(activeWorkspaceId);
                 const mappedMembers = members.map((m: any) => ({
@@ -1372,6 +1400,18 @@ export default function TasksPage() {
 
                 {/* Conteúdo Principal */}
                 <div className="relative h-full w-full">
+                    {/* Overlay de carregamento ao trocar de workspace / filtros */}
+                    {isLoadingTasks && (
+                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
+                            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-sm border border-gray-200">
+                                <Loader2 className="w-4 h-4 animate-spin text-green-600" />
+                                <span className="text-xs font-medium text-gray-600">
+                                    Atualizando tarefas...
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
                     <AnimatePresence mode="wait">
                         {viewMode === "list" ? (
                             <motion.div
@@ -1685,7 +1725,9 @@ export default function TasksPage() {
                                                 title,
                                                 status: dbStatus as any, // Inclui "review" e "correction"
                                                 priority: context.priority as any,
-                                                workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
+                                                // Se estiver na aba "minhas", tarefa pessoal (sem workspace)
+                                                // Caso contrário, associar ao workspace ativo
+                                                workspace_id: activeTab === "minhas" ? null : (activeWorkspaceId || null),
                                                 assignee_id: context.assigneeId,
                                                 due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
                                                 group_id: groupId,
@@ -2003,7 +2045,9 @@ export default function TasksPage() {
                                                 title,
                                                 status: dbStatus as any, // Inclui "review" e "correction"
                                                 priority: context.priority as any,
-                                                workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
+                                                // Se estiver na aba "minhas", tarefa pessoal (sem workspace)
+                                                // Caso contrário, associar ao workspace ativo
+                                                workspace_id: activeTab === "minhas" ? null : (activeWorkspaceId || null),
                                                 assignee_id: context.assigneeId,
                                                 due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
                                                 group_id: groupId,
@@ -2091,7 +2135,9 @@ export default function TasksPage() {
                                                 priority: priority,
                                                 assignee_id: assigneeId || undefined,
                                                 due_date: dueDate ? dueDate.toISOString() : undefined,
-                                                workspace_id: activeTab === "minhas" ? null : undefined,
+                                                // Se estiver na aba "minhas", tarefa pessoal (sem workspace)
+                                                // Caso contrário, associar ao workspace ativo
+                                                workspace_id: activeTab === "minhas" ? null : (activeWorkspaceId || null),
                                                 group_id: groupId,
                                             });
 

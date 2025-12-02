@@ -25,14 +25,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi } from "lucide-react";
+import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi, Loader2 } from "lucide-react";
 import { useUI } from "@/components/providers/UIScaleProvider";
-import { updateProfile, Profile, Workspace } from "@/lib/actions/user";
+import { updateProfile, Profile, Workspace, getWorkspaceById } from "@/lib/actions/user";
 import { updateWorkspaceSettings } from "@/lib/actions/workspace-settings";
-import { inviteMember, revokeInvite, Member, Invite } from "@/lib/actions/members";
+import { inviteMember, revokeInvite, Member, Invite, getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 
 // Mock Data for Billing History
 const BILLING_HISTORY = [
@@ -48,20 +49,25 @@ interface SettingsPageClientProps {
   initialInvites: Invite[];
 }
 
-export function SettingsPageClient({ user, workspace, initialMembers, initialInvites }: SettingsPageClientProps) {
+export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites }: SettingsPageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const activeTab = searchParams.get("tab") || "general";
+  const { activeWorkspaceId, isLoaded } = useWorkspace();
+
+  // Workspace state - agora dinâmico baseado no contexto
+  const [workspace, setWorkspace] = useState<Workspace | null>(initialWorkspace);
+  const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
 
   // General Settings State
-  const [workspaceName, setWorkspaceName] = useState(workspace?.name || "Minha Empresa");
-  const [slug, setSlug] = useState(workspace?.slug || "minha-empresa");
+  const [workspaceName, setWorkspaceName] = useState(initialWorkspace?.name || "Minha Empresa");
+  const [slug, setSlug] = useState(initialWorkspace?.slug || "minha-empresa");
   const [isSaving, setIsSaving] = useState(false);
   const { scale, setScale } = useUI();
   
   const [workspaceLogoFile, setWorkspaceLogoFile] = useState<File | null>(null);
   // Tipagem do workspace pode não ter logo_url ainda, então forçamos um cast ou usamos any por segurança
-  const [workspaceLogoPreview, setWorkspaceLogoPreview] = useState<string | null>((workspace as any)?.logo_url || null);
+  const [workspaceLogoPreview, setWorkspaceLogoPreview] = useState<string | null>((initialWorkspace as any)?.logo_url || null);
 
   // Profile State
   const [profileName, setProfileName] = useState(user?.full_name || "");
@@ -74,19 +80,50 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_url || null);
 
-  // Update state if props change
+  // Carregar workspace ativo quando o contexto mudar
+  useEffect(() => {
+    if (!isLoaded || !activeWorkspaceId) {
+      return;
+    }
+
+    const loadActiveWorkspace = async () => {
+      setIsLoadingWorkspace(true);
+      try {
+        const activeWorkspace = await getWorkspaceById(activeWorkspaceId);
+        if (activeWorkspace) {
+          setWorkspace(activeWorkspace);
+          setWorkspaceName(activeWorkspace.name);
+          setSlug(activeWorkspace.slug || "");
+          setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
+          setWorkspaceLogoFile(null); // Limpar arquivo selecionado ao trocar workspace
+          
+          // Recarregar membros e convites do novo workspace
+          const [members, invites] = await Promise.all([
+            getWorkspaceMembers(activeWorkspaceId),
+            getPendingInvites(activeWorkspaceId)
+          ]);
+          setMembers(members);
+          setInvites(invites);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar workspace:", error);
+        toast.error("Erro ao carregar dados do workspace");
+      } finally {
+        setIsLoadingWorkspace(false);
+      }
+    };
+
+    loadActiveWorkspace();
+  }, [activeWorkspaceId, isLoaded]);
+
+  // Update state if props change (para perfil do usuário)
   useEffect(() => {
     if (user) {
       setProfileName(user.full_name || "");
       setProfileEmail(user.email || "");
       setAvatarPreview(user.avatar_url || null);
     }
-    if (workspace) {
-        setWorkspaceName(workspace.name);
-        setSlug(workspace.slug || "");
-        setWorkspaceLogoPreview((workspace as any)?.logo_url || null);
-    }
-  }, [user, workspace]);
+  }, [user]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -255,7 +292,12 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
         <TabsContent value="general" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Identidade do Workspace</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                Identidade do Workspace
+                {isLoadingWorkspace && (
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                )}
+              </CardTitle>
               <CardDescription>
                 Personalize como seu workspace aparece para os outros.
               </CardDescription>
@@ -303,7 +345,8 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
                     id="workspace-name" 
                     value={workspaceName}
                     onChange={(e) => setWorkspaceName(e.target.value)}
-                    placeholder="Ex: Acme Corp" 
+                    placeholder="Ex: Acme Corp"
+                    disabled={isLoadingWorkspace || !workspace}
                   />
                 </div>
                 <div className="space-y-2">
@@ -316,14 +359,15 @@ export function SettingsPageClient({ user, workspace, initialMembers, initialInv
                       id="slug" 
                       value={slug}
                       onChange={(e) => setSlug(e.target.value)}
-                      className="rounded-l-none" 
+                      className="rounded-l-none"
+                      disabled={isLoadingWorkspace || !workspace}
                     />
                   </div>
                 </div>
               </div>
             </CardContent>
               <CardFooter className="border-t px-6 py-4 bg-gray-50/50 flex justify-end">
-              <Button onClick={handleSaveSettings} disabled={isSaving}>
+              <Button onClick={handleSaveSettings} disabled={isSaving || isLoadingWorkspace || !workspace}>
                 {isSaving ? "Salvando..." : "Salvar Alterações"}
               </Button>
             </CardFooter>
