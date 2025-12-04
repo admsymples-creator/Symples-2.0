@@ -538,8 +538,6 @@ function TaskRowComponent({
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                     <TaskActionsMenu
                         task={taskForMenu}
-                        isFocused={isFocusActive}
-                        isUrgent={isUrgentActive}
                         onOpenDetails={onClick}
                         onTaskUpdated={onTaskUpdated}
                         onTaskDeleted={onTaskDeleted}
