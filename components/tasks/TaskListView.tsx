@@ -25,7 +25,7 @@ interface TaskListViewProps {
     tasks: Task[];
     isLoading: boolean;
     workspaceId?: string | null;
-    onTaskClick?: (taskId: string) => void;
+    onTaskClick?: (taskId: string | number) => void;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
@@ -86,11 +86,8 @@ const TaskListViewComponent = ({
             initialTasks={tasks}
             workspaceId={workspaceId}
             onTaskClick={onTaskClick}
-            onToggleComplete={onToggleComplete}
             onTaskUpdated={onTaskUpdated}
-            onTaskDeleted={onTaskDeleted}
             members={members}
-            groupBy={groupBy}
         />
     );
 };
