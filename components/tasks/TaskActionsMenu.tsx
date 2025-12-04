@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
     MoreHorizontal, 
     Maximize2, 
@@ -117,15 +117,23 @@ export function TaskActionsMenu({
     const [isProcessing, setIsProcessing] = useState(false);
     const [members, setMembers] = useState<Member[]>(providedMembers);
 
+    // Memoizar string de IDs dos providedMembers para comparação
+    const providedMembersKey = useMemo(() => 
+        providedMembers.map(m => m.id).sort().join(','),
+        [providedMembers]
+    );
+
     // Buscar membros automaticamente se não foram fornecidos
     useEffect(() => {
-        // Se membros foram fornecidos, usar eles e não buscar
+        // Se membros foram fornecidos, usar eles
         if (providedMembers.length > 0) {
             setMembers(providedMembers);
             return;
         }
 
-        // Buscar membros apenas se não foram fornecidos
+        // Buscar membros apenas se não foram fornecidos E workspace_id existe
+        if (!task.workspace_id) return;
+
         let cancelled = false;
         const loadMembers = async () => {
             try {
@@ -150,7 +158,7 @@ export function TaskActionsMenu({
         return () => {
             cancelled = true;
         };
-    }, [task.workspace_id]); // Apenas workspace_id como dependência
+    }, [task.workspace_id, providedMembersKey]); // Usar string de IDs memoizada ao invés de array
 
     // Verificar se tem contexto do WhatsApp
     const hasWhatsAppContext = task.origin_context && (

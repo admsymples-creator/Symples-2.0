@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useMemo, useState, useEffect } from "react";
+import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
@@ -196,6 +196,24 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   // Configuração Visual do Status
   const dbStatus = mapLabelToStatus(task.status || "Não iniciado");
   const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
+
+  // Memoizar objeto task para TaskActionsMenu para evitar re-renders infinitos
+  const assigneeId = task.assignees?.[0]?.id || null;
+  const taskForActionsMenu = useMemo(() => ({
+    id: String(task.id),
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    due_date: task.dueDate || null,
+    assignee_id: assigneeId,
+    workspace_id: task.workspace_id || null,
+    origin_context: null,
+  }), [task.id, task.title, task.status, task.priority, task.dueDate, assigneeId, task.workspace_id]);
+
+  // Memoizar callback para abrir detalhes
+  const handleOpenDetails = useCallback(() => {
+    onClick?.(task.id);
+  }, [onClick, task.id]);
 
   // Função para parar propagação de eventos
   const stopProp = (e: React.MouseEvent | React.PointerEvent) => {
@@ -587,19 +605,10 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       {/* Coluna: Menu Ações */}
       <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
         <TaskActionsMenu
-          task={{
-            id: String(task.id),
-            title: task.title,
-            status: task.status,
-            priority: task.priority,
-            due_date: task.dueDate || null,
-            assignee_id: task.assignees?.[0]?.id || null,
-            workspace_id: task.workspace_id || null,
-            origin_context: null,
-          }}
+          task={taskForActionsMenu}
           isFocused={isFocusActive}
           isUrgent={isUrgentActive}
-          onOpenDetails={() => onClick?.(task.id)}
+          onOpenDetails={handleOpenDetails}
           onTaskUpdated={onTaskUpdated}
           onTaskDeleted={onTaskDeleted}
           members={members}
