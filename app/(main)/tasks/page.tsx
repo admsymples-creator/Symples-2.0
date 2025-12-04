@@ -625,11 +625,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, [effectiveWorkspaceId]);
 
     // ✅ Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
-    const updateLocalTask = useCallback((taskId: string, updates: Partial<Task>) => {
+    const updateLocalTask = useCallback((taskId: string | number, updates: Partial<Task>) => {
+        const id = String(taskId);
         setLocalTasks((prev) => {
-            const taskIndex = prev.findIndex(t => t.id === taskId);
+            const taskIndex = prev.findIndex(t => String(t.id) === id);
             if (taskIndex === -1) {
-                console.warn("[updateLocalTask] Tarefa não encontrada:", taskId);
+                console.warn("[updateLocalTask] Tarefa não encontrada:", id);
                 return prev;
             }
             
@@ -645,13 +646,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, []);
 
     // ✅ Callback memoizado para optimistic updates
-    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
         const localUpdates: Partial<Task> = {};
         if (updates.title) localUpdates.title = updates.title;
         if (updates.status) {
             localUpdates.status = updates.status;
         }
         if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
+        if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
         if (updates.assignees) localUpdates.assignees = updates.assignees;
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
@@ -1723,14 +1725,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         setActiveTask(null);
     };
 
-    const handleTaskClick = async (taskId: string) => {
-        setSelectedTaskId(taskId);
+    const handleTaskClick = async (taskId: string | number) => {
+        setSelectedTaskId(String(taskId));
         setIsModalOpen(true);
         setIsLoadingTaskDetails(true);
 
         try {
             // Buscar dados completos da tarefa usando getTaskDetails
-            const taskDetails = await getTaskDetails(taskId);
+            const taskDetails = await getTaskDetails(String(taskId));
             
             if (!taskDetails) {
                 console.error("Tarefa nÃ£o encontrada");
@@ -1991,127 +1993,32 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                     <SortableContext
                                         items={groupOrder}
                                         strategy={verticalListSortingStrategy}
-                                >
-                                <div className="space-y-0">
-                        {listGroups.length === 0 && (
-                             <div className="h-[calc(100vh-200px)] flex items-center justify-center">
-                                <EmptyState
-                                    icon={CheckSquare}
-                                    title="Nenhuma tarefa encontrada"
-                                    description="Que tal criar sua primeira tarefa agora?"
-                                    actionLabel="Criar Tarefa"
-                                    onClick={() => setIsModalOpen(true)}
-                                />
-                            </div>
-                        )}
-                    {listGroups.map((group) => (
-                        <TaskGroup
-                            key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
-                                 id={group.id}
-                            title={group.title}
-                            tasks={group.tasks}
-                                 groupColor={group.groupColor || groupColors[group.id]}
-                            onTaskClick={handleTaskClick}
-                            isDragDisabled={isDragDisabled}
-                                onRenameGroup={handleRenameGroup}
-                                onColorChange={handleColorChange}
-                                 onDeleteGroup={handleDeleteGroup}
-                                 onClearGroup={handleClearGroup}
-                                 onTaskUpdated={handleTaskUpdated}
-                                 onTaskDeleted={handleTaskDeleted}
-                                 onToggleComplete={async (taskId, completed) => {
-                                     // AtualizaÃ§Ã£o otimista no estado local
-                                     setLocalTasks((prevTasks) =>
-                                         prevTasks.map((task) =>
-                                             task.id === taskId
-                                                 ? { ...task, completed }
-                                                 : task
-                                         )
-                                     );
-
-                                     // Persistir no backend de forma assÃ­ncrona
-                                     try {
-                                         const result = await updateTask({
-                                             id: taskId,
-                                             status: completed ? "done" : "todo",
-                                         });
-
-                                         if (!result.success) {
-                                             // Reverter em caso de erro
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId
-                                                         ? { ...task, completed: !completed }
-                                                         : task
-                                                 )
-                                             );
-                                             console.error("Erro ao atualizar tarefa:", result.error);
-                                         }
-                                         // Sucesso - updateTask retorna { success: true, data: null }
-                                         // A atualização otimista já foi feita acima
-                                     } catch (error) {
-                                         // Reverter em caso de erro
-                                         setLocalTasks((prevTasks) =>
-                                             prevTasks.map((task) =>
-                                                 task.id === taskId
-                                                     ? { ...task, completed: !completed }
-                                                     : task
-                                             )
-                                         );
-                                         console.error("Erro ao atualizar tarefa:", error);
-                                     }
-                                 }}
-                                    onAddTask={async (title, context) => {
-                                        try {
-                                            // Mapear status customizÃ¡vel para status do banco
-                                            const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
-                                                "NÃ£o iniciada": "todo",
-                                                "Em progresso": "in_progress",
-                                                "RevisÃ£o": "review",
-                                                "CorreÃ§Ã£o": "correction",
-                                                "Finalizado": "done",
-                                                // Aliases para compatibilidade
-                                                "Backlog": "todo",
-                                                "Triagem": "todo",
-                                                "ExecuÃ§Ã£o": "in_progress",
-                                            };
-                                            
-                                            const dbStatus = context.status 
-                                                ? statusMap[context.status] || "todo"
-                                                : undefined;
-
-                                            // Se viewOption for "group", usar o ID do grupo atual
-                                            const groupId = viewOption === "group" && group.id !== "inbox" && group.id !== "Inbox" 
-                                                ? group.id 
-                                                : undefined;
-
-                                            const result = await createTask({
-                                                title,
-                                                status: dbStatus as any, // Inclui "review" e "correction"
-                                                priority: context.priority as any,
-                                                // Se estiver na aba "minhas", tarefa pessoal (sem workspace)
-                                                // Caso contrÃ¡rio, associar ao workspace ativo
-                                                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
-                                                assignee_id: context.assigneeId,
-                                                due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
-                                                group_id: groupId,
-                                            });
-
-                                        if (result.success && 'data' in result && result.data) {
-                                            // Recarregar tarefas do banco para garantir sincronizaÃ§Ã£o
-                                            await reloadTasks();
-                                        } else {
-                                            console.error("Erro ao criar tarefa:", result.error);
-                                            if (result.error === "UsuÃ¡rio nÃ£o autenticado") {
-                                                router.push("/login");
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.error("Erro ao criar tarefa:", error);
-                                    }
-                            }}
-                            groupBy={viewOption}
-                        />
+                                    >
+                                        <div className="space-y-0">
+                                            {listGroups.length === 0 && (
+                                                <div className="h-[calc(100vh-200px)] flex items-center justify-center">
+                                                    <EmptyState
+                                                        icon={CheckSquare}
+                                                        title="Nenhuma tarefa encontrada"
+                                                        description="Que tal criar sua primeira tarefa agora?"
+                                                        actionLabel="Criar Tarefa"
+                                                        onClick={() => setIsModalOpen(true)}
+                                                    />
+                                                </div>
+                                            )}
+                                            {listGroups.map((group) => (
+                                                <TaskGroup
+                                                    key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
+                                                    id={group.id}
+                                                    title={group.title}
+                                                    tasks={group.tasks}
+                                                    groupColor={group.groupColor || groupColors[group.id]}
+                                                    onTaskClick={handleTaskClick}
+                                                    isDragDisabled={isDragDisabled}
+                                                    onTaskUpdated={handleTaskUpdated}
+                                                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                    members={workspaceMembers}
+                                                />
                                             ))}
                                         </div>
                                     </SortableContext>
@@ -2136,109 +2043,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 tasks={group.tasks}
                                                 groupColor={group.groupColor || groupColors[group.id]}
                                                 onTaskClick={handleTaskClick}
-                                                isGroupSortable={viewOption === "group"}
                                                 isDragDisabled={isDragDisabled}
-                                                onRenameGroup={handleRenameGroup}
-                                                onColorChange={handleColorChange}
-                                                onDeleteGroup={handleDeleteGroup}
-                                 onClearGroup={handleClearGroup}
-                                 onTaskUpdated={handleTaskUpdated}
-                                 onTaskDeleted={handleTaskDeleted}
-                                 onToggleComplete={async (taskId, completed) => {
-                                     // AtualizaÃ§Ã£o otimista no estado local
-                                     setLocalTasks((prevTasks) =>
-                                         prevTasks.map((task) =>
-                                             task.id === taskId
-                                                 ? { ...task, completed }
-                                                 : task
-                                         )
-                                     );
-
-                                     // Persistir no backend de forma assÃ­ncrona
-                                     try {
-                                         const result = await updateTask({
-                                             id: taskId,
-                                             status: completed ? "done" : "todo",
-                                         });
-
-                                         if (!result.success) {
-                                             // Reverter em caso de erro
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId
-                                                         ? { ...task, completed: !completed }
-                                                         : task
-                                                 )
-                                             );
-                                             console.error("Erro ao atualizar tarefa:", result.error);
-                                         }
-                                         // Sucesso - updateTask retorna { success: true, data: null }
-                                         // A atualização otimista já foi feita acima
-                                     } catch (error) {
-                                         // Reverter em caso de erro
-                                         setLocalTasks((prevTasks) =>
-                                             prevTasks.map((task) =>
-                                                 task.id === taskId
-                                                     ? { ...task, completed: !completed }
-                                                     : task
-                                             )
-                                         );
-                                         console.error("Erro ao atualizar tarefa:", error);
-                                     }
-                                 }}
-                                    onAddTask={async (title, context) => {
-                                        try {
-                                            // Mapear status customizÃ¡vel para status do banco
-                                            const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
-                                                "NÃ£o iniciada": "todo",
-                                                "Em progresso": "in_progress",
-                                                "RevisÃ£o": "review",
-                                                "CorreÃ§Ã£o": "correction",
-                                                "Finalizado": "done",
-                                                // Aliases para compatibilidade
-                                                "Backlog": "todo",
-                                                "Triagem": "todo",
-                                                "ExecuÃ§Ã£o": "in_progress",
-                                            };
-                                            
-                                            const dbStatus = context.status 
-                                                ? statusMap[context.status] || "todo"
-                                                : undefined;
-
-                                            // Se viewOption for "group", usar o ID do grupo atual
-                                            const groupId = viewOption === "group" && group.id !== "inbox" && group.id !== "Inbox" 
-                                                ? group.id 
-                                                : undefined;
-
-                                            const result = await createTask({
-                                                title,
-                                                status: dbStatus as any, // Inclui "review" e "correction"
-                                                priority: context.priority as any,
-                                                // Se estiver na aba "minhas", tarefa pessoal (sem workspace)
-                                                // Caso contrÃ¡rio, associar ao workspace ativo
-                                                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
-                                                assignee_id: context.assigneeId,
-                                                due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
-                                                group_id: groupId,
-                                            });
-
-                                        if (result.success && 'data' in result && result.data) {
-                                            // Recarregar tarefas do banco para garantir sincronizaÃ§Ã£o
-                                            await reloadTasks();
-                                        } else {
-                                            console.error("Erro ao criar tarefa:", result.error);
-                                            if (result.error === "UsuÃ¡rio nÃ£o autenticado") {
-                                                router.push("/login");
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.error("Erro ao criar tarefa:", error);
-                                    }
-                            }}
-                            groupBy={viewOption}
-                        />
-                    ))}
-                </div>
+                                                onTaskUpdated={handleTaskUpdated}
+                                                onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                members={workspaceMembers}
+                                            />
+                                        ))}
+                                    </div>
                                 )}
                     <DragOverlay>
                         {activeTask ? (
