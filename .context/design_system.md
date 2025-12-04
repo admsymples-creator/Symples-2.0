@@ -1,5 +1,5 @@
 **\# SYMPLES — Design System & Tech Specs**  
-\*\*Versão:\*\* 2.1 (Atualizado - Dez 2024)  
+\*\*Versão:\*\* 2.2 (Atualizado - Dez 2025)  
 \*\*Source of Truth:\*\* Screenshots do MVP atual.  
 \*\*Stack:\*\* Next.js 16.0.5, React 19.2.0, TypeScript 5, Tailwind CSS 4, Lucide React, Shadcn UI (base).
 
@@ -151,6 +151,29 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 ### 7.4. Navegação (Sidebar & Header)
 - **Sidebar:** Hierarquia Invertida. "Minha Semana" (Global) no topo. Seletor de Workspace e menus específicos abaixo de um divisor.
 - **Header:** Controles de Visualização (3 Dias / 5 Dias) próximos ao título da seção, usando `Tabs` (Segmented Control).
+
+### 7.5. Controles de Visualização de Tarefas (Ordenar & Agrupar)
+- **Ordenar (`SortMenu`):**
+  - Local: Header da página de tarefas, à direita do campo de busca.
+  - Comportamento:
+    - Abre um `DropdownMenu` com opções de ordenação (`Status`, `Prioridade`, `Responsável`, `Título (A-Z)`).
+    - A opção escolhida **não aplica imediatamente no banco**; ao clicar em **Aplicar**, a ordem é recalculada no frontend **e persistida** no campo `position` via RPC `updateTaskPositionsBulk`.
+    - Mostra um **badge** com o rótulo do filtro ativo ao lado do texto "Ordenar".
+  - URL:
+    - Usa o parâmetro `?sort=key` (`status`, `priority`, `assignee`, `title`).
+    - O estado visual do botão é derivado da URL (Source of Truth).
+
+- **Agrupar (`GroupingMenu`):**
+  - Local: Ao lado do botão "Ordenar", com ícone de grid.
+  - Comportamento:
+    - Usa `DropdownMenuRadioGroup` com opções (`none`, `status`, `priority`, `assignee`).
+    - Ao selecionar uma opção, aplica o agrupamento **imediatamente** (não há botão "Aplicar").
+    - Quando um agrupamento está ativo (`group !== none`), o botão:
+      - Fica com borda verde e fundo verde claro.
+      - Exibe um **badge** com o rótulo do agrupamento ativo (ex: `Status`, `Data`).
+  - URL:
+    - Usa o parâmetro `?group=key` (`none`, `status`, `priority`, `assignee`).
+    - A UI sempre reflete o valor atual de `group` na URL.
 
 ## 8. ATUALIZAÇÕES V3.3 (Módulo Financeiro)
 
@@ -506,3 +529,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
    - Indicadores na UI:
      - Badge “Origem WhatsApp” em tarefas/transações vindas do fluxo de automação.  
      - Tooltips explicando automatizações ativas (ex: “Esta tarefa foi criada via fluxo n8n X”).
+
+---
+
+## 14. Journal Visual de Preview
+
+- Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
+  `.context/journal-symples.md`, sempre com data e hora.  
+- Este documento continua sendo o **guia canônico de padrões**; o journal documenta o histórico de
+  refinamentos aplicados entre preview e produção.

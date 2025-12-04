@@ -312,3 +312,4 @@ WHERE t.workspace_id IS NOT NULL
 -- 5. Para testar UPDATE manual, descomente a seção 6.1
 --
 
+

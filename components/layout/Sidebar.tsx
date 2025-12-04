@@ -3,7 +3,7 @@
 import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +86,7 @@ function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive:
 function SidebarContent({ workspaces = [] }: SidebarProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const { isCollapsed, toggleSidebar } = useSidebar();
     const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
 
@@ -122,6 +123,8 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
     }, [workspaces, hasWorkspaces, activeWorkspaceId, setActiveWorkspaceId]);
 
     const currentWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
+    const workspaceBase = currentWorkspace?.slug || currentWorkspace?.id || "";
+    const workspacePrefix = workspaceBase ? `/${workspaceBase}` : "";
 
     return (
         <aside 
@@ -238,7 +241,13 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                 {workspaces.map((workspace) => (
                                     <DropdownMenuItem 
                                         key={workspace.id} 
-                                        onClick={() => setActiveWorkspaceId(workspace.id)}
+                                        onClick={() => {
+                                            setActiveWorkspaceId(workspace.id);
+                                            const base = workspace.slug || workspace.id;
+                                            if (base) {
+                                                router.push(`/${base}/tasks`);
+                                            }
+                                        }}
                                         className="gap-2 cursor-pointer"
                                     >
                                         <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
@@ -284,11 +293,19 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                 {/* Workspace Menu Items */}
                 <div>
                     <ul className="space-y-1">
-                        {workspaceItems.map((item) => (
-                            <li key={item.href}>
-                                <NavItemView item={item} isActive={isActive(item.href)} isCollapsed={isCollapsed} />
-                            </li>
-                        ))}
+                        {workspaceItems.map((item) => {
+                            const href = workspacePrefix + item.href;
+                            const resolvedItem = { ...item, href };
+                            return (
+                                <li key={item.href}>
+                                    <NavItemView
+                                        item={resolvedItem}
+                                        isActive={isActive(href)}
+                                        isCollapsed={isCollapsed}
+                                    />
+                                </li>
+                            );
+                        })}
                     </ul>
                 </div>
             </nav>

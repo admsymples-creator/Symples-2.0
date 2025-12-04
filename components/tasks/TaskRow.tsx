@@ -1,5 +1,6 @@
 "use client";
 
+import React, { memo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -109,7 +110,7 @@ const getNextSunday = (): Date => {
     return nextSunday;
 };
 
-export function TaskRow({
+function TaskRowComponent({
     id,
     title,
     completed,
@@ -251,11 +252,13 @@ export function TaskRow({
         transform,
         transition,
         isDragging,
-    } = useSortable({ id });
+    } = useSortable({ id: String(id) }); // ✅ CORREÇÃO: Normalizar ID para string
 
+    // ✅ CORREÇÃO: Usar CSS.Translate em vez de CSS.Transform para melhor performance
+    // Remover transition durante drag para evitar flicking
     const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
+        transform: CSS.Translate.toString(transform),
+        transition: isDragging ? 'none' : transition,
         opacity: isDragging ? 0.5 : 1,
     };
 
@@ -547,4 +550,54 @@ export function TaskRow({
         </TooltipProvider>
     );
 }
+
+// 🛡️ Memoização agressiva: re-renderiza SÓ quando algo visualmente relevante muda
+export const TaskRow = memo(
+    TaskRowComponent,
+    (prev, next) => {
+        // Props escalares principais
+        if (
+            prev.id !== next.id ||
+            prev.title !== next.title ||
+            prev.completed !== next.completed ||
+            prev.status !== next.status ||
+            prev.priority !== next.priority ||
+            prev.assigneeId !== next.assigneeId ||
+            prev.dueDate !== next.dueDate ||
+            prev.groupColor !== next.groupColor ||
+            prev.hasComments !== next.hasComments ||
+            prev.commentCount !== next.commentCount ||
+            prev.hasUpdates !== next.hasUpdates ||
+            prev.workspaceId !== next.workspaceId ||
+            prev.isLast !== next.isLast
+        ) {
+            return false; // algo importante mudou → re-render
+        }
+
+        // Arrays de tags: comparar conteúdo básico (comprimento + join)
+        const prevTags = prev.tags || [];
+        const nextTags = next.tags || [];
+        if (
+            prevTags.length !== nextTags.length ||
+            prevTags.join("|") !== nextTags.join("|")
+        ) {
+            return false;
+        }
+
+        // Assignees: comparar só IDs (referências podem mudar)
+        const prevAssignees = prev.assignees || [];
+        const nextAssignees = next.assignees || [];
+        if (prevAssignees.length !== nextAssignees.length) {
+            return false;
+        }
+        for (let i = 0; i < prevAssignees.length; i++) {
+            if (prevAssignees[i]?.id !== nextAssignees[i]?.id) {
+                return false;
+            }
+        }
+
+        // Callbacks são estáveis (useCallback nos pais) → ignorar
+        return true; // nada relevante mudou → pular re-render
+    }
+);
 

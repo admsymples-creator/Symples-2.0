@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
     Command,
@@ -23,14 +23,22 @@ interface Member {
 
 interface TaskAssigneePickerProps {
     assigneeId: string | null;
-    onSelect: (assigneeId: string | null) => void;
+    onSelect: (assigneeId: string | null) => void; // Handler de save - chamado APENAS quando usuário seleciona
     workspaceId?: string | null;
-    members?: Member[]; // Opcional: se não fornecido, busca automaticamente
+    members?: Member[]; // Opcional: se não fornecido, busca quando usuário abre o picker
     trigger?: React.ReactElement; // Trigger customizado - deve ser um único elemento React válido
     align?: "start" | "center" | "end";
     side?: "top" | "bottom" | "left" | "right";
 }
 
+/**
+ * Componente PURO de INPUT para seleção de responsável
+ * 
+ * REGRA DE OURO:
+ * - NENHUM useEffect que faça save ou busque dados na montagem
+ * - Save APENAS no handler onSelect (chamado quando usuário seleciona)
+ * - Busca de membros APENAS quando usuário abre o picker (onOpenChange)
+ */
 export function TaskAssigneePicker({
     assigneeId,
     onSelect,
@@ -42,24 +50,19 @@ export function TaskAssigneePicker({
 }: TaskAssigneePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [members, setMembers] = useState<Member[]>(providedMembers || []);
-    const [isLoading, setIsLoading] = useState(!providedMembers);
+    const [isLoading, setIsLoading] = useState(false);
+    const [hasLoadedMembers, setHasLoadedMembers] = useState(!!providedMembers && providedMembers.length > 0);
 
-    // Buscar membros se não foram fornecidos
-    useEffect(() => {
-        // Se membros foram fornecidos, usar eles e não buscar
-        if (providedMembers && providedMembers.length > 0) {
-            setMembers(providedMembers);
-            setIsLoading(false);
-            return;
-        }
-
-        // Buscar membros apenas se não foram fornecidos
-        let cancelled = false;
-        const loadMembers = async () => {
+    // Buscar membros APENAS quando o usuário abre o picker (evento do usuário)
+    // NUNCA buscar na montagem do componente
+    const handleOpenChange = async (open: boolean) => {
+        setIsOpen(open);
+        
+        // Se está abrindo e ainda não carregou membros (e não foram fornecidos)
+        if (open && !hasLoadedMembers && (!providedMembers || providedMembers.length === 0)) {
             setIsLoading(true);
             try {
                 const workspaceMembers = await getWorkspaceMembers(workspaceId);
-                if (cancelled) return;
                 
                 const mappedMembers: Member[] = workspaceMembers.map((m: any) => ({
                     id: m.id,
@@ -67,27 +70,29 @@ export function TaskAssigneePicker({
                     avatar: m.avatar_url || undefined,
                 }));
                 setMembers(mappedMembers);
+                setHasLoadedMembers(true);
             } catch (error) {
-                if (!cancelled) {
-                    console.error("Erro ao carregar membros:", error);
-                }
+                console.error("Erro ao carregar membros:", error);
             } finally {
-                if (!cancelled) {
-                    setIsLoading(false);
-                }
+                setIsLoading(false);
             }
-        };
-
-        loadMembers();
-        
-        return () => {
-            cancelled = true;
-        };
-    }, [workspaceId]); // Apenas workspaceId como dependência para evitar loops
+        } else if (providedMembers && providedMembers.length > 0) {
+            // Se membros foram fornecidos, usar eles
+            setMembers(providedMembers);
+            setHasLoadedMembers(true);
+        }
+    };
 
     const selectedMember = members.find((m) => m.id === assigneeId);
 
+    /**
+     * Handler de seleção - ÚNICO lugar onde o save acontece
+     * Este handler é chamado APENAS quando o usuário seleciona um membro
+     * O save real acontece no componente pai através do callback onSelect
+     */
     const handleSelect = (memberId: string | null) => {
+        // Chamar callback do pai - este é o ÚNICO lugar onde save acontece
+        // O componente pai (TaskRow) é responsável por chamar updateTask
         onSelect(memberId);
         setIsOpen(false);
     };
@@ -120,7 +125,7 @@ export function TaskAssigneePicker({
     const triggerElement = React.isValidElement(trigger) ? trigger : defaultTrigger;
 
     return (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <Popover open={isOpen} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
                 {triggerElement}
             </PopoverTrigger>

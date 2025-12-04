@@ -140,3 +140,4 @@ COMMENT ON FUNCTION public.move_tasks_bulk(JSONB) IS
 GRANT EXECUTE ON FUNCTION public.move_tasks_bulk(JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.move_tasks_bulk(JSONB) TO anon;
 
+

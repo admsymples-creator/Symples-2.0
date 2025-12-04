@@ -22,7 +22,7 @@ import {
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2 } from "lucide-react";
+import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -61,7 +61,7 @@ import {
 import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups } from "@/lib/actions/task-groups";
 import { getTaskDetails } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getUserWorkspaces } from "@/lib/actions/user";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
@@ -71,8 +71,10 @@ import type { WorkspaceGroup } from "@/lib/group-actions";
 type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
 type GroupBy = "status" | "priority" | "assignee";
+type ViewOption = "group" | "status" | "date" | "priority";
 
-import { ViewOptions, ViewOption } from "@/components/tasks/ViewOptions";
+import { GroupingMenu } from "@/components/tasks/ViewOptions";
+import { SortMenu } from "@/components/tasks/SortMenu";
 
 interface Task {
     id: string;
@@ -100,10 +102,15 @@ interface TasksPageProps {
 
 export default function TasksPage({ initialTasks, initialGroups, workspaceId: propWorkspaceId }: TasksPageProps = {}) {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    
+    // Ler sortBy da URL, com fallback para "position"
+    const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
+    
     const [activeTab, setActiveTab] = useState<ContextTab>("todas");
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>("group");
-    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">("position");
+    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -1004,17 +1011,91 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     };
 
-    // Aplica ordenação apenas uma vez e volta para "posição" para liberar o DnD
-    const handleSortChange = useCallback(
-        (value: "status" | "priority" | "assignee" | "title" | "position") => {
-            const selected = value;
-            if (selected === "position") {
-                setSortBy("position");
-                return;
-            }
+    // Sincronizar sortBy quando URL mudar
+    useEffect(() => {
+        setSortBy(urlSort);
+    }, [urlSort]);
 
+    // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
+    useEffect(() => {
+        if (sortBy === "position") {
+            return;
+        }
+
+        const compare = (a: Task, b: Task) => {
+            if (sortBy === "status") {
+                const statusOrder = ORDERED_STATUSES;
+                const mapStatus = (s: string) => {
+                    const index = Object.values(STATUS_TO_LABEL).indexOf(s);
+                    return index === -1 ? statusOrder.length : index;
+                };
+                return mapStatus(a.status) - mapStatus(b.status);
+            }
+            if (sortBy === "priority") {
+                const priorityOrder = ["urgent", "high", "medium", "low"];
+                const aIndex = priorityOrder.indexOf(a.priority || "medium");
+                const bIndex = priorityOrder.indexOf(b.priority || "medium");
+                return aIndex - bIndex;
+            }
+            if (sortBy === "assignee") {
+                const aName = a.assignees?.[0]?.name || "zzzz";
+                const bName = b.assignees?.[0]?.name || "zzzz";
+                return aName.localeCompare(bName);
+            }
+            if (sortBy === "title") {
+                return (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" });
+            }
+            return 0;
+        };
+
+        let recalculatedRef: Task[] = [];
+        setLocalTasks((prev) => {
+            const groupedByKey: Record<string, Task[]> = {};
+            prev.forEach((task) => {
+                const key = getTaskGroupKey(task);
+                if (!groupedByKey[key]) groupedByKey[key] = [];
+                groupedByKey[key].push(task);
+            });
+
+            const recalculated: Task[] = [];
+            Object.entries(groupedByKey).forEach(([_, tasks]) => {
+                const sorted = [...tasks].sort(compare);
+                let pos = 0;
+                sorted.forEach((task) => {
+                    pos += 1;
+                    recalculated.push({ ...task, position: pos * 1000 });
+                });
+            });
+
+            recalculatedRef = recalculated;
+            return recalculated;
+        });
+
+        if (recalculatedRef.length) {
+            localTasksRef.current = recalculatedRef;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sortBy, viewOption]);
+
+    // Função para persistir a ordem visual atual no banco
+    const handlePersistSortOrder = useCallback(async () => {
+        // Pega as tarefas na ordem visual atual (como aparecem na tela)
+        // Precisamos usar a ordem dos grupos para garantir que pegamos na ordem correta
+        const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
+        
+        if (currentTasks.length === 0) {
+            toast.info("Nenhuma tarefa para salvar");
+            return;
+        }
+
+        // Se há ordenação aplicada, precisamos reordenar as tarefas conforme a ordem visual
+        // A ordem visual é determinada pelo sortBy e pelos grupos
+        let tasksInVisualOrder: Task[] = [];
+        
+        if (sortBy !== "position") {
+            // Aplicar a mesma lógica de ordenação que é usada no listGroups
             const compare = (a: Task, b: Task) => {
-                if (selected === "status") {
+                if (sortBy === "status") {
                     const statusOrder = ORDERED_STATUSES;
                     const mapStatus = (s: string) => {
                         const index = Object.values(STATUS_TO_LABEL).indexOf(s);
@@ -1022,55 +1103,95 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     };
                     return mapStatus(a.status) - mapStatus(b.status);
                 }
-                if (selected === "priority") {
+                if (sortBy === "priority") {
                     const priorityOrder = ["urgent", "high", "medium", "low"];
                     const aIndex = priorityOrder.indexOf(a.priority || "medium");
                     const bIndex = priorityOrder.indexOf(b.priority || "medium");
                     return aIndex - bIndex;
                 }
-                if (selected === "assignee") {
+                if (sortBy === "assignee") {
                     const aName = a.assignees?.[0]?.name || "zzzz";
                     const bName = b.assignees?.[0]?.name || "zzzz";
                     return aName.localeCompare(bName);
                 }
-                if (selected === "title") {
+                if (sortBy === "title") {
                     return (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" });
                 }
                 return 0;
             };
 
-            let recalculatedRef: Task[] = [];
-            setLocalTasks((prev) => {
-                const groupedByKey: Record<string, Task[]> = {};
-                prev.forEach((task) => {
-                    const key = getTaskGroupKey(task);
-                    if (!groupedByKey[key]) groupedByKey[key] = [];
-                    groupedByKey[key].push(task);
-                });
+            // Agrupar por grupo (se aplicável) e ordenar dentro de cada grupo
+            const groupedByKey: Record<string, Task[]> = {};
+            currentTasks.forEach((task) => {
+                const key = getTaskGroupKey(task);
+                if (!groupedByKey[key]) groupedByKey[key] = [];
+                groupedByKey[key].push(task);
+            });
 
-                const recalculated: Task[] = [];
-                Object.entries(groupedByKey).forEach(([_, tasks]) => {
-                    const sorted = [...tasks].sort(compare);
-                    let pos = 0;
-                    sorted.forEach((task) => {
-                        pos += 1;
-                        recalculated.push({ ...task, position: pos * 1000 });
+            // Ordenar dentro de cada grupo e depois juntar tudo
+            Object.entries(groupedByKey).forEach(([_, tasks]) => {
+                const sorted = [...tasks].sort(compare);
+                tasksInVisualOrder.push(...sorted);
+            });
+        } else {
+            // Se sortBy é "position", usar a ordem atual (já ordenada por position)
+            tasksInVisualOrder = [...currentTasks].sort((a, b) => {
+                const posA = a.position ?? 0;
+                const posB = b.position ?? 0;
+                return posA - posB;
+            });
+        }
+
+        // Recalcula índices limpos (1000, 2000, 3000...)
+        // Isso "reseta" a bagunça dos floats e deixa tudo espaçado novamente
+        const bulkUpdates = tasksInVisualOrder.map((task, index) => ({
+            id: String(task.id),
+            position: (index + 1) * 1000
+        }));
+
+        // Executa o bulk update com feedback visual via toast.promise
+        const bulkPromise = updateTaskPositionsBulk(bulkUpdates);
+
+        toast.promise(bulkPromise, {
+            loading: "Reorganizando tarefas no banco...",
+            success: "Nova ordem salva com sucesso!",
+            error: "Erro ao salvar ordem. Tente novamente.",
+        });
+
+        try {
+            const result = await bulkPromise;
+
+            if (result?.success) {
+                // Atualizar estado local com as novas posições
+                setLocalTasks((prev) => {
+                    return prev.map((task) => {
+                        const update = bulkUpdates.find((u) => u.id === String(task.id));
+                        if (update) {
+                            return { ...task, position: update.position };
+                        }
+                        return task;
                     });
                 });
 
-                recalculatedRef = recalculated;
-                return recalculated;
-            });
+                // Atualizar ref também com as tarefas na ordem correta
+                localTasksRef.current = tasksInVisualOrder.map((task) => {
+                    const update = bulkUpdates.find((u) => u.id === String(task.id));
+                    if (update) {
+                        return { ...task, position: update.position };
+                    }
+                    return task;
+                });
 
-            if (recalculatedRef.length) {
-                localTasksRef.current = recalculatedRef;
+                // Voltar para ordenação manual (position) após salvar
+                setSortBy("position");
+
+                // Invalidar cache e recarregar se necessário
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
             }
-
-            // Volta para personalizado para que o DnD funcione livremente
-            setSortBy("position");
-        },
-        [viewOption]
-    );
+        } catch (error) {
+            console.error("Erro ao persistir ordem:", error);
+        }
+    }, [effectiveWorkspaceId, activeTab, sortBy, viewOption]);
     // Handler para quando o drag comeca
     const handleDragStart = (event: DragStartEvent) => {
         const { active } = event;
@@ -1535,42 +1656,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         </div>
 
                         {/* Ordenar Por */}
-                        <Select value={sortBy} onValueChange={(v) => handleSortChange(v as any)}>
-                            <SelectTrigger className="w-[140px] h-9 px-3 rounded-lg border-solid border-gray-200 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700 shadow-sm transition-colors">
-                                <div className="flex items-center gap-2">
-                                    <ArrowUpDown className="w-4 h-4 text-gray-500" />
-                                    <span>Ordenar</span>
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="position">Nada aplicado</SelectItem>
-                                <SelectItem value="status">Status</SelectItem>
-                                <SelectItem value="priority">Prioridade</SelectItem>
-                                <SelectItem value="assignee">Respons?vel</SelectItem>
-                                <SelectItem value="title">T?tulo (A-Z)</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
 
                         {/* Agrupar por */}
-                        <Select value={viewOption} onValueChange={(value) => setViewOption(value as ViewOption)}>
-                            <SelectTrigger className={cn(
-                                "w-[140px] h-9 px-3 rounded-lg border-solid text-sm font-medium shadow-sm transition-colors",
-                                viewOption !== "group"
-                                    ? "border-green-500 bg-green-50 text-green-700"
-                                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                            )}>
-                                <div className="flex items-center gap-2">
-                                    <LayoutGrid className={cn("w-4 h-4", viewOption !== "group" ? "text-green-600" : "text-gray-500")} />
-                                    <span>Agrupar</span>
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="group">Personalizado</SelectItem>
-                                <SelectItem value="status">Status</SelectItem>
-                                <SelectItem value="priority">Prioridade</SelectItem>
-                                <SelectItem value="date">Data</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <GroupingMenu />
 
                         <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
 

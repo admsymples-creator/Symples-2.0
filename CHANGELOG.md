@@ -32,3 +32,6 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 - Melhorada performance com cleanup adequado de requisições assíncronas
 - Adicionado suporte para edição inline de status sem abrir modal completo
 
+
+
+

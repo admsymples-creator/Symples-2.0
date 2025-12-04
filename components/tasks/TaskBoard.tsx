@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useCallback, useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { KanbanCard } from "./KanbanCard";
 import { KanbanEmptyCard } from "./KanbanEmptyCard";
 import { TaskSectionHeader } from "./TaskSectionHeader";
@@ -12,26 +11,10 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    DragEndEvent,
-    DragOverEvent,
-    DragStartEvent,
-    DragOverlay,
-    pointerWithin,
-} from "@dnd-kit/core";
-import {
-    arrayMove,
     SortableContext,
-    sortableKeyboardCoordinates,
     verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
@@ -62,7 +45,7 @@ interface TaskBoardProps {
     columns: Column[];
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
-    onTaskMoved?: () => void;
+    onTaskMoved?: (taskId: string, sourceColumnId: string, destinationColumnId: string, newIndex?: number) => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
     groupBy?: string;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
@@ -75,12 +58,12 @@ const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archi
     return mapLabelToStatus(status) as "todo" | "in_progress" | "done" | "archived";
 };
 
+// ✅ MINIFY v2: DroppableColumn apenas renderiza, não gerencia drag & drop
 // Componente de Coluna Droppable
 function DroppableColumn({
     column,
     onTaskClick,
     onAddTask,
-    onTaskMoved,
     members,
     groupBy,
     onToggleComplete,
@@ -88,7 +71,6 @@ function DroppableColumn({
     column: Column;
     onTaskClick?: (taskId: string) => void;
     onAddTask?: (columnId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
-    onTaskMoved?: () => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
     groupBy?: string;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
@@ -101,6 +83,31 @@ function DroppableColumn({
 
     // Garantir que tasks seja sempre um array
     const tasks = column.tasks || [];
+    
+    // ✅ REGRA 4: estabilizar array de IDs usado no DnD (SortableContext)
+    const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
+    
+    // ✅ OTIMIZAÇÃO: Handlers memoizados
+    const handleSetAdding = useCallback(() => {
+        setIsAdding(true);
+    }, []);
+    
+    const handleCancelAdd = useCallback(() => {
+        setIsAdding(false);
+    }, []);
+    
+    const handleTaskClick = useCallback((taskId: string) => {
+        onTaskClick?.(taskId);
+    }, [onTaskClick]);
+    
+    const handleSubmitAdd = useCallback(async (title: string, dueDate?: Date | null, assigneeId?: string | null) => {
+        const result = onAddTask?.(column.id, title, dueDate, assigneeId);
+        // Manter o input aberto para adicionar mais tarefas
+        // Aguardar Promise se onAddTask retornar uma
+        if (result && typeof result === 'object' && 'then' in result) {
+            await result;
+        }
+    }, [onAddTask, column.id]);
 
     return (
         <div
@@ -132,7 +139,7 @@ function DroppableColumn({
                                 <DropdownMenuItem
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setIsAdding(true);
+                                        handleSetAdding();
                                     }}
                                 >
                                     Adicionar Tarefa
@@ -145,7 +152,7 @@ function DroppableColumn({
 
             {/* Corpo da Coluna (Scroll) */}
             <SortableContext
-                items={tasks.map((t) => t.id)}
+                items={taskIds}
                 strategy={verticalListSortingStrategy}
             >
                 <div className="flex-1 overflow-y-auto space-y-2 min-h-0 pb-2 scrollbar-thin p-1">
@@ -153,7 +160,7 @@ function DroppableColumn({
                         <KanbanEmptyCard
                             columnTitle={column.title}
                             columnId={column.id}
-                            onClick={() => setIsAdding(true)}
+                            onClick={handleSetAdding}
                         />
                     ) : (
                         tasks.map((task) => {
@@ -169,9 +176,7 @@ function DroppableColumn({
                                     dueDate={task.dueDate}
                                     tags={task.tags}
                                     groupColor={task.group?.color}
-                                    onClick={() => onTaskClick?.(task.id)}
-                                    onTaskUpdated={onTaskMoved}
-                                    onDelete={onTaskMoved}
+                                    onClick={() => handleTaskClick(task.id)}
                                     members={members}
                                     onToggleComplete={onToggleComplete}
                                 />
@@ -185,15 +190,8 @@ function DroppableColumn({
                             <QuickTaskAdd
                                 placeholder="Adicionar tarefa aqui..."
                                 autoFocus={isAdding}
-                                onCancel={() => setIsAdding(false)}
-                                onSubmit={async (title, dueDate, assigneeId) => {
-                                    const result = onAddTask?.(column.id, title, dueDate, assigneeId);
-                                    // Manter o input aberto para adicionar mais tarefas
-                                    // Aguardar Promise se onAddTask retornar uma
-                                    if (result && typeof result === 'object' && 'then' in result) {
-                                        await result;
-                                    }
-                                }}
+                                onCancel={handleCancelAdd}
+                                onSubmit={handleSubmitAdd}
                                 members={members || []}
                             />
                         </div>
@@ -204,211 +202,44 @@ function DroppableColumn({
     );
 }
 
-export function TaskBoard({ columns, onTaskClick, onAddTask, onTaskMoved, members, groupBy, onToggleComplete }: TaskBoardProps) {
-    const [localColumns, setLocalColumns] = useState(columns);
-    const [activeTask, setActiveTask] = useState<Task | null>(null);
-
-    // Atualizar colunas locais quando props mudarem
-    useEffect(() => {
-        setLocalColumns(columns);
-    }, [columns]);
-
-    // Sensores para drag & drop
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
-
-    // Handler para quando o drag começa
-    const handleDragStart = (event: DragStartEvent) => {
-        const { active } = event;
-        const task = localColumns
-            .flatMap((col) => col.tasks)
-            .find((t) => t.id === active.id);
-        setActiveTask(task || null);
-    };
-
-    // Handler para quando o drag termina
-    const handleDragEnd = async (event: DragEndEvent) => {
-        const { active, over } = event;
-        setActiveTask(null);
-
-        if (!over) {
-            return;
-        }
-
-        // Encontrar coluna de origem
-        const sourceColumn = localColumns.find((col) =>
-            col.tasks.some((task) => task.id === active.id)
-        );
-
-        // Se não encontrou coluna de origem, sair
-        if (!sourceColumn) {
-            return;
-        }
-
-        // Verificar se está arrastando para uma coluna (drop zone) ou para uma tarefa
-        let destinationColumnId: string | undefined;
-        
-        const isColumnId = localColumns.some((col) => col.id === over.id);
-        if (isColumnId) {
-            destinationColumnId = over.id as string;
-        } else {
-            // É uma tarefa, encontrar a coluna que contém essa tarefa
-            destinationColumnId = localColumns.find((col) =>
-                col.tasks.some((t) => t.id === over.id)
-            )?.id;
-        }
-
-        if (!destinationColumnId) {
-            return;
-        }
-
-        // Se está arrastando para a mesma coluna, apenas reordenar
-        if (sourceColumn.id === destinationColumnId) {
-            const oldIndex = sourceColumn.tasks.findIndex((task) => task.id === active.id);
-            const newIndex = sourceColumn.tasks.findIndex((task) => task.id === over.id);
-
-            if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
-                return;
-            }
-
-            // Optimistic update
-            const newColumns = localColumns.map((col) => {
-                if (col.id === sourceColumn.id) {
-                    return {
-                        ...col,
-                        tasks: arrayMove(col.tasks, oldIndex, newIndex),
-                    };
-                }
-                return col;
-            });
-            setLocalColumns(newColumns);
-
-            // Persistir no backend
-            try {
-                const { updateTaskPosition } = await import("@/lib/actions/tasks");
-                await updateTaskPosition({
-                    taskId: active.id as string,
-                    newPosition: newIndex + 1,
-                });
-            } catch (error) {
-                console.error("Erro ao atualizar posição:", error);
-                setLocalColumns(columns);
-            }
-        } else {
-            // Mudando de coluna (status)
-            const destinationColumn = localColumns.find((col) => col.id === destinationColumnId);
-            if (!destinationColumn) {
-                return;
-            }
-
-            const sourceIndex = sourceColumn.tasks.findIndex((task) => task.id === active.id);
-            const task = sourceColumn.tasks[sourceIndex];
-
-            if (sourceIndex === -1 || !task) {
-                return;
-            }
-
-            // Determinar posição de inserção
-            const overTaskIndex = destinationColumn.tasks.findIndex((t) => t.id === over.id);
-            const insertIndex = overTaskIndex === -1 ? destinationColumn.tasks.length : overTaskIndex;
-
-            // Optimistic update
-            const newColumns = localColumns.map((col) => {
-                if (col.id === sourceColumn.id) {
-                    // Remover da coluna de origem
-                    return {
-                        ...col,
-                        tasks: col.tasks.filter((t) => t.id !== active.id),
-                    };
-                }
-                if (col.id === destinationColumnId) {
-                    // Adicionar na coluna de destino
-                    const newTasks = [...col.tasks];
-                    newTasks.splice(insertIndex, 0, task);
-                    return {
-                        ...col,
-                        tasks: newTasks,
-                    };
-                }
-                return col;
-            });
-            setLocalColumns(newColumns);
-
-            // Persistir no backend
-            try {
-                const { updateTaskPosition } = await import("@/lib/actions/tasks");
-                
-                let updateData: any = {
-                    taskId: active.id as string,
-                    newPosition: insertIndex + 1,
-                };
-
-                if (groupBy === "status") {
-                    updateData.newStatus = mapStatusToDb(destinationColumn.title);
-                } else if (groupBy === "priority") {
-                    const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
-                        "Urgente": "urgent",
-                        "Alta": "high",
-                        "Média": "medium",
-                        "Baixa": "low",
-                    };
-                    updateData.priority = priorityMap[destinationColumn.title];
-                } else if (groupBy === "group") {
-                    if (destinationColumn.id === "inbox" || destinationColumn.id === "Inbox") {
-                        updateData.group_id = null;
-                    } else {
-                        updateData.group_id = destinationColumn.id;
-                    }
-                }
-                // TODO: Implementar para 'date' se necessário
-
-                await updateTaskPosition(updateData);
-                onTaskMoved?.();
-            } catch (error) {
-                console.error("Erro ao atualizar posição e status:", error);
-                setLocalColumns(columns);
-            }
-        }
-    };
-
+// ✅ MINIFY v2: TaskBoard agora é puramente apresentacional, sem DndContext interno
+// O DndContext deve estar no componente pai (TasksView)
+function TaskBoardComponent({ columns, onTaskClick, onAddTask, onTaskMoved, members, groupBy, onToggleComplete }: TaskBoardProps) {
+    // ✅ MINIFY v2: TaskBoard apenas renderiza colunas, não gerencia drag & drop
+    // O drag & drop é gerenciado pelo TasksView que tem o DndContext principal
+    
     return (
-        <DndContext
-            sensors={sensors}
-            collisionDetection={pointerWithin}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-        >
-            <div className="flex h-[calc(100vh-200px)] overflow-x-auto gap-6 scrollbar-thin">
-                {localColumns.map((column) => (
-                    <DroppableColumn
-                        key={column.id}
-                        column={column}
-                        onTaskClick={onTaskClick}
-                        onAddTask={onAddTask}
-                        onTaskMoved={onTaskMoved}
-                        members={members}
-                        groupBy={groupBy}
-                        onToggleComplete={onToggleComplete}
-                    />
-                ))}
-            </div>
-
-            {/* Drag Overlay para feedback visual */}
-            <DragOverlay>
-                {activeTask ? (
-                    <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90 w-[300px]">
-                        <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
-                    </div>
-                ) : null}
-            </DragOverlay>
-        </DndContext>
+        <div className="flex h-[calc(100vh-200px)] overflow-x-auto gap-6 scrollbar-thin">
+            {columns.map((column) => (
+                <DroppableColumn
+                    key={column.id}
+                    column={column}
+                    onTaskClick={onTaskClick}
+                    onAddTask={onAddTask}
+                    members={members}
+                    groupBy={groupBy}
+                    onToggleComplete={onToggleComplete}
+                />
+            ))}
+        </div>
     );
 }
+
+// ✅ REGRA 6 — Boundary de memo para o board kanban
+export const TaskBoard = memo(TaskBoardComponent, (prev, next) => {
+    const prevColIds = prev.columns.map(c => c.id).join(",");
+    const nextColIds = next.columns.map(c => c.id).join(",");
+    if (prevColIds !== nextColIds) return false;
+
+    if (
+        prev.groupBy !== next.groupBy ||
+        prev.onTaskClick !== next.onTaskClick ||
+        prev.onAddTask !== next.onAddTask ||
+        prev.onTaskMoved !== next.onTaskMoved ||
+        prev.onToggleComplete !== next.onToggleComplete
+    ) {
+        return false;
+    }
+
+    return true;
+});
