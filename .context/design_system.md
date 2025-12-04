@@ -303,7 +303,8 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 - **TaskGroup (`components/tasks/TaskGroup.tsx`):**
   - Agrupamento por status, prioridade ou assignee
-  - Accordion colapsável
+  - Indicador de cor do grupo (círculo colorido ao lado do título)
+  - Espaçamento: `gap-6` entre grupos, `mt-4` nos títulos
   - Quick Add no rodapé
   - Ações de grupo (renomear, mudar cor, deletar)
 
@@ -311,6 +312,29 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Estilo "Clean Checklist"
   - Barra vertical colorida para workspace
   - Hover actions (drag handle, raio, exclamação)
+
+- **TaskRowMinify (`components/tasks/TaskRowMinify.tsx`):**
+  - **Layout**: CSS Grid com colunas fixas para alinhamento vertical
+  - **Colunas**: `grid-cols-[40px_1fr_90px_32px_100px_40px]`
+    - Drag Handle (40px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (100px) | Menu (40px)
+  - **Altura**: `h-11` (44px) - Interface compacta
+  - **Indicadores Visuais**:
+    - **Data**: Date picker funcional com calendário, cores dinâmicas (vermelho/verde/cinza)
+    - **Status**: Badge editável com popover para mudança rápida
+    - **Responsável**: Avatar picker garantindo usuário atual sempre disponível
+    - **Comentários**: Contador que aparece apenas quando há comentários
+    - **Focus (⚡)**: Botão para mover tarefa para próximo domingo (aparece no hover)
+    - **Urgente (⚠)**: Botão para marcar como urgente (aparece no hover)
+  - **Indicador de Cor do Grupo**: Barra vertical colorida à esquerda (`w-1`, `absolute left-0`)
+    - Suporta cores nomeadas (red, blue, green) e hex (#ffffff)
+    - Mapeamento via `getGroupColorClass()`
+  - **Optimistic UI**: Todas as atualizações usam padrão optimistic com rollback
+    - Atualização instantânea antes da chamada ao servidor
+    - Rollback automático em caso de erro
+    - Callback `onTaskUpdatedOptimistic` para sincronização de estado
+  - **Hover Actions**: Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
+    - Classe: `opacity-0 group-hover:opacity-100`
+    - Mantém-se visível quando ativo (mesmo sem hover)
 
 - **AttachmentCard (`components/tasks/AttachmentCard.tsx`):**
   - Card compacto para exibição de anexos

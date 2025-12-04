@@ -6,6 +6,51 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-XX - [Hora]
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🎯 TaskRowMinify - Indicadores Visuais Completos
+- **Layout em Grid**: Implementado CSS Grid com colunas fixas para alinhamento vertical
+  - Colunas: Drag Handle | Título (com hover indicators) | Data | Responsável | Status | Menu
+  - Altura reduzida para `h-11` (44px) para interface mais compacta
+  - Gap de `gap-1` entre colunas para espaçamento consistente
+  
+- **Indicadores Funcionais**:
+  - **Data**: Date picker com calendário, cores dinâmicas (vermelho para atrasado, verde para hoje, cinza para futuro)
+  - **Status**: Badge editável com popover para mudança rápida de status
+  - **Responsável**: Avatar picker garantindo usuário atual sempre disponível na lista
+  - **Comentários**: Contador que aparece apenas quando `commentCount > 0`
+  - **Focus (⚡)**: Botão para mover tarefa para próximo domingo (aparece no hover, ativo quando data é próximo domingo)
+  - **Urgente (⚠)**: Botão para marcar como urgente e definir data para hoje (aparece no hover, ativo quando urgente ou data é hoje)
+  
+- **Indicador de Cor do Grupo**: Barra vertical colorida à esquerda (`w-1`, `absolute left-0`)
+  - Suporte para cores nomeadas (red, blue, green, etc.) e hex (#ffffff)
+  - Mapeamento automático via `getGroupColorClass()`
+  - Exibido apenas quando `groupColor` está definido
+
+- **Optimistic UI**: Todas as atualizações (data, status, responsável, focus, urgente) usam padrão optimistic
+  - Atualização instantânea da UI antes da chamada ao servidor
+  - Rollback automático em caso de erro
+  - Callback `onTaskUpdatedOptimistic` para sincronização de estado local
+  - Garantia de imutabilidade em atualizações de estado
+
+#### 🎨 TaskGroup - Melhorias Visuais
+- **Indicador de Cor**: Círculo colorido ao lado do título do grupo (via `TaskSectionHeader`)
+  - Conversão automática de cores nomeadas para hex
+  - Exibido apenas quando `groupColor` está definido
+  
+- **Espaçamento**: 
+  - Gap entre grupos aumentado para `gap-6` (24px) em `TaskList`
+  - Margin-top nos títulos: `mt-4` (16px) para melhor separação visual
+
+#### 🔧 Melhorias Técnicas
+- **Conversão de Cores**: Função `extractColorFromClass()` em `TaskList` para extrair nome de cor de classes Tailwind
+- **Memoização**: `useMemo` para conversão de cores em `TaskGroup` para evitar recálculos
+- **Tipos**: Adicionado suporte para `groupColor`, `commentCount`, `commentsCount`, `priority` em interfaces
+
+---
+
 ## 2025-12-03 - 21:41 (Data a ser preenchida)
 
 ### 1. Melhorias, bugs e features implementadas em preview

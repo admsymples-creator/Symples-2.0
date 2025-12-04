@@ -157,7 +157,7 @@ symples-v2/
 │   │   ├── TaskList.tsx
 │   │   ├── TaskListView.tsx
 │   │   ├── TaskRow.tsx
-│   │   ├── TaskRowMinify.tsx
+│   │   ├── TaskRowMinify.tsx (✅ Layout Grid, Indicadores Visuais, Optimistic UI)
 │   │   ├── TaskSectionHeader.tsx
 │   │   └── ViewOptions.tsx
 │   │
