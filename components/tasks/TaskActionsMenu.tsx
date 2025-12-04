@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { 
     MoreHorizontal, 
     Maximize2, 
@@ -115,19 +115,26 @@ export function TaskActionsMenu({
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [members, setMembers] = useState<Member[]>(providedMembers);
-
-    // Memoizar string de IDs dos providedMembers para comparação
+    // Memoizar string de IDs dos providedMembers para comparação estável
     const providedMembersKey = useMemo(() => 
         providedMembers.map(m => m.id).sort().join(','),
         [providedMembers]
     );
 
+    const [members, setMembers] = useState<Member[]>(providedMembers);
+    const prevProvidedMembersKeyRef = useRef<string>(providedMembersKey);
+
     // Buscar membros automaticamente se não foram fornecidos
     useEffect(() => {
-        // Se membros foram fornecidos, usar eles
-        if (providedMembers.length > 0) {
-            setMembers(providedMembers);
+        // Só atualizar se os membros realmente mudaram (comparação por IDs)
+        if (prevProvidedMembersKeyRef.current !== providedMembersKey) {
+            prevProvidedMembersKeyRef.current = providedMembersKey;
+            if (providedMembers.length > 0) {
+                setMembers(providedMembers);
+                return;
+            }
+        } else if (providedMembers.length > 0) {
+            // Se os IDs não mudaram, não fazer nada (evita re-renders)
             return;
         }
 
@@ -158,7 +165,7 @@ export function TaskActionsMenu({
         return () => {
             cancelled = true;
         };
-    }, [task.workspace_id, providedMembersKey]); // Usar string de IDs memoizada ao invés de array
+    }, [task.workspace_id, providedMembersKey, providedMembers]); // Usar string de IDs memoizada
 
     // Verificar se tem contexto do WhatsApp
     const hasWhatsAppContext = task.origin_context && (
