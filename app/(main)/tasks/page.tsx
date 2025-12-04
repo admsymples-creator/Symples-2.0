@@ -101,12 +101,14 @@ interface TasksPageProps {
 }
 
 // ✅ Função auxiliar para mapear parâmetro group da URL para ViewOption
+// Trata todos os edge cases: "none", null, undefined -> "group" (padrão)
 function getInitialViewOption(groupParam: string | null): ViewOption {
     if (groupParam === "status") return "status";
     if (groupParam === "priority") return "priority";
     if (groupParam === "date") return "date";
     if (groupParam === "assignee") return "assignee";
-    // "none", null ou undefined -> "group" (padrão)
+    // "none", null ou undefined -> "group" (padrão: grupos do banco)
+    // Também trata qualquer outro valor inválido como "group"
     return "group";
 }
 
@@ -1067,7 +1069,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     useEffect(() => {
         const groupParam = searchParams.get("group");
         const newViewOption = getInitialViewOption(groupParam);
-        setViewOption(newViewOption);
+        // Só atualizar se o valor realmente mudou para evitar re-renders desnecessários
+        setViewOption((current) => {
+            if (current !== newViewOption) {
+                return newViewOption;
+            }
+            return current;
+        });
     }, [searchParams]);
 
     // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
@@ -1249,6 +1257,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Handler para quando o drag comeca
     const handleDragStart = (event: DragStartEvent) => {
         // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
+        // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
+        if (!viewOption) {
+            console.warn("⚠️ [handleDragStart] viewOption está undefined. Bloqueando drag.");
+            return;
+        }
+        
         const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
         if (!isDragEnabled) {
             toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
@@ -1256,30 +1270,68 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         const { active } = event;
-        // âœ… CORREÃ‡ÃƒO: Normalizar ID para string
+        // ✅ CORREÇÃO: Normalizar ID para string
         const activeIdStr = String(active.id);
         const task = localTasks.find((t) => String(t.id) === activeIdStr);
-        setActiveTask(task || null);
+        
+        if (!task) {
+            console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
+            return;
+        }
+        
+        setActiveTask(task);
     };
 
     // Handler para quando o drag termina
     const handleDragEnd = async (event: DragEndEvent) => {
         // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
+        // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
+        if (!viewOption) {
+            console.warn("⚠️ [handleDragEnd] viewOption está undefined. Bloqueando drag.");
+            setActiveTask(null);
+            return;
+        }
+        
         const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
         if (!isDragEnabled) {
             toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            setActiveTask(null);
             return; // Bloqueia a ação lógica se estiver nas views apenas de leitura
         }
 
         const { active, over } = event;
         setActiveTask(null);
-        if (!over) return;
+        
+        // ✅ CORREÇÃO: Validar se over existe e tem ID válido
+        if (!over) {
+            console.log("ℹ️ [handleDragEnd] Drag cancelado: over é null/undefined");
+            return;
+        }
+        
+        // ✅ CORREÇÃO: Validar se active existe
+        if (!active) {
+            console.warn("⚠️ [handleDragEnd] active é null/undefined");
+            return;
+        }
 
         const activeIdStr = String(active.id);
         const overIdStr = String(over.id);
+        
+        // ✅ CORREÇÃO: Log de debug para diagnóstico
+        console.log("🎯 [handleDragEnd] Iniciando processamento:", {
+            activeId: activeIdStr,
+            overId: overIdStr,
+            viewOption,
+            viewMode,
+            groupedDataKeys: Object.keys(groupedData),
+            kanbanColumnsIds: viewMode === "kanban" ? kanbanColumns.map(c => c.id) : []
+        });
 
         const findGroupKeyForId = (id: string): string | null => {
+            // ✅ CORREÇÃO: Verificar se o ID é uma chave de grupo diretamente
             if (Object.keys(groupedData).includes(id)) return id;
+            
+            // ✅ CORREÇÃO: Buscar em todas as tarefas agrupadas
             const entry = Object.entries(groupedData).find(([_, tasks]) =>
                 tasks.some((t) => String(t.id) === id)
             );
@@ -1287,11 +1339,62 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         };
 
         const sourceGroupKey = findGroupKeyForId(activeIdStr);
-        const destinationGroupKey = findGroupKeyForId(overIdStr);
-        if (!sourceGroupKey || !destinationGroupKey) return;
+        let destinationGroupKey = findGroupKeyForId(overIdStr);
+        
+        // ✅ CORREÇÃO: Validação melhorada com logs
+        if (!sourceGroupKey) {
+            console.error("❌ [handleDragEnd] Grupo de origem não encontrado para tarefa:", activeIdStr);
+            toast.error("Erro: Tarefa de origem não encontrada. Recarregue a página.");
+            return;
+        }
+        
+        // ✅ CORREÇÃO: Se overIdStr é uma coluna (não uma tarefa), usar diretamente
+        // No modo kanban, o over.id pode ser o ID da coluna (DroppableColumn)
+        if (!destinationGroupKey) {
+            // Verificar se é uma coluna do kanban
+            if (viewMode === "kanban") {
+                const kanbanColumn = kanbanColumns.find(col => col.id === overIdStr);
+                if (kanbanColumn) {
+                    destinationGroupKey = kanbanColumn.id;
+                    console.log("ℹ️ [handleDragEnd] Detectado ID de coluna kanban como destino:", destinationGroupKey);
+                } else if (Object.keys(groupedData).includes(overIdStr)) {
+                    destinationGroupKey = overIdStr;
+                    console.log("ℹ️ [handleDragEnd] Usando ID de coluna como destino:", destinationGroupKey);
+                }
+            } else if (Object.keys(groupedData).includes(overIdStr)) {
+                destinationGroupKey = overIdStr;
+                console.log("ℹ️ [handleDragEnd] Usando ID de coluna como destino:", destinationGroupKey);
+            }
+        }
+        
+        if (!destinationGroupKey) {
+            console.error("❌ [handleDragEnd] Grupo de destino não encontrado para ID:", overIdStr);
+            console.error("❌ [handleDragEnd] Debug info:", {
+                overIdStr,
+                groupedDataKeys: Object.keys(groupedData),
+                kanbanColumnsIds: viewMode === "kanban" ? kanbanColumns.map(c => c.id) : [],
+                viewMode
+            });
+            toast.error("Erro: Destino inválido. Tente arrastar para uma coluna válida.");
+            return;
+        }
 
         const destinationTasks = groupedData[destinationGroupKey] || [];
-        const overIndex = destinationTasks.findIndex((t) => String(t.id) === overIdStr);
+        
+        // ✅ CORREÇÃO: Se overIdStr é o ID de uma coluna (não uma tarefa), adicionar no final
+        // Se overIdStr é uma chave de groupedData, significa que arrastou para a coluna vazia
+        const isOverColumn = Object.keys(groupedData).includes(overIdStr);
+        let overIndex = -1;
+        
+        if (isOverColumn) {
+            // Arrastou para a coluna vazia, adicionar no final
+            overIndex = -1;
+            console.log("ℹ️ [handleDragEnd] Arrastou para coluna vazia, adicionando no final");
+        } else {
+            // Arrastou sobre uma tarefa, encontrar o índice
+            overIndex = destinationTasks.findIndex((t) => String(t.id) === overIdStr);
+        }
+        
         const targetIndex = overIndex >= 0 ? overIndex : destinationTasks.length;
 
         const isSameGroup = sourceGroupKey === destinationGroupKey;
@@ -1415,16 +1518,33 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             calculatedPosition = 1000;
         } else if (!prevTask) {
             // Moveu para o TOPO (antes do primeiro)
-            calculatedPosition = (nextTask.position || 0) / 2;
-            if (calculatedPosition <= 0) calculatedPosition = 500; // Fallback seguro
+            const nextPos = nextTask.position ?? 0;
+            calculatedPosition = nextPos > 0 ? nextPos / 2 : 500;
+            // Garantir que não seja zero ou negativo
+            if (calculatedPosition <= 0) calculatedPosition = 500;
         } else if (!nextTask) {
             // Moveu para o FINAL (depois do último)
-            calculatedPosition = (prevTask.position || 0) + 1000;
+            const prevPos = prevTask.position ?? 0;
+            calculatedPosition = prevPos > 0 ? prevPos + 1000 : 2000;
+            // Garantir que seja maior que a posição anterior
+            if (calculatedPosition <= prevPos) calculatedPosition = prevPos + 1000;
         } else {
             // Moveu para o MEIO (entre A e B)
-            const prevPos = prevTask.position || 0;
-            const nextPos = nextTask.position || 0;
-            calculatedPosition = (prevPos + nextPos) / 2;
+            const prevPos = prevTask.position ?? 0;
+            const nextPos = nextTask.position ?? 0;
+            
+            // ✅ CORREÇÃO: Validar se há espaço suficiente entre prevPos e nextPos
+            if (nextPos <= prevPos) {
+                // Colisão detectada: usar posição baseada no índice
+                calculatedPosition = prevPos + 500;
+            } else {
+                calculatedPosition = (prevPos + nextPos) / 2;
+                // ✅ CORREÇÃO: Garantir que a posição calculada seja única
+                if (calculatedPosition <= prevPos || calculatedPosition >= nextPos) {
+                    // Se o cálculo resultou em colisão, usar posição intermediária segura
+                    calculatedPosition = prevPos + (nextPos - prevPos) / 2;
+                }
+            }
         }
 
         const recomposed = [...otherList, ...newDest];
@@ -1493,7 +1613,16 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     });
                 });
 
-                const resBulk = await updateTaskPositionsBulk(rebalancedUpdates);
+                // ✅ CORREÇÃO: Adicionar tratamento de erro mais robusto para server actions
+                let resBulk;
+                try {
+                    resBulk = await updateTaskPositionsBulk(rebalancedUpdates);
+                } catch (error: any) {
+                    console.error("❌ [handleDragEnd] Erro ao chamar updateTaskPositionsBulk:", error);
+                    toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
+                    await reloadTasks();
+                    return;
+                }
                 
                 if (!resBulk?.success) {
                     console.error("❌ Erro fatal no Rebalanceamento:", resBulk?.error);
@@ -1506,24 +1635,46 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 // ✅ CASO PADRÃO (99% das vezes): Salva APENAS o item movido.
                 console.log(`🎯 Posição Calculada: ${calculatedPosition} (Entre ${prevTask?.position || 'início'} e ${nextTask?.position || 'fim'})`);
                 
+                // ✅ CORREÇÃO CRÍTICA: Sempre enviar group_id quando viewOption === "group" para garantir RLS
+                // Mesmo dentro do mesmo grupo, precisamos do group_id para validação de permissões
+                // Preparar group_id: se viewOption é "group", sempre enviar (mesmo se mesmo grupo)
+                const finalGroupId = viewOption === "group" 
+                    ? (destinationGroupKey === "inbox" || destinationGroupKey === "Inbox" 
+                        ? null 
+                        : destinationGroupKey)
+                    : (isSameGroup ? undefined : updateData.group_id);
+                
                 // Atualizar item arrastado (inclui status/priority/group quando muda de grupo)
                 console.log("📤 [handleDragEnd] Enviando update para tarefa ativa:", {
                     taskId: activeIdStr,
                     calculatedPosition,
                     status: isSameGroup ? undefined : updateData.status,
                     priority: isSameGroup ? undefined : updateData.priority,
-                    group_id: isSameGroup ? undefined : updateData.group_id
+                    group_id: finalGroupId,
+                    viewOption,
+                    isSameGroup,
+                    destinationGroupKey,
+                    sourceGroupKey
                 });
                 
-                const resMain = await updateTaskPosition({
-                    taskId: activeIdStr,
-                    newPosition: calculatedPosition,
-                    status: isSameGroup ? undefined : updateData.status,
-                    priority: isSameGroup ? undefined : updateData.priority,
-                    group_id: isSameGroup ? undefined : updateData.group_id,
-                    assignee_id: isSameGroup ? undefined : updateData.assignee_id,
-                    workspace_id: movingFinal?.workspaceId ?? null,
-                });
+                // ✅ CORREÇÃO: Adicionar tratamento de erro mais robusto para server actions
+                let resMain;
+                try {
+                    resMain = await updateTaskPosition({
+                        taskId: activeIdStr,
+                        newPosition: calculatedPosition,
+                        status: isSameGroup ? undefined : updateData.status,
+                        priority: isSameGroup ? undefined : updateData.priority,
+                        group_id: finalGroupId,
+                        assignee_id: isSameGroup ? undefined : updateData.assignee_id,
+                        workspace_id: movingFinal?.workspaceId ?? null,
+                    });
+                } catch (error: any) {
+                    console.error("❌ [handleDragEnd] Erro ao chamar updateTaskPosition:", error);
+                    toast.error("Erro ao salvar a nova ordem. Tente novamente.");
+                    await reloadTasks();
+                    return;
+                }
                 
                 if (!resMain?.success) {
                     console.error("❌ [handleDragEnd] Falha ao salvar posição (item ativo):", resMain?.error);
@@ -2086,12 +2237,20 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             </div>
                         ) : (
                             <div className="h-full" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
-                                <TaskBoard
-                                    columns={kanbanColumns}
-                                    onTaskClick={handleTaskClick}
-                                    onTaskMoved={reloadTasks}
-                                    onToggleComplete={handleToggleComplete}
-                                    isDragDisabled={isDragDisabled}
+                                {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
+                                <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCenter}
+                                    onDragStart={handleDragStart}
+                                    onDragEnd={handleDragEnd}
+                                    onDragCancel={handleDragCancel}
+                                >
+                                    <TaskBoard
+                                        columns={kanbanColumns}
+                                        onTaskClick={handleTaskClick}
+                                        onTaskMoved={reloadTasks}
+                                        onToggleComplete={handleToggleComplete}
+                                        isDragDisabled={isDragDisabled}
                                     onAddTask={async (columnId, title, dueDate, assigneeId) => {
                                         try {
                                             // Mapear status/priority baseado no viewOption e columnId
@@ -2166,6 +2325,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                     members={workspaceMembers}
                                     groupBy={viewOption}
                                 />
+                                    <DragOverlay>
+                                        {activeTask ? (
+                                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
+                                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                                            </div>
+                                        ) : null}
+                                    </DragOverlay>
+                                </DndContext>
                             </div>
                         )}
                     </AnimatePresence>

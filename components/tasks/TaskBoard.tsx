@@ -182,6 +182,7 @@ function DroppableColumn({
                                     onClick={() => handleTaskClick(task.id)}
                                     members={members}
                                     onToggleComplete={onToggleComplete}
+                                    disabled={isDragDisabled}
                                 />
                             );
                         })
