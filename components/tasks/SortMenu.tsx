@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -92,101 +92,115 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
     };
 
     return (
-        <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-            <DropdownMenuTrigger asChild>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                        "h-9 px-3 border-dashed transition-all",
-                        hasActiveSort
-                            ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
-                            : "text-gray-600 border-gray-300 hover:bg-gray-50",
-                        className
-                    )}
-                >
-                    <div className="flex items-center gap-2">
-                        <ArrowUpDown className={cn("w-4 h-4", hasActiveSort ? "text-green-600" : "text-gray-500")} />
-                        <span>Ordenar</span>
-                        {hasActiveSort && (
-                            <>
-                                <div className="mx-2 h-4 w-[1px] bg-green-200" />
-                                <Badge
-                                    variant="secondary"
-                                    className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
-                                >
-                                    {getCurrentLabel()}
-                                </Badge>
-                            </>
-                        )}
-                    </div>
-                </Button>
-            </DropdownMenuTrigger>
-            
-            <DropdownMenuContent
-                align="end"
-                className="w-56 p-0 flex flex-col max-h-[400px]"
-                onCloseAutoFocus={(e) => e.preventDefault()}
-            >
-                <DropdownMenuLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Ordenação
-                </DropdownMenuLabel>
-                
-                <DropdownMenuSeparator />
-
-                <div className="flex-1 overflow-y-auto min-h-0">
-                    <div className="p-1">
-                        {/* MUDANÇA AQUI: Usando RadioGroup para garantir o círculo (Dot)
-                           O 'value' controla qual bolinha está preenchida
-                           O 'onValueChange' atualiza apenas o estado local (sem aplicar)
-                        */}
-                        <DropdownMenuRadioGroup 
-                            value={localSort} 
-                            onValueChange={(val) => setLocalSort(val as SortOption)}
-                        >
-                            {sortOptions.map((option) => (
-                                <DropdownMenuRadioItem
-                                    key={option.value}
-                                    value={option.value}
-                                    onSelect={(e) => e.preventDefault()} // Impede fechar ao clicar
-                                    className="cursor-pointer"
-                                >
-                                    {option.label}
-                                </DropdownMenuRadioItem>
-                            ))}
-                        </DropdownMenuRadioGroup>
-                    </div>
-                </div>
-
-                <DropdownMenuSeparator className="flex-shrink-0" />
-
-                <div className="flex-shrink-0 bg-popover border-t p-2 flex items-center justify-between gap-2">
-                    {(hasActiveSort || localSort !== "position") && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleClear}
-                            className="h-8 px-3 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                            Limpar
-                        </Button>
-                    )}
-
+        <div className="flex items-center gap-1">
+            <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+                <DropdownMenuTrigger asChild>
                     <Button
-                        onClick={handleApply}
+                        variant="outline"
                         size="sm"
-                        disabled={!hasPendingChange}
                         className={cn(
-                            "h-8 px-4 text-sm font-medium transition-all ml-auto",
-                            hasPendingChange
-                                ? "bg-[#22C55E] hover:bg-[#16a34a] text-white shadow-sm"
-                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            "h-9 px-3 border-dashed transition-all",
+                            hasActiveSort
+                                ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                                : "text-gray-600 border-gray-300 hover:bg-gray-50",
+                            className
                         )}
                     >
-                        {hasActiveSort && !hasPendingChange ? "Aplicado" : "Aplicar"}
+                        <div className="flex items-center gap-2">
+                            <ArrowUpDown className={cn("w-4 h-4", hasActiveSort ? "text-green-600" : "text-gray-500")} />
+                            <span>Ordenar</span>
+                            {hasActiveSort && (
+                                <>
+                                    <div className="mx-2 h-4 w-[1px] bg-green-200" />
+                                    <Badge
+                                        variant="secondary"
+                                        className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
+                                    >
+                                        {getCurrentLabel()}
+                                    </Badge>
+                                </>
+                            )}
+                        </div>
                     </Button>
-                </div>
-            </DropdownMenuContent>
-        </DropdownMenu>
+                </DropdownMenuTrigger>
+                
+                <DropdownMenuContent
+                    align="end"
+                    className="w-56 p-0 flex flex-col max-h-[400px]"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                >
+                    <DropdownMenuLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        ORDENAR POR
+                    </DropdownMenuLabel>
+                    
+                    <DropdownMenuSeparator />
+
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                        <div className="p-1">
+                            {/* MUDANÇA AQUI: Usando RadioGroup para garantir o círculo (Dot)
+                               O 'value' controla qual bolinha está preenchida
+                               O 'onValueChange' atualiza apenas o estado local (sem aplicar)
+                            */}
+                            <DropdownMenuRadioGroup 
+                                value={localSort} 
+                                onValueChange={(val) => setLocalSort(val as SortOption)}
+                            >
+                                {sortOptions.map((option) => (
+                                    <DropdownMenuRadioItem
+                                        key={option.value}
+                                        value={option.value}
+                                        onSelect={(e) => e.preventDefault()} // Impede fechar ao clicar
+                                        className="cursor-pointer"
+                                    >
+                                        {option.label}
+                                    </DropdownMenuRadioItem>
+                                ))}
+                            </DropdownMenuRadioGroup>
+                        </div>
+                    </div>
+
+                    <DropdownMenuSeparator className="flex-shrink-0" />
+
+                    <div className="flex-shrink-0 bg-popover border-t p-2 flex items-center justify-between gap-2">
+                        {(hasActiveSort || localSort !== "position") && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleClear}
+                                className="h-8 px-3 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                                Limpar
+                            </Button>
+                        )}
+
+                        <Button
+                            onClick={handleApply}
+                            size="sm"
+                            disabled={!hasPendingChange}
+                            className={cn(
+                                "h-8 px-4 text-sm font-medium transition-all ml-auto",
+                                hasPendingChange
+                                    ? "bg-[#22C55E] hover:bg-[#16a34a] text-white shadow-sm"
+                                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            )}
+                        >
+                            {hasActiveSort && !hasPendingChange ? "Aplicado" : "Aplicar"}
+                        </Button>
+                    </div>
+                </DropdownMenuContent>
+            </DropdownMenu>
+            
+            {hasActiveSort && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClear}
+                    className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                    title="Limpar filtro de ordenação"
+                >
+                    <X className="h-4 w-4" />
+                </Button>
+            )}
+        </div>
     );
 }

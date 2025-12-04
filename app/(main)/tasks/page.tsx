@@ -71,7 +71,7 @@ import type { WorkspaceGroup } from "@/lib/group-actions";
 type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
 type GroupBy = "status" | "priority" | "assignee";
-type ViewOption = "group" | "status" | "date" | "priority";
+type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
 import { SortMenu } from "@/components/tasks/SortMenu";
@@ -100,6 +100,16 @@ interface TasksPageProps {
     workspaceId?: string;
 }
 
+// ✅ Função auxiliar para mapear parâmetro group da URL para ViewOption
+function getInitialViewOption(groupParam: string | null): ViewOption {
+    if (groupParam === "status") return "status";
+    if (groupParam === "priority") return "priority";
+    if (groupParam === "date") return "date";
+    if (groupParam === "assignee") return "assignee";
+    // "none", null ou undefined -> "group" (padrão)
+    return "group";
+}
+
 export default function TasksPage({ initialTasks, initialGroups, workspaceId: propWorkspaceId }: TasksPageProps = {}) {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -107,9 +117,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ler sortBy da URL, com fallback para "position"
     const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
     
+    // ✅ Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
+    const initialViewOption = getInitialViewOption(searchParams.get("group"));
+    
     const [activeTab, setActiveTab] = useState<ContextTab>("todas");
     const [viewMode, setViewMode] = useState<ViewMode>("list");
-    const [viewOption, setViewOption] = useState<ViewOption>("group");
+    const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
     const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -689,7 +702,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             "low": "Baixa",
         };
 
-        // Se viewOption for "group", inicializar grupos vazios do banco
+        // ✅ Buckets First: Inicializar grupos vazios baseado no viewOption
         if (viewOption === "group") {
             // Inicializar grupo "Inbox" (tarefas sem grupo)
             groups["inbox"] = [];
@@ -698,6 +711,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             availableGroups.forEach((group) => {
                 groups[group.id] = [];
             });
+        } else if (viewOption === "assignee") {
+            // Inicializar grupos para todos os membros (mesmo sem tarefas)
+            workspaceMembers.forEach((member) => {
+                const memberName = member.name || "Membro";
+                groups[memberName] = [];
+            });
+            // Grupo para tarefas sem responsável
+            groups["Sem responsável"] = [];
         }
 
         filteredTasks.forEach((task) => {
@@ -755,6 +776,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         }
                     }
                     break;
+                case "assignee":
+                    // Agrupar por nome do primeiro responsável
+                    const assigneeName = task.assignees?.[0]?.name;
+                    groupKey = assigneeName ? assigneeName.trim() : "Sem responsável";
+                    break;
                 default:
                     groupKey = "Inbox";
             }
@@ -766,7 +792,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
 
         return groups;
-    }, [viewOption, filteredTasks, availableGroups]);
+    }, [viewOption, filteredTasks, availableGroups, workspaceMembers]);
 
     // Atualizar ref para groupedData (apÃ³s groupedData ser definido)
     groupedDataRef.current = groupedData;
@@ -853,6 +879,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 if (aIndex === -1) return 1;
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
+            });
+        }
+
+        if (viewOption === "assignee") {
+            // Ordenar por nome alfabeticamente, com "Sem responsável" no final
+            return columns.sort((a, b) => {
+                if (a.title === "Sem responsável") return 1;
+                if (b.title === "Sem responsável") return -1;
+                return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
             });
         }
 
@@ -972,6 +1007,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
+        if (viewOption === "assignee") {
+            // Ordenar por nome alfabeticamente, com "Sem responsável" no final
+            return groups.sort((a, b) => {
+                if (a.title === "Sem responsável") return 1;
+                if (b.title === "Sem responsável") return -1;
+                return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+            });
+        }
+
         return groups;
     }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length]); // Usar .length para evitar re-renders quando o conteÃºdo muda mas o tamanho Ã© o mesmo
 
@@ -1006,6 +1050,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 if (!task.dueDate) return "Sem data";
                 // ... lÃ³gica de data repetida ...
                 return "Inbox"; // Simplificado para evitar complexidade excessiva aqui, idealmente refatorar lÃ³gica de data para funÃ§Ã£o reutilizÃ¡vel
+            case "assignee":
+                const assigneeName = task.assignees?.[0]?.name;
+                return assigneeName ? assigneeName.trim() : "Sem responsável";
             default:
                 return "Inbox";
         }
@@ -1015,6 +1062,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     useEffect(() => {
         setSortBy(urlSort);
     }, [urlSort]);
+
+    // ✅ Sincronizar viewOption quando parâmetro group da URL mudar
+    useEffect(() => {
+        const groupParam = searchParams.get("group");
+        const newViewOption = getInitialViewOption(groupParam);
+        setViewOption(newViewOption);
+    }, [searchParams]);
 
     // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
     useEffect(() => {
@@ -1232,6 +1286,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             status?: "todo" | "in_progress" | "done" | "archived" | "review" | "correction";
             priority?: "low" | "medium" | "high" | "urgent";
             group_id?: string | null;
+            assignee_id?: string | null;
         } = {};
 
         if (!isSameGroup) {
@@ -1261,6 +1316,18 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             ? null
                             : destinationGroupKey;
                     break;
+                case "assignee": {
+                    // Encontrar o membro pelo nome para obter o ID
+                    if (destinationGroupKey === "Sem responsável") {
+                        updateData.assignee_id = null;
+                    } else {
+                        const member = workspaceMembers.find(m => m.name === destinationGroupKey);
+                        if (member) {
+                            updateData.assignee_id = member.id;
+                        }
+                    }
+                    break;
+                }
             }
         } else if (viewOption === "group") {
             // Mesmo grupo: ainda envia group_id para garantir que o RLS permita o update
@@ -1302,6 +1369,23 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                           color: availableGroups.find((g) => g.id === updateData.group_id)?.color || moving.group?.color,
                       }
                     : undefined;
+            }
+            if (updateData.assignee_id !== undefined) {
+                // Atualizar assignees no estado local
+                if (updateData.assignee_id === null) {
+                    moving.assignees = [];
+                    moving.assigneeId = null;
+                } else {
+                    const member = workspaceMembers.find(m => m.id === updateData.assignee_id);
+                    if (member) {
+                        moving.assignees = [{
+                            name: member.name,
+                            avatar: member.avatar,
+                            id: member.id
+                        }];
+                        moving.assigneeId = member.id;
+                    }
+                }
             }
         }
 
@@ -1432,6 +1516,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     status: isSameGroup ? undefined : updateData.status,
                     priority: isSameGroup ? undefined : updateData.priority,
                     group_id: isSameGroup ? undefined : updateData.group_id,
+                    assignee_id: isSameGroup ? undefined : updateData.assignee_id,
                     workspace_id: movingFinal?.workspaceId ?? null,
                 });
                 
@@ -2028,6 +2113,18 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     groupId = columnId;
                                                 }
                                                 // Status padrÃ£o para novas tarefas em grupos
+                                                dbStatus = "todo";
+                                            } else if (viewOption === "assignee") {
+                                                // Encontrar o membro pelo nome para obter o ID
+                                                if (columnId === "Sem responsável") {
+                                                    assigneeId = null;
+                                                } else {
+                                                    const member = workspaceMembers.find(m => m.name === columnId);
+                                                    if (member) {
+                                                        assigneeId = member.id;
+                                                    }
+                                                }
+                                                // Status padrão para novas tarefas
                                                 dbStatus = "todo";
                                             }
 
