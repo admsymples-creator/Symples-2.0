@@ -197,18 +197,11 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   const dbStatus = mapLabelToStatus(task.status || "Não iniciado");
   const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
 
-  // Memoizar objeto task para TaskActionsMenu para evitar re-renders infinitos
-  const assigneeId = task.assignees?.[0]?.id || null;
+  // Memoizar objeto task para TaskActionsMenu (versão simplificada)
   const taskForActionsMenu = useMemo(() => ({
     id: String(task.id),
     title: task.title,
-    status: task.status,
-    priority: task.priority,
-    due_date: task.dueDate || null,
-    assignee_id: assigneeId,
-    workspace_id: task.workspace_id || null,
-    origin_context: null,
-  }), [task.id, task.title, task.status, task.priority, task.dueDate, assigneeId, task.workspace_id]);
+  }), [task.id, task.title]);
 
   // Memoizar callback para abrir detalhes
   const handleOpenDetails = useCallback(() => {
@@ -606,12 +599,9 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
         <TaskActionsMenu
           task={taskForActionsMenu}
-          isFocused={isFocusActive}
-          isUrgent={isUrgentActive}
           onOpenDetails={handleOpenDetails}
           onTaskUpdated={onTaskUpdated}
           onTaskDeleted={onTaskDeleted}
-          members={members}
           className="opacity-50 hover:opacity-100 transition-opacity"
         />
       </div>
