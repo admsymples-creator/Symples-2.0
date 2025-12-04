@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { TaskWithDetails, createTask, updateTask, updateTaskPosition } from "@/lib/actions/tasks";
 import { mapStatusToLabel } from "@/lib/config/tasks";
@@ -58,6 +58,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     const [localTasks, setLocalTasks] = useState<Task[]>(() =>
         initialTasks.map((task) => mapTaskFromDB(task))
     );
+
+
     const [activeTab, setActiveTab] = useState<ContextTab>("todas");
     const [groupBy, setGroupBy] = useState<GroupBy>("status");
     const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -115,13 +117,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
     // Filtrar tarefas por busca
     const filteredTasks = useMemo(() => {
-        if (!searchQuery.trim()) return localTasks;
-        const query = searchQuery.toLowerCase();
-        return localTasks.filter(
+        return !searchQuery.trim() ? localTasks : localTasks.filter(
             (task) =>
-                task.title.toLowerCase().includes(query) ||
-                task.tags?.some((tag) => tag.toLowerCase().includes(query))
-  );
+                task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                task.tags?.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+        );
     }, [localTasks, searchQuery]);
 
     // Agrupar tarefas
@@ -133,7 +133,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             switch (groupBy) {
                 case "status":
-                    key = task.status || "Backlog";
+                    key = task.status || "Não iniciado";
                     break;
                 case "priority":
                     key = task.priority || "medium";
@@ -142,7 +142,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     key = task.assignees?.[0]?.name || "Sem responsável";
                     break;
                 default:
-                    key = task.status || "Backlog";
+                    key = task.status || "Não iniciado";
             }
 
             if (!groups[key]) {
@@ -151,21 +151,30 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             groups[key].push(task);
         });
 
-        return groups;
+        // ✅ Criar novos arrays para cada grupo para garantir novas referências
+        // Isso força o React a detectar mudanças mesmo quando o conteúdo é o mesmo
+        const newGroups: Record<string, Task[]> = {};
+        Object.keys(groups).forEach(key => {
+            newGroups[key] = [...groups[key]];
+        });
+
+        return newGroups;
     }, [filteredTasks, groupBy]);
 
     // Converter grupos para formato de colunas (Kanban)
+    // ✅ IMPORTANTE: Criar novas referências para garantir que React detecte mudanças
     const kanbanColumns = useMemo(() => {
         const columns = Object.entries(groupedData).map(([key, tasks]) => ({
             id: key,
             title: key,
-            tasks,
+            tasks: [...tasks], // ✅ Criar novo array para garantir nova referência
         }));
 
         // Ordenar colunas baseado no tipo de agrupamento
+        let sortedColumns;
         if (groupBy === "status") {
-            const statusOrder = ["Backlog", "Triagem", "Execução", "Revisão"];
-            return columns.sort((a, b) => {
+            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Correção", "Concluido"];
+            sortedColumns = columns.sort((a, b) => {
                 const aIndex = statusOrder.indexOf(a.title);
                 const bIndex = statusOrder.indexOf(b.title);
                 if (aIndex === -1 && bIndex === -1) return 0;
@@ -173,11 +182,9 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
             });
-        }
-
-        if (groupBy === "priority") {
+        } else if (groupBy === "priority") {
             const priorityOrder = ["urgent", "high", "medium", "low"];
-            return columns.sort((a, b) => {
+            sortedColumns = columns.sort((a, b) => {
                 const aIndex = priorityOrder.indexOf(a.title);
                 const bIndex = priorityOrder.indexOf(b.title);
                 if (aIndex === -1 && bIndex === -1) return 0;
@@ -185,9 +192,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
             });
+        } else {
+            sortedColumns = columns;
         }
 
-        return columns;
+        return [...sortedColumns];
     }, [groupedData, groupBy]);
 
     // Converter grupos para formato de lista (TaskGroup)
@@ -628,18 +637,54 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     }, []);
 
     // ✅ OTIMIZAÇÃO: Handler memoizado para evitar re-renders
-    const handleTaskClick = useCallback((taskId: string) => {
-        const task = localTasksRef.current.find((t) => t.id === taskId);
+    const handleTaskClick = useCallback((taskId: string | number) => {
+        const taskIdStr = String(taskId);
+        const task = localTasksRef.current.find((t) => t.id === taskIdStr);
         if (task) {
-            setSelectedTaskId(taskId);
+            setSelectedTaskId(taskIdStr);
             setTaskDetails(task);
             setIsModalOpen(true);
         }
     }, []);
 
+    // ✅ Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
+    const updateLocalTask = useCallback((taskId: string, updates: Partial<Task>) => {
+        setLocalTasks((prev) => {
+            const taskIndex = prev.findIndex(t => t.id === taskId);
+            if (taskIndex === -1) {
+                return prev;
+            }
+            
+            // ✅ Criar novo array com imutabilidade garantida
+            const updated = prev.map((task, index) => {
+                if (index === taskIndex) {
+                    return { ...task, ...updates };
+                }
+                return task;
+            });
+            
+            return updated;
+        });
+    }, []);
+
+    // ✅ Callback memoizado para optimistic updates (deve vir depois de updateLocalTask)
+    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+        // Mapear updates para o formato do estado local
+        const localUpdates: Partial<Task> = {};
+        if (updates.title) localUpdates.title = updates.title;
+        if (updates.status) {
+            // O status já vem como label da UI (ex: "Não iniciado", "Em progresso")
+            localUpdates.status = updates.status;
+        }
+        if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
+        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        updateLocalTask(taskId, localUpdates);
+    }, [updateLocalTask]);
+
     // ✅ OTIMIZAÇÃO: Handler memoizado para evitar re-renders
     const reloadTasks = useCallback(() => {
         // MINIFY v2: evitar router.refresh em handlers críticos
+        // A atualização otimista é feita via updateLocalTask
         console.log("Simulando refresh opcional…");
     }, []);
     
@@ -774,14 +819,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                                     id={group.id}
                                     title={group.title}
                                     tasks={group.tasks}
-                                    groupBy={groupBy}
                                     onTaskClick={handleTaskClick}
-                                    onAddTask={handleAddTask}
-                                    onToggleComplete={handleToggleComplete}
                                 />
                             ))}
                         </div>
-        ) : (
+                    ) : (
                         <TaskBoard
                             columns={kanbanColumns}
                             onTaskClick={handleTaskClick}
@@ -797,6 +839,9 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                             }))}
                             groupBy={groupBy}
                             onToggleComplete={handleToggleComplete}
+                            onTaskUpdated={reloadTasks}
+                            onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                            onDelete={reloadTasks}
                         />
                     )}
 

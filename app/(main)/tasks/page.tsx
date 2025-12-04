@@ -624,6 +624,38 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         loadMembers();
     }, [effectiveWorkspaceId]);
 
+    // ✅ Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
+    const updateLocalTask = useCallback((taskId: string, updates: Partial<Task>) => {
+        setLocalTasks((prev) => {
+            const taskIndex = prev.findIndex(t => t.id === taskId);
+            if (taskIndex === -1) {
+                console.warn("[updateLocalTask] Tarefa não encontrada:", taskId);
+                return prev;
+            }
+            
+            const updated = prev.map((task, index) => {
+                if (index === taskIndex) {
+                    return { ...task, ...updates };
+                }
+                return task;
+            });
+            
+            return updated;
+        });
+    }, []);
+
+    // ✅ Callback memoizado para optimistic updates
+    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+        const localUpdates: Partial<Task> = {};
+        if (updates.title) localUpdates.title = updates.title;
+        if (updates.status) {
+            localUpdates.status = updates.status;
+        }
+        if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
+        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        updateLocalTask(taskId, localUpdates);
+    }, [updateLocalTask]);
+
     // Filtrar tarefas por busca
     // FunÃ§Ã£o para alternar status de conclusÃ£o
     const handleToggleComplete = async (taskId: string, completed: boolean) => {
@@ -2250,6 +2282,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                         onTaskClick={handleTaskClick}
                                         onTaskMoved={reloadTasks}
                                         onToggleComplete={handleToggleComplete}
+                                        onTaskUpdatedOptimistic={handleOptimisticUpdate}
                                         isDragDisabled={isDragDisabled}
                                     onAddTask={async (columnId, title, dueDate, assigneeId) => {
                                         try {

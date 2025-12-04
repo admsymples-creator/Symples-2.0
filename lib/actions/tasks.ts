@@ -389,21 +389,29 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
   const supabase = await createServerActionClient();
   const { id, ...updates } = params;
 
-  const { data, error } = await supabase
+  console.log("[updateTask] Atualizando tarefa:", { id, updates });
+
+  // Fazer o update diretamente sem select para evitar problemas de RLS
+  // O Supabase retorna erro apenas se houver problema de permissão ou sintaxe
+  const { error } = await supabase
     .from("tasks")
     .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+    .eq("id", id);
 
   if (error) {
-    console.error("Erro ao atualizar tarefa:", error);
+    console.error("[updateTask] Erro ao atualizar tarefa:", error);
+    // Se for erro de "nenhuma linha", pode ser que a tarefa não existe ou RLS bloqueou
+    if (error.code === 'PGRST116' || error.message.includes('0 rows') || error.message.includes('No rows')) {
+      return { success: false, error: "Tarefa não encontrada ou sem permissão" };
+    }
     return { success: false, error: error.message };
   }
 
+  // Se não houve erro, o update foi bem-sucedido
+  console.log("[updateTask] Tarefa atualizada com sucesso:", id);
   revalidatePath("/tasks");
   revalidatePath("/home");
-  return { success: true, data };
+  return { success: true, data: null };
 }
 
 interface UpdateTaskPositionParams {

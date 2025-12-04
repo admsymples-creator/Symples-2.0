@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState, useRef, useEffect } from "react";
 import { 
   GitPullRequest, 
   MessageSquare, 
@@ -8,7 +8,9 @@ import {
   X, 
   Zap, 
   AlertTriangle, 
-  Calendar as CalendarIcon 
+  Calendar as CalendarIcon,
+  ChevronDown,
+  CheckCircle2
 } from "lucide-react";
 import { useTaskPreload } from "@/hooks/use-task-preload";
 import { Avatar } from "./Avatar";
@@ -16,10 +18,11 @@ import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TaskActionsMenu } from "./TaskActionsMenu";
-import { TASK_CONFIG, mapLabelToStatus } from "@/lib/config/tasks";
+import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES } from "@/lib/config/tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 import {
@@ -43,7 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// --- Utilitários (Movidos para fora para performance) ---
+// --- Utilitários ---
 
 function getTagColor(tag: string): string {
   const normalized = tag.toLowerCase();
@@ -104,6 +107,7 @@ interface KanbanCardProps {
   commentsCount?: number;
   onClick?: () => void;
   onTaskUpdated?: () => void;
+  onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
   onDelete?: () => void;
   onToggleComplete?: (taskId: string, completed: boolean) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
@@ -126,12 +130,38 @@ function KanbanCardComponent({
   commentsCount = 0,
   onClick,
   onTaskUpdated,
+  onTaskUpdatedOptimistic,
   onDelete,
   onToggleComplete,
   members,
   disabled = false,
 }: KanbanCardProps) {
   const { preloadTask, cancelPreload } = useTaskPreload();
+  
+  // Estado para edição de título
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(title);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados para controlar abertura dos Popovers
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [isDateOpen, setIsDateOpen] = useState(false);
+  const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
+
+  // Sincronizar titleValue com prop title quando não estiver editando
+  useEffect(() => {
+    if (!isEditingTitle) {
+      setTitleValue(title);
+    }
+  }, [title, isEditingTitle]);
+
+  // Auto-focus no input de título
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
   
   // Lógica de Data
   const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
@@ -174,78 +204,163 @@ function KanbanCardComponent({
   const dragStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : disabled ? 0.75 : 1,
+    opacity: isDragging ? 0.3 : disabled ? 0.75 : 1, // Opacidade menor no original quando arrasta (padrão Trello)
+    willChange: 'transform',
   };
 
-  // Actions
+  // Actions - Optimistic UI
   const handleDateUpdate = async (date: Date | undefined) => {
+    setIsDateOpen(false); // Fechar Popover imediatamente
+    const previousDueDate = dueDate;
+    onTaskUpdatedOptimistic?.(id, { dueDate: date ? date.toISOString() : undefined });
+
     try {
       const result = await updateTask({ 
         id, 
         due_date: date ? date.toISOString() : null 
       });
-      if (result.success) {
-        onTaskUpdated?.();
-        toast.success(date ? "Data atualizada" : "Data removida");
-      } else {
+      
+      if (!result.success) {
+        onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
         toast.error("Erro ao atualizar data");
+      } else {
+        toast.success(date ? "Data atualizada" : "Data removida");
+        onTaskUpdated?.();
       }
-    } catch {
+    } catch (error) {
+      onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
       toast.error("Erro ao atualizar data");
     }
   };
 
   const handleAssigneeUpdate = async (memberId: string | null) => {
+    setIsAssigneeOpen(false); // Fechar Popover imediatamente
+    const previousAssignees = assignees;
+    const updatedAssignees = memberId && members 
+      ? members.filter(m => m.id === memberId).map(m => ({ name: m.name, avatar: m.avatar, id: m.id }))
+      : [];
+    onTaskUpdatedOptimistic?.(id, { assignees: updatedAssignees });
+
     try {
       const result = await updateTask({ id, assignee_id: memberId });
-      if (result.success) {
-        onTaskUpdated?.();
-        toast.success(memberId ? "Responsável atualizado" : "Responsável removido");
-      } else {
+      
+      if (!result.success) {
+        onTaskUpdatedOptimistic?.(id, { assignees: previousAssignees });
         toast.error("Erro ao atualizar responsável");
+      } else {
+        toast.success(memberId ? "Responsável atualizado" : "Responsável removido");
+        onTaskUpdated?.();
       }
-    } catch {
+    } catch (error) {
+      onTaskUpdatedOptimistic?.(id, { assignees: previousAssignees });
       toast.error("Erro ao atualizar responsável");
     }
   };
 
-  const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      let updateData = {};
-      
-      if (type === 'focus') {
-        const nextSunday = getNextSunday();
-        updateData = { due_date: nextSunday.toISOString() };
-      } else {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        updateData = { priority: "urgent", due_date: today.toISOString() };
-      }
+  const handleTitleSave = async (newTitle: string) => {
+    if (newTitle.trim() === title) {
+      setIsEditingTitle(false);
+      return;
+    }
 
+    if (!newTitle.trim()) {
+      toast.error("O título não pode estar vazio");
+      setTitleValue(title);
+      setIsEditingTitle(false);
+      return;
+    }
+
+    const trimmedTitle = newTitle.trim();
+    const previousTitle = title;
+    
+    onTaskUpdatedOptimistic?.(id, { title: trimmedTitle });
+    setTitleValue(trimmedTitle);
+    setIsEditingTitle(false);
+
+    try {
+      const result = await updateTask({ id, title: trimmedTitle });
+      
+      if (!result.success) {
+        onTaskUpdatedOptimistic?.(id, { title: previousTitle });
+        setTitleValue(previousTitle);
+        toast.error("Erro ao atualizar título");
+      } else {
+        toast.success("Título atualizado");
+        onTaskUpdated?.();
+      }
+    } catch (error) {
+      onTaskUpdatedOptimistic?.(id, { title: previousTitle });
+      setTitleValue(previousTitle);
+      toast.error("Erro ao atualizar título");
+    }
+  };
+
+  const handleStatusUpdate = async (newStatus: string) => {
+    setIsStatusOpen(false); // Fechar Popover imediatamente
+    const previousStatus = status;
+    onTaskUpdatedOptimistic?.(id, { status: newStatus });
+
+    try {
+      const dbStatus = mapLabelToStatus(newStatus);
+      const result = await updateTask({ id, status: dbStatus });
+      
+      if (!result.success) {
+        onTaskUpdatedOptimistic?.(id, { status: previousStatus });
+        toast.error("Erro ao atualizar status");
+      } else {
+        toast.success(`Status alterado para ${newStatus}`);
+        onTaskUpdated?.();
+      }
+    } catch (error) {
+      onTaskUpdatedOptimistic?.(id, { status: previousStatus });
+      toast.error("Erro ao atualizar status");
+    }
+  };
+
+  const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
+    // IMPORTANTE: Stop propagation para não iniciar o drag ao clicar
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const previousDueDate = dueDate;
+    let updateData = {};
+    let optimisticUpdates: Partial<{ dueDate?: string; priority?: string }> = {};
+    
+    if (type === 'focus') {
+      const nextSunday = getNextSunday();
+      updateData = { due_date: nextSunday.toISOString() };
+      optimisticUpdates = { dueDate: nextSunday.toISOString() };
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      updateData = { priority: "urgent", due_date: today.toISOString() };
+      optimisticUpdates = { dueDate: today.toISOString() };
+    }
+    
+    onTaskUpdatedOptimistic?.(id, optimisticUpdates);
+
+    try {
       const result = await updateTask({ id, ...updateData });
       
-      if (result.success) {
+      if (!result.success) {
+        onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
+        toast.error(result.error || "Erro ao atualizar");
+      } else {
         toast.success(type === 'focus' ? "Movido para Próximo Domingo" : "Marcado como Urgente");
         onTaskUpdated?.();
-      } else {
-        toast.error(result.error || "Erro ao atualizar");
       }
-    } catch {
+    } catch (error) {
+      onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
       toast.error("Erro ao atualizar tarefa");
     }
   };
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (isDragging) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
+  // Handler de clique no card (abre detalhes)
+  const handleClick = useCallback(() => {
+    // Não precisa verificar isDragging aqui se o sensor do pai tiver 'distance: 8'
     onClick?.();
-  }, [onClick, isDragging]);
+  }, [onClick]);
 
-  // Objeto reconstruído para o menu (Idealmente deveria vir via props, mantido para compatibilidade)
   const taskForMenu = {
     id,
     title,
@@ -258,17 +373,22 @@ function KanbanCardComponent({
     origin_context: {},
   };
 
+  // Função helper para parar propagação (usada em botões e inputs)
+  const stopProp = (e: React.BaseSyntheticEvent) => {
+    e.stopPropagation();
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={dragStyle}
       {...attributes}
-      {...(disabled ? {} : listeners)}
+      {...(disabled ? {} : listeners)} // VOLTAMOS os listeners para a raiz
       className={cn(
         "group bg-white rounded-xl p-3 border border-gray-200 shadow-sm w-full relative",
         "hover:shadow-md transition-all duration-200 flex flex-col min-h-[112px]",
-        disabled ? "cursor-default opacity-75" : "cursor-grab active:cursor-grabbing",
-        isDragging && "shadow-lg rotate-1 z-50"
+        disabled ? "opacity-75 cursor-default" : "cursor-grab active:cursor-grabbing",
+        isDragging && "shadow-xl rotate-2 z-50 ring-2 ring-blue-500/20"
       )}
       onClick={handleClick}
       onMouseEnter={() => preloadTask(id, null)}
@@ -277,8 +397,8 @@ function KanbanCardComponent({
       {/* Menu de Ações (Absoluto) */}
       <div 
         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-30"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
+        onPointerDown={stopProp} // Impede drag
+        onClick={stopProp} // Impede clique no card
       >
         <TaskActionsMenu
           task={taskForMenu}
@@ -297,15 +417,51 @@ function KanbanCardComponent({
         />
       )}
 
-      {/* Header: Status */}
+      {/* Header: Status com edição rápida */}
       <div className="flex items-center justify-between mb-2">
-        <Badge
-          variant="outline"
-          className={cn("text-[10px] px-2 py-0.5 h-5 font-medium", statusConfig.lightColor)}
-        >
-          <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
-          {statusConfig.label}
-        </Badge>
+        <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
+          <PopoverTrigger asChild>
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[10px] px-2 py-0.5 h-5 font-medium cursor-pointer hover:bg-gray-50 transition-colors",
+                statusConfig.lightColor
+              )}
+              onClick={stopProp}
+              onPointerDown={stopProp} // Crucial para não iniciar drag
+            >
+              <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
+              {statusConfig.label}
+              <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+            </Badge>
+          </PopoverTrigger>
+          <PopoverContent className="p-0 w-48" align="start" onClick={stopProp} onPointerDown={stopProp}>
+            <Command>
+              <CommandList>
+                <CommandGroup>
+                  {ORDERED_STATUSES.map((statusKey) => {
+                    const config = TASK_CONFIG[statusKey];
+                    const isSelected = mapLabelToStatus(status) === statusKey;
+                    return (
+                      <CommandItem
+                        key={statusKey}
+                        onSelect={() => handleStatusUpdate(config.label)}
+                        className={cn(
+                          "text-xs cursor-pointer",
+                          isSelected && "bg-gray-100"
+                        )}
+                      >
+                        <div className={cn("w-1.5 h-1.5 rounded-full mr-2", config.color.replace("fill-", "bg-"))} />
+                        {config.label}
+                        {isSelected && <CheckCircle2 className="w-3 h-3 ml-auto text-green-600" />}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Body: Checkbox & Título */}
@@ -313,8 +469,8 @@ function KanbanCardComponent({
         <div className="flex gap-2">
           <div 
             className="pt-0.5 flex-shrink-0"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
+            onClick={stopProp}
+            onPointerDown={stopProp} // Protege Checkbox
           >
             <Checkbox 
               checked={completed} 
@@ -324,12 +480,47 @@ function KanbanCardComponent({
           </div>
           
           <div className="flex-1 min-w-0">
-            <h4 className={cn(
-              "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
-              completed && "line-through text-gray-500"
-            )}>
-              {title}
-            </h4>
+            {isEditingTitle ? (
+              <Input
+                ref={titleInputRef}
+                value={titleValue}
+                onChange={(e) => setTitleValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleTitleSave(titleValue);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setTitleValue(title);
+                    setIsEditingTitle(false);
+                  }
+                }}
+                onBlur={() => handleTitleSave(titleValue)}
+                onClick={stopProp}
+                onPointerDown={stopProp} // Protege Input de Drag
+                className={cn(
+                  "font-semibold text-gray-800 text-sm mb-2 leading-snug",
+                  "border border-gray-300 focus-visible:ring-2 focus-visible:ring-gray-200",
+                  "px-2 py-1 rounded",
+                  completed && "line-through text-gray-500"
+                )}
+              />
+            ) : (
+              <h4 
+                className={cn(
+                  "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
+                  "cursor-text hover:bg-gray-50 rounded px-1 -mx-1",
+                  completed && "line-through text-gray-500"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation(); // Impede abrir modal ao clicar para editar
+                  setIsEditingTitle(true);
+                }}
+                // NOTA: Não colocamos stopProp no pointerDown aqui para permitir arrastar pelo título se não for edição
+              >
+                {title}
+              </h4>
+            )}
           </div>
         </div>
         
@@ -359,10 +550,10 @@ function KanbanCardComponent({
           {/* Data Picker */}
           <div 
             className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 -ml-1 transition-colors"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
+            onClick={stopProp}
+            onPointerDown={stopProp}
           >
-            <Popover>
+            <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
               <PopoverTrigger asChild>
                 <div className="flex items-center gap-1.5">
                   {dueDate ? (
@@ -382,7 +573,7 @@ function KanbanCardComponent({
                   )}
                 </div>
               </PopoverTrigger>
-              <PopoverContent className="p-0 w-auto" align="start">
+              <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp} onPointerDown={stopProp}>
                 <Calendar
                   mode="single"
                   selected={dueDate ? new Date(dueDate) : undefined}
@@ -406,7 +597,11 @@ function KanbanCardComponent({
 
           {/* Smart Triggers (Raio e Exclamação) */}
           <TooltipProvider>
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div 
+              className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={stopProp}
+              onPointerDown={stopProp}
+            >
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -415,7 +610,6 @@ function KanbanCardComponent({
                       "rounded p-0.5 transition-all",
                       isFocusActive ? "text-yellow-600 bg-yellow-50" : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
                     )}
-                    onPointerDown={(e) => e.stopPropagation()}
                   >
                     <Zap className="w-3.5 h-3.5 fill-current" />
                   </button>
@@ -431,7 +625,6 @@ function KanbanCardComponent({
                       "rounded p-0.5 transition-all",
                       isUrgentActive ? "text-red-600 bg-red-50" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
                     )}
-                    onPointerDown={(e) => e.stopPropagation()}
                   >
                     <AlertTriangle className="w-3.5 h-3.5 fill-current" />
                   </button>
@@ -460,10 +653,10 @@ function KanbanCardComponent({
 
           {/* Assignee Picker */}
           <div 
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
+            onClick={stopProp}
+            onPointerDown={stopProp}
           >
-            <Popover>
+            <Popover open={isAssigneeOpen} onOpenChange={setIsAssigneeOpen}>
               <PopoverTrigger asChild>
                 <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
                   {assignees.length > 0 ? (
@@ -480,7 +673,7 @@ function KanbanCardComponent({
                   )}
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="p-0 w-56" align="end">
+              <PopoverContent className="p-0 w-56" align="end" onClick={stopProp} onPointerDown={stopProp}>
                 <Command>
                   <CommandInput placeholder="Buscar membro..." />
                   <CommandList>
@@ -522,5 +715,4 @@ function KanbanCardComponent({
   );
 }
 
-// Exportar sem memo temporariamente para debug (similar ao TaskCard)
 export const KanbanCard = KanbanCardComponent;
