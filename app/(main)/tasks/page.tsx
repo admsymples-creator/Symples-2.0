@@ -686,15 +686,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 );
                 console.error("Erro ao atualizar tarefa:", result.error);
                 toast.error("Erro ao atualizar tarefa");
-            } else if (result.data) {
-                // Atualizar com dados do servidor para garantir sincronizaÃ§Ã£o
-                const updatedTask = mapTaskFromDB(result.data);
-                setLocalTasks((prevTasks) =>
-                    prevTasks.map((task) =>
-                        task.id === taskId ? updatedTask : task
-                    )
-                );
             }
+            // Sucesso - não há dados retornados pelo updateTask (retorna { success: true, data: null })
+            // A atualização otimista já foi feita acima, então não precisamos fazer nada aqui
         } catch (error) {
             // Reverter em caso de erro
             setLocalTasks((prevTasks) =>
@@ -2052,15 +2046,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                  )
                                              );
                                              console.error("Erro ao atualizar tarefa:", result.error);
-                                         } else if ('data' in result && result.data) {
-                                             // Atualizar com dados do servidor para garantir sincronizaÃ§Ã£o
-                                             const updatedTask = mapTaskFromDB(result.data);
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId ? updatedTask : task
-                                                 )
-                                             );
                                          }
+                                         // Sucesso - updateTask retorna { success: true, data: null }
+                                         // A atualização otimista já foi feita acima
                                      } catch (error) {
                                          // Reverter em caso de erro
                                          setLocalTasks((prevTasks) =>
@@ -2183,15 +2171,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                  )
                                              );
                                              console.error("Erro ao atualizar tarefa:", result.error);
-                                         } else if ('data' in result && result.data) {
-                                             // Atualizar com dados do servidor para garantir sincronizaÃ§Ã£o
-                                             const updatedTask = mapTaskFromDB(result.data);
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId ? updatedTask : task
-                                                 )
-                                             );
                                          }
+                                         // Sucesso - updateTask retorna { success: true, data: null }
+                                         // A atualização otimista já foi feita acima
                                      } catch (error) {
                                          // Reverter em caso de erro
                                          setLocalTasks((prevTasks) =>
