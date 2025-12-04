@@ -49,6 +49,7 @@ interface TaskBoardProps {
     members?: Array<{ id: string; name: string; avatar?: string }>;
     groupBy?: string;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
+    isDragDisabled?: boolean;
 }
 
 import { mapLabelToStatus } from "@/lib/config/tasks";
@@ -67,6 +68,7 @@ function DroppableColumn({
     members,
     groupBy,
     onToggleComplete,
+    isDragDisabled = false,
 }: {
     column: Column;
     onTaskClick?: (taskId: string) => void;
@@ -74,6 +76,7 @@ function DroppableColumn({
     members?: Array<{ id: string; name: string; avatar?: string }>;
     groupBy?: string;
     onToggleComplete?: (taskId: string, completed: boolean) => void;
+    isDragDisabled?: boolean;
 }) {
     const { setNodeRef, isOver } = useDroppable({
         id: column.id,
@@ -204,7 +207,7 @@ function DroppableColumn({
 
 // ✅ MINIFY v2: TaskBoard agora é puramente apresentacional, sem DndContext interno
 // O DndContext deve estar no componente pai (TasksView)
-function TaskBoardComponent({ columns, onTaskClick, onAddTask, onTaskMoved, members, groupBy, onToggleComplete }: TaskBoardProps) {
+function TaskBoardComponent({ columns, onTaskClick, onAddTask, onTaskMoved, members, groupBy, onToggleComplete, isDragDisabled = false }: TaskBoardProps) {
     // ✅ MINIFY v2: TaskBoard apenas renderiza colunas, não gerencia drag & drop
     // O drag & drop é gerenciado pelo TasksView que tem o DndContext principal
     
@@ -219,6 +222,7 @@ function TaskBoardComponent({ columns, onTaskClick, onAddTask, onTaskMoved, memb
                     members={members}
                     groupBy={groupBy}
                     onToggleComplete={onToggleComplete}
+                    isDragDisabled={isDragDisabled}
                 />
             ))}
         </div>

@@ -55,6 +55,7 @@ interface KanbanCardProps {
     onDelete?: () => void; // Mantido, mas idealmente usaria onTaskDeleted via TaskActionMenu
     onToggleComplete?: (taskId: string, completed: boolean) => void;
     members?: Array<{ id: string; name: string; avatar?: string }>; // Membros para atribuição rápida
+    disabled?: boolean;
 }
 
 // Função para mapear tags para cores de badge
@@ -136,6 +137,7 @@ export function KanbanCard({
     onDelete,
     onToggleComplete,
     members,
+    disabled = false,
 }: KanbanCardProps) {
     const { preloadTask, cancelPreload } = useTaskPreload();
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
@@ -180,12 +182,12 @@ export function KanbanCard({
         transform,
         transition,
         isDragging,
-    } = useSortable({ id });
+    } = useSortable({ id, disabled });
 
     const dragStyle = {
         transform: CSS.Transform.toString(transform),
         transition,
-        opacity: isDragging ? 0.5 : 1,
+        opacity: isDragging ? 0.5 : disabled ? 0.75 : 1,
     };
 
     // Estados para edição inline
@@ -304,11 +306,13 @@ export function KanbanCard({
             ref={setNodeRef}
             style={dragStyle}
             {...attributes}
-            {...listeners}
+            {...(disabled ? {} : listeners)}
             className={cn(
                 "group bg-white rounded-xl p-3 border border-gray-200 shadow-sm w-full relative", // Adicionado relative
-                "hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing",
-                "flex flex-col h-[112px]",
+                "hover:shadow-md transition-all duration-200 flex flex-col h-[112px]",
+                disabled 
+                    ? "cursor-default opacity-75" 
+                    : "cursor-grab active:cursor-grabbing",
                 isDragging && "shadow-lg rotate-1"
             )}
             onClick={onClick}

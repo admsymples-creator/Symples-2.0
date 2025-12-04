@@ -1248,6 +1248,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, [effectiveWorkspaceId, activeTab, sortBy, viewOption]);
     // Handler para quando o drag comeca
     const handleDragStart = (event: DragStartEvent) => {
+        // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
+        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
+        if (!isDragEnabled) {
+            toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            return; // Evita iniciar o drag
+        }
+
         const { active } = event;
         // âœ… CORREÃ‡ÃƒO: Normalizar ID para string
         const activeIdStr = String(active.id);
@@ -1257,6 +1264,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // Handler para quando o drag termina
     const handleDragEnd = async (event: DragEndEvent) => {
+        // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
+        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
+        if (!isDragEnabled) {
+            toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            return; // Bloqueia a ação lógica se estiver nas views apenas de leitura
+        }
+
         const { active, over } = event;
         setActiveTask(null);
         if (!over) return;
@@ -1290,43 +1304,34 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         } = {};
 
         if (!isSameGroup) {
-            switch (viewOption) {
-                case "status":
-                    updateData.status = mapLabelToStatus(destinationGroupKey) as any;
-                    break;
-                case "priority": {
-                    const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
-                        "Urgente": "urgent",
-                        "Alta": "high",
-                        "Média": "medium",
-                        "Baixa": "low",
-                        "urgente": "urgent",
-                        "alta": "high",
-                        "média": "medium",
-                        "media": "medium",
-                        "baixa": "low",
-                    };
-                    const mapped = priorityMap[destinationGroupKey] || (destinationGroupKey as any);
-                    if (mapped) updateData.priority = mapped;
-                    break;
-                }
-                case "group":
-                    updateData.group_id =
-                        destinationGroupKey === "inbox" || destinationGroupKey === "Inbox"
-                            ? null
-                            : destinationGroupKey;
-                    break;
-                case "assignee": {
-                    // Encontrar o membro pelo nome para obter o ID
-                    if (destinationGroupKey === "Sem responsável") {
-                        updateData.assignee_id = null;
-                    } else {
-                        const member = workspaceMembers.find(m => m.name === destinationGroupKey);
-                        if (member) {
-                            updateData.assignee_id = member.id;
-                        }
+            // Type narrowing: após a guard clause, viewOption só pode ser "status", "priority" ou "group"
+            if (viewOption === "status" || viewOption === "priority" || viewOption === "group") {
+                switch (viewOption) {
+                    case "status":
+                        updateData.status = mapLabelToStatus(destinationGroupKey) as any;
+                        break;
+                    case "priority": {
+                        const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
+                            "Urgente": "urgent",
+                            "Alta": "high",
+                            "Média": "medium",
+                            "Baixa": "low",
+                            "urgente": "urgent",
+                            "alta": "high",
+                            "média": "medium",
+                            "media": "medium",
+                            "baixa": "low",
+                        };
+                        const mapped = priorityMap[destinationGroupKey] || (destinationGroupKey as any);
+                        if (mapped) updateData.priority = mapped;
+                        break;
                     }
-                    break;
+                    case "group":
+                        updateData.group_id =
+                            destinationGroupKey === "inbox" || destinationGroupKey === "Inbox"
+                                ? null
+                                : destinationGroupKey;
+                        break;
                 }
             }
         } else if (viewOption === "group") {
@@ -1662,6 +1667,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     };
 
+    // ✅ Variável para controlar se drag está habilitado
+    const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
+
     return (
         <div className="min-h-screen bg-gray-50/50 pb-20" suppressHydrationWarning>
             {/* HEADER AREA - LINE 1 */}
@@ -1827,6 +1835,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             tasks={group.tasks}
                                  groupColor={group.groupColor || groupColors[group.id]}
                             onTaskClick={handleTaskClick}
+                            isDragDisabled={isDragDisabled}
                                 onRenameGroup={handleRenameGroup}
                                 onColorChange={handleColorChange}
                                  onDeleteGroup={handleDeleteGroup}
@@ -1957,6 +1966,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 groupColor={group.groupColor || groupColors[group.id]}
                                                 onTaskClick={handleTaskClick}
                                                 isGroupSortable={viewOption === "group"}
+                                                isDragDisabled={isDragDisabled}
                                                 onRenameGroup={handleRenameGroup}
                                                 onColorChange={handleColorChange}
                                                 onDeleteGroup={handleDeleteGroup}
@@ -2081,6 +2091,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                     onTaskClick={handleTaskClick}
                                     onTaskMoved={reloadTasks}
                                     onToggleComplete={handleToggleComplete}
+                                    isDragDisabled={isDragDisabled}
                                     onAddTask={async (columnId, title, dueDate, assigneeId) => {
                                         try {
                                             // Mapear status/priority baseado no viewOption e columnId

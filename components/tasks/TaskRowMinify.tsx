@@ -14,11 +14,12 @@ interface TaskRowMinifyProps {
   };
   containerId?: string;
   isOverlay?: boolean;
+  disabled?: boolean;
   onActionClick?: () => void;
   onClick?: (taskId: string | number) => void;
 }
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, onActionClick, onClick }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, onActionClick, onClick }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -26,7 +27,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, onAction
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: String(task.id), data: { containerId } }); // Normaliza ID para string
+  } = useSortable({ id: String(task.id), data: { containerId }, disabled }); // Normaliza ID para string e desabilita se necessário
 
   // Usar Translate para performance durante o drag
   const style = {
@@ -45,16 +46,22 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, onAction
       style={style}
       className={cn(
         "group flex items-center h-14 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1",
-        (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm"
+        (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
+        disabled && "opacity-75"
       )}
       onClick={() => onClick?.(task.id)}
     >
       {/* Drag Handle */}
       <div
         {...attributes}
-        {...listeners}
+        {...(disabled ? {} : listeners)}
         suppressHydrationWarning
-        className="h-full flex items-center px-3 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600 outline-none touch-none"
+        className={cn(
+          "h-full flex items-center px-3 outline-none touch-none",
+          disabled 
+            ? "cursor-default text-gray-200 opacity-50" 
+            : "cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600"
+        )}
       >
         <GripVertical className="w-4 h-4" />
       </div>
@@ -93,6 +100,7 @@ export const TaskRowMinify = memo(
       prev.task.title === next.task.title &&
       prev.task.status === next.task.status &&
       prev.isOverlay === next.isOverlay &&
+      prev.disabled === next.disabled &&
       prev.onClick === next.onClick &&
       prev.onActionClick === next.onActionClick
     );

@@ -21,9 +21,10 @@ interface TaskGroupProps {
     title: string;
     tasks: MinimalTask[];
     onTaskClick?: (taskId: string | number) => void;
+    isDragDisabled?: boolean;
 }
 
-function TaskGroupComponent({ id, title, tasks, onTaskClick }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, onTaskClick, isDragDisabled = false }: TaskGroupProps) {
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
 
@@ -63,6 +64,7 @@ function TaskGroupComponent({ id, title, tasks, onTaskClick }: TaskGroupProps) {
                                     task={task}
                                     containerId={id}
                                     onClick={onTaskClick}
+                                    disabled={isDragDisabled}
                                 />
                             ))}
                         </div>
