@@ -14,17 +14,27 @@ type MinimalTask = {
     id: string | number;
     title: string;
     status?: string;
+    dueDate?: string;
+    completed?: boolean;
+    priority?: "low" | "medium" | "high" | "urgent";
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    commentCount?: number;
+    commentsCount?: number;
 };
 
 interface TaskGroupProps {
     id: string;
     title: string;
     tasks: MinimalTask[];
+    groupColor?: string;
     onTaskClick?: (taskId: string | number) => void;
     isDragDisabled?: boolean;
+    onTaskUpdated?: () => void;
+    onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+    members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
-function TaskGroupComponent({ id, title, tasks, onTaskClick, isDragDisabled = false }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskUpdatedOptimistic, members }: TaskGroupProps) {
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
 
@@ -33,13 +43,40 @@ function TaskGroupComponent({ id, title, tasks, onTaskClick, isDragDisabled = fa
         id: id,
     });
 
+    // Converter groupColor (nome ou hex) para cor válida para o indicador
+    const colorForIndicator = useMemo(() => {
+        if (!groupColor) return undefined;
+        
+        // Se já for hex, retornar direto
+        if (groupColor.startsWith('#')) {
+            return groupColor;
+        }
+        
+        // Mapear nomes de cores para valores hex
+        const colorMap: Record<string, string> = {
+            "red": "#ef4444",
+            "blue": "#3b82f6",
+            "green": "#22c55e",
+            "yellow": "#eab308",
+            "purple": "#a855f7",
+            "pink": "#ec4899",
+            "orange": "#f97316",
+            "slate": "#64748b",
+            "cyan": "#06b6d4",
+            "indigo": "#6366f1",
+        };
+        
+        return colorMap[groupColor] || undefined;
+    }, [groupColor]);
+
     return (
         <div className="flex-1 min-w-[320px] max-w-full">
             {/* Header do Grupo */}
-            <div className="mb-2 px-1">
+            <div className="mt-4 mb-2 px-1">
                 <TaskSectionHeader
                     title={title}
                     count={tasks.length}
+                    color={colorForIndicator}
                 />
             </div>
 
@@ -63,8 +100,12 @@ function TaskGroupComponent({ id, title, tasks, onTaskClick, isDragDisabled = fa
                                     key={task.id}
                                     task={task}
                                     containerId={id}
+                                    groupColor={groupColor}
                                     onClick={onTaskClick}
                                     disabled={isDragDisabled}
+                                    onTaskUpdated={onTaskUpdated}
+                                    onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
+                                    members={members}
                                 />
                             ))}
                         </div>
@@ -77,19 +118,23 @@ function TaskGroupComponent({ id, title, tasks, onTaskClick, isDragDisabled = fa
 
 // Memo para estabilidade do DnD
 export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
-    // Comparar IDs das tasks
-    const prevIds = prev.tasks.map((t) => String(t.id)).join(',');
-    const nextIds = next.tasks.map((t) => String(t.id)).join(',');
-    if (prevIds !== nextIds) return false;
+    // ✅ Se a referência das tasks mudou, sempre re-renderizar
+    if (prev.tasks !== next.tasks) {
+        return false; // Re-renderizar
+    }
 
     // Comparar título e ID do grupo
     if (prev.id !== next.id || prev.title !== next.title) {
         return false;
     }
 
-    if (prev.onTaskClick !== next.onTaskClick) {
+    // Comparar callbacks
+    if (prev.onTaskClick !== next.onTaskClick || 
+        prev.onTaskUpdated !== next.onTaskUpdated ||
+        prev.onTaskUpdatedOptimistic !== next.onTaskUpdatedOptimistic ||
+        prev.members !== next.members) {
         return false;
     }
 
-    return true;
+    return true; // Não re-renderizar
 });

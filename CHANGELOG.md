@@ -4,33 +4,46 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ## [Unreleased]
 
+### Added
+- **TaskRowMinify - Indicadores Visuais Completos**:
+  - **Data**: Date picker funcional com calendário, cores dinâmicas (vermelho para atrasado, verde para hoje)
+  - **Status**: Badge editável com popover para mudança rápida de status
+  - **Responsável**: Avatar picker com busca de membros, garantindo que usuário atual sempre aparece
+  - **Comentários**: Indicador de contagem de comentários (aparece apenas quando há comentários)
+  - **Focus (⚡)**: Botão para mover tarefa para próximo domingo (aparece no hover)
+  - **Urgente (⚠)**: Botão para marcar como urgente e definir data para hoje (aparece no hover)
+  - **Indicador de Cor do Grupo**: Barra vertical colorida à esquerda (1px) indicando cor do grupo
+
+- **TaskRowMinify - Layout em Grid**:
+  - Layout CSS Grid com colunas fixas para alinhamento vertical consistente
+  - Colunas: Drag Handle (40px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (100px) | Menu (40px)
+  - Indicadores Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
+
+- **TaskGroup - Indicador de Cor**:
+  - Círculo colorido ao lado do título do grupo (via TaskSectionHeader)
+  - Suporte para cores nomeadas (red, blue, green, etc.) e hex (#ffffff)
+
+- **Optimistic UI em TaskRowMinify**:
+  - Todas as atualizações (data, status, responsável, focus, urgente) usam optimistic UI
+  - Atualização instantânea da UI antes da chamada ao servidor
+  - Rollback automático em caso de erro
+
+### Changed
+- **TaskRowMinify**: Altura reduzida de `h-14` (56px) para `h-11` (44px) para interface mais compacta
+- **TaskGroup**: Espaçamento entre grupos aumentado de `gap-4` para `gap-6`
+- **TaskGroup**: Margin-top adicionado nos títulos dos grupos (`mt-4`)
+
 ### Fixed
 - **Correção de filtro na lista de membros**: Garantido que o usuário logado sempre aparece na lista de membros ao selecionar responsável de tarefa
   - Corrigido `getWorkspaceMembers` para incluir o usuário atual mesmo que não esteja em `workspace_members`
   - Removido filtro que excluía o usuário logado da lista
   - Corrigido loop infinito de renderização em `TaskActionsMenu` e `TaskAssigneePicker`
 
-### Added
-- **TaskStatusPicker**: Novo componente picker para edição rápida de status diretamente no TaskRow
-  - Status agora é editável inline, similar aos pickers de responsável e data
-  - Feedback visual com chevron sutil no hover
-  - Popover abre para baixo com todos os status disponíveis
-
-### Changed
-- **TaskRow**: Status badge agora é clicável e editável
-  - Adicionado feedback visual (hover effects, chevron)
-  - Melhorada UX com cursor pointer e transições suaves
-- **TaskAssigneePicker**: Otimizado para buscar membros automaticamente
-  - Removida dependência de `providedMembers` no useEffect para evitar loops
-  - Adicionado cleanup para cancelar requisições pendentes
-- **TaskActionsMenu**: Busca automática de membros quando não fornecidos
-  - Busca membros usando `workspace_id` da tarefa
-  - Corrigido loop infinito de renderização
-
 ### Technical
-- Corrigido problema de re-renders infinitos causado por arrays nas dependências do useEffect
-- Melhorada performance com cleanup adequado de requisições assíncronas
-- Adicionado suporte para edição inline de status sem abrir modal completo
+- Implementado layout CSS Grid em TaskRowMinify para alinhamento vertical consistente
+- Adicionado suporte para cores de grupo (nomeadas e hex) em TaskRowMinify e TaskGroup
+- Melhorada imutabilidade em atualizações de estado para garantir re-renders corretos
+- Adicionado `useMemo` para conversão de cores de grupo em TaskGroup
 
 
 

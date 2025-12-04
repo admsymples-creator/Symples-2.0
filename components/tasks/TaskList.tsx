@@ -24,12 +24,20 @@ type MinimalTask = {
     title: string;
     status: string;
     position?: number | null;
+    dueDate?: string;
+    completed?: boolean;
+    priority?: "low" | "medium" | "high" | "urgent";
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    commentCount?: number;
+    commentsCount?: number;
 };
 
 interface TaskListProps {
     initialTasks: MinimalTask[];
     workspaceId?: string | null;
     onTaskClick?: (taskId: string | number) => void;
+    onTaskUpdated?: () => void;
+    members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
 const GROUPS = ORDERED_STATUSES.map((status) => ({
@@ -38,12 +46,49 @@ const GROUPS = ORDERED_STATUSES.map((status) => ({
     color: TASK_CONFIG[status]?.lightColor || 'bg-gray-200',
 }));
 
-export function TaskList({ initialTasks, workspaceId, onTaskClick }: TaskListProps) {
+// Função auxiliar para extrair cor do nome da classe Tailwind ou retornar o valor direto
+const extractColorFromClass = (colorClass?: string): string | undefined => {
+    if (!colorClass) return undefined;
+    // Se já for uma cor hex, retornar direto
+    if (colorClass.startsWith('#')) {
+        return colorClass;
+    }
+    // Extrair nome da cor de classes Tailwind como "bg-red-500" -> "red"
+    // ou "bg-gray-200" -> "gray"
+    const match = colorClass.match(/bg-(\w+)(?:-\d+)?/);
+    return match ? match[1] : undefined;
+};
+
+export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated, members }: TaskListProps) {
     void workspaceId;
     const [tasks, setTasks] = useState<MinimalTask[]>(() => [...initialTasks]);
     const [activeId, setActiveId] = useState<string | null>(null);
     const tasksRef = useRef(tasks);
     tasksRef.current = tasks;
+
+    // ✅ Atualização otimista: atualiza estado local imediatamente
+    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+        setTasks((prev) => {
+            const taskIndex = prev.findIndex(t => String(t.id) === String(taskId));
+            if (taskIndex === -1) {
+                return prev;
+            }
+            
+            const updated = prev.map((task, index) => {
+                if (index === taskIndex) {
+                    const taskUpdates: Partial<MinimalTask> = {};
+                    if (updates.dueDate !== undefined) taskUpdates.dueDate = updates.dueDate;
+                    if (updates.status) taskUpdates.status = updates.status;
+                    if (updates.priority) taskUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
+                    if (updates.assignees) taskUpdates.assignees = updates.assignees;
+                    return { ...task, ...taskUpdates };
+                }
+                return task;
+            });
+            
+            return updated;
+        });
+    }, []);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -62,7 +107,14 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick }: TaskListPro
         Object.values(groups).forEach((list) =>
             list.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
         );
-        return groups;
+        // ✅ IMPORTANTE: Criar novas referências para garantir que React detecte mudanças
+        // Criar novos arrays E novos objetos para cada grupo para forçar re-render
+        const newGroups: Record<string, MinimalTask[]> = {};
+        Object.keys(groups).forEach((key) => {
+            // Criar novos objetos para cada task também (spread operator cria shallow copy)
+            newGroups[key] = groups[key].map(task => ({ ...task }));
+        });
+        return newGroups;
     }, [tasks]);
 
     const findContainer = useCallback(
@@ -155,16 +207,24 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick }: TaskListPro
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
-            <div className="flex gap-4 overflow-x-auto pb-10 h-full">
-                {GROUPS.map((group) => (
-                    <TaskGroup
-                        key={group.id}
-                        id={group.id}
-                        title={group.title}
-                        tasks={tasksByGroup[group.id] || []}
-                        onTaskClick={onTaskClick}
-                    />
-                ))}
+            <div className="flex gap-6 overflow-x-auto pb-10 h-full">
+                {GROUPS.map((group) => {
+                    // ✅ Garantir que sempre passamos uma nova referência de array
+                    const groupTasks = tasksByGroup[group.id] || [];
+                    return (
+                        <TaskGroup
+                            key={group.id}
+                            id={group.id}
+                            title={group.title}
+                            tasks={groupTasks}
+                            groupColor={extractColorFromClass(group.color)}
+                            onTaskClick={onTaskClick}
+                            onTaskUpdated={onTaskUpdated}
+                            onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                            members={members}
+                        />
+                    );
+                })}
             </div>
             <DragOverlay>
                 {activeTask ? <TaskRowMinify task={activeTask} isOverlay /> : null}
