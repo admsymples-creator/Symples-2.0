@@ -37,6 +37,7 @@ interface TaskListProps {
     workspaceId?: string | null;
     onTaskClick?: (taskId: string | number) => void;
     onTaskUpdated?: () => void;
+    onTaskDeleted?: () => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
@@ -59,7 +60,7 @@ const extractColorFromClass = (colorClass?: string): string | undefined => {
     return match ? match[1] : undefined;
 };
 
-export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated, members }: TaskListProps) {
+export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated, onTaskDeleted, members }: TaskListProps) {
     void workspaceId;
     const [tasks, setTasks] = useState<MinimalTask[]>(() => [...initialTasks]);
     const [activeId, setActiveId] = useState<string | null>(null);
@@ -218,8 +219,10 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
                             title={group.title}
                             tasks={groupTasks}
                             groupColor={extractColorFromClass(group.color)}
+                            workspaceId={workspaceId}
                             onTaskClick={onTaskClick}
                             onTaskUpdated={onTaskUpdated}
+                            onTaskDeleted={onTaskDeleted}
                             onTaskUpdatedOptimistic={handleOptimisticUpdate}
                             members={members}
                         />

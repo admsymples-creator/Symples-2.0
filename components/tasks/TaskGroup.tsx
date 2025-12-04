@@ -27,14 +27,16 @@ interface TaskGroupProps {
     title: string;
     tasks: MinimalTask[];
     groupColor?: string;
+    workspaceId?: string | null;
     onTaskClick?: (taskId: string | number) => void;
     isDragDisabled?: boolean;
     onTaskUpdated?: () => void;
+    onTaskDeleted?: () => void;
     onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskUpdatedOptimistic, members }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, members }: TaskGroupProps) {
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
 
@@ -98,12 +100,13 @@ function TaskGroupComponent({ id, title, tasks, groupColor, onTaskClick, isDragD
                             {tasks.map((task) => (
                                 <TaskRowMinify
                                     key={task.id}
-                                    task={task}
+                                    task={{...task, workspace_id: workspaceId || null}}
                                     containerId={id}
                                     groupColor={groupColor}
                                     onClick={onTaskClick}
                                     disabled={isDragDisabled}
                                     onTaskUpdated={onTaskUpdated}
+                                    onTaskDeleted={onTaskDeleted}
                                     onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
                                     members={members}
                                 />
@@ -131,6 +134,7 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
     // Comparar callbacks
     if (prev.onTaskClick !== next.onTaskClick || 
         prev.onTaskUpdated !== next.onTaskUpdated ||
+        prev.onTaskDeleted !== next.onTaskDeleted ||
         prev.onTaskUpdatedOptimistic !== next.onTaskUpdatedOptimistic ||
         prev.members !== next.members) {
         return false;

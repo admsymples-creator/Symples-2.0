@@ -3,7 +3,7 @@
 import React, { memo, useMemo, useState, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, MoreHorizontal, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -32,6 +32,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TaskActionsMenu } from "./TaskActionsMenu";
 
 interface TaskRowMinifyProps {
   task: {
@@ -42,6 +43,7 @@ interface TaskRowMinifyProps {
     completed?: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    workspace_id?: string | null;
     commentCount?: number;
     commentsCount?: number;
   };
@@ -52,6 +54,7 @@ interface TaskRowMinifyProps {
   onActionClick?: () => void;
   onClick?: (taskId: string | number) => void;
   onTaskUpdated?: () => void;
+  onTaskDeleted?: () => void;
   onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
 }
@@ -94,7 +97,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskUpdatedOptimistic, members }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, members }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -159,8 +162,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
     zIndex: isDragging ? 50 : 1,
     position: "relative" as const,
   };
-
-  const menuTriggerId = useMemo(() => `menu-${String(task.id)}`, [task.id]);
 
   // Lógica de Data (mesma do KanbanCard)
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
@@ -584,20 +585,26 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       </div>
 
       {/* Coluna: Menu Ações */}
-      <div className="flex items-center justify-center">
-        <button
-          type="button"
-          id={menuTriggerId}
-          suppressHydrationWarning
-          className="rounded p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          aria-label="Abrir ações da tarefa"
-          onClick={(e) => {
-            e.stopPropagation();
-            onActionClick?.();
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <TaskActionsMenu
+          task={{
+            id: String(task.id),
+            title: task.title,
+            status: task.status,
+            priority: task.priority,
+            due_date: task.dueDate || null,
+            assignee_id: task.assignees?.[0]?.id || null,
+            workspace_id: task.workspace_id || null,
+            origin_context: null,
           }}
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
+          isFocused={isFocusActive}
+          isUrgent={isUrgentActive}
+          onOpenDetails={() => onClick?.(task.id)}
+          onTaskUpdated={onTaskUpdated}
+          onTaskDeleted={onTaskDeleted}
+          members={members}
+          className="opacity-50 hover:opacity-100 transition-opacity"
+        />
       </div>
     </div>
   );
@@ -624,6 +631,7 @@ export const TaskRowMinify = memo(
       prev.onClick === next.onClick &&
       prev.onActionClick === next.onActionClick &&
       prev.onTaskUpdated === next.onTaskUpdated &&
+      prev.onTaskDeleted === next.onTaskDeleted &&
       prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic
     );
   }
