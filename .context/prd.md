@@ -1,8 +1,8 @@
 **\# SYMPLES — Product Requirements Document (PRD)**  
-**\*\*Versão:\*\* 2.0 (Full Scope: Business OS)**  
+**\*\*Versão:\*\* 2.1 (Full Scope: Business OS)**  
 **\*\*Visão:\*\* "O Hub de Soluções do Empreendedor Digital."**  
 **\*\*Slogan:\*\* "Gerir uma empresa tem que ser Symples."**  
-**\*\*Status:\*\* Em Desenvolvimento Ativo**  
+**\*\*Status:\*\* Em Desenvolvimento Ativo (Preview estável em \`develop\`, Produção em \`master\`)**  
 **\*\*Stack:\*\* Next.js 16.0.5, React 19, TypeScript, Supabase, Tailwind CSS, shadcn/ui, n8n, OpenAI.**
 
 **\---**
@@ -357,6 +357,48 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
   - Integrada ao `TaskActionsMenu` com feedback visual e tratamento de erros
   - Revalidação automática dos caminhos `/tasks` e `/home` após duplicação
 
+### 10.10. Sistema de Drag & Drop e Persistência de Posição (v2.4)
+- ✅ **Implementação de Midpoint Calculation:**
+  - Algoritmo de cálculo de posição usando média entre vizinhos (floating point math)
+  - Evita colisões de posição e permite inserções infinitas entre itens
+  - Reduz drasticamente a necessidade de re-indexação (bulk updates apenas em casos raros)
+  - Posições calculadas: Topo (`nextTask.position / 2`), Meio (`(prev + next) / 2`), Final (`prev + 1000`)
+
+- ✅ **Funções RPC no Banco de Dados:**
+  - `move_task(UUID, DOUBLE PRECISION)`: Atualiza posição de uma tarefa individual
+    - Retorna `JSONB` com `success`, `task_id`, `old_position`, `new_position`, `rows_affected`
+    - Usa `SECURITY DEFINER` para contornar políticas RLS
+    - Validação de permissões (workspace membership ou ownership)
+    - Verificação pós-update usando `RETURNING` clause
+  - `move_tasks_bulk(JSONB)`: Atualiza múltiplas posições em lote
+    - Recebe array de `{id, position}` via JSONB
+    - Processamento atômico para melhor performance
+    - Validação individual de permissões para cada tarefa
+
+- ✅ **Server Actions Otimizadas:**
+  - `updateTaskPosition()`: Lida corretamente com retorno VOID/JSONB da RPC
+  - `updateTaskPositionsBulk()`: Bulk update via RPC para melhor performance
+  - Fallback automático para update direto se RPC não estiver disponível
+  - Verificação pós-update no banco para garantir persistência
+
+- ✅ **Lógica de Cálculo no Frontend:**
+  - Cálculo de posição apenas para o item movido (não recalcula toda a lista)
+  - Bulk update apenas em caso raro de colisão (espaço < 0.00001)
+  - Estado local como source of truth com atualização otimista
+  - Logs detalhados para debugging e diagnóstico
+
+- ✅ **Scripts SQL de Manutenção:**
+  - `SCRIPT_CORRIGIR_TIPO_POSICAO.sql`: Corrige tipo do parâmetro de INTEGER para DOUBLE PRECISION
+  - `SCRIPT_VERIFICAR_E_ATUALIZAR_MOVE_TASK.sql`: Verifica e atualiza função move_task
+  - `SCRIPT_VERIFICAR_POSICOES_SALVAS.sql`: Diagnóstico de posições no banco
+  - `SCRIPT_REFRESH_TODAS_RPCS.sql`: Refresh completo do schema cache do PostgREST
+
+- ✅ **Correções Técnicas:**
+  - Interface `Task` atualizada com propriedade `position?: number`
+  - Tratamento correto de retorno VOID da RPC (não verifica `data`)
+  - Validação de tipos TypeScript para evitar erros de compilação
+  - Logs estruturados para rastreamento de problemas
+
 ---
 
 ## 11. Próximos Passos (Roadmap Imediato)
@@ -401,4 +443,13 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
    - Garantir rastreabilidade completa:
      - Cada item vindo do WhatsApp deve ter origem claramente marcada no `origin_context`.  
      - Logs de auditoria registrando cenários críticos (ex: falhas de parsing, mensagens ignoradas).  
-   - Documentar o fluxo em um diagrama (n8n + Supabase + Symples) e em um guia técnico (`docs/INTEGRACAO_WHATSAPP.md`).
+  - Documentar o fluxo em um diagrama (n8n + Supabase + Symples) e em um guia técnico (`docs/INTEGRACAO_WHATSAPP.md`).  
+
+---
+
+## 12. Journal de Preview (Fonte de Verdade Operacional)
+
+- O estado **vivido** do produto em preview (melhorias, bugs corrigidos e features liberadas) é rastreado em  
+  `.context/journal-symples.md`.  
+- Este PRD permanece como visão macro e regras de negócio; o **journal** detalha a linha do tempo de entrega
+  entre preview e produção.
