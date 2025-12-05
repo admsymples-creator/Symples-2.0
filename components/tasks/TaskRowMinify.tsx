@@ -100,6 +100,9 @@ const getNextSunday = (): Date => {
 };
 
 function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
+  // Log para debug
+  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
+  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
   const {
     attributes,
     listeners,
@@ -604,14 +607,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           onOpenDetails={handleOpenDetails}
           onTaskUpdated={onTaskUpdated}
           onTaskDeleted={onTaskDeleted}
-          onTaskDeletedOptimistic={onTaskDeletedOptimistic ? (taskId: string) => {
-            console.log("🔴 [TaskRowMinify] onTaskDeletedOptimistic recebido, taskId:", taskId);
-            onTaskDeletedOptimistic(taskId);
-          } : undefined}
-          onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic ? (duplicatedTask: any) => {
-            console.log("🟢 [TaskRowMinify] onTaskDuplicatedOptimistic recebido, task:", duplicatedTask);
-            onTaskDuplicatedOptimistic(duplicatedTask);
-          } : undefined}
+          onTaskDeletedOptimistic={onTaskDeletedOptimistic}
+          onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
           className="opacity-50 hover:opacity-100 transition-opacity"
         />
       </div>
@@ -641,7 +638,9 @@ export const TaskRowMinify = memo(
       prev.onActionClick === next.onActionClick &&
       prev.onTaskUpdated === next.onTaskUpdated &&
       prev.onTaskDeleted === next.onTaskDeleted &&
-      prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic
+      prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic &&
+      prev.onTaskDeletedOptimistic === next.onTaskDeletedOptimistic &&
+      prev.onTaskDuplicatedOptimistic === next.onTaskDuplicatedOptimistic
     );
   }
 );

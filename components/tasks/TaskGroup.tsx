@@ -39,6 +39,9 @@ interface TaskGroupProps {
 }
 
 function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskGroupProps) {
+    // Log para debug
+    console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
+    console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
 
@@ -110,14 +113,8 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     onTaskUpdated={onTaskUpdated}
                                     onTaskDeleted={onTaskDeleted}
                                     onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
-                                    onTaskDeletedOptimistic={onTaskDeletedOptimistic ? (taskId: string) => {
-                                        console.log("🔴 [TaskGroup] onTaskDeletedOptimistic recebido, passando para TaskRowMinify, taskId:", taskId);
-                                        onTaskDeletedOptimistic(taskId);
-                                    } : undefined}
-                                    onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic ? (duplicatedTask: any) => {
-                                        console.log("🟢 [TaskGroup] onTaskDuplicatedOptimistic recebido, passando para TaskRowMinify");
-                                        onTaskDuplicatedOptimistic(duplicatedTask);
-                                    } : undefined}
+                                    onTaskDeletedOptimistic={onTaskDeletedOptimistic}
+                                    onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
                                     members={members}
                                 />
                             ))}
@@ -146,6 +143,8 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
         prev.onTaskUpdated !== next.onTaskUpdated ||
         prev.onTaskDeleted !== next.onTaskDeleted ||
         prev.onTaskUpdatedOptimistic !== next.onTaskUpdatedOptimistic ||
+        prev.onTaskDeletedOptimistic !== next.onTaskDeletedOptimistic ||
+        prev.onTaskDuplicatedOptimistic !== next.onTaskDuplicatedOptimistic ||
         prev.members !== next.members) {
         return false;
     }
