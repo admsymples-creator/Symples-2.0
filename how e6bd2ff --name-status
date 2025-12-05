@@ -1,0 +1,64 @@
+fec5bf4 - Merge branch 'master' into develop # Please enter a commit message to explain why this merge is necessary, # especially if it merges an updated upstream into a topic branch. # # Lines starting with '#' will be ignored, and an empty message aborts # the commit. (17 minutes ago)
+e6bd2ff - refactor: melhorias nos componentes de tarefas e edição inline (29 minutes ago)
+M	app/(main)/tasks/page.tsx
+M	components/tasks/TaskBoard.tsx
+M	components/tasks/TaskGroup.tsx
+M	components/tasks/TaskList.tsx
+M	components/tasks/TaskRow.tsx
+M	components/ui/inline-text-edit.tsx
+
+16f88e6 - docs: atualiza journal com data correta do merge (42 minutes ago)
+M	.context/journal-symples.md
+
+26f1362 - Merge feature/taskrow-minify-improvements: Checkbox de conclusão no TaskRowMinify (43 minutes ago)
+00f9823 - feat: adiciona checkbox de conclusão no TaskRowMinify com optimistic UI (43 minutes ago)
+M	.context/design_system.md
+M	.context/journal-symples.md
+M	components/tasks/TaskGroup.tsx
+M	components/tasks/TaskRowMinify.tsx
+
+ee32ff4 - debug: Adiciona log no TaskList mostrando callbacks sendo passados para TaskGroup (18 hours ago)
+M	components/tasks/TaskList.tsx
+
+a1aa16e - debug: Adiciona logs detalhados no TaskGroup e TaskList para rastrear callbacks (18 hours ago)
+M	components/tasks/TaskGroup.tsx
+
+d73ad49 - debug: Adiciona useEffect para rastrear mudanças no estado tasks (19 hours ago)
+M	components/tasks/TaskList.tsx
+
+d51c08b - debug: Adiciona logs detalhados para rastrear exclusão de tarefas (19 hours ago)
+M	components/tasks/TaskList.tsx
+
+a7c159a - debug: Adiciona log detalhado de props no TaskActionsMenu para rastrear callbacks (19 hours ago)
+M	components/tasks/TaskActionsMenu.tsx
+
+2f77764 - fix: Simplifica passagem de callbacks optimistic e adiciona mais logs (19 hours ago)
+M	components/tasks/TaskGroup.tsx
+M	components/tasks/TaskRowMinify.tsx
+
+89762b6 - debug: Adiciona logs detalhados para rastrear optimistic UI (19 hours ago)
+M	components/tasks/TaskActionsMenu.tsx
+M	components/tasks/TaskGroup.tsx
+M	components/tasks/TaskList.tsx
+M	components/tasks/TaskRowMinify.tsx
+
+4423bbd - feat: Implementa optimistic UI para ações Excluir e Duplicar (19 hours ago)
+M	components/tasks/TaskActionsMenu.tsx
+M	components/tasks/TaskGroup.tsx
+M	components/tasks/TaskList.tsx
+M	components/tasks/TaskRowMinify.tsx
+
+d877efc - fix: Remove props não utilizadas do TaskActionsMenu em TaskRow e KanbanCard (20 hours ago)
+M	components/tasks/KanbanCard.tsx
+M	components/tasks/TaskRow.tsx
+
+c205841 - refactor: Minifica TaskActionsMenu para 4 ações essenciais (20 hours ago)
+M	components/tasks/TaskActionsMenu.tsx
+M	components/tasks/TaskRowMinify.tsx
+
+5352b21 - fix: Corrige import do useRef no TaskActionsMenu (20 hours ago)
+M	components/tasks/TaskActionsMenu.tsx
+
+e566507 - fix: Corrige loop infinito de renderização no TaskActionsMenu (20 hours ago)
+M	components/tasks/TaskActionsMenu.tsx
+M	components/tasks/TaskRowMinify.tsx

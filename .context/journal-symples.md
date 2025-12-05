@@ -6,6 +6,63 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-05 - 16:05
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ TaskRow - Edição Inline de Título com Optimistic UI
+- **Edição Inline**: Implementada edição direta do título da tarefa usando componente `InlineTextEdit`
+  - Clique no título ou no ícone de lápis (aparece no hover) para editar
+  - Auto-focus e seleção automática do texto ao entrar em modo de edição
+  - Suporte a Enter (salvar) e Escape (cancelar)
+  - Prevenção de propagação de eventos para evitar conflitos com cliques do container
+  
+- **Optimistic UI Pattern para Título**:
+  - Atualização instantânea da interface antes da chamada ao servidor
+  - Rollback automático em caso de erro, restaurando título anterior
+  - Validação: título não pode estar vazio
+  - Toast de feedback (sucesso/erro) para melhor UX
+  - Callback `onTaskUpdatedOptimistic` para sincronização de estado local
+  
+- **Melhorias no InlineTextEdit**:
+  - Ícone de lápis que aparece apenas no hover (`opacity-0 group-hover/title:opacity-100`)
+  - Estado desabilitado com visual diferenciado (`cursor-default`)
+  - Atualização automática quando a prop `value` muda externamente (apenas se não estiver editando)
+  - Melhor tratamento de eventos (onClick, onMouseDown) para evitar conflitos
+
+#### 🎨 Melhorias de Componentes Relacionados
+- **TaskBoard**: Melhorias na integração com optimistic updates
+- **TaskGroup**: Suporte aprimorado para callback `onTaskUpdatedOptimistic`
+- **TaskList**: Integração completa com padrão optimistic UI
+- **Página de Tarefas**: Handlers memoizados para melhor performance
+
+#### 📝 Refatoração de Código
+- **Arquivos modificados** (commit `e6bd2ff`):
+  - `components/tasks/TaskRow.tsx`: +67 linhas (edição inline + optimistic UI)
+  - `components/ui/inline-text-edit.tsx`: +66 linhas (melhorias de UX)
+  - `components/tasks/TaskBoard.tsx`: +60 linhas (integração optimistic)
+  - `components/tasks/TaskGroup.tsx`: +110 linhas (suporte optimistic)
+  - `components/tasks/TaskList.tsx`: +3 linhas (ajustes)
+  - `app/(main)/tasks/page.tsx`: +334 linhas (handlers e estado)
+
+**Total**: ~525 inserções e ~115 deleções em 6 arquivos
+
+### 2. O que está sendo trabalhado no momento
+
+- **Validação e testes da edição inline**
+  - Testes de edição rápida de títulos
+  - Validação de rollback em caso de erro de rede
+  - Verificação de performance com múltiplas edições simultâneas
+
+### 3. Próximos passos
+
+- **Melhorias de UX na edição inline**
+  - Considerar debounce para evitar salvamentos excessivos durante digitação
+  - Adicionar indicador visual de "salvando..." durante a chamada ao servidor
+  - Suporte para edição inline em outros campos (descrição, tags)
+
+---
+
 ## 2025-12-05 - 15:51
 
 ### 1. Melhorias, bugs e features implementadas em preview

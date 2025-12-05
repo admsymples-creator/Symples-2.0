@@ -312,6 +312,17 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Estilo "Clean Checklist"
   - Barra vertical colorida para workspace
   - Hover actions (drag handle, raio, exclamação)
+  - **Edição Inline de Título**: Componente `InlineTextEdit` integrado para edição direta do título
+    - Ícone de lápis aparece no hover (`group-hover/title:opacity-100`)
+    - Atualização com Optimistic UI: interface atualiza antes da chamada ao servidor
+    - Rollback automático em caso de erro, restaurando valor anterior
+    - Validação: título não pode estar vazio
+    - Callback `onTaskUpdatedOptimistic` para sincronização de estado local
+  - **Optimistic UI Pattern**:
+    - Atualização instantânea da UI antes da chamada ao servidor
+    - Rollback automático em caso de erro
+    - Garantia de imutabilidade em atualizações de estado
+    - Toast de feedback (sucesso/erro) para melhor UX
 
 - **TaskRowMinify (`components/tasks/TaskRowMinify.tsx`):**
   - **Layout**: CSS Grid com colunas fixas para alinhamento vertical
@@ -341,6 +352,15 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - **Hover Actions**: Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
     - Classe: `opacity-0 group-hover:opacity-100`
     - Mantém-se visível quando ativo (mesmo sem hover)
+
+- **InlineTextEdit (`components/ui/inline-text-edit.tsx`):**
+  - Componente de edição inline de texto
+  - Auto-focus e seleção de texto ao entrar em modo de edição
+  - Suporte a Enter (salvar) e Escape (cancelar)
+  - Ícone de lápis no hover para indicar editabilidade
+  - Prevenção de propagação de eventos para evitar conflitos com cliques do container
+  - Atualização automática quando a prop `value` muda externamente (apenas se não estiver editando)
+  - Estado desabilitado com visual diferenciado
 
 - **AttachmentCard (`components/tasks/AttachmentCard.tsx`):**
   - Card compacto para exibição de anexos
