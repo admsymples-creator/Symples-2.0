@@ -93,11 +93,18 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
 
     // ✅ Optimistic Delete: Remove tarefa instantaneamente
     const handleOptimisticDelete = useCallback((taskId: string) => {
-        setTasks((prev) => prev.filter(t => String(t.id) !== String(taskId)));
+        console.log("🔴 [TaskList] handleOptimisticDelete chamado para taskId:", taskId);
+        setTasks((prev) => {
+            console.log("🔴 [TaskList] Tarefas antes de remover:", prev.length);
+            const filtered = prev.filter(t => String(t.id) !== String(taskId));
+            console.log("🔴 [TaskList] Tarefas depois de remover:", filtered.length);
+            return filtered;
+        });
     }, []);
 
     // ✅ Optimistic Duplicate: Adiciona tarefa duplicada instantaneamente
     const handleOptimisticDuplicate = useCallback((duplicatedTaskData: any) => {
+        console.log("🟢 [TaskList] handleOptimisticDuplicate chamado com dados:", duplicatedTaskData);
         // Mapear dados do backend para MinimalTask
         const newTask: MinimalTask = {
             id: duplicatedTaskData.id,
@@ -118,7 +125,13 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
             commentsCount: 0,
         };
         
-        setTasks((prev) => [...prev, newTask]);
+        console.log("🟢 [TaskList] Nova tarefa mapeada:", newTask);
+        setTasks((prev) => {
+            console.log("🟢 [TaskList] Tarefas antes de adicionar:", prev.length);
+            const updated = [...prev, newTask];
+            console.log("🟢 [TaskList] Tarefas depois de adicionar:", updated.length);
+            return updated;
+        });
     }, []);
 
     const sensors = useSensors(

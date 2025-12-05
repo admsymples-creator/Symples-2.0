@@ -110,8 +110,14 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     onTaskUpdated={onTaskUpdated}
                                     onTaskDeleted={onTaskDeleted}
                                     onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
-                                    onTaskDeletedOptimistic={onTaskDeletedOptimistic}
-                                    onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
+                                    onTaskDeletedOptimistic={onTaskDeletedOptimistic ? (taskId: string) => {
+                                        console.log("🔴 [TaskGroup] onTaskDeletedOptimistic recebido, passando para TaskRowMinify, taskId:", taskId);
+                                        onTaskDeletedOptimistic(taskId);
+                                    } : undefined}
+                                    onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic ? (duplicatedTask: any) => {
+                                        console.log("🟢 [TaskGroup] onTaskDuplicatedOptimistic recebido, passando para TaskRowMinify");
+                                        onTaskDuplicatedOptimistic(duplicatedTask);
+                                    } : undefined}
                                     members={members}
                                 />
                             ))}

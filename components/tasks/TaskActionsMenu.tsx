@@ -54,13 +54,20 @@ export function TaskActionsMenu({
     const handleDuplicate = async () => {
         if (isProcessing) return;
         setIsProcessing(true);
+        console.log("🟢 [TaskActionsMenu] handleDuplicate chamado para task:", task.id);
         try {
             const result = await duplicateTask(task.id);
+            console.log("🟢 [TaskActionsMenu] duplicateTask result:", result);
 
             if (result.success) {
                 // ✅ Optimistic UI: Adicionar tarefa duplicada instantaneamente
+                console.log("🟢 [TaskActionsMenu] onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
+                console.log("🟢 [TaskActionsMenu] result.data existe?", !!result.data);
                 if (result.data && onTaskDuplicatedOptimistic) {
+                    console.log("🟢 [TaskActionsMenu] Chamando onTaskDuplicatedOptimistic com:", result.data);
                     onTaskDuplicatedOptimistic(result.data);
+                } else {
+                    console.warn("🟡 [TaskActionsMenu] onTaskDuplicatedOptimistic não disponível ou result.data vazio");
                 }
                 toast.success("Tarefa duplicada com sucesso");
                 onTaskUpdated?.();
@@ -68,7 +75,7 @@ export function TaskActionsMenu({
                 toast.error(result.error || "Erro ao duplicar tarefa");
             }
         } catch (error) {
-            console.error("Erro ao duplicar tarefa:", error);
+            console.error("🔴 [TaskActionsMenu] Erro ao duplicar tarefa:", error);
             toast.error("Erro inesperado ao duplicar tarefa");
         } finally {
             setIsProcessing(false);
@@ -89,24 +96,32 @@ export function TaskActionsMenu({
     // Excluir
     const confirmDelete = async () => {
         setIsDeleting(true);
+        console.log("🔴 [TaskActionsMenu] confirmDelete chamado para task:", task.id);
         
         // ✅ Optimistic UI: Remover tarefa instantaneamente ANTES de chamar o backend
+        console.log("🔴 [TaskActionsMenu] onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
         if (onTaskDeletedOptimistic) {
+            console.log("🔴 [TaskActionsMenu] Chamando onTaskDeletedOptimistic com taskId:", task.id);
             onTaskDeletedOptimistic(task.id);
+        } else {
+            console.warn("🟡 [TaskActionsMenu] onTaskDeletedOptimistic não disponível");
         }
         
         try {
             const result = await deleteTask(task.id);
+            console.log("🔴 [TaskActionsMenu] deleteTask result:", result);
             if (result.success) {
                 toast.success("Tarefa excluída com sucesso");
                 onTaskDeleted?.();
             } else {
                 // ❌ Rollback: Recarregar para restaurar estado em caso de erro
+                console.warn("🟡 [TaskActionsMenu] Erro ao excluir, fazendo rollback");
                 toast.error(result.error || "Erro ao excluir tarefa");
                 onTaskUpdated?.(); // Recarregar para restaurar estado
             }
         } catch (error) {
             // ❌ Rollback: Recarregar para restaurar estado em caso de erro
+            console.error("🔴 [TaskActionsMenu] Erro inesperado ao excluir:", error);
             toast.error("Erro inesperado");
             onTaskUpdated?.(); // Recarregar para restaurar estado
         } finally {

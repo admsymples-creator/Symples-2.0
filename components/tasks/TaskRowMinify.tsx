@@ -604,8 +604,14 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           onOpenDetails={handleOpenDetails}
           onTaskUpdated={onTaskUpdated}
           onTaskDeleted={onTaskDeleted}
-          onTaskDeletedOptimistic={onTaskDeletedOptimistic}
-          onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
+          onTaskDeletedOptimistic={onTaskDeletedOptimistic ? (taskId: string) => {
+            console.log("🔴 [TaskRowMinify] onTaskDeletedOptimistic recebido, taskId:", taskId);
+            onTaskDeletedOptimistic(taskId);
+          } : undefined}
+          onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic ? (duplicatedTask: any) => {
+            console.log("🟢 [TaskRowMinify] onTaskDuplicatedOptimistic recebido, task:", duplicatedTask);
+            onTaskDuplicatedOptimistic(duplicatedTask);
+          } : undefined}
           className="opacity-50 hover:opacity-100 transition-opacity"
         />
       </div>
