@@ -269,6 +269,12 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
                 {GROUPS.map((group) => {
                     // ✅ Garantir que sempre passamos uma nova referência de array
                     const groupTasks = tasksByGroup[group.id] || [];
+                    console.log("🟦 [TaskList] Renderizando TaskGroup:", {
+                        groupId: group.id,
+                        tasksCount: groupTasks.length,
+                        hasOnTaskDeletedOptimistic: !!handleOptimisticDelete,
+                        hasOnTaskDuplicatedOptimistic: !!handleOptimisticDuplicate,
+                    });
                     return (
                         <TaskGroup
                             key={group.id}
