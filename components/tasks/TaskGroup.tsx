@@ -33,10 +33,12 @@ interface TaskGroupProps {
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
     onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+    onTaskDeletedOptimistic?: (taskId: string) => void;
+    onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, members }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskGroupProps) {
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
 
@@ -108,6 +110,8 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     onTaskUpdated={onTaskUpdated}
                                     onTaskDeleted={onTaskDeleted}
                                     onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
+                                    onTaskDeletedOptimistic={onTaskDeletedOptimistic}
+                                    onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
                                     members={members}
                                 />
                             ))}

@@ -56,6 +56,8 @@ interface TaskRowMinifyProps {
   onTaskUpdated?: () => void;
   onTaskDeleted?: () => void;
   onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+  onTaskDeletedOptimistic?: (taskId: string) => void;
+  onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
@@ -97,7 +99,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, members }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -602,6 +604,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           onOpenDetails={handleOpenDetails}
           onTaskUpdated={onTaskUpdated}
           onTaskDeleted={onTaskDeleted}
+          onTaskDeletedOptimistic={onTaskDeletedOptimistic}
+          onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
           className="opacity-50 hover:opacity-100 transition-opacity"
         />
       </div>

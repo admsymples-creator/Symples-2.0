@@ -91,6 +91,36 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
         });
     }, []);
 
+    // ✅ Optimistic Delete: Remove tarefa instantaneamente
+    const handleOptimisticDelete = useCallback((taskId: string) => {
+        setTasks((prev) => prev.filter(t => String(t.id) !== String(taskId)));
+    }, []);
+
+    // ✅ Optimistic Duplicate: Adiciona tarefa duplicada instantaneamente
+    const handleOptimisticDuplicate = useCallback((duplicatedTaskData: any) => {
+        // Mapear dados do backend para MinimalTask
+        const newTask: MinimalTask = {
+            id: duplicatedTaskData.id,
+            title: duplicatedTaskData.title,
+            status: duplicatedTaskData.status || 'todo',
+            position: duplicatedTaskData.position || null,
+            dueDate: duplicatedTaskData.due_date,
+            completed: duplicatedTaskData.status === 'done',
+            priority: duplicatedTaskData.priority || 'medium',
+            assignees: duplicatedTaskData.assignee_id ? [
+                {
+                    id: duplicatedTaskData.assignee_id,
+                    name: duplicatedTaskData.assignee?.full_name || duplicatedTaskData.assignee?.email || 'Usuário',
+                    avatar: duplicatedTaskData.assignee?.avatar_url
+                }
+            ] : undefined,
+            commentCount: 0,
+            commentsCount: 0,
+        };
+        
+        setTasks((prev) => [...prev, newTask]);
+    }, []);
+
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -224,6 +254,8 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
                             onTaskUpdated={onTaskUpdated}
                             onTaskDeleted={onTaskDeleted}
                             onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                            onTaskDeletedOptimistic={handleOptimisticDelete}
+                            onTaskDuplicatedOptimistic={handleOptimisticDuplicate}
                             members={members}
                         />
                     );

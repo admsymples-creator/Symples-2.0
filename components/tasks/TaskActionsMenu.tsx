@@ -32,6 +32,8 @@ interface TaskActionsMenuProps {
     onOpenDetails?: () => void;
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
+    onTaskDeletedOptimistic?: (taskId: string) => void;
+    onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
     className?: string;
 }
 
@@ -40,6 +42,8 @@ export function TaskActionsMenu({
     onOpenDetails,
     onTaskUpdated,
     onTaskDeleted,
+    onTaskDeletedOptimistic,
+    onTaskDuplicatedOptimistic,
     className,
 }: TaskActionsMenuProps) {
     const [isDeleting, setIsDeleting] = useState(false);
@@ -54,6 +58,10 @@ export function TaskActionsMenu({
             const result = await duplicateTask(task.id);
 
             if (result.success) {
+                // ✅ Optimistic UI: Adicionar tarefa duplicada instantaneamente
+                if (result.data && onTaskDuplicatedOptimistic) {
+                    onTaskDuplicatedOptimistic(result.data);
+                }
                 toast.success("Tarefa duplicada com sucesso");
                 onTaskUpdated?.();
             } else {
@@ -81,16 +89,26 @@ export function TaskActionsMenu({
     // Excluir
     const confirmDelete = async () => {
         setIsDeleting(true);
+        
+        // ✅ Optimistic UI: Remover tarefa instantaneamente ANTES de chamar o backend
+        if (onTaskDeletedOptimistic) {
+            onTaskDeletedOptimistic(task.id);
+        }
+        
         try {
             const result = await deleteTask(task.id);
             if (result.success) {
                 toast.success("Tarefa excluída com sucesso");
                 onTaskDeleted?.();
             } else {
+                // ❌ Rollback: Recarregar para restaurar estado em caso de erro
                 toast.error(result.error || "Erro ao excluir tarefa");
+                onTaskUpdated?.(); // Recarregar para restaurar estado
             }
         } catch (error) {
+            // ❌ Rollback: Recarregar para restaurar estado em caso de erro
             toast.error("Erro inesperado");
+            onTaskUpdated?.(); // Recarregar para restaurar estado
         } finally {
             setIsDeleting(false);
             setIsDeleteModalOpen(false);
