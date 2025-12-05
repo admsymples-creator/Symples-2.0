@@ -46,6 +46,15 @@ export function TaskActionsMenu({
     onTaskDuplicatedOptimistic,
     className,
 }: TaskActionsMenuProps) {
+    // Log para debug - verificar se callbacks estão chegando
+    console.log("🟣 [TaskActionsMenu] Props recebidas:", {
+        taskId: task.id,
+        hasOnTaskDeletedOptimistic: !!onTaskDeletedOptimistic,
+        hasOnTaskDuplicatedOptimistic: !!onTaskDuplicatedOptimistic,
+        hasOnTaskUpdated: !!onTaskUpdated,
+        hasOnTaskDeleted: !!onTaskDeleted,
+    });
+    
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
