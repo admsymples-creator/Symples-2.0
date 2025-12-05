@@ -1,5 +1,6 @@
 "use client";
 
+import React, { memo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ interface TaskRowProps {
     onToggleComplete?: (id: string, completed: boolean) => void;
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
+    onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
     isLast?: boolean;
     groupColor?: string;
     hasComments?: boolean;
@@ -55,9 +57,10 @@ const priorityColors = {
     urgent: "bg-red-500",
 };
 
-import { TASK_CONFIG, getTaskStatusConfig, mapLabelToStatus } from "@/lib/config/tasks";
+import { TASK_CONFIG, getTaskStatusConfig, mapLabelToStatus, TaskStatus } from "@/lib/config/tasks";
 import { TaskDatePicker } from "./pickers/TaskDatePicker";
 import { TaskAssigneePicker } from "./pickers/TaskAssigneePicker";
+import { TaskStatusPicker } from "./pickers/TaskStatusPicker";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 
@@ -108,7 +111,7 @@ const getNextSunday = (): Date => {
     return nextSunday;
 };
 
-export function TaskRow({
+function TaskRowComponent({
     id,
     title,
     completed,
@@ -124,6 +127,7 @@ export function TaskRow({
     onToggleComplete,
     onTaskUpdated,
     onTaskDeleted,
+    onTaskUpdatedOptimistic,
     isLast = false,
     groupColor,
     hasComments = false,
@@ -201,20 +205,61 @@ export function TaskRow({
         }
     };
 
-    // Handler para atualizar título
-    const handleTitleUpdate = async (newTitle: string) => {
+    // Handler para atualizar status
+    const handleStatusSelect = async (newStatus: TaskStatus) => {
         try {
             const result = await updateTask({
                 id,
-                title: newTitle,
+                status: newStatus,
             });
 
             if (result.success) {
                 onTaskUpdated?.();
             } else {
+                toast.error(result.error || "Erro ao atualizar status");
+            }
+        } catch (error) {
+            toast.error("Erro ao atualizar status");
+            console.error(error);
+        }
+    };
+
+    // Handler para atualizar título com Optimistic UI
+    const handleTitleUpdate = async (newTitle: string) => {
+        // Validar título não vazio
+        if (!newTitle.trim()) {
+            toast.error("O título não pode estar vazio");
+            return;
+        }
+
+        const trimmedTitle = newTitle.trim();
+        
+        // Se não mudou, não fazer nada
+        if (trimmedTitle === title) {
+            return;
+        }
+
+        const previousTitle = title;
+        
+        // ✅ Optimistic UI: Atualizar interface imediatamente
+        onTaskUpdatedOptimistic?.(id, { title: trimmedTitle });
+
+        try {
+            const result = await updateTask({
+                id,
+                title: trimmedTitle,
+            });
+
+            if (result.success) {
+                onTaskUpdated?.();
+            } else {
+                // ❌ Rollback: Restaurar título anterior em caso de erro
+                onTaskUpdatedOptimistic?.(id, { title: previousTitle });
                 toast.error(result.error || "Erro ao atualizar título");
             }
         } catch (error) {
+            // ❌ Rollback: Restaurar título anterior em caso de erro
+            onTaskUpdatedOptimistic?.(id, { title: previousTitle });
             toast.error("Erro ao atualizar título");
             console.error(error);
         }
@@ -231,11 +276,13 @@ export function TaskRow({
         transform,
         transition,
         isDragging,
-    } = useSortable({ id });
+    } = useSortable({ id: String(id) }); // ✅ CORREÇÃO: Normalizar ID para string
 
+    // ✅ CORREÇÃO: Usar CSS.Translate em vez de CSS.Transform para melhor performance
+    // Remover transition durante drag para evitar flicking
     const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
+        transform: CSS.Translate.toString(transform),
+        transition: isDragging ? 'none' : transition,
         opacity: isDragging ? 0.5 : 1,
     };
 
@@ -263,6 +310,20 @@ export function TaskRow({
                 )}
                 onMouseEnter={() => preloadTask(id, workspaceId)}
                 onMouseLeave={cancelPreload}
+                onClick={(e) => {
+                    // Só abrir modal se não for clique no título ou em elementos interativos
+                    const target = e.target as HTMLElement;
+                    const isTitleClick = target.closest('[data-inline-edit="true"]') ||
+                                       target.closest('.cursor-text') || 
+                                       target.closest('input') ||
+                                       target.closest('[role="textbox"]') ||
+                                       target.classList.contains('cursor-text') ||
+                                       target.hasAttribute('data-inline-edit');
+                    
+                    if (!isTitleClick && onClick) {
+                        onClick();
+                    }
+                }}
             >
             {/* Barra Lateral Colorida (linha contínua) - APENAS Cor do Grupo */}
             {(groupColorClass || isHexColor) && (
@@ -300,24 +361,25 @@ export function TaskRow({
 
             {/* Título (Truncate, flex-1, mr-4) - Área clicável */}
             <div 
-                className="flex items-center gap-2 min-w-0 flex-1 mr-4 cursor-pointer"
-                onClick={onClick}
+                className="flex items-center gap-2 min-w-0 flex-1 mr-4"
             >
                 {/* Indicador de atualização não lida */}
                 {hasUpdates && (
                     <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
                 )}
                 
-                <InlineTextEdit
-                    value={title}
-                    onSave={handleTitleUpdate}
-                    className={cn(
-                        "text-sm text-gray-900 leading-tight",
-                        hasUpdates ? "font-semibold" : "font-medium",
-                        completed && "line-through text-gray-500"
-                    )}
-                    inputClassName="text-sm font-medium text-gray-900"
-                />
+                <div className="flex-1 min-w-0">
+                    <InlineTextEdit
+                        value={title}
+                        onSave={handleTitleUpdate}
+                        className={cn(
+                            "text-sm text-gray-900 leading-tight",
+                            hasUpdates ? "font-semibold" : "font-medium",
+                            completed && "line-through text-gray-500"
+                        )}
+                        inputClassName="text-sm font-medium text-gray-900"
+                    />
+                </div>
 
                 {/* Indicador de comentários - mais sutil */}
                 {hasComments && commentCount > 0 && (
@@ -448,7 +510,6 @@ export function TaskRow({
                         assigneeId={assigneeId || null}
                         onSelect={handleAssigneeSelect}
                         workspaceId={workspaceId}
-                        members={assignees.map(a => ({ id: a.id || "", name: a.name, avatar: a.avatar }))}
                         trigger={
                             <button
                                 type="button"
@@ -502,25 +563,23 @@ export function TaskRow({
                     />
                 </div>
 
-                {/* 5. Status (Badge com cor isolada) */}
-                <div className={cn(
-                    "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs whitespace-nowrap",
-                    statusConfig.lightColor
-                )}>
-                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusConfig.color.replace("fill-", "bg-"))} />
-                    <span>{statusConfig.label}</span>
+                {/* 5. Status (Badge editável) */}
+                <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                    <TaskStatusPicker
+                        status={status}
+                        onSelect={handleStatusSelect}
+                        side="bottom"
+                        align="end"
+                    />
                 </div>
 
                 {/* 6. Menu */}
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                     <TaskActionsMenu
                         task={taskForMenu}
-                        isFocused={isFocusActive}
-                        isUrgent={isUrgentActive}
                         onOpenDetails={onClick}
                         onTaskUpdated={onTaskUpdated}
                         onTaskDeleted={onTaskDeleted}
-                        members={assignees.map(a => ({ id: a.id || "", name: a.name, avatar: a.avatar }))}
                     />
                 </div>
             </div>
@@ -528,4 +587,54 @@ export function TaskRow({
         </TooltipProvider>
     );
 }
+
+// 🛡️ Memoização agressiva: re-renderiza SÓ quando algo visualmente relevante muda
+export const TaskRow = memo(
+    TaskRowComponent,
+    (prev, next) => {
+        // Props escalares principais
+        if (
+            prev.id !== next.id ||
+            prev.title !== next.title ||
+            prev.completed !== next.completed ||
+            prev.status !== next.status ||
+            prev.priority !== next.priority ||
+            prev.assigneeId !== next.assigneeId ||
+            prev.dueDate !== next.dueDate ||
+            prev.groupColor !== next.groupColor ||
+            prev.hasComments !== next.hasComments ||
+            prev.commentCount !== next.commentCount ||
+            prev.hasUpdates !== next.hasUpdates ||
+            prev.workspaceId !== next.workspaceId ||
+            prev.isLast !== next.isLast
+        ) {
+            return false; // algo importante mudou → re-render
+        }
+
+        // Arrays de tags: comparar conteúdo básico (comprimento + join)
+        const prevTags = prev.tags || [];
+        const nextTags = next.tags || [];
+        if (
+            prevTags.length !== nextTags.length ||
+            prevTags.join("|") !== nextTags.join("|")
+        ) {
+            return false;
+        }
+
+        // Assignees: comparar só IDs (referências podem mudar)
+        const prevAssignees = prev.assignees || [];
+        const nextAssignees = next.assignees || [];
+        if (prevAssignees.length !== nextAssignees.length) {
+            return false;
+        }
+        for (let i = 0; i < prevAssignees.length; i++) {
+            if (prevAssignees[i]?.id !== nextAssignees[i]?.id) {
+                return false;
+            }
+        }
+
+        // Callbacks são estáveis (useCallback nos pais) → ignorar
+        return true; // nada relevante mudou → pular re-render
+    }
+);
 

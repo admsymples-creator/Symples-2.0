@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { Avatar } from "./Avatar";
 import { Calendar, MoreHorizontal, Paperclip, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -47,7 +48,7 @@ const priorityLabels = {
     urgent: "Urgente",
 };
 
-export function TaskCard({
+function TaskCardComponent({
     id,
     title,
     completed,
@@ -245,4 +246,8 @@ export function TaskCard({
         </div>
     );
 }
+
+// Exportar sem memo para evitar loops de renderização
+// O memo pode causar problemas quando props são recriadas a cada render
+export const TaskCard = TaskCardComponent;
 

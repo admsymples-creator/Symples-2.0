@@ -1,5 +1,5 @@
 **\# SYMPLES — Design System & Tech Specs**  
-\*\*Versão:\*\* 2.1 (Atualizado - Dez 2024)  
+\*\*Versão:\*\* 2.3 (Atualizado - Jan 2025)  
 \*\*Source of Truth:\*\* Screenshots do MVP atual.  
 \*\*Stack:\*\* Next.js 16.0.5, React 19.2.0, TypeScript 5, Tailwind CSS 4, Lucide React, Shadcn UI (base).
 
@@ -142,6 +142,21 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - "Grip" (Drag handle) na esquerda.
   - Botões "Raio" (Semana) e "Exclamação" (Urgente) na direita.
 
+### 7.6. Visão Semanal (DayColumn)
+- **Componente:** `components/home/DayColumn.tsx`
+- **Layout:** Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
+- **Quick Add:** Input no rodapé com seletor de data/hora (`TaskDateTimePicker`)
+  - Ícone de calendário ao lado do campo de texto
+  - Permite selecionar data e hora específica para tarefas pessoais
+  - Atualização imediata ao selecionar (não precisa clicar em "Confirmar")
+- **Ordenação de Tarefas:**
+  1. Tarefas pessoais com horário específico (não 00:00)
+  2. Tarefas pessoais sem horário (00:00 ou sem data)
+  3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Filtro de Workspace:**
+  - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
+  - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
+
 ### 7.3. Modal de Tarefa (Task Detail)
 - **Dimensões:** Widescreen (`max-w-6xl` ou `w-[90vw]`).
 - **Layout:** Split-Screen Rígido.
@@ -151,6 +166,29 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 ### 7.4. Navegação (Sidebar & Header)
 - **Sidebar:** Hierarquia Invertida. "Minha Semana" (Global) no topo. Seletor de Workspace e menus específicos abaixo de um divisor.
 - **Header:** Controles de Visualização (3 Dias / 5 Dias) próximos ao título da seção, usando `Tabs` (Segmented Control).
+
+### 7.5. Controles de Visualização de Tarefas (Ordenar & Agrupar)
+- **Ordenar (`SortMenu`):**
+  - Local: Header da página de tarefas, à direita do campo de busca.
+  - Comportamento:
+    - Abre um `DropdownMenu` com opções de ordenação (`Status`, `Prioridade`, `Responsável`, `Título (A-Z)`).
+    - A opção escolhida **não aplica imediatamente no banco**; ao clicar em **Aplicar**, a ordem é recalculada no frontend **e persistida** no campo `position` via RPC `updateTaskPositionsBulk`.
+    - Mostra um **badge** com o rótulo do filtro ativo ao lado do texto "Ordenar".
+  - URL:
+    - Usa o parâmetro `?sort=key` (`status`, `priority`, `assignee`, `title`).
+    - O estado visual do botão é derivado da URL (Source of Truth).
+
+- **Agrupar (`GroupingMenu`):**
+  - Local: Ao lado do botão "Ordenar", com ícone de grid.
+  - Comportamento:
+    - Usa `DropdownMenuRadioGroup` com opções (`none`, `status`, `priority`, `assignee`).
+    - Ao selecionar uma opção, aplica o agrupamento **imediatamente** (não há botão "Aplicar").
+    - Quando um agrupamento está ativo (`group !== none`), o botão:
+      - Fica com borda verde e fundo verde claro.
+      - Exibe um **badge** com o rótulo do agrupamento ativo (ex: `Status`, `Data`).
+  - URL:
+    - Usa o parâmetro `?group=key` (`none`, `status`, `priority`, `assignee`).
+    - A UI sempre reflete o valor atual de `group` na URL.
 
 ## 8. ATUALIZAÇÕES V3.3 (Módulo Financeiro)
 
@@ -273,6 +311,15 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Preview de imagens e documentos
   - Estados de upload (loading, success, error)
 
+- **TaskDateTimePicker (`components/tasks/pickers/TaskDateTimePicker.tsx`):**
+  - Seletor de data e hora para tarefas pessoais
+  - Popover com calendário e seletores de hora/minuto
+  - Atalhos rápidos: Hoje, Amanhã, Próxima Semana
+  - Atualização imediata no componente pai ao selecionar data/hora
+  - Renderização apenas no cliente para evitar problemas de hidratação
+  - Formato de exibição: `HH:MM` (24 horas)
+  - Opções de minuto: 0, 15, 30, 45
+
 - **TaskBoard (`components/tasks/TaskBoard.tsx`):**
   - Board Kanban com drag & drop (@dnd-kit)
   - Colunas com scroll interno
@@ -280,7 +327,8 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 - **TaskGroup (`components/tasks/TaskGroup.tsx`):**
   - Agrupamento por status, prioridade ou assignee
-  - Accordion colapsável
+  - Indicador de cor do grupo (círculo colorido ao lado do título)
+  - Espaçamento: `gap-6` entre grupos, `mt-4` nos títulos
   - Quick Add no rodapé
   - Ações de grupo (renomear, mudar cor, deletar)
 
@@ -288,6 +336,73 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Estilo "Clean Checklist"
   - Barra vertical colorida para workspace
   - Hover actions (drag handle, raio, exclamação)
+  - **Edição Inline de Título**: Componente `InlineTextEdit` integrado para edição direta do título
+    - Ícone de lápis aparece no hover (`group-hover/title:opacity-100`)
+    - Atualização com Optimistic UI: interface atualiza antes da chamada ao servidor
+    - Rollback automático em caso de erro, restaurando valor anterior
+    - Validação: título não pode estar vazio
+    - Callback `onTaskUpdatedOptimistic` para sincronização de estado local
+  - **Optimistic UI Pattern**:
+    - Atualização instantânea da UI antes da chamada ao servidor
+    - Rollback automático em caso de erro
+    - Garantia de imutabilidade em atualizações de estado
+    - Toast de feedback (sucesso/erro) para melhor UX
+
+- **TaskRow (Home/Dashboard) (`components/home/TaskRow.tsx`):**
+  - Componente específico para visão semanal da home
+  - **Indicador de Horário**: Badge cinza claro ao lado do título mostrando hora (HH:MM) para tarefas pessoais com hora específica
+    - Aparece apenas quando `hasSpecificTime` é true (não é 00:00)
+    - Estilo: `text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100`
+    - Tooltip com horário completo ao passar o mouse
+  - **Badge de Workspace**: Badge colorido ao lado do título para tarefas de workspace
+    - Cor gerada a partir do `workspace_id` usando hash HSL
+    - Estilo: `text-[10px] font-medium px-1.5 py-0.5 rounded text-white`
+    - Truncado com `max-w-[100px]` para nomes longos
+  - **Ações no Hover**:
+    - Editar (lápis)
+    - Calendário (apenas tarefas pessoais) - abre `TaskDateTimePicker` para editar data/hora
+    - Excluir (lixeira)
+    - Ir para detalhes (seta direita, apenas tarefas de workspace) - navega para `/[workspaceSlug]/tasks?taskId=[taskId]`
+    - Mover para Workspace (seta curva, apenas tarefas pessoais)
+  - **Renderização no Cliente**: Componentes Radix UI (DropdownMenu, Popover) renderizam apenas após montagem para evitar problemas de hidratação
+
+- **TaskRowMinify (`components/tasks/TaskRowMinify.tsx`):**
+  - **Layout**: CSS Grid com colunas fixas para alinhamento vertical
+  - **Colunas**: `grid-cols-[40px_24px_1fr_90px_32px_130px_40px]`
+    - Drag Handle (40px) | Checkbox (24px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (130px) | Menu (40px)
+  - **Altura**: `h-11` (44px) - Interface compacta
+  - **Checkbox de Conclusão**: 
+    - Posicionado após drag handle, antes do título
+    - Visual verde quando marcado (`data-[state=checked]:bg-green-500`)
+    - Título com `line-through` quando concluída
+    - Integração com sistema de status (done/todo)
+    - Optimistic UI com rollback automático
+  - **Indicadores Visuais**:
+    - **Data**: Date picker funcional com calendário, cores dinâmicas (vermelho/verde/cinza)
+    - **Status**: Badge editável com popover para mudança rápida
+    - **Responsável**: Avatar picker garantindo usuário atual sempre disponível
+    - **Comentários**: Contador que aparece apenas quando há comentários
+    - **Focus (⚡)**: Botão para mover tarefa para próximo domingo (aparece no hover)
+    - **Urgente (⚠)**: Botão para marcar como urgente (aparece no hover)
+  - **Indicador de Cor do Grupo**: Barra vertical colorida à esquerda (`w-1`, `absolute left-0`)
+    - Suporta cores nomeadas (red, blue, green) e hex (#ffffff)
+    - Mapeamento via `getGroupColorClass()`
+  - **Optimistic UI**: Todas as atualizações usam padrão optimistic com rollback
+    - Atualização instantânea antes da chamada ao servidor
+    - Rollback automático em caso de erro
+    - Callback `onTaskUpdatedOptimistic` para sincronização de estado
+  - **Hover Actions**: Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
+    - Classe: `opacity-0 group-hover:opacity-100`
+    - Mantém-se visível quando ativo (mesmo sem hover)
+
+- **InlineTextEdit (`components/ui/inline-text-edit.tsx`):**
+  - Componente de edição inline de texto
+  - Auto-focus e seleção de texto ao entrar em modo de edição
+  - Suporte a Enter (salvar) e Escape (cancelar)
+  - Ícone de lápis no hover para indicar editabilidade
+  - Prevenção de propagação de eventos para evitar conflitos com cliques do container
+  - Atualização automática quando a prop `value` muda externamente (apenas se não estiver editando)
+  - Estado desabilitado com visual diferenciado
 
 - **AttachmentCard (`components/tasks/AttachmentCard.tsx`):**
   - Card compacto para exibição de anexos
@@ -416,7 +531,49 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Variáveis de Ambiente:** Configuradas (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - **Deploy Automático:** Configurado para branch `master`
 
-## 12. PRÓXIMOS PASSOS (FOCO DE UX/UI)
+## 12. ESTADOS DE LOADING E FEEDBACK VISUAL (v2.2)
+
+### 12.1. Feedback de Carregamento na Troca de Workspace
+- **Overlay de Loading:**
+  - Aparece durante a troca de workspace na página de tarefas
+  - Estilo: Card centralizado com fundo branco (`bg-white`), sombra suave (`shadow-lg`)
+  - Conteúdo: Ícone `Loader2` animado (`animate-spin`) + texto "Atualizando tarefas..."
+  - Posicionamento: Sobre o conteúdo anterior com leve blur (`backdrop-blur-sm`) e opacidade (`bg-white/60`)
+  - Objetivo: Evitar "piscar" de tela vazia e manter contexto visual durante o carregamento
+
+- **Indicador no Título:**
+  - Spinner discreto (`Loader2` com `w-4 h-4`) ao lado do título "Identidade do Workspace" em configurações
+  - Cor: `text-gray-400`
+  - Aparece apenas durante o carregamento do workspace ativo
+
+- **Campos Desabilitados:**
+  - Durante o carregamento, campos de formulário ficam desabilitados (`disabled`)
+  - Estilo: `opacity-50 cursor-not-allowed`
+  - Previne edições em dados incorretos durante a transição
+
+### 12.2. Padrões de Performance
+- **Carregamento Paralelo:**
+  - Tarefas e grupos são carregados simultaneamente usando `Promise.all()`
+  - Reduz tempo percebido de carregamento
+  - Aplicado em: Troca de workspace, mudança de aba
+
+- **Otimização de Requisições:**
+  - Guard clauses para evitar chamadas ao backend quando não há dados necessários
+  - Exemplo: Não buscar membros se `activeWorkspaceId` for `null`
+  - Limpeza de estados ao trocar de contexto
+
+### 12.3. Estados de Loading por Componente
+- **TasksPage:**
+  - `isLoadingTasks`: Controla overlay de loading principal
+  - Feedback visual: Overlay centralizado com spinner e mensagem
+  - Mantém conteúdo anterior visível (não limpa a tela)
+
+- **SettingsPageClient:**
+  - `isLoadingWorkspace`: Controla loading do workspace ativo
+  - Feedback visual: Spinner no título + campos desabilitados
+  - Recarrega membros e convites automaticamente ao trocar workspace
+
+## 13. PRÓXIMOS PASSOS (FOCO DE UX/UI)
 
 1. **Detalhes de Tarefas 100% (Arquivos, Áudio, etc.)**  
    - Refinar o layout do `TaskDetailModal` para acomodar:
@@ -464,3 +621,82 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
    - Indicadores na UI:
      - Badge “Origem WhatsApp” em tarefas/transações vindas do fluxo de automação.  
      - Tooltips explicando automatizações ativas (ex: “Esta tarefa foi criada via fluxo n8n X”).
+
+---
+
+## 14. VISÃO SEMANAL - COMPONENTES E FUNCIONALIDADES (v2.3)
+
+### 14.1. DayColumn (`components/home/DayColumn.tsx`)
+- **Layout**: Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
+- **Quick Add**: Input no rodapé com seletor de data/hora
+  - Ícone de calendário clicável ao lado do campo de texto
+  - Permite definir data e hora específica para tarefas pessoais
+  - Data/hora selecionada é aplicada automaticamente ao criar tarefas
+- **Ordenação de Tarefas**:
+  1. Tarefas pessoais com horário específico (não 00:00)
+  2. Tarefas pessoais sem horário (00:00 ou sem data)
+  3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Filtro de Workspace**:
+  - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
+  - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
+
+### 14.2. WorkspaceCard (`components/home/WorkspaceCard.tsx`)
+- **Componente**: Card de workspace na seção "Visão por Workspace" da home
+- **Layout**: Card branco com borda arredondada (`rounded-xl`), sombra suave e hover effect
+- **Estrutura**:
+  - **Header**: Logo do workspace (ou imagem fallback) + Menu dropdown (MoreHorizontal)
+  - **Corpo**: Nome do workspace em destaque
+  - **Progresso da Semana**: 
+    - Título "Progresso da Semana" (uppercase, cinza claro)
+    - Percentual de conclusão (negrito, cinza escuro)
+    - Barra de progresso verde (`bg-green-500`)
+    - Quantidades abaixo da barra, alinhadas à direita: `[finalizadas] / [pendentes]`
+  - **Rodapé**: Avatares dos membros (até 3) + Métricas (tarefas pendentes, comentários)
+- **Funcionalidades**:
+  - **Navegação**: Clique no card navega para `/{slug}/tasks` ou `/{id}/tasks`
+  - **Integração com Contexto**: Atualiza workspace ativo no `SidebarProvider` ao clicar
+  - **Menu Dropdown**: 
+    - "Abrir workspace" (ícone FolderOpen) - navega para tarefas
+    - "Configurações" (ícone Settings) - navega para `/settings` com workspace ativo
+  - **Logo Real**: Usa `logo_url` do workspace quando disponível, fallback para imagens mockadas
+  - **Membros Reais**: Exibe avatares reais dos membros do workspace (até 3), com fallback para avatares mockados
+- **Dados**:
+  - Recebe: `id`, `name`, `slug`, `logo_url`, `pendingCount`, `totalCount`, `members[]`
+  - `pendingCount`: Tarefas pendentes da semana (status != "done" && != "archived")
+  - `totalCount`: Total de tarefas da semana (filtradas por `due_date` entre início e fim da semana)
+  - `completedCount`: Calculado como `totalCount - pendingCount`
+- **Cálculo do Progresso**: `(totalCount - pendingCount) / totalCount * 100`
+- **Estilo**: Hover effect com sombra aumentada e borda verde (`hover:border-green-200`)
+
+### 14.3. TaskRow (Home) (`components/home/TaskRow.tsx`)
+- **Indicador de Horário**: Badge cinza claro ao lado do título
+  - Aparece apenas para tarefas pessoais com hora específica
+  - Formato: `HH:MM` (24 horas)
+  - Estilo: `text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100`
+- **Badge de Workspace**: Badge colorido ao lado do título
+  - Cor gerada a partir do `workspace_id` usando hash HSL
+  - Exibe nome do workspace truncado
+  - Estilo: `text-[10px] font-medium px-1.5 py-0.5 rounded text-white`
+- **Ações no Hover**:
+  - Editar (lápis)
+  - Calendário (apenas tarefas pessoais) - edita data/hora
+  - Excluir (lixeira)
+  - Ir para detalhes (seta direita, apenas workspace) - navega para `/[workspaceSlug]/tasks?taskId=[taskId]`
+  - Mover para Workspace (seta curva, apenas pessoais)
+
+### 14.3. TaskDateTimePicker (`components/tasks/pickers/TaskDateTimePicker.tsx`)
+- **Componente**: Seletor de data e hora com popover
+- **Funcionalidades**:
+  - Calendário para seleção de data
+  - Seletores de hora (0-23) e minuto (0, 15, 30, 45)
+  - Atalhos rápidos: Hoje, Amanhã, Próxima Semana
+  - Atualização imediata no componente pai
+  - Renderização apenas no cliente (evita problemas de hidratação)
+- **Formato**: Exibe data e hora no formato `d MMM, HH:mm` (pt-BR)
+
+## 15. Journal Visual de Preview
+
+- Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
+  `.context/journal-symples.md`, sempre com data e hora.  
+- Este documento continua sendo o **guia canônico de padrões**; o journal documenta o histórico de
+  refinamentos aplicados entre preview e produção.

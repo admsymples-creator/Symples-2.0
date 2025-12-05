@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { TaskWithDetails, createTask, updateTask } from "@/lib/actions/tasks";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { toast } from "sonner";
+import { TaskWithDetails, createTask, updateTask, updateTaskPosition } from "@/lib/actions/tasks";
 import { mapStatusToLabel } from "@/lib/config/tasks";
+import { arrayMove } from "@dnd-kit/sortable";
 import { Member } from "@/lib/actions/members";
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
@@ -12,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, List, LayoutGrid, CircleDashed } from "lucide-react";
+import { Search, Filter, List, LayoutGrid, CircleDashed, Cloud, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { STAGGER_CONTAINER, STAGGER_ITEM } from "@/lib/motion";
@@ -53,8 +54,12 @@ interface Task {
 }
 
 export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps) {
-    const router = useRouter();
-    const [localTasks, setLocalTasks] = useState<Task[]>([]);
+    // ✅ MINIFY v2: initialTasks só é usado para inicializar o estado local
+    const [localTasks, setLocalTasks] = useState<Task[]>(() =>
+        initialTasks.map((task) => mapTaskFromDB(task))
+    );
+
+
     const [activeTab, setActiveTab] = useState<ContextTab>("todas");
     const [groupBy, setGroupBy] = useState<GroupBy>("status");
     const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -63,6 +68,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
+    // ✅ MINIFY v2: Estado de sincronização para feedback visual
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Sensores para drag and drop
     const sensors = useSensors(
@@ -76,8 +83,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
         })
     );
 
-    // Função para mapear dados do banco para interface local
-    const mapTaskFromDB = (task: TaskWithDetails): Task => {
+    // ✅ OTIMIZAÇÃO: Função memoizada para evitar recriação
+    const mapTaskFromDB = useCallback((task: TaskWithDetails): Task => {
 
         // Extrair tags do origin_context se existir
         const tags: string[] = [];
@@ -106,23 +113,15 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             hasUpdates: false,
             workspaceId: task.workspace_id || null,
         };
-    };
-
-    // Carregar tarefas iniciais
-    useEffect(() => {
-        const mapped = initialTasks.map(mapTaskFromDB);
-        setLocalTasks(mapped);
-    }, [initialTasks]);
+    }, []);
 
     // Filtrar tarefas por busca
     const filteredTasks = useMemo(() => {
-        if (!searchQuery.trim()) return localTasks;
-        const query = searchQuery.toLowerCase();
-        return localTasks.filter(
+        return !searchQuery.trim() ? localTasks : localTasks.filter(
             (task) =>
-                task.title.toLowerCase().includes(query) ||
-                task.tags?.some((tag) => tag.toLowerCase().includes(query))
-  );
+                task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                task.tags?.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+        );
     }, [localTasks, searchQuery]);
 
     // Agrupar tarefas
@@ -134,7 +133,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             switch (groupBy) {
                 case "status":
-                    key = task.status || "Backlog";
+                    key = task.status || "Não iniciado";
                     break;
                 case "priority":
                     key = task.priority || "medium";
@@ -143,7 +142,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     key = task.assignees?.[0]?.name || "Sem responsável";
                     break;
                 default:
-                    key = task.status || "Backlog";
+                    key = task.status || "Não iniciado";
             }
 
             if (!groups[key]) {
@@ -152,21 +151,30 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             groups[key].push(task);
         });
 
-        return groups;
+        // ✅ Criar novos arrays para cada grupo para garantir novas referências
+        // Isso força o React a detectar mudanças mesmo quando o conteúdo é o mesmo
+        const newGroups: Record<string, Task[]> = {};
+        Object.keys(groups).forEach(key => {
+            newGroups[key] = [...groups[key]];
+        });
+
+        return newGroups;
     }, [filteredTasks, groupBy]);
 
     // Converter grupos para formato de colunas (Kanban)
+    // ✅ IMPORTANTE: Criar novas referências para garantir que React detecte mudanças
     const kanbanColumns = useMemo(() => {
         const columns = Object.entries(groupedData).map(([key, tasks]) => ({
             id: key,
             title: key,
-            tasks,
+            tasks: [...tasks], // ✅ Criar novo array para garantir nova referência
         }));
 
         // Ordenar colunas baseado no tipo de agrupamento
+        let sortedColumns;
         if (groupBy === "status") {
-            const statusOrder = ["Backlog", "Triagem", "Execução", "Revisão"];
-            return columns.sort((a, b) => {
+            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Correção", "Concluido"];
+            sortedColumns = columns.sort((a, b) => {
                 const aIndex = statusOrder.indexOf(a.title);
                 const bIndex = statusOrder.indexOf(b.title);
                 if (aIndex === -1 && bIndex === -1) return 0;
@@ -174,11 +182,9 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
             });
-        }
-
-        if (groupBy === "priority") {
+        } else if (groupBy === "priority") {
             const priorityOrder = ["urgent", "high", "medium", "low"];
-            return columns.sort((a, b) => {
+            sortedColumns = columns.sort((a, b) => {
                 const aIndex = priorityOrder.indexOf(a.title);
                 const bIndex = priorityOrder.indexOf(b.title);
                 if (aIndex === -1 && bIndex === -1) return 0;
@@ -186,9 +192,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
             });
+        } else {
+            sortedColumns = columns;
         }
 
-        return columns;
+        return [...sortedColumns];
     }, [groupedData, groupBy]);
 
     // Converter grupos para formato de lista (TaskGroup)
@@ -199,57 +207,242 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             tasks,
         }));
     }, [groupedData]);
+    
+    // Refs para valores que mudam mas não devem causar re-criação de callbacks
+    // Criados após os useMemo para terem acesso aos valores calculados
+    const localTasksRef = useRef(localTasks);
+    localTasksRef.current = localTasks;
+    const groupedDataRef = useRef(groupedData);
+    groupedDataRef.current = groupedData;
+    const kanbanColumnsRef = useRef(kanbanColumns);
+    kanbanColumnsRef.current = kanbanColumns;
 
-    // Handler para quando o drag começa
-    const handleDragStart = (event: any) => {
+    // ✅ OTIMIZAÇÃO: Handler memoizado para evitar re-renders
+    const handleDragStart = useCallback((event: any) => {
         const { active } = event;
-        const task = localTasks.find((t) => t.id === active.id);
+        const task = localTasksRef.current.find((t) => t.id === active.id);
         setActiveTask(task || null);
-    };
+    }, []);
 
-    // Handler para quando o drag termina
-    const handleDragEnd = async (event: any) => {
+    // ✅ MINIFY v2: Handler unificado para drag & drop (list e kanban) com rollback
+    const handleDragEnd = useCallback((event: any) => {
         const { active, over } = event;
         setActiveTask(null);
         if (!over) return;
 
-        // Encontrar grupo de origem
-        const sourceGroup = Object.entries(groupedData).find(([_, tasks]) =>
-            tasks.some((task) => task.id === active.id)
-        );
-        if (!sourceGroup) return;
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
 
-        const [sourceGroupKey, sourceTasks] = sourceGroup;
-        const sourceTaskIndex = sourceTasks.findIndex((task) => task.id === active.id);
-        const task = sourceTasks[sourceTaskIndex];
-        if (sourceTaskIndex === -1 || !task) return;
+        const task = localTasksRef.current.find((t) => t.id === active.id);
+        if (!task) return;
 
-        // Verificar se está arrastando para um grupo (drop zone) ou para uma tarefa
-        let destinationGroupKey: string | undefined;
-        const isGroupId = Object.keys(groupedData).includes(over.id);
-        if (isGroupId) {
-            destinationGroupKey = over.id;
-        } else {
-            destinationGroupKey = Object.entries(groupedData).find(([_, tasks]) =>
-                tasks.some((t) => t.id === over.id)
-            )?.[0];
-        }
+        // Detectar se está no modo kanban ou list
+        if (viewMode === "kanban") {
+            // Modo Kanban: trabalhar com colunas
+            const currentColumns = kanbanColumnsRef.current;
+            const sourceColumn = currentColumns.find((col) =>
+                col.tasks.some((t) => t.id === active.id)
+            );
+            if (!sourceColumn) return;
 
-        if (!destinationGroupKey) return;
-
-        // Se está no mesmo grupo, apenas reordenar
-        if (sourceGroupKey === destinationGroupKey) {
-            // TODO: Implementar reordenação dentro do mesmo grupo
-            return;
-        }
-
-        // Mover para outro grupo
-        try {
-            let newStatus = task.status;
-            if (groupBy === "status") {
-                newStatus = destinationGroupKey;
+            // Detectar coluna de destino: pode ser o ID da coluna (droppable) ou uma tarefa dentro dela
+            let destinationColumnId: string | undefined;
+            
+            // Primeiro, verificar se over.id é o ID de uma coluna
+            const columnById = currentColumns.find((col) => col.id === over.id);
+            if (columnById) {
+                destinationColumnId = columnById.id;
+            } else {
+                // Se não for uma coluna, procurar em qual coluna está a tarefa de destino
+                const columnWithTask = currentColumns.find((col) =>
+                    col.tasks.some((t) => t.id === over.id)
+                );
+                if (columnWithTask) {
+                    destinationColumnId = columnWithTask.id;
+                }
             }
 
+            if (!destinationColumnId) return;
+
+            // Se mesma coluna, reordenar dentro da coluna
+            if (sourceColumn.id === destinationColumnId) {
+                const sourceTasks = sourceColumn.tasks;
+                const oldIndex = sourceTasks.findIndex((t) => t.id === active.id);
+                
+                // Se over.id é uma tarefa, usar seu índice; senão, adicionar no final
+                let newIndex = sourceTasks.findIndex((t) => t.id === over.id);
+                if (newIndex === -1) {
+                    newIndex = sourceTasks.length - 1;
+                }
+
+                if (oldIndex === -1 || oldIndex === newIndex) {
+                    return;
+                }
+
+                // ✅ 2. Atualização otimista local - reordenar tarefas apenas na coluna específica
+                setLocalTasks((prev) => {
+                    // Separar tarefas da coluna das outras
+                    const columnTaskIds = new Set(sourceTasks.map((t) => t.id));
+                    const columnTasks = prev.filter((t) => columnTaskIds.has(t.id));
+                    const otherTasks = prev.filter((t) => !columnTaskIds.has(t.id));
+                    
+                    // Reordenar apenas as tarefas da coluna
+                    const reorderedColumnTasks = arrayMove(columnTasks, oldIndex, newIndex);
+                    
+                    // Reunir todas as tarefas
+                    return [...reorderedColumnTasks, ...otherTasks];
+                });
+                setIsSyncing(true);
+
+                // ✅ 3. Calcular nova posição (usando índice + 1 como posição)
+                const newPosition = (newIndex + 1) * 1000;
+
+                // ✅ 4. Backend em background com rollback
+                updateTaskPosition({
+                    taskId: task.id,
+                    newPosition,
+                })
+                    .then(() => {
+                        // Sucesso silencioso
+                    })
+                    .catch((error) => {
+                        console.error("Erro ao reordenar tarefa:", error);
+                        // ✅ 5. Rollback em caso de erro
+                        setLocalTasks(previousTasks);
+                        toast.error("Erro ao salvar ordem. Tente novamente.");
+                    })
+                    .finally(() => {
+                        setIsSyncing(false);
+                    });
+
+                return;
+            }
+
+            // Preparar atualização baseada no tipo de agrupamento
+            const updateData: any = { id: task.id };
+
+            if (groupBy === "status") {
+                // Mapear label da UI para status do banco
+                const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived" | "review" | "correction"> = {
+                    "Backlog": "todo",
+                    "Não iniciado": "todo",
+                    "Não iniciada": "todo",
+                    "Triagem": "in_progress",
+                    "Execução": "in_progress",
+                    "Em progresso": "in_progress",
+                    "Revisão": "review",
+                    "Correção": "correction",
+                    "Concluido": "done",
+                    "Finalizado": "done",
+                    "Arquivado": "archived",
+                };
+
+                const nextStatusDb = statusMap[destinationColumnId] || "todo";
+                updateData.status = nextStatusDb;
+
+                // ✅ 2. Atualização otimista local
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === task.id ? { ...t, status: destinationColumnId } : t
+                    )
+                );
+            } else if (groupBy === "priority") {
+                // A chave da coluna já é o valor da priority (low, medium, high, urgent)
+                const nextPriority = destinationColumnId as "low" | "medium" | "high" | "urgent";
+                
+                // Validar se é um valor válido
+                if (!["low", "medium", "high", "urgent"].includes(nextPriority)) {
+                    console.warn("Priority inválida:", destinationColumnId);
+                    return;
+                }
+
+                updateData.priority = nextPriority;
+
+                // ✅ 2. Atualização otimista local - manter status, atualizar apenas priority visualmente
+                // O status visual não muda quando agrupamos por priority
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === task.id ? { ...t, priority: nextPriority } : t
+                    )
+                );
+            } else if (groupBy === "assignee") {
+                // Encontrar o membro correspondente ao nome da coluna
+                // Member tem estrutura: { user_id, profiles: { full_name, email, avatar_url } }
+                const member = members.find((m) => 
+                    m.profiles?.full_name === destinationColumnId || 
+                    m.profiles?.email === destinationColumnId ||
+                    destinationColumnId === "Sem responsável"
+                );
+                const assigneeId = member?.user_id || null;
+
+                updateData.assignee_id = assigneeId;
+
+                // ✅ 2. Atualização otimista local
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === task.id
+                            ? {
+                                  ...t,
+                                  assignees: assigneeId && member?.profiles
+                                      ? [{ 
+                                          name: member.profiles.full_name || member.profiles.email || destinationColumnId, 
+                                          id: assigneeId, 
+                                          avatar: member.profiles.avatar_url || undefined 
+                                      }]
+                                      : [],
+                              }
+                            : t
+                    )
+                );
+            }
+
+            setIsSyncing(true);
+
+            // ✅ 3. Backend em background com rollback
+            updateTask(updateData)
+                .then(() => {
+                    // Sucesso silencioso
+                })
+                .catch((error) => {
+                    console.error("Erro ao mover tarefa:", error);
+                    // ✅ 4. Rollback em caso de erro
+                    setLocalTasks(previousTasks);
+                    toast.error("Erro ao salvar movimento. Tente novamente.");
+                })
+                .finally(() => {
+                    setIsSyncing(false);
+                });
+        } else {
+            // Modo List: trabalhar com grupos
+            const currentGroupedData = groupedDataRef.current;
+
+            const sourceGroup = Object.entries(currentGroupedData).find(([_, tasks]) =>
+                tasks.some((task) => task.id === active.id)
+            );
+            if (!sourceGroup) return;
+
+            const [sourceGroupKey, sourceTasks] = sourceGroup;
+            const sourceTaskIndex = sourceTasks.findIndex((task) => task.id === active.id);
+            const taskInGroup = sourceTasks[sourceTaskIndex];
+            if (sourceTaskIndex === -1 || !taskInGroup) return;
+
+            let destinationGroupKey: string | undefined;
+            const isGroupId = Object.keys(currentGroupedData).includes(over.id);
+            if (isGroupId) {
+                destinationGroupKey = over.id;
+            } else {
+                destinationGroupKey = Object.entries(currentGroupedData).find(([_, tasks]) =>
+                    tasks.some((t) => t.id === over.id)
+                )?.[0];
+            }
+
+            if (!destinationGroupKey) return;
+
+            if (sourceGroupKey === destinationGroupKey) {
+                return;
+            }
+
+            // ✅ MINIFY v2: mover apenas no estado local, backend em background
             const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
                 Backlog: "todo",
                 Triagem: "in_progress",
@@ -258,119 +451,267 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 Arquivado: "archived",
             };
 
-            const result = await updateTask({
-                id: task.id,
-                status: statusMap[newStatus] || "todo",
-            });
+            const currentGroupBy = groupBy;
+            let nextStatusLabel = taskInGroup.status;
 
-            if (result.success) {
-                router.refresh();
+            if (currentGroupBy === "status") {
+                nextStatusLabel = destinationGroupKey;
             }
-        } catch (error) {
-            console.error("Erro ao mover tarefa:", error);
-        }
-    };
 
-    // Handler para adicionar tarefa
-    const handleAddTask = async (
+            const nextStatusDb = statusMap[nextStatusLabel] || "todo";
+
+            // ✅ 2. Atualização otimista local
+            setLocalTasks((prev) =>
+                prev.map((t) =>
+                    t.id === taskInGroup.id ? { ...t, status: nextStatusLabel } : t
+                )
+            );
+            setIsSyncing(true);
+
+            // ✅ 3. Backend em background com rollback
+            updateTask({
+                id: taskInGroup.id,
+                status: nextStatusDb,
+            })
+                .then(() => {
+                    // Sucesso silencioso
+                })
+                .catch((error) => {
+                    console.error("Erro ao mover tarefa:", error);
+                    // ✅ 4. Rollback em caso de erro
+                    setLocalTasks(previousTasks);
+                    toast.error("Erro ao salvar movimento. Tente novamente.");
+                })
+                .finally(() => {
+                    setIsSyncing(false);
+                });
+        }
+    }, [groupBy, viewMode]);
+
+    // ✅ MINIFY v2: Handler de criação com rollback
+    const handleAddTask = useCallback((
         title: string,
         context: { status?: string; priority?: string; assignee?: string }
     ) => {
-        try {
-            const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
-                Backlog: "todo",
-                Triagem: "in_progress",
-                Execução: "in_progress",
-                Revisão: "done",
-            };
+        const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
+            Backlog: "todo",
+            Triagem: "in_progress",
+            Execução: "in_progress",
+            Revisão: "done",
+        };
 
-            await createTask({
-                title,
-                workspace_id: workspaceId,
-                status: context.status ? (statusMap[context.status] || "todo") : "todo",
+        const tempId = `temp-${Date.now()}`;
+        const nextStatusLabel = context.status || "Backlog";
+        const nextStatusDb = statusMap[nextStatusLabel] || "todo";
+
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
+
+        // ✅ 2. Atualização otimista no estado local
+        setLocalTasks((prev) => [
+            {
+                id: tempId,
+                title: title || "Nova tarefa",
+                completed: false,
+                status: nextStatusLabel,
                 priority: context.priority as any,
-                is_personal: false,
-            });
+                assignees: [],
+                tags: [],
+                hasUpdates: false,
+                workspaceId,
+            },
+            ...prev,
+        ]);
+        setIsSyncing(true);
 
-            router.refresh();
-        } catch (error) {
-            console.error("Erro ao criar tarefa:", error);
-        }
-    };
+        // ✅ 3. Backend em background com rollback
+        createTask({
+            title: title || "Nova tarefa",
+            workspace_id: workspaceId,
+            status: nextStatusDb,
+            priority: context.priority as any,
+            is_personal: false,
+        })
+            .then((result) => {
+                if (!result || !("success" in result)) {
+                    throw new Error("Resposta inválida do servidor");
+                }
+                if (!result.success || !result.data) {
+                    throw new Error(result.error || "Erro ao criar tarefa");
+                }
 
-    // Handler para toggle de completude
-    const handleToggleComplete = async (taskId: string, completed: boolean) => {
-        try {
-            const result = await updateTask({
-                id: taskId,
-                status: completed ? "done" : "todo",
-            });
-
-            if (result.success) {
+                const mapped = mapTaskFromDB(result.data as TaskWithDetails);
                 setLocalTasks((prev) =>
-                    prev.map((task) =>
-                        task.id === taskId ? { ...task, completed } : task
-                    )
+                    prev.map((task) => (task.id === tempId ? mapped : task))
                 );
-            }
-        } catch (error) {
-            console.error("Erro ao atualizar tarefa:", error);
-        }
-    };
+            })
+            .catch((error) => {
+                console.error("Erro ao criar tarefa:", error);
+                // ✅ 4. Rollback em caso de erro
+                setLocalTasks(previousTasks);
+                toast.error("Erro ao criar tarefa. Tente novamente.");
+            })
+            .finally(() => {
+                setIsSyncing(false);
+            });
+    }, [workspaceId, mapTaskFromDB]);
 
-    // Handler para atualização de tarefa
-    const handleTaskUpdate = async (
+    // ✅ MINIFY v2: Handler de toggle com rollback
+    const handleToggleComplete = useCallback((taskId: string, completed: boolean) => {
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
+
+        // ✅ 2. Atualização otimista
+        setLocalTasks((prev) =>
+            prev.map((task) =>
+                task.id === taskId ? { ...task, completed } : task
+            )
+        );
+        setIsSyncing(true);
+
+        // ✅ 3. Backend em background com rollback
+        updateTask({
+            id: taskId,
+            status: completed ? "done" : "todo",
+        })
+            .then(() => {
+                // Sucesso silencioso
+            })
+            .catch((error) => {
+                console.error("Erro ao atualizar tarefa:", error);
+                // ✅ 4. Rollback em caso de erro
+                setLocalTasks(previousTasks);
+                toast.error("Erro ao atualizar tarefa. Tente novamente.");
+            })
+            .finally(() => {
+                setIsSyncing(false);
+            });
+    }, []);
+
+    // ✅ MINIFY v2: Handler de atualização com rollback
+    const handleTaskUpdate = useCallback((
         taskId: string,
         updates: { title?: string; dueDate?: string | null; assigneeId?: string | null }
     ) => {
-        try {
-            const updateData: any = {};
-            if (updates.title) updateData.title = updates.title;
-            if (updates.dueDate !== undefined) updateData.due_date = updates.dueDate;
-            if (updates.assigneeId !== undefined) updateData.assignee_id = updates.assigneeId;
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previous = [...localTasksRef.current];
 
-            const result = await updateTask({
-                id: taskId,
-                ...updateData,
+        // ✅ 2. Atualização otimista
+        setLocalTasks((prev) =>
+            prev.map((task) =>
+                task.id === taskId
+                    ? {
+                          ...task,
+                          ...(updates.title && { title: updates.title }),
+                          ...(updates.dueDate !== undefined && {
+                              dueDate: updates.dueDate || undefined,
+                          }),
+                      }
+                    : task
+            )
+        );
+        setIsSyncing(true);
+
+        const updateData: any = {};
+        if (updates.title) updateData.title = updates.title;
+        if (updates.dueDate !== undefined) updateData.due_date = updates.dueDate;
+        if (updates.assigneeId !== undefined) updateData.assignee_id = updates.assigneeId;
+
+        // ✅ 3. Backend em background com rollback
+        updateTask({
+            id: taskId,
+            ...updateData,
+        })
+            .then(() => {
+                // Sucesso silencioso
+            })
+            .catch((error) => {
+                console.error("Erro ao atualizar tarefa:", error);
+                // ✅ 4. Rollback em caso de erro
+                setLocalTasks(previous);
+                toast.error("Erro ao atualizar tarefa. Tente novamente.");
+            })
+            .finally(() => {
+                setIsSyncing(false);
             });
+    }, []);
 
-            if (result.success) {
-                setLocalTasks((prev) =>
-                    prev.map((task) =>
-                        task.id === taskId
-                            ? {
-                                  ...task,
-                                  ...(updates.title && { title: updates.title }),
-                                  ...(updates.dueDate !== undefined && {
-                                      dueDate: updates.dueDate || undefined,
-                                  }),
-                              }
-                            : task
-                    )
-                );
-            }
-        } catch (error) {
-            console.error("Erro ao atualizar tarefa:", error);
-        }
-    };
-
-    // Handler para clique em tarefa
-    const handleTaskClick = (taskId: string) => {
-        const task = localTasks.find((t) => t.id === taskId);
+    // ✅ OTIMIZAÇÃO: Handler memoizado para evitar re-renders
+    const handleTaskClick = useCallback((taskId: string | number) => {
+        const taskIdStr = String(taskId);
+        const task = localTasksRef.current.find((t) => t.id === taskIdStr);
         if (task) {
-            setSelectedTaskId(taskId);
+            setSelectedTaskId(taskIdStr);
             setTaskDetails(task);
             setIsModalOpen(true);
-  }
-    };
+        }
+    }, []);
 
-    // Função para recarregar tarefas
-    const reloadTasks = () => {
-        router.refresh();
-    };
+    // ✅ Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
+    const updateLocalTask = useCallback((taskId: string, updates: Partial<Task>) => {
+        setLocalTasks((prev) => {
+            const taskIndex = prev.findIndex(t => t.id === taskId);
+            if (taskIndex === -1) {
+                return prev;
+            }
+            
+            // ✅ Criar novo array com imutabilidade garantida
+            const updated = prev.map((task, index) => {
+                if (index === taskIndex) {
+                    return { ...task, ...updates };
+                }
+                return task;
+            });
+            
+            return updated;
+        });
+    }, []);
+
+    // ✅ Callback memoizado para optimistic updates (deve vir depois de updateLocalTask)
+    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+        // Mapear updates para o formato do estado local
+        const localUpdates: Partial<Task> = {};
+        if (updates.title) localUpdates.title = updates.title;
+        if (updates.status) {
+            // O status já vem como label da UI (ex: "Não iniciado", "Em progresso")
+            localUpdates.status = updates.status;
+        }
+        if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
+        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        updateLocalTask(taskId, localUpdates);
+    }, [updateLocalTask]);
+
+    // ✅ OTIMIZAÇÃO: Handler memoizado para evitar re-renders
+    const reloadTasks = useCallback(() => {
+        // MINIFY v2: evitar router.refresh em handlers críticos
+        // A atualização otimista é feita via updateLocalTask
+        console.log("Simulando refresh opcional…");
+    }, []);
+    
+    // ✅ OTIMIZAÇÃO: Handler memoizado para drag cancel
+    const handleDragCancel = useCallback(() => {
+        setActiveTask(null);
+    }, []);
+    
+    // ✅ OTIMIZAÇÃO: Handler memoizado para modal change
+    const handleModalOpenChange = useCallback((open: boolean) => {
+        setIsModalOpen(open);
+        if (!open) {
+            setTaskDetails(null);
+            setSelectedTaskId(null);
+        }
+    }, []);
+    
+    // ✅ OTIMIZAÇÃO: Handler memoizado para add task no kanban
+    const handleKanbanAddTask = useCallback((columnId: string) => {
+        const context: any = {};
+        if (groupBy === "status") context.status = columnId;
+        if (groupBy === "priority") context.priority = columnId;
+        handleAddTask("", context);
+    }, [groupBy, handleAddTask]);
 
   return (
-        <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/50">
+        <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/50 relative">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
         <div className="flex items-center gap-4">
@@ -423,6 +764,14 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
                     <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
 
+                    {/* ✅ MINIFY v2: Indicador de sincronização discreto */}
+                    {isSyncing && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Salvando...</span>
+                      </div>
+                    )}
+
                     {/* View Switcher */}
                     <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
              <button 
@@ -460,38 +809,39 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     collisionDetection={closestCenter}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
+                    onDragCancel={handleDragCancel}
                 >
                     {viewMode === "list" ? (
-                        <motion.div 
-                          variants={STAGGER_CONTAINER}
-                          initial="hidden"
-                          animate="show"
-                          className="space-y-6"
-                        >
+                        <div className="space-y-6">
                             {listGroups.map((group) => (
-                                <motion.div key={group.id} variants={STAGGER_ITEM}>
-                                    <TaskGroup
-                                        id={group.id}
-                                        title={group.title}
-                                        tasks={group.tasks}
-                                        groupBy={groupBy}
-                                        onTaskClick={handleTaskClick}
-                                        onAddTask={handleAddTask}
-                                        onToggleComplete={handleToggleComplete}
-                                    />
-                                </motion.div>
+                                <TaskGroup
+                                    key={group.id}
+                                    id={group.id}
+                                    title={group.title}
+                                    tasks={group.tasks}
+                                    onTaskClick={handleTaskClick}
+                                />
                             ))}
-                        </motion.div>
-        ) : (
+                        </div>
+                    ) : (
                         <TaskBoard
                             columns={kanbanColumns}
                             onTaskClick={handleTaskClick}
-                            onAddTask={(columnId) => {
-                                const context: any = {};
-                                if (groupBy === "status") context.status = columnId;
-                                if (groupBy === "priority") context.priority = columnId;
-                                handleAddTask("", context);
+                            onAddTask={handleKanbanAddTask}
+                            onTaskMoved={() => {
+                                // ✅ MINIFY v2: Callback vazio, drag já foi processado no handleDragEnd
+                                // Backend já foi atualizado em background
                             }}
+                            members={members.map((m) => ({
+                                id: m.user_id,
+                                name: m.profiles?.full_name || m.profiles?.email || "Usuário",
+                                avatar: m.profiles?.avatar_url || undefined,
+                            }))}
+                            groupBy={groupBy}
+                            onToggleComplete={handleToggleComplete}
+                            onTaskUpdated={reloadTasks}
+                            onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                            onDelete={reloadTasks}
                         />
                     )}
 
@@ -509,13 +859,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             <TaskDetailModal
                 key={selectedTaskId}
                 open={isModalOpen}
-                onOpenChange={(open) => {
-                    setIsModalOpen(open);
-                    if (!open) {
-                        setTaskDetails(null);
-                        setSelectedTaskId(null);
-                    }
-                }}
+                onOpenChange={handleModalOpenChange}
                 task={taskDetails}
                 mode={selectedTaskId ? "edit" : "create"}
                 onTaskCreated={reloadTasks}

@@ -612,7 +612,9 @@ export default function DesignSystemPage() {
                                     <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                         <div className="w-[300px]">
                                             <WorkspaceCard
+                                                id="workspace-1"
                                                 name="Agência V4"
+                                                slug="agencia-v4"
                                                 pendingCount={5}
                                                 totalCount={15}
                                             />

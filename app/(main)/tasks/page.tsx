@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown } from "lucide-react";
+import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -53,21 +53,29 @@ import {
     getTasks, 
     createTask, 
     updateTask,
+    updateTaskPosition,
+    updateTaskPositionsBulk,
     getWorkspaceMembers,
+    deleteTask,
     type Task as TaskFromDB 
 } from "@/lib/actions/tasks";
 import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups } from "@/lib/actions/task-groups";
 import { getTaskDetails } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getUserWorkspaces } from "@/lib/actions/user";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
+import type { TaskWithDetails } from "@/lib/actions/tasks";
+import type { WorkspaceGroup } from "@/lib/group-actions";
 
 type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
 type GroupBy = "status" | "priority" | "assignee";
+type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
 
-import { ViewOptions, ViewOption } from "@/components/tasks/ViewOptions";
+import { GroupingMenu } from "@/components/tasks/ViewOptions";
+import { SortMenu } from "@/components/tasks/SortMenu";
 
 interface Task {
     id: string;
@@ -76,31 +84,56 @@ interface Task {
     priority?: "low" | "medium" | "high" | "urgent";
     status: string;
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
-    assigneeId?: string | null; // ID do responsável atual
+    assigneeId?: string | null; // ID do responsÃ¡vel atual
     dueDate?: string;
     tags?: string[];
     hasUpdates?: boolean;
     workspaceId?: string | null;
-    group?: { id: string; name: string; color?: string }; // compatível com TaskBoard
+    group?: { id: string; name: string; color?: string }; // compatÃ­vel com TaskBoard
     hasComments?: boolean;
     commentCount?: number;
+    position?: number; // Posição para ordenação (drag & drop)
 }
 
-export default function TasksPage() {
+interface TasksPageProps {
+    initialTasks?: TaskWithDetails[];
+    initialGroups?: WorkspaceGroup[];
+    workspaceId?: string;
+}
+
+// ✅ Função auxiliar para mapear parâmetro group da URL para ViewOption
+// Trata todos os edge cases: "none", null, undefined -> "group" (padrão)
+function getInitialViewOption(groupParam: string | null): ViewOption {
+    if (groupParam === "status") return "status";
+    if (groupParam === "priority") return "priority";
+    if (groupParam === "date") return "date";
+    if (groupParam === "assignee") return "assignee";
+    // "none", null ou undefined -> "group" (padrão: grupos do banco)
+    // Também trata qualquer outro valor inválido como "group"
+    return "group";
+}
+
+export default function TasksPage({ initialTasks, initialGroups, workspaceId: propWorkspaceId }: TasksPageProps = {}) {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    
+    // Ler sortBy da URL, com fallback para "position"
+    const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
+    
+    // ✅ Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
+    const initialViewOption = getInitialViewOption(searchParams.get("group"));
+    
     const [activeTab, setActiveTab] = useState<ContextTab>("todas");
     const [viewMode, setViewMode] = useState<ViewMode>("list");
-    const [viewOption, setViewOption] = useState<ViewOption>("group");
-    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee">("status");
+    const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
+    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
     const [newGroupName, setNewGroupName] = useState("");
     const [newGroupColor, setNewGroupColor] = useState("#e5e7eb");
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
-    const [localTasks, setLocalTasks] = useState<Task[]>([]);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
-    const [isLoadingTasks, setIsLoadingTasks] = useState(false);
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -109,21 +142,24 @@ export default function TasksPage() {
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
     const [groupOrder, setGroupOrder] = useState<string[]>([]); // Ordem dos grupos quando viewOption === "group"
     const { activeWorkspaceId, isLoaded } = useWorkspace();
+    const localTasksRef = useRef<Task[]>([]);
+    
+    // âœ… NOVO: Usar workspaceId da prop se fornecido, senÃ£o usar do contexto
+    const effectiveWorkspaceId = propWorkspaceId ?? activeWorkspaceId;
 
-    // Sensores para drag & drop
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
-
-    // Função para mapear dados do banco para interface local
-    const mapTaskFromDB = (task: TaskFromDB): Task => {
+    // âœ… NOVO: Se initialTasks foi fornecido, nÃ£o usar o hook para buscar dados iniciais
+    // O hook sÃ³ serÃ¡ usado para refetch quando necessÃ¡rio
+    const shouldUseHook = !initialTasks;
+    
+    // Usar hook customizado para gerenciar tarefas (apenas se nÃ£o tiver initialTasks)
+    const { tasks: tasksFromHook, isLoading: isLoadingTasks, error: tasksError, refetch: refetchTasks } = useTasks({
+        workspaceId: effectiveWorkspaceId,
+        tab: activeTab,
+        enabled: isLoaded && shouldUseHook, // âœ… Desabilitar hook se initialTasks foi fornecido
+    });
+    
+    // FunÃ§Ã£o para mapear dados do banco para interface local (mantida para compatibilidade com outras partes do cÃ³digo)
+    const mapTaskFromDB = (task: TaskFromDB | TaskWithDetails): Task => {
         // Extrair tags do origin_context se existir
         const tags: string[] = [];
         if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context && Array.isArray((task.origin_context as any).tags)) {
@@ -159,11 +195,56 @@ export default function TasksPage() {
                     color: (task as any).group.color || undefined,
                 }
                 : undefined,
-            // Contar comentários
+            // Contar comentÃ¡rios
             hasComments: ((task as any).comment_count || 0) > 0,
             commentCount: (task as any).comment_count || 0,
+            position: (task as any).position ?? (task as any).order ?? undefined,
         };
     };
+    
+    // Manter estado local para atualizaÃ§Ãµes otimistas
+    const [localTasks, setLocalTasks] = useState<Task[]>(() => {
+        // âœ… NOVO: Inicializar com initialTasks se fornecido
+        if (initialTasks) {
+            return initialTasks.map(mapTaskFromDB);
+        }
+        return [];
+    });
+    
+    // âœ… CORREÃ‡ÃƒO: ComparaÃ§Ã£o profunda baseada em IDs para evitar loops infinitos
+    // Compara apenas os IDs das tarefas, nÃ£o as referÃªncias dos arrays
+    const prevTaskIdsRef = useRef<string>('');
+    useEffect(() => {
+        // âœ… NOVO: Se initialTasks foi fornecido, nÃ£o sincronizar com hook
+        if (initialTasks) {
+            return;
+        }
+        
+        // Criar string de IDs ordenados para comparaÃ§Ã£o estÃ¡vel
+        const currentTaskIds = tasksFromHook
+            .map(t => t.id)
+            .sort()
+            .join(',');
+        
+        // SÃ³ atualizar se os IDs realmente mudaram (evita re-renders desnecessÃ¡rios)
+        if (prevTaskIdsRef.current !== currentTaskIds) {
+            prevTaskIdsRef.current = currentTaskIds;
+            setLocalTasks(tasksFromHook);
+        }
+    }, [tasksFromHook, initialTasks]);
+
+    // Sensores para drag & drop
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
 
     // Handler para criar grupo
     const handleCreateGroup = async () => {
@@ -175,9 +256,9 @@ export default function TasksPage() {
         setIsCreatingGroup(true);
         
         try {
-            let targetWorkspaceId: string | null = activeWorkspaceId;
+            let targetWorkspaceId: string | null = effectiveWorkspaceId;
             
-            // Se não encontrou (improvável com o novo Sidebar), buscar do primeiro workspace do usuário
+            // Se nÃ£o encontrou (improvÃ¡vel com o novo Sidebar), buscar do primeiro workspace do usuÃ¡rio
             if (!targetWorkspaceId) {
                 try {
                     const workspaces = await getUserWorkspaces();
@@ -190,7 +271,7 @@ export default function TasksPage() {
             }
             
             if (!targetWorkspaceId) {
-                toast.error("Não foi possível identificar o workspace. Certifique-se de que você é membro de um workspace.");
+                toast.error("NÃ£o foi possÃ­vel identificar o workspace. Certifique-se de que vocÃª Ã© membro de um workspace.");
                 setIsCreatingGroup(false);
                 return;
             }
@@ -218,54 +299,433 @@ export default function TasksPage() {
         }
     };
 
-    // Função para recarregar tarefas
-    const reloadTasks = async () => {
-        setIsLoadingTasks(true);
-        try {
-            // Determinar filtros baseado na aba ativa
-            let filters: { 
-                workspaceId?: string | null;
-                assigneeId?: string | null | "current";
-                dueDateStart?: string;
-                dueDateEnd?: string;
-            } = {};
-
-            // Aplicar filtro de workspace (ou pessoal) apenas na aba "time"
-            // "Minhas" e "Todas" devem mostrar tarefas globais (de todos os contextos)
-            // "Time" deve respeitar o workspace ativo (tarefas da equipe neste contexto)
-            if (activeTab === "time") {
-                filters.workspaceId = activeWorkspaceId || null;
-            }
-            
-            if (activeTab === "minhas") {
-                // Minhas: Tudo que eu estou atribuído
-                filters.assigneeId = "current";
-            } else if (activeTab === "time") {
-                // Time: Tarefas da semana (até o próximo domingo)
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const nextSunday = new Date(today);
-                const dayOfWeek = today.getDay();
-                const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
-                nextSunday.setDate(today.getDate() + daysUntilSunday);
-                nextSunday.setHours(23, 59, 59, 999);
-                
-                filters.dueDateStart = today.toISOString();
-                filters.dueDateEnd = nextSunday.toISOString();
-            }
-            // Todas: Sem filtros (buscar todas as tarefas)
-
-            const tasksFromDB = await getTasks(filters);
-            // Filtrar tarefas arquivadas para não aparecerem na lista principal
-            const activeTasks = tasksFromDB.filter(t => t.status !== "archived");
-            const mappedTasks = activeTasks.map(mapTaskFromDB);
-            setLocalTasks(mappedTasks);
-        } catch (error) {
-            console.error("Erro ao carregar tarefas:", error);
-        } finally {
-            setIsLoadingTasks(false);
+    // FunÃ§Ã£o para recarregar tarefas (com proteÃ§Ã£o contra loops)
+    // FunÃ§Ã£o para recarregar tarefas (usa o hook ou recarrega via prop)
+    const reloadTasks = useCallback(async () => {
+        if (initialTasks) {
+            // âœ… NOVO: Se initialTasks foi fornecido, nÃ£o usar hook
+            // A pÃ¡gina Server Component deve ser recarregada via router.refresh() ou similar
+            // Por enquanto, apenas invalidar cache
+            invalidateTasksCache(effectiveWorkspaceId, activeTab);
+            // TODO: Implementar recarregamento via router.refresh() ou window.location.reload()
+            return;
         }
-    };
+        // Invalidar cache e refetch
+        invalidateTasksCache(effectiveWorkspaceId, activeTab);
+        await refetchTasks();
+    }, [effectiveWorkspaceId, activeTab, refetchTasks, initialTasks]);
+
+    // Callbacks memoizados para evitar re-renders infinitos
+    const handleTaskUpdated = useCallback(() => {
+        // Invalidar cache e recarregar tarefas apÃ³s atualizaÃ§Ã£o
+        invalidateTasksCache(effectiveWorkspaceId, activeTab);
+        if (!initialTasks) {
+            refetchTasks();
+        }
+    }, [effectiveWorkspaceId, activeTab, refetchTasks, initialTasks]);
+
+    const handleTaskDeleted = useCallback(() => {
+        // Recarregar apÃ³s deletar
+        invalidateTasksCache(effectiveWorkspaceId, activeTab);
+        if (!initialTasks) {
+            refetchTasks();
+        }
+    }, [effectiveWorkspaceId, activeTab, refetchTasks, initialTasks]);
+
+    // Refs para acessar valores atuais sem causar re-renders
+    const viewOptionRef = useRef(viewOption);
+    viewOptionRef.current = viewOption;
+    useEffect(() => {
+        localTasksRef.current = localTasks;
+    }, [localTasks]);
+    const groupColorsRef = useRef(groupColors);
+    groupColorsRef.current = groupColors;
+    const availableGroupsRef = useRef(availableGroups);
+    availableGroupsRef.current = availableGroups;
+    const refetchTasksRef = useRef(refetchTasks);
+    refetchTasksRef.current = refetchTasks;
+
+    // Callbacks memoizados para TaskGroup - usar refs para evitar dependÃªncias
+    const handleRenameGroup = useCallback(async (groupId: string, newTitle: string) => {
+        const currentViewOption = viewOptionRef.current;
+        const currentLocalTasks = localTasksRef.current;
+        const currentLoadGroups = loadGroups;
+
+        if (currentViewOption !== "group") {
+            toast.error("NÃ£o Ã© possÃ­vel editar o nome de grupos automÃ¡ticos.");
+            return;
+        }
+        
+        if (groupId === "inbox" || groupId === "Inbox") {
+            toast.error("O grupo padrÃ£o Inbox nÃ£o pode ser renomeado.");
+            return;
+        }
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(groupId)) {
+            toast.error("ID de grupo invÃ¡lido");
+            return;
+        }
+
+        const oldTasks = [...currentLocalTasks];
+        setLocalTasks((prev) => prev.map((t) => 
+            t.group?.id === groupId ? { ...t, group: { ...t.group!, name: newTitle } } : t
+        ));
+
+        try {
+            const result = await updateTaskGroup(groupId, { name: newTitle });
+            if (result.success) {
+                toast.success("Grupo renomeado com sucesso");
+                if (currentLoadGroups) await currentLoadGroups();
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+                refetchTasksRef.current();
+            } else {
+                setLocalTasks(oldTasks);
+                toast.error(result.error || "Erro ao renomear grupo");
+            }
+        } catch (error) {
+            setLocalTasks(oldTasks);
+            toast.error("Erro ao renomear grupo");
+        }
+    }, [effectiveWorkspaceId, activeTab]);
+
+    const handleColorChange = useCallback(async (groupId: string, color: string) => {
+        const currentViewOption = viewOptionRef.current;
+        const currentLocalTasks = localTasksRef.current;
+        const currentGroupColors = groupColorsRef.current;
+        const currentLoadGroups = loadGroups;
+
+        if (currentViewOption !== "group") return;
+        if (groupId === "inbox" || groupId === "Inbox") return;
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(groupId)) {
+            toast.error("ID de grupo invÃ¡lido");
+            return;
+        }
+
+        const oldTasks = [...currentLocalTasks];
+        const oldGroupColors = { ...currentGroupColors };
+        
+        setLocalTasks((prev) => prev.map((t) => 
+            t.group?.id === groupId ? { ...t, group: { ...t.group!, color } } : t
+        ));
+        setGroupColors((prev) => ({ ...prev, [groupId]: color }));
+
+        try {
+            const result = await updateTaskGroup(groupId, { color });
+            if (result.success) {
+                toast.success("Cor do grupo atualizada");
+                if (currentLoadGroups) await currentLoadGroups();
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+                refetchTasksRef.current();
+            } else {
+                setLocalTasks(oldTasks);
+                setGroupColors(oldGroupColors);
+                toast.error(result.error || "Erro ao atualizar cor do grupo");
+            }
+        } catch (error) {
+            setLocalTasks(oldTasks);
+            setGroupColors(oldGroupColors);
+            toast.error("Erro ao atualizar cor do grupo");
+        }
+    }, [effectiveWorkspaceId, activeTab]);
+
+    const handleDeleteGroup = useCallback(async (groupId: string) => {
+        const currentViewOption = viewOptionRef.current;
+        const currentLoadGroups = loadGroups;
+
+        if (currentViewOption !== "group") return;
+        if (groupId === "inbox" || groupId === "Inbox") {
+            toast.error("O grupo Inbox nÃ£o pode ser deletado.");
+            return;
+        }
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(groupId)) {
+            toast.error("ID de grupo invÃ¡lido");
+            return;
+        }
+
+        try {
+            const result = await deleteTaskGroup(groupId);
+            if (result.success) {
+                toast.success("Grupo deletado com sucesso");
+                if (currentLoadGroups) await currentLoadGroups();
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+                refetchTasksRef.current();
+            } else {
+                toast.error(result.error || "Erro ao deletar grupo");
+            }
+        } catch (error) {
+            toast.error("Erro ao deletar grupo");
+        }
+    }, [effectiveWorkspaceId, activeTab]);
+
+    // ✅ Optimistic Create: Adiciona tarefa instantaneamente ao estado local
+    const handleTaskCreatedOptimistic = useCallback((taskData: {
+        id: string; // ID temporário ou real
+        title: string;
+        status: string;
+        priority?: "low" | "medium" | "high" | "urgent";
+        assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        dueDate?: string;
+        groupId?: string | null;
+        workspaceId?: string | null;
+    }) => {
+        const newTask: Task = {
+            id: taskData.id,
+            title: taskData.title,
+            completed: taskData.status === "done",
+            priority: taskData.priority || "medium",
+            status: taskData.status,
+            assignees: taskData.assignees || [],
+            assigneeId: taskData.assignees?.[0]?.id || null,
+            dueDate: taskData.dueDate,
+            tags: [],
+            hasUpdates: false,
+            workspaceId: taskData.workspaceId || null,
+            group: taskData.groupId ? {
+                id: taskData.groupId,
+                name: availableGroups.find(g => g.id === taskData.groupId)?.name || "Grupo",
+                color: availableGroups.find(g => g.id === taskData.groupId)?.color || undefined
+            } : undefined,
+            hasComments: false,
+            commentCount: 0,
+            position: undefined,
+        };
+
+        setLocalTasks((prev) => {
+            return [newTask, ...prev];
+        });
+    }, [availableGroups]);
+
+    // ✅ Optimistic Delete: Remove tarefa instantaneamente do estado local
+    const handleOptimisticDelete = useCallback((taskId: string | number) => {
+        const id = String(taskId);
+        setLocalTasks((prev) => {
+            return prev.filter(t => String(t.id) !== id);
+        });
+    }, []);
+
+    // Handler para adicionar tarefa em grupo (usado no TaskGroup) com Optimistic UI
+    const handleAddTaskToGroup = useCallback(async (
+        groupId: string,
+        title: string,
+        dueDate?: Date | null,
+        assigneeId?: string | null
+    ) => {
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
+
+        // Mapear status/priority baseado no viewOption e groupId (columnId)
+        const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
+            "Não iniciada": "todo",
+            "Em progresso": "in_progress",
+            "Revisão": "review",
+            "Correção": "correction",
+            "Finalizado": "done",
+            // Aliases para compatibilidade
+            "Backlog": "todo",
+            "Triagem": "todo",
+            "Execução": "in_progress",
+        };
+
+        let dbStatus: "todo" | "in_progress" | "review" | "correction" | "done" | undefined = "todo";
+        let priority: "low" | "medium" | "high" | "urgent" | undefined;
+        let finalGroupId: string | null | undefined = null;
+        let statusLabel: string = STATUS_TO_LABEL.todo;
+
+        if (viewOption === "status") {
+            dbStatus = statusMap[groupId] || "todo";
+            statusLabel = groupId;
+        } else if (viewOption === "priority") {
+            priority = groupId as "low" | "medium" | "high" | "urgent";
+            dbStatus = "todo";
+            statusLabel = STATUS_TO_LABEL.todo;
+        } else if (viewOption === "group") {
+            // Se estiver na visão de grupos, usar o groupId recebido
+            // Se for "inbox", groupId é null (explicitamente)
+            if (groupId === "inbox" || groupId === "Inbox") {
+                finalGroupId = null;
+            } else {
+                finalGroupId = groupId;
+            }
+            dbStatus = "todo";
+            statusLabel = STATUS_TO_LABEL.todo;
+        } else if (viewOption === "assignee") {
+            // Encontrar o membro pelo nome para obter o ID
+            if (groupId === "Sem responsável") {
+                assigneeId = null;
+            } else {
+                const member = workspaceMembers.find(m => m.name === groupId);
+                if (member) {
+                    assigneeId = member.id;
+                }
+            }
+            dbStatus = "todo";
+            statusLabel = STATUS_TO_LABEL.todo;
+        }
+
+        // ✅ 2. Atualização otimista: adicionar tarefa ao estado local imediatamente
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const assignee = assigneeId ? workspaceMembers.find(m => m.id === assigneeId) : undefined;
+        
+        handleTaskCreatedOptimistic({
+            id: tempId,
+            title,
+            status: statusLabel,
+            priority: priority,
+            assignees: assignee ? [{
+                id: assignee.id,
+                name: assignee.name,
+                avatar: assignee.avatar
+            }] : undefined,
+            dueDate: dueDate ? dueDate.toISOString() : undefined,
+            groupId: finalGroupId,
+            workspaceId: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+        });
+
+        try {
+            // ✅ 3. Backend em background
+            const result = await createTask({
+                title,
+                status: dbStatus as any,
+                priority: priority,
+                assignee_id: assigneeId || undefined,
+                due_date: dueDate ? dueDate.toISOString() : undefined,
+                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+                group_id: finalGroupId,
+            });
+
+            if (result.success && 'data' in result && result.data) {
+                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend
+                const createdTask = result.data;
+                setLocalTasks((prev) => {
+                    return prev.map((task) => {
+                        if (task.id === tempId) {
+                            return {
+                                ...task,
+                                id: createdTask.id,
+                                status: createdTask.status ? mapStatusToLabel(createdTask.status as string) || task.status : task.status,
+                                priority: (createdTask.priority as "low" | "medium" | "high" | "urgent") || task.priority,
+                                dueDate: createdTask.due_date || task.dueDate,
+                            } as Task;
+                        }
+                        return task;
+                    });
+                });
+            } else {
+                // ✅ 5. Erro: rollback - remover tarefa otimista
+                setLocalTasks(previousTasks);
+                console.error("Erro ao criar tarefa:", result.error);
+                if (result.error === "Usuário não autenticado") {
+                    router.push("/login");
+                } else {
+                    toast.error("Erro ao criar tarefa: " + (result.error || "Erro desconhecido"));
+                }
+            }
+        } catch (error) {
+            // ✅ 5. Erro: rollback - remover tarefa otimista
+            setLocalTasks(previousTasks);
+            console.error("Erro ao criar tarefa:", error);
+            toast.error("Erro ao criar tarefa");
+        }
+    }, [viewOption, effectiveWorkspaceId, activeTab, router, workspaceMembers, handleTaskCreatedOptimistic, availableGroups]);
+
+    // Handler para adicionar tarefa no kanban (TaskBoard) com Optimistic UI
+    // Reutiliza a mesma lógica do handleAddTaskToGroup
+    const handleAddTaskToKanban = useCallback(async (
+        columnId: string,
+        title: string,
+        dueDate?: Date | null,
+        assigneeId?: string | null
+    ) => {
+        // Usar o mesmo handler que funciona para TaskGroup
+        // O columnId funciona da mesma forma que groupId
+        return handleAddTaskToGroup(columnId, title, dueDate, assigneeId);
+    }, [handleAddTaskToGroup]);
+
+    // ✅ Handler para excluir tarefa com Optimistic UI e rollback
+    const handleDeleteTaskWithOptimistic = useCallback(async (taskId: string | number) => {
+        const id = String(taskId);
+        
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
+        
+        // ✅ 2. Optimistic UI: Remover tarefa do estado local imediatamente
+        handleOptimisticDelete(id);
+
+        try {
+            // ✅ 3. Backend em background
+            const result = await deleteTask(id);
+
+            if (result.success) {
+                // ✅ 4. Sucesso: Tarefa já foi removida otimisticamente
+                toast.success("Tarefa excluída com sucesso");
+                // Invalidar cache para sincronizar
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+            } else {
+                // ✅ 5. Erro: Rollback - restaurar tarefa
+                setLocalTasks(previousTasks);
+                console.error("Erro ao excluir tarefa:", result.error);
+                if (result.error === "Usuário não autenticado") {
+                    router.push("/login");
+                } else {
+                    toast.error("Erro ao excluir tarefa: " + (result.error || "Erro desconhecido"));
+                }
+            }
+        } catch (error) {
+            // ✅ 5. Erro: Rollback - restaurar tarefa
+            setLocalTasks(previousTasks);
+            console.error("Erro ao excluir tarefa:", error);
+            toast.error("Erro ao excluir tarefa");
+        }
+    }, [handleOptimisticDelete, effectiveWorkspaceId, activeTab, router]);
+
+    // Ref para groupedData (serÃ¡ atualizado apÃ³s groupedData ser definido)
+    const groupedDataRef = useRef<Record<string, Task[]>>({});
+
+    const handleClearGroup = useCallback(async (groupId: string) => {
+        const currentViewOption = viewOptionRef.current;
+        const currentGroupedData = groupedDataRef.current; // Usar ref (atualizado apÃ³s groupedData)
+        const currentLocalTasks = localTasksRef.current;
+
+        const groupTasks = currentGroupedData[groupId] || [];
+        if (groupTasks.length === 0) {
+            toast.info("Nenhuma tarefa para limpar neste grupo");
+            return;
+        }
+
+        const previousTasks = [...currentLocalTasks];
+        const taskIdsToArchive = groupTasks.map((t: Task) => t.id);
+        
+        setLocalTasks((prev) => prev.filter((t: Task) => {
+            if (currentViewOption === "group") {
+                if (groupId === "inbox") {
+                    return t.group?.id !== null && t.group?.id !== undefined;
+                }
+                return t.group?.id !== groupId;
+            }
+            // Para outros viewOptions, usar getTaskGroupKey
+            const taskGroupKey = getTaskGroupKey(t);
+            return taskGroupKey !== groupId;
+        }));
+
+        try {
+            await Promise.all(taskIdsToArchive.map((taskId: string) =>
+                updateTask({ id: taskId, status: "archived" })
+            ));
+            invalidateTasksCache(activeWorkspaceId, activeTab);
+            refetchTasksRef.current();
+            toast.success(`${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`);
+        } catch (error) {
+            setLocalTasks(previousTasks);
+            invalidateTasksCache(activeWorkspaceId, activeTab);
+            refetchTasksRef.current();
+            toast.error("Erro ao limpar grupo");
+        }
+    }, [effectiveWorkspaceId, activeTab]);
 
     // Carregar cores dos grupos do localStorage
     useEffect(() => {
@@ -286,12 +746,12 @@ export default function TasksPage() {
         }
     }, [groupColors]);
 
-    // Limpar cores de grupos que não existem mais quando viewOption muda
+    // Limpar cores de grupos que nÃ£o existem mais quando viewOption muda
     useEffect(() => {
-        // Só faz sentido limpar se groupColors estiver sendo usado para viewOption
-        // Por segurança, vamos manter o estado anterior se não for "group"
-        // Mas se mudarmos para "status", os IDs mudam, então as cores antigas não servem
-        // Melhor deixar o usuário redefinir cores se necessário ou manter cache
+        // SÃ³ faz sentido limpar se groupColors estiver sendo usado para viewOption
+        // Por seguranÃ§a, vamos manter o estado anterior se nÃ£o for "group"
+        // Mas se mudarmos para "status", os IDs mudam, entÃ£o as cores antigas nÃ£o servem
+        // Melhor deixar o usuÃ¡rio redefinir cores se necessÃ¡rio ou manter cache
         
         // const currentGroupIds = Object.keys(groupedData);
         // setGroupColors((prev) => {
@@ -305,71 +765,77 @@ export default function TasksPage() {
         // });
     }, [viewOption]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Função para carregar grupos
-    const loadGroups = async () => {
+    // FunÃ§Ã£o para carregar grupos
+    const loadGroups = useCallback(async () => {
         try {
-            // Usar workspace ativo do contexto
-            let targetWorkspaceId: string | null = activeWorkspaceId;
-            
-            // Se não tiver workspace ativo, tentar buscar o primeiro (fallback)
-            if (!targetWorkspaceId) {
-                try {
-                    const workspaces = await getUserWorkspaces();
-                    if (workspaces.length > 0) {
-                        targetWorkspaceId = workspaces[0].id;
-                    }
-                } catch (err) {
-                    console.error("Erro ao buscar workspaces:", err);
-                }
-            }
+            // Usar workspace ativo do contexto diretamente
+            // NÃ£o fazer fallback para getUserWorkspaces aqui - isso adiciona latÃªncia desnecessÃ¡ria
+            // Se nÃ£o houver workspace, simplesmente retornar grupos vazios
+            const targetWorkspaceId: string | null = effectiveWorkspaceId;
 
             const result = await getTaskGroups(targetWorkspaceId);
             if (result.success && result.data) {
-                setAvailableGroups(result.data);
+                const groupsData = result.data;
+                setAvailableGroups(groupsData);
                 
-                // Inicializar ordem dos grupos se não existir
-                if (viewOption === "group" && groupOrder.length === 0) {
-                    const savedOrder = localStorage.getItem("taskGroupOrder");
-                    if (savedOrder) {
-                        try {
-                            const parsed = JSON.parse(savedOrder);
-                            setGroupOrder(parsed);
-                        } catch (e) {
-                            console.error("Erro ao carregar ordem dos grupos:", e);
-                            // Ordem padrão: inbox primeiro, depois grupos do banco
-                            const defaultOrder = ["inbox", ...result.data.map((g: any) => g.id)];
-                            setGroupOrder(defaultOrder);
+                // Inicializar ordem dos grupos se nÃ£o existir
+                // Usar funÃ§Ã£o de callback do setState para acessar o valor atual de groupOrder
+                setGroupOrder((currentOrder) => {
+                    if (viewOption === "group" && currentOrder.length === 0) {
+                        const savedOrder = localStorage.getItem("taskGroupOrder");
+                        if (savedOrder) {
+                            try {
+                                const parsed = JSON.parse(savedOrder);
+                                return parsed;
+                            } catch (e) {
+                                console.error("Erro ao carregar ordem dos grupos:", e);
+                                // Ordem padrÃ£o: inbox primeiro, depois grupos do banco
+                                return ["inbox", ...groupsData.map((g: any) => g.id)];
+                            }
+                        } else {
+                            // Ordem padrÃ£o: inbox primeiro, depois grupos do banco
+                            return ["inbox", ...groupsData.map((g: any) => g.id)];
                         }
-                    } else {
-                        // Ordem padrão: inbox primeiro, depois grupos do banco
-                        const defaultOrder = ["inbox", ...result.data.map((g: any) => g.id)];
-                        setGroupOrder(defaultOrder);
                     }
-                }
+                    return currentOrder;
+                });
+            } else {
+                // Se nÃ£o houver grupos, limpar lista
+                setAvailableGroups([]);
             }
         } catch (error) {
             console.error("Erro ao carregar grupos:", error);
+            setAvailableGroups([]);
         }
-    };
+    }, [effectiveWorkspaceId, viewOption]);
 
-    // Buscar tarefas e grupos do banco
+    // Carregar grupos quando workspace mudar (tarefas sÃ£o gerenciadas pelo hook useTasks)
     useEffect(() => {
-        // Aguardar o carregamento do contexto do workspace para evitar "blink"
-        // Se não estiver carregado, não fazemos nada, pois activeWorkspaceId pode estar incorreto (null inicial)
         if (!isLoaded) return;
 
-        reloadTasks();
-        loadGroups();
-    }, [activeTab, activeWorkspaceId, isLoaded]);
+        // Limpar grupos quando workspace/tab mudar
+        setAvailableGroups([]);
+
+        // Carregar grupos em background (nÃ£o bloqueia a UI)
+        loadGroups().catch((err) => {
+            console.error("Erro ao carregar grupos:", err);
+        });
+    }, [effectiveWorkspaceId, activeTab, isLoaded, loadGroups]);
 
     // Buscar membros do workspace
     useEffect(() => {
         const loadMembers = async () => {
+            // Se nÃ£o houver workspace ativo, limpar lista e nÃ£o buscar
+            if (!effectiveWorkspaceId) {
+                setWorkspaceMembers([]);
+                return;
+            }
+
             try {
-                const members = await getWorkspaceMembers(activeWorkspaceId);
+                const members = await getWorkspaceMembers(effectiveWorkspaceId);
                 const mappedMembers = members.map((m: any) => ({
                     id: m.id || m.email || "",
-                    name: m.full_name || m.email || "Usuário",
+                    name: m.full_name || m.email || "UsuÃ¡rio",
                     avatar: m.avatar_url || undefined,
                 }));
                 setWorkspaceMembers(mappedMembers);
@@ -378,12 +844,47 @@ export default function TasksPage() {
             }
         };
         loadMembers();
-    }, [activeWorkspaceId]);
+    }, [effectiveWorkspaceId]);
+
+    // ✅ Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
+    const updateLocalTask = useCallback((taskId: string | number, updates: Partial<Task>) => {
+        const id = String(taskId);
+        setLocalTasks((prev) => {
+            const taskIndex = prev.findIndex(t => String(t.id) === id);
+            if (taskIndex === -1) {
+                console.warn("[updateLocalTask] Tarefa não encontrada:", id);
+                return prev;
+            }
+            
+            const updated = prev.map((task, index) => {
+                if (index === taskIndex) {
+                    return { ...task, ...updates };
+                }
+                return task;
+            });
+            
+            return updated;
+        });
+    }, []);
+
+    // ✅ Callback memoizado para optimistic updates
+    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+        const localUpdates: Partial<Task> = {};
+        if (updates.title) localUpdates.title = updates.title;
+        if (updates.status) {
+            localUpdates.status = updates.status;
+        }
+        if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
+        if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
+        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        updateLocalTask(taskId, localUpdates);
+    }, [updateLocalTask]);
+
 
     // Filtrar tarefas por busca
-    // Função para alternar status de conclusão
+    // FunÃ§Ã£o para alternar status de conclusÃ£o
     const handleToggleComplete = async (taskId: string, completed: boolean) => {
-        // Atualização otimista no estado local
+        // AtualizaÃ§Ã£o otimista no estado local
         setLocalTasks((prevTasks) =>
             prevTasks.map((task) =>
                 task.id === taskId
@@ -392,7 +893,7 @@ export default function TasksPage() {
             )
         );
 
-        // Persistir no backend de forma assíncrona
+        // Persistir no backend de forma assÃ­ncrona
         try {
             const result = await updateTask({
                 id: taskId,
@@ -410,15 +911,9 @@ export default function TasksPage() {
                 );
                 console.error("Erro ao atualizar tarefa:", result.error);
                 toast.error("Erro ao atualizar tarefa");
-            } else if (result.data) {
-                // Atualizar com dados do servidor para garantir sincronização
-                const updatedTask = mapTaskFromDB(result.data);
-                setLocalTasks((prevTasks) =>
-                    prevTasks.map((task) =>
-                        task.id === taskId ? updatedTask : task
-                    )
-                );
             }
+            // Sucesso - não há dados retornados pelo updateTask (retorna { success: true, data: null })
+            // A atualização otimista já foi feita acima, então não precisamos fazer nada aqui
         } catch (error) {
             // Reverter em caso de erro
             setLocalTasks((prevTasks) =>
@@ -448,19 +943,19 @@ export default function TasksPage() {
         });
     }, [localTasks, searchQuery]);
 
-    // Função de agrupamento dinâmico
+    // FunÃ§Ã£o de agrupamento dinÃ¢mico
     const groupedData = useMemo(() => {
         const groups: Record<string, Task[]> = {};
 
-        // Mapeamento de prioridades para português
+        // Mapeamento de prioridades para portuguÃªs
         const priorityLabels: Record<string, string> = {
             "urgent": "Urgente",
             "high": "Alta",
-            "medium": "Média",
+            "medium": "MÃ©dia",
             "low": "Baixa",
         };
 
-        // Se viewOption for "group", inicializar grupos vazios do banco
+        // ✅ Buckets First: Inicializar grupos vazios baseado no viewOption
         if (viewOption === "group") {
             // Inicializar grupo "Inbox" (tarefas sem grupo)
             groups["inbox"] = [];
@@ -469,6 +964,14 @@ export default function TasksPage() {
             availableGroups.forEach((group) => {
                 groups[group.id] = [];
             });
+        } else if (viewOption === "assignee") {
+            // Inicializar grupos para todos os membros (mesmo sem tarefas)
+            workspaceMembers.forEach((member) => {
+                const memberName = member.name || "Membro";
+                groups[memberName] = [];
+            });
+            // Grupo para tarefas sem responsável
+            groups["Sem responsável"] = [];
         }
 
         filteredTasks.forEach((task) => {
@@ -476,16 +979,16 @@ export default function TasksPage() {
 
             switch (viewOption) {
                 case "group":
-                    // Usar ID do grupo como chave para permitir edição
+                    // Usar ID do grupo como chave para permitir ediÃ§Ã£o
                     if (task.group && task.group.id) {
                         groupKey = task.group.id;
                     } else {
                         groupKey = "inbox";
                     }
                     
-                    // Garantir que o grupo existe (caso não tenha sido inicializado ou seja um novo grupo)
+                    // Garantir que o grupo existe (caso nÃ£o tenha sido inicializado ou seja um novo grupo)
                     if (!groups[groupKey]) {
-                        // Se for um ID de grupo válido do banco que não estava em availableGroups
+                        // Se for um ID de grupo vÃ¡lido do banco que nÃ£o estava em availableGroups
                         // (pode acontecer se availableGroups estiver desatualizado)
                         groups[groupKey] = [];
                     }
@@ -509,7 +1012,7 @@ export default function TasksPage() {
                         const nextWeek = new Date(today);
                         nextWeek.setDate(nextWeek.getDate() + 7);
 
-                        // Normalizar data da tarefa para comparação (sem hora)
+                        // Normalizar data da tarefa para comparaÃ§Ã£o (sem hora)
                         const taskDate = new Date(date);
                         taskDate.setHours(0,0,0,0);
 
@@ -518,13 +1021,18 @@ export default function TasksPage() {
                         } else if (taskDate.getTime() === today.getTime()) {
                             groupKey = "Hoje";
                         } else if (taskDate.getTime() === tomorrow.getTime()) {
-                            groupKey = "Amanhã";
+                            groupKey = "AmanhÃ£";
                         } else if (taskDate > tomorrow && taskDate <= nextWeek) {
-                            groupKey = "Próximos 7 dias";
+                            groupKey = "PrÃ³ximos 7 dias";
                         } else {
                             groupKey = "Futuro";
                         }
                     }
+                    break;
+                case "assignee":
+                    // Agrupar por nome do primeiro responsável
+                    const assigneeName = task.assignees?.[0]?.name;
+                    groupKey = assigneeName ? assigneeName.trim() : "Sem responsável";
                     break;
                 default:
                     groupKey = "Inbox";
@@ -537,49 +1045,37 @@ export default function TasksPage() {
         });
 
         return groups;
-    }, [viewOption, filteredTasks, availableGroups]);
+    }, [viewOption, filteredTasks, availableGroups, workspaceMembers]);
+
+    // Atualizar ref para groupedData (apÃ³s groupedData ser definido)
+    groupedDataRef.current = groupedData;
 
     // Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
-        if (viewOption !== "group") {
-            return groupedData;
-        }
-        
-        const groups = { ...groupedData }; // Copia para manipular
-        const ordered: Record<string, Task[]> = {};
-        
-        // 1. Adicionar grupos que estão em groupOrder e existem em groupedData
-        if (groupOrder && groupOrder.length > 0) {
-            groupOrder.forEach((groupId) => {
-                if (groups[groupId]) {
-                    ordered[groupId] = groups[groupId];
-                    delete groups[groupId]; // Marcar como processado
-                }
-            });
-        }
-        
-        // 2. Adicionar Inbox se existir e ainda não foi processado
-        if (groups["inbox"]) {
-            ordered["inbox"] = groups["inbox"];
-            delete groups["inbox"];
-        }
-        
-        // 3. Adicionar o restante (novos grupos ou sem ordem)
-        Object.keys(groups).forEach((groupId) => {
-            ordered[groupId] = groups[groupId];
-        });
-        
-        return ordered;
-    }, [groupedData, groupOrder, viewOption]);
+        return groupedData;
+    }, [groupedData]);
 
     // Converter grupos para formato de colunas (Kanban)
     const kanbanColumns = useMemo(() => {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
-        const columns = Object.entries(dataToUse).map(([key, tasks]) => {
+        const columns = Object.entries(dataToUse)
+            .filter(([key, tasks]) => {
+                // ✅ Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
+                // verificar se o grupo ainda existe em availableGroups
+                if (viewOption === "group" && key !== "inbox") {
+                    const groupExists = availableGroups.some(g => g.id === key);
+                    // Se o grupo não existe mais e não há tarefas, filtrar
+                    if (!groupExists && tasks.length === 0) {
+                        return false;
+                    }
+                }
+                return true;
+            })
+            .map(([key, tasks]) => {
             let title = key;
             let color: string | undefined;
             
-            // Recuperar título real se a chave for um ID (modo group)
+            // Recuperar tÃ­tulo real se a chave for um ID (modo group)
             if (viewOption === "group") {
                 if (key === "inbox") {
                     title = "Inbox";
@@ -591,7 +1087,7 @@ export default function TasksPage() {
                         title = groupFromTask.name || "Sem Nome";
                         color = groupFromTask.color || undefined;
                     } else {
-                        // Se não há tarefas, buscar do availableGroups
+                        // Se nÃ£o hÃ¡ tarefas, buscar do availableGroups
                         const groupFromDB = availableGroups.find(g => g.id === key);
                         if (groupFromDB) {
                             title = groupFromDB.name || "Sem Nome";
@@ -601,7 +1097,7 @@ export default function TasksPage() {
                         }
                     }
                     
-                    // Fallback para cor do mapa de cores se disponível
+                    // Fallback para cor do mapa de cores se disponÃ­vel
                     if (groupColors[key] && groupColors[key] !== color) {
                          color = groupColors[key];
                     }
@@ -629,7 +1125,7 @@ export default function TasksPage() {
         }
 
         if (viewOption === "priority") {
-            const priorityOrder = ["Urgente", "Alta", "Média", "Baixa"];
+            const priorityOrder = ["Urgente", "Alta", "MÃ©dia", "Baixa"];
             return columns.sort((a, b) => {
                 const aIndex = priorityOrder.indexOf(a.title);
                 const bIndex = priorityOrder.indexOf(b.title);
@@ -641,7 +1137,7 @@ export default function TasksPage() {
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Próximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
             return columns.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -652,15 +1148,29 @@ export default function TasksPage() {
             });
         }
 
-        return columns;
-    }, [groupedData, viewOption]);
+        if (viewOption === "assignee") {
+            // Ordenar por nome alfabeticamente, com "Sem responsável" no final
+            return columns.sort((a, b) => {
+                if (a.title === "Sem responsável") return 1;
+                if (b.title === "Sem responsável") return -1;
+                return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+            });
+        }
 
-    // Converter grupos para formato de lista (TaskGroup) com ordenação
+        return columns;
+    }, [groupedData, orderedGroupedData, viewOption, availableGroups]);
+
+    // Converter grupos para formato de lista (TaskGroup) com ordenaÃ§Ã£o
     const listGroups = useMemo(() => {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
         const groups = Object.entries(dataToUse).map(([key, tasks]) => {
             // Ordenar tarefas dentro do grupo
             const sortedTasks = [...tasks].sort((a, b) => {
+                if (sortBy === "position") {
+                    const posA = a.position ?? 0;
+                    const posB = b.position ?? 0;
+                    return posA - posB;
+                }
                 if (sortBy === "status") {
                     const statusOrder = ORDERED_STATUSES;
                     const mapStatus = (s: string) => {
@@ -685,13 +1195,16 @@ export default function TasksPage() {
                     const bName = b.assignees?.[0]?.name || "zzzz";
                     return aName.localeCompare(bName);
                 }
+                if (sortBy === "title") {
+                    return (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" });
+                }
                 return 0;
             });
 
             let title = key;
             let groupColor = undefined;
             
-            // Recuperar título e cor real se a chave for um ID (modo group)
+            // Recuperar tÃ­tulo e cor real se a chave for um ID (modo group)
             if (viewOption === "group") {
                 if (key === "inbox") {
                     title = "Inbox";
@@ -702,7 +1215,7 @@ export default function TasksPage() {
                         title = groupFromTask.name || "Sem Nome";
                         groupColor = groupFromTask.color || undefined;
                     } else {
-                        // Se não há tarefas, buscar do availableGroups
+                        // Se nÃ£o hÃ¡ tarefas, buscar do availableGroups
                         const groupFromDB = availableGroups.find(g => g.id === key);
                         if (groupFromDB) {
                             title = groupFromDB.name || "Sem Nome";
@@ -718,7 +1231,7 @@ export default function TasksPage() {
                 id: key,
                 title,
                 tasks: sortedTasks,
-                // Passar a cor do grupo vindo do banco se disponível, senão usa o local/padrão
+                // Passar a cor do grupo vindo do banco se disponÃ­vel, senÃ£o usa o local/padrÃ£o
                 groupColor,
             };
         });
@@ -737,7 +1250,7 @@ export default function TasksPage() {
         }
 
         if (viewOption === "priority") {
-            const priorityOrder = ["Urgente", "Alta", "Média", "Baixa"];
+            const priorityOrder = ["Urgente", "Alta", "MÃ©dia", "Baixa"];
             return groups.sort((a, b) => {
                 const aIndex = priorityOrder.indexOf(a.title);
                 const bIndex = priorityOrder.indexOf(b.title);
@@ -749,7 +1262,7 @@ export default function TasksPage() {
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Próximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
             return groups.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -760,31 +1273,40 @@ export default function TasksPage() {
             });
         }
 
+        if (viewOption === "assignee") {
+            // Ordenar por nome alfabeticamente, com "Sem responsável" no final
+            return groups.sort((a, b) => {
+                if (a.title === "Sem responsável") return 1;
+                if (b.title === "Sem responsável") return -1;
+                return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+            });
+        }
+
         return groups;
-    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups]);
+    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length]); // Usar .length para evitar re-renders quando o conteÃºdo muda mas o tamanho Ã© o mesmo
 
 
-    // Mapear status customizáveis para status do banco (usando config centralizado)
+    // Mapear status customizÃ¡veis para status do banco (usando config centralizado)
     const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archived" => {
         return mapLabelToStatus(status) as "todo" | "in_progress" | "done" | "archived";
     };
 
-    // Mapear prioridade do banco para label em português
+    // Mapear prioridade do banco para label em portuguÃªs
     const getPriorityLabel = (priority: string | undefined): string => {
         const priorityLabels: Record<string, string> = {
             "urgent": "Urgente",
             "high": "Alta",
-            "medium": "Média",
+            "medium": "MÃ©dia",
             "low": "Baixa",
         };
-        return priorityLabels[priority || "medium"] || priority || "Média";
+        return priorityLabels[priority || "medium"] || priority || "MÃ©dia";
     };
 
-    // Função auxiliar para obter groupKey de uma tarefa (usada no Drag & Drop)
+    // FunÃ§Ã£o auxiliar para obter groupKey de uma tarefa (usada no Drag & Drop)
     const getTaskGroupKey = (task: Task): string => {
         switch (viewOption) {
             case "group":
-                // Retornar ID do grupo para permitir comparação correta
+                // Retornar ID do grupo para permitir comparaÃ§Ã£o correta
                 return task.group?.id || "inbox";
             case "status":
                 return task.status || "Sem Status";
@@ -792,328 +1314,664 @@ export default function TasksPage() {
                 return getPriorityLabel(task.priority);
             case "date":
                 if (!task.dueDate) return "Sem data";
-                // ... lógica de data repetida ...
-                return "Inbox"; // Simplificado para evitar complexidade excessiva aqui, idealmente refatorar lógica de data para função reutilizável
+                // ... lÃ³gica de data repetida ...
+                return "Inbox"; // Simplificado para evitar complexidade excessiva aqui, idealmente refatorar lÃ³gica de data para funÃ§Ã£o reutilizÃ¡vel
+            case "assignee":
+                const assigneeName = task.assignees?.[0]?.name;
+                return assigneeName ? assigneeName.trim() : "Sem responsável";
             default:
                 return "Inbox";
         }
     };
 
-    // Handler para quando o drag começa
+    // Sincronizar sortBy quando URL mudar
+    useEffect(() => {
+        setSortBy(urlSort);
+    }, [urlSort]);
+
+    // ✅ Sincronizar viewOption quando parâmetro group da URL mudar
+    useEffect(() => {
+        const groupParam = searchParams.get("group");
+        const newViewOption = getInitialViewOption(groupParam);
+        // Só atualizar se o valor realmente mudou para evitar re-renders desnecessários
+        setViewOption((current) => {
+            if (current !== newViewOption) {
+                return newViewOption;
+            }
+            return current;
+        });
+    }, [searchParams]);
+
+    // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
+    useEffect(() => {
+        if (sortBy === "position") {
+            return;
+        }
+
+        const compare = (a: Task, b: Task) => {
+            if (sortBy === "status") {
+                const statusOrder = ORDERED_STATUSES;
+                const mapStatus = (s: string) => {
+                    const index = Object.values(STATUS_TO_LABEL).indexOf(s);
+                    return index === -1 ? statusOrder.length : index;
+                };
+                return mapStatus(a.status) - mapStatus(b.status);
+            }
+            if (sortBy === "priority") {
+                const priorityOrder = ["urgent", "high", "medium", "low"];
+                const aIndex = priorityOrder.indexOf(a.priority || "medium");
+                const bIndex = priorityOrder.indexOf(b.priority || "medium");
+                return aIndex - bIndex;
+            }
+            if (sortBy === "assignee") {
+                const aName = a.assignees?.[0]?.name || "zzzz";
+                const bName = b.assignees?.[0]?.name || "zzzz";
+                return aName.localeCompare(bName);
+            }
+            if (sortBy === "title") {
+                return (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" });
+            }
+            return 0;
+        };
+
+        let recalculatedRef: Task[] = [];
+        setLocalTasks((prev) => {
+            const groupedByKey: Record<string, Task[]> = {};
+            prev.forEach((task) => {
+                const key = getTaskGroupKey(task);
+                if (!groupedByKey[key]) groupedByKey[key] = [];
+                groupedByKey[key].push(task);
+            });
+
+            const recalculated: Task[] = [];
+            Object.entries(groupedByKey).forEach(([_, tasks]) => {
+                const sorted = [...tasks].sort(compare);
+                let pos = 0;
+                sorted.forEach((task) => {
+                    pos += 1;
+                    recalculated.push({ ...task, position: pos * 1000 });
+                });
+            });
+
+            recalculatedRef = recalculated;
+            return recalculated;
+        });
+
+        if (recalculatedRef.length) {
+            localTasksRef.current = recalculatedRef;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sortBy, viewOption]);
+
+    // Função para persistir a ordem visual atual no banco
+    const handlePersistSortOrder = useCallback(async () => {
+        // Pega as tarefas na ordem visual atual (como aparecem na tela)
+        // Precisamos usar a ordem dos grupos para garantir que pegamos na ordem correta
+        const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
+        
+        if (currentTasks.length === 0) {
+            toast.info("Nenhuma tarefa para salvar");
+            return;
+        }
+
+        // Se há ordenação aplicada, precisamos reordenar as tarefas conforme a ordem visual
+        // A ordem visual é determinada pelo sortBy e pelos grupos
+        let tasksInVisualOrder: Task[] = [];
+        
+        if (sortBy !== "position") {
+            // Aplicar a mesma lógica de ordenação que é usada no listGroups
+            const compare = (a: Task, b: Task) => {
+                if (sortBy === "status") {
+                    const statusOrder = ORDERED_STATUSES;
+                    const mapStatus = (s: string) => {
+                        const index = Object.values(STATUS_TO_LABEL).indexOf(s);
+                        return index === -1 ? statusOrder.length : index;
+                    };
+                    return mapStatus(a.status) - mapStatus(b.status);
+                }
+                if (sortBy === "priority") {
+                    const priorityOrder = ["urgent", "high", "medium", "low"];
+                    const aIndex = priorityOrder.indexOf(a.priority || "medium");
+                    const bIndex = priorityOrder.indexOf(b.priority || "medium");
+                    return aIndex - bIndex;
+                }
+                if (sortBy === "assignee") {
+                    const aName = a.assignees?.[0]?.name || "zzzz";
+                    const bName = b.assignees?.[0]?.name || "zzzz";
+                    return aName.localeCompare(bName);
+                }
+                if (sortBy === "title") {
+                    return (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" });
+                }
+                return 0;
+            };
+
+            // Agrupar por grupo (se aplicável) e ordenar dentro de cada grupo
+            const groupedByKey: Record<string, Task[]> = {};
+            currentTasks.forEach((task) => {
+                const key = getTaskGroupKey(task);
+                if (!groupedByKey[key]) groupedByKey[key] = [];
+                groupedByKey[key].push(task);
+            });
+
+            // Ordenar dentro de cada grupo e depois juntar tudo
+            Object.entries(groupedByKey).forEach(([_, tasks]) => {
+                const sorted = [...tasks].sort(compare);
+                tasksInVisualOrder.push(...sorted);
+            });
+        } else {
+            // Se sortBy é "position", usar a ordem atual (já ordenada por position)
+            tasksInVisualOrder = [...currentTasks].sort((a, b) => {
+                const posA = a.position ?? 0;
+                const posB = b.position ?? 0;
+                return posA - posB;
+            });
+        }
+
+        // Recalcula índices limpos (1000, 2000, 3000...)
+        // Isso "reseta" a bagunça dos floats e deixa tudo espaçado novamente
+        const bulkUpdates = tasksInVisualOrder.map((task, index) => ({
+            id: String(task.id),
+            position: (index + 1) * 1000
+        }));
+
+        // Executa o bulk update com feedback visual via toast.promise
+        const bulkPromise = updateTaskPositionsBulk(bulkUpdates);
+
+        toast.promise(bulkPromise, {
+            loading: "Reorganizando tarefas no banco...",
+            success: "Nova ordem salva com sucesso!",
+            error: "Erro ao salvar ordem. Tente novamente.",
+        });
+
+        try {
+            const result = await bulkPromise;
+
+            if (result?.success) {
+                // Atualizar estado local com as novas posições
+                setLocalTasks((prev) => {
+                    return prev.map((task) => {
+                        const update = bulkUpdates.find((u) => u.id === String(task.id));
+                        if (update) {
+                            return { ...task, position: update.position };
+                        }
+                        return task;
+                    });
+                });
+
+                // Atualizar ref também com as tarefas na ordem correta
+                localTasksRef.current = tasksInVisualOrder.map((task) => {
+                    const update = bulkUpdates.find((u) => u.id === String(task.id));
+                    if (update) {
+                        return { ...task, position: update.position };
+                    }
+                    return task;
+                });
+
+                // Voltar para ordenação manual (position) após salvar
+                setSortBy("position");
+
+                // Invalidar cache e recarregar se necessário
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+            }
+        } catch (error) {
+            console.error("Erro ao persistir ordem:", error);
+        }
+    }, [effectiveWorkspaceId, activeTab, sortBy, viewOption]);
+    // Handler para quando o drag comeca
     const handleDragStart = (event: DragStartEvent) => {
+        // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
+        // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
+        if (!viewOption) {
+            console.warn("⚠️ [handleDragStart] viewOption está undefined. Bloqueando drag.");
+            return;
+        }
+        
+        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
+        if (!isDragEnabled) {
+            toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            return; // Evita iniciar o drag
+        }
+
         const { active } = event;
-        const task = localTasks.find((t) => t.id === active.id);
-        setActiveTask(task || null);
+        // ✅ CORREÇÃO: Normalizar ID para string
+        const activeIdStr = String(active.id);
+        const task = localTasks.find((t) => String(t.id) === activeIdStr);
+        
+        if (!task) {
+            console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
+            return;
+        }
+        
+        setActiveTask(task);
     };
 
     // Handler para quando o drag termina
     const handleDragEnd = async (event: DragEndEvent) => {
+        // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
+        // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
+        if (!viewOption) {
+            console.warn("⚠️ [handleDragEnd] viewOption está undefined. Bloqueando drag.");
+            setActiveTask(null);
+            return;
+        }
+        
+        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
+        if (!isDragEnabled) {
+            toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            setActiveTask(null);
+            return; // Bloqueia a ação lógica se estiver nas views apenas de leitura
+        }
+
         const { active, over } = event;
         setActiveTask(null);
-
+        
+        // ✅ CORREÇÃO: Validar se over existe e tem ID válido
         if (!over) {
+            console.log("ℹ️ [handleDragEnd] Drag cancelado: over é null/undefined");
+            return;
+        }
+        
+        // ✅ CORREÇÃO: Validar se active existe
+        if (!active) {
+            console.warn("⚠️ [handleDragEnd] active é null/undefined");
             return;
         }
 
-        // Verificar se está arrastando um grupo (quando viewOption === "group")
-        if (viewOption === "group" && groupOrder.includes(active.id as string)) {
-            // Reordenar grupos
-            const oldIndex = groupOrder.indexOf(active.id as string);
+        const activeIdStr = String(active.id);
+        const overIdStr = String(over.id);
+        
+        // ✅ CORREÇÃO: Log de debug para diagnóstico
+        console.log("🎯 [handleDragEnd] Iniciando processamento:", {
+            activeId: activeIdStr,
+            overId: overIdStr,
+            viewOption,
+            viewMode,
+            groupedDataKeys: Object.keys(groupedData),
+            kanbanColumnsIds: viewMode === "kanban" ? kanbanColumns.map(c => c.id) : []
+        });
+
+        const findGroupKeyForId = (id: string): string | null => {
+            // ✅ CORREÇÃO: Verificar se o ID é uma chave de grupo diretamente
+            if (Object.keys(groupedData).includes(id)) return id;
             
-            // Verificar se over.id é um grupo ou uma tarefa dentro de um grupo
-            let targetGroupId: string | undefined;
-            
-            // Se over.id está em groupOrder, é um grupo
-            if (groupOrder.includes(over.id as string)) {
-                targetGroupId = over.id as string;
-            } else {
-                // É uma tarefa, encontrar o grupo que contém essa tarefa
-                const targetGroup = Object.entries(groupedData).find(([_, tasks]) =>
-                    tasks.some((t) => t.id === over.id)
-                );
-                targetGroupId = targetGroup?.[0];
-            }
-            
-            if (!targetGroupId) {
-                return;
-            }
-            
-            const newIndex = groupOrder.indexOf(targetGroupId);
-            
-            if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-                const newOrder = arrayMove(groupOrder, oldIndex, newIndex);
-                setGroupOrder(newOrder);
-                // Salvar no localStorage
-                localStorage.setItem("taskGroupOrder", JSON.stringify(newOrder));
-            }
+            // ✅ CORREÇÃO: Buscar em todas as tarefas agrupadas
+            const entry = Object.entries(groupedData).find(([_, tasks]) =>
+                tasks.some((t) => String(t.id) === id)
+            );
+            return entry ? entry[0] : null;
+        };
+
+        const sourceGroupKey = findGroupKeyForId(activeIdStr);
+        let destinationGroupKey = findGroupKeyForId(overIdStr);
+        
+        // ✅ CORREÇÃO: Validação melhorada com logs
+        if (!sourceGroupKey) {
+            console.error("❌ [handleDragEnd] Grupo de origem não encontrado para tarefa:", activeIdStr);
+            toast.error("Erro: Tarefa de origem não encontrada. Recarregue a página.");
             return;
         }
-
-        // Encontrar grupo de origem
-        const sourceGroup = Object.entries(groupedData).find(([_, tasks]) =>
-            tasks.some((task) => task.id === active.id)
-        );
-
-        if (!sourceGroup) {
-            return;
-        }
-
-        const [sourceGroupKey, sourceTasks] = sourceGroup;
-        const sourceTaskIndex = sourceTasks.findIndex((task) => task.id === active.id);
-        const task = sourceTasks[sourceTaskIndex];
-
-        if (sourceTaskIndex === -1 || !task) {
-            return;
-        }
-
-        // Verificar se está arrastando para um grupo (drop zone) ou para uma tarefa
-        let destinationGroupKey: string | undefined;
-
-        // Verificar se over.id é um ID de grupo
-        const isGroupId = Object.keys(groupedData).includes(over.id as string);
-        if (isGroupId) {
-            destinationGroupKey = over.id as string;
-        } else {
-            // É uma tarefa, encontrar o grupo que contém essa tarefa
-            destinationGroupKey = Object.entries(groupedData).find(([_, tasks]) =>
-                tasks.some((t) => t.id === over.id)
-            )?.[0];
-        }
-
+        
+        // ✅ CORREÇÃO: Se overIdStr é uma coluna (não uma tarefa), usar diretamente
+        // No modo kanban, o over.id pode ser o ID da coluna (DroppableColumn)
         if (!destinationGroupKey) {
+            // Verificar se é uma coluna do kanban
+            if (viewMode === "kanban") {
+                const kanbanColumn = kanbanColumns.find(col => col.id === overIdStr);
+                if (kanbanColumn) {
+                    destinationGroupKey = kanbanColumn.id;
+                    console.log("ℹ️ [handleDragEnd] Detectado ID de coluna kanban como destino:", destinationGroupKey);
+                } else if (Object.keys(groupedData).includes(overIdStr)) {
+                    destinationGroupKey = overIdStr;
+                    console.log("ℹ️ [handleDragEnd] Usando ID de coluna como destino:", destinationGroupKey);
+                }
+            } else if (Object.keys(groupedData).includes(overIdStr)) {
+                destinationGroupKey = overIdStr;
+                console.log("ℹ️ [handleDragEnd] Usando ID de coluna como destino:", destinationGroupKey);
+            }
+        }
+        
+        if (!destinationGroupKey) {
+            console.error("❌ [handleDragEnd] Grupo de destino não encontrado para ID:", overIdStr);
+            console.error("❌ [handleDragEnd] Debug info:", {
+                overIdStr,
+                groupedDataKeys: Object.keys(groupedData),
+                kanbanColumnsIds: viewMode === "kanban" ? kanbanColumns.map(c => c.id) : [],
+                viewMode
+            });
+            toast.error("Erro: Destino inválido. Tente arrastar para uma coluna válida.");
             return;
         }
 
-        // Se está no mesmo grupo, apenas reordenar
-        if (sourceGroupKey === destinationGroupKey) {
-            const destinationTasks = groupedData[destinationGroupKey];
-            const overTaskIndex = destinationTasks.findIndex((t) => t.id === over.id);
-            const newIndex = overTaskIndex === -1 ? destinationTasks.length - 1 : overTaskIndex;
+        const destinationTasks = groupedData[destinationGroupKey] || [];
+        
+        // ✅ CORREÇÃO: Se overIdStr é o ID de uma coluna (não uma tarefa), adicionar no final
+        // Se overIdStr é uma chave de groupedData, significa que arrastou para a coluna vazia
+        const isOverColumn = Object.keys(groupedData).includes(overIdStr);
+        let overIndex = -1;
+        
+        if (isOverColumn) {
+            // Arrastou para a coluna vazia, adicionar no final
+            overIndex = -1;
+            console.log("ℹ️ [handleDragEnd] Arrastou para coluna vazia, adicionando no final");
+        } else {
+            // Arrastou sobre uma tarefa, encontrar o índice
+            overIndex = destinationTasks.findIndex((t) => String(t.id) === overIdStr);
+        }
+        
+        const targetIndex = overIndex >= 0 ? overIndex : destinationTasks.length;
 
-            if (sourceTaskIndex === newIndex) {
-                return;
-            }
+        const isSameGroup = sourceGroupKey === destinationGroupKey;
 
-            // Optimistic update: usar arrayMove dentro do grupo
-            const newTasks = [...localTasks];
-            const tasksInGroup = newTasks.filter((t) => {
-                return getTaskGroupKey(t) === destinationGroupKey;
-            });
+        const updateData: {
+            status?: "todo" | "in_progress" | "done" | "archived" | "review" | "correction";
+            priority?: "low" | "medium" | "high" | "urgent";
+            group_id?: string | null;
+            assignee_id?: string | null;
+        } = {};
 
-            const groupTaskIds = tasksInGroup.map((t) => t.id);
-            const oldGroupIndex = groupTaskIds.indexOf(active.id as string);
-            const newGroupIndex = overTaskIndex === -1 ? groupTaskIds.length - 1 : groupTaskIds.indexOf(over.id as string);
-
-            if (oldGroupIndex === -1 || newGroupIndex === -1) {
-                return;
-            }
-
-            const reorderedGroupTasks = arrayMove(tasksInGroup, oldGroupIndex, newGroupIndex);
-            
-            // Substituir as tarefas do grupo na lista completa
-            let groupStartIndex = 0;
-            for (let i = 0; i < newTasks.length; i++) {
-                let groupKey: string;
+        if (!isSameGroup) {
+            // Type narrowing: após a guard clause, viewOption só pode ser "status", "priority" ou "group"
+            if (viewOption === "status" || viewOption === "priority" || viewOption === "group") {
                 switch (viewOption) {
                     case "status":
-                        groupKey = newTasks[i].status || "Sem Status";
+                        updateData.status = mapLabelToStatus(destinationGroupKey) as any;
                         break;
-                    case "priority":
-                        const priorityLabels: Record<string, string> = {
-                            "urgent": "Urgente",
-                            "high": "Alta",
-                            "medium": "Média",
-                            "low": "Baixa",
+                    case "priority": {
+                        const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
+                            "Urgente": "urgent",
+                            "Alta": "high",
+                            "Média": "medium",
+                            "Baixa": "low",
+                            "urgente": "urgent",
+                            "alta": "high",
+                            "média": "medium",
+                            "media": "medium",
+                            "baixa": "low",
                         };
-                        const priority = newTasks[i].priority || "medium";
-                        groupKey = priorityLabels[priority] || priority;
+                        const mapped = priorityMap[destinationGroupKey] || (destinationGroupKey as any);
+                        if (mapped) updateData.priority = mapped;
                         break;
+                    }
                     case "group":
-                        groupKey = newTasks[i].group?.name || "Inbox";
+                        updateData.group_id =
+                            destinationGroupKey === "inbox" || destinationGroupKey === "Inbox"
+                                ? null
+                                : destinationGroupKey;
                         break;
-                    case "date":
-                        // Lógica simplificada para encontrar o grupo de data
-                         if (!newTasks[i].dueDate) {
-                            groupKey = "Sem data";
-                        } else {
-                             // ... repetindo lógica de data simplificada para encontrar índice
-                             // Idealmente refatorar para função helper getGroupKey(task, viewOption)
-                             const date = new Date(newTasks[i].dueDate!);
-                             const today = new Date();
-                             today.setHours(0,0,0,0);
-                             if (date < today && !newTasks[i].completed) groupKey = "Atrasadas";
-                             else groupKey = "Futuro"; // Simplificação
-                        }
-                        break;
-                    default:
-                        groupKey = newTasks[i].status || "Sem Status";
-                }
-                if (groupKey === destinationGroupKey) {
-                    groupStartIndex = i;
-                    break;
                 }
             }
+        } else if (viewOption === "group") {
+            // Mesmo grupo: ainda envia group_id para garantir que o RLS permita o update
+            updateData.group_id =
+                destinationGroupKey === "inbox" || destinationGroupKey === "Inbox"
+                    ? null
+                    : destinationGroupKey;
+        }
 
-            // Remover tarefas do grupo antigo
-            const tasksOutsideGroup = newTasks.filter((t) => {
-                return getTaskGroupKey(t) !== destinationGroupKey;
-            });
+        // Reordenar lista local e recalcular posições por grupo
+        let finalState: Task[] = [];
+        const prevLocal = localTasksRef.current;
+        
+        // ✅ Calcular posição ANTES de atualizar o estado (para usar fora do setState)
+        const current = [...localTasksRef.current];
+        const movingIndex = current.findIndex((t) => String(t.id) === activeIdStr);
+        if (movingIndex === -1) return;
 
-            // Inserir tarefas reordenadas na posição correta
-            const finalTasks = [
-                ...tasksOutsideGroup.slice(0, groupStartIndex),
-                ...reorderedGroupTasks,
-                ...tasksOutsideGroup.slice(groupStartIndex),
-            ];
+        const moving = { ...current[movingIndex] };
+        const currentWithoutMoving = [...current];
+        currentWithoutMoving.splice(movingIndex, 1);
 
-            setLocalTasks(finalTasks);
-
-            // Persistir no backend
-            try {
-                const { updateTaskPosition } = await import("@/lib/actions/tasks");
-                const result = await updateTaskPosition({
-                    taskId: active.id as string,
-                    newPosition: newIndex + 1,
-                });
-
-                if (result.success) {
-                    // Não recarregar todas as tarefas - a atualização otimista já foi feita
-                    // A posição já está correta no estado local
-                } else {
-                    // Reverter em caso de erro
-                    await reloadTasks();
-                    throw new Error(result.error || "Erro ao atualizar posição");
-                }
-            } catch (error) {
-                console.error("Erro ao atualizar posição:", error);
-                // Reverter mudança otimista recarregando dados originais
-                await reloadTasks();
-            }
-        } else {
-            // Mudando de grupo - atualizar status/priority/assignee
-            const newTasks = [...localTasks];
-            const taskToUpdate = newTasks.find((t) => t.id === active.id);
-            const previousTasksState = [...localTasks]; // Snapshot para rollback
-
-            if (!taskToUpdate) {
-                return;
-            }
-
-
-            // Determinar o que atualizar baseado no viewOption
-            let updateData: { 
-                status?: "todo" | "in_progress" | "done" | "archived";
-                priority?: "low" | "medium" | "high" | "urgent";
-                assignee_id?: string | null;
-                group_id?: string | null;
-            } = {};
-
-            switch (viewOption) {
-                case "status":
-                    // Mapear status customizável para status do banco
-                    updateData.status = mapStatusToDb(destinationGroupKey);
-                    break;
-                case "priority":
-                    // Mapear nomes em português de volta para valores do banco
-                    const priorityMapReverse: Record<string, "low" | "medium" | "high" | "urgent"> = {
-                        "urgente": "urgent",
-                        "alta": "high",
-                        "média": "medium",
-                        "baixa": "low",
-                    };
-                    const priority = priorityMapReverse[destinationGroupKey.toLowerCase()];
-                    if (priority) {
-                        updateData.priority = priority;
-                    }
-                    break;
-                case "group":
-                    // Atualizar group_id quando move entre grupos customizados
-                    if (destinationGroupKey === "inbox") {
-                        updateData.group_id = null;
-                    } else {
-                        // Verificar se é um UUID válido (grupo do banco)
-                        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                        if (uuidRegex.test(destinationGroupKey)) {
-                            updateData.group_id = destinationGroupKey;
-                        }
-                    }
-                    break;
-            }
-
-            // Atualizar tarefa localmente com os valores mapeados
+        // aplicar alterações de grupo/status/priority se mudou de grupo
+        if (!isSameGroup) {
             if (updateData.status) {
-                // Mapear status do banco de volta para status customizável
-                const statusMapReverse: Record<string, string> = {
-                    todo: "Não iniciada",
-                    in_progress: "Em progresso",
-                    review: "Revisão",
-                    correction: "Correção",
-                    done: "Finalizado",
-                    archived: "Arquivado",
-                };
-                taskToUpdate.status = statusMapReverse[updateData.status] || taskToUpdate.status;
+                const statusLabel =
+                    STATUS_TO_LABEL[updateData.status as keyof typeof STATUS_TO_LABEL] || moving.status;
+                moving.status = statusLabel;
             }
-            if (updateData.priority) {
-                taskToUpdate.priority = updateData.priority;
+            if (updateData.priority) moving.priority = updateData.priority;
+            if (updateData.group_id !== undefined) {
+                moving.group = updateData.group_id
+                    ? {
+                          id: updateData.group_id,
+                          name:
+                              availableGroups.find((g) => g.id === updateData.group_id)?.name ||
+                              moving.group?.name ||
+                              "Grupo",
+                          color: availableGroups.find((g) => g.id === updateData.group_id)?.color || moving.group?.color,
+                      }
+                    : undefined;
             }
-            // Para assignee, precisaríamos buscar o ID do membro pelo nome
-            // Por enquanto, apenas atualizamos a posição
+            if (updateData.assignee_id !== undefined) {
+                // Atualizar assignees no estado local
+                if (updateData.assignee_id === null) {
+                    moving.assignees = [];
+                    moving.assigneeId = null;
+                } else {
+                    const member = workspaceMembers.find(m => m.id === updateData.assignee_id);
+                    if (member) {
+                        moving.assignees = [{
+                            name: member.name,
+                            avatar: member.avatar,
+                            id: member.id
+                        }];
+                        moving.assigneeId = member.id;
+                    }
+                }
+            }
+        }
 
-            // O agrupamento será recalculado automaticamente pelo useMemo
-            setLocalTasks(newTasks);
+        const destList = currentWithoutMoving.filter((t) => getTaskGroupKey(t) === destinationGroupKey);
+        const otherList = currentWithoutMoving.filter((t) => getTaskGroupKey(t) !== destinationGroupKey);
 
-            // Persistir no backend
-            try {
-                // Usar updateTaskPosition para atualizar posição e outros campos quando muda de grupo
-                const { updateTaskPosition } = await import("@/lib/actions/tasks");
-                const result = await updateTaskPosition({
-                    taskId: active.id as string,
-                    newPosition: 1, // Nova posição no grupo de destino
-                    status: updateData.status,
-                    priority: updateData.priority,
-                    assignee_id: updateData.assignee_id,
-                    group_id: updateData.group_id,
+        const insertIndex = targetIndex > destList.length ? destList.length : targetIndex;
+        const newDest = [...destList];
+        newDest.splice(insertIndex, 0, moving);
+
+        // ✅ MIDPOINT CALCULATION: Calcular posição apenas para o item movido
+        // Identificar vizinhos na nova posição
+        const prevTask = newDest[insertIndex - 1];
+        const nextTask = newDest[insertIndex + 1];
+
+        // Calcular nova posição usando média entre vizinhos
+        const MIN_DELTA = 0.00001; // Precisão mínima antes de forçar re-index
+        let calculatedPosition: number;
+
+        if (!prevTask && !nextTask) {
+            // Lista estava vazia ou é o único item
+            calculatedPosition = 1000;
+        } else if (!prevTask) {
+            // Moveu para o TOPO (antes do primeiro)
+            const nextPos = nextTask.position ?? 0;
+            calculatedPosition = nextPos > 0 ? nextPos / 2 : 500;
+            // Garantir que não seja zero ou negativo
+            if (calculatedPosition <= 0) calculatedPosition = 500;
+        } else if (!nextTask) {
+            // Moveu para o FINAL (depois do último)
+            const prevPos = prevTask.position ?? 0;
+            calculatedPosition = prevPos > 0 ? prevPos + 1000 : 2000;
+            // Garantir que seja maior que a posição anterior
+            if (calculatedPosition <= prevPos) calculatedPosition = prevPos + 1000;
+        } else {
+            // Moveu para o MEIO (entre A e B)
+            const prevPos = prevTask.position ?? 0;
+            const nextPos = nextTask.position ?? 0;
+            
+            // ✅ CORREÇÃO: Validar se há espaço suficiente entre prevPos e nextPos
+            if (nextPos <= prevPos) {
+                // Colisão detectada: usar posição baseada no índice
+                calculatedPosition = prevPos + 500;
+            } else {
+                calculatedPosition = (prevPos + nextPos) / 2;
+                // ✅ CORREÇÃO: Garantir que a posição calculada seja única
+                if (calculatedPosition <= prevPos || calculatedPosition >= nextPos) {
+                    // Se o cálculo resultou em colisão, usar posição intermediária segura
+                    calculatedPosition = prevPos + (nextPos - prevPos) / 2;
+                }
+            }
+        }
+
+        const recomposed = [...otherList, ...newDest];
+
+        // Atualizar apenas o item movido com a nova posição calculada
+        finalState = recomposed.map((t) => {
+            if (String(t.id) === activeIdStr) {
+                return { ...t, position: calculatedPosition };
+            }
+            // Manter posições existentes dos outros itens
+            return t;
+        });
+
+        // Atualizar estado local
+        setLocalTasks(finalState);
+
+        if (finalState.length) {
+            localTasksRef.current = finalState;
+        }
+
+        // ✅ Obter posição calculada do item movido
+        const movingFinal = finalState.find((t) => String(t.id) === activeIdStr);
+
+        // ✅ Identificar vizinhos para validação de colisão
+        const destListFinal = finalState.filter((t) => getTaskGroupKey(t) === destinationGroupKey);
+        const movingIndexInDest = destListFinal.findIndex((t) => String(t.id) === activeIdStr);
+        const prevTaskFinal = destListFinal[movingIndexInDest - 1];
+        const nextTaskFinal = destListFinal[movingIndexInDest + 1];
+
+        // ✅ Validação de Colisão (Se o espaço ficou pequeno demais)
+        const gap = nextTaskFinal && prevTaskFinal ? (nextTaskFinal.position || 0) - (prevTaskFinal.position || 0) : 1000;
+        const needsRebalance = gap < MIN_DELTA;
+
+        console.log("🎯 [handleDragEnd] Dados do movimento:", {
+            activeId: activeIdStr,
+            targetIndex,
+            destinationTasksLength: destinationTasks.length,
+            calculatedPosition,
+            prevTaskPosition: prevTaskFinal?.position,
+            nextTaskPosition: nextTaskFinal?.position,
+            gap,
+            needsRebalance,
+            isSameGroup,
+            sourceGroupKey,
+            destinationGroupKey
+        });
+
+        try {
+            if (needsRebalance) {
+                // ✅ CASO RARO: O espaço acabou. Precisamos re-indexar tudo (Bulk Update).
+                console.log("⚠️ Espaço esgotado. Re-indexando lista do grupo de destino...");
+                
+                const rebalancedUpdates = destListFinal.map((t, i) => ({
+                    id: String(t.id),
+                    position: (i + 1) * 1000
+                }));
+
+                // Atualizar estado local com posições rebalanceadas
+                setLocalTasks((prev) => {
+                    return prev.map((t) => {
+                        const rebalanced = rebalancedUpdates.find(u => u.id === String(t.id));
+                        if (rebalanced) {
+                            return { ...t, position: rebalanced.position };
+                        }
+                        return t;
+                    });
                 });
 
-                if (result.success && result.data) {
-                    // Atualizar tarefa específica com dados do servidor
-                    const updatedTask = mapTaskFromDB(result.data);
-                    setLocalTasks((prevTasks) =>
-                        prevTasks.map((task) =>
-                            task.id === active.id ? updatedTask : task
-                        )
-                    );
-                    
-                    // Se mudou de grupo, recarregar para garantir sincronização
-                    if (viewOption === "group" && updateData.group_id !== undefined) {
-                        await reloadTasks();
-                    }
-                } else {
-                    // Reverter em caso de erro
-                    setLocalTasks(previousTasksState);
-                    throw new Error(result.error || "Erro ao atualizar tarefa");
+                // ✅ CORREÇÃO: Adicionar tratamento de erro mais robusto para server actions
+                let resBulk;
+                try {
+                    resBulk = await updateTaskPositionsBulk(rebalancedUpdates);
+                } catch (error: any) {
+                    console.error("❌ [handleDragEnd] Erro ao chamar updateTaskPositionsBulk:", error);
+                    toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
+                    await reloadTasks();
+                    return;
                 }
-            } catch (error) {
-                console.error("Erro ao atualizar posição e status:", error);
-                // Reverter para estado anterior ao erro
-                setLocalTasks(previousTasksState);
-                // Recarregar apenas se necessário
-                await reloadTasks();
+                
+                if (!resBulk?.success) {
+                    console.error("❌ Erro fatal no Rebalanceamento:", resBulk?.error);
+                    toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
+                    await reloadTasks();
+                } else {
+                    console.log(`✅ Rebalanceamento concluído! ${rebalancedUpdates.length} tarefas atualizadas.`);
+                }
+            } else {
+                // ✅ CASO PADRÃO (99% das vezes): Salva APENAS o item movido.
+                console.log(`🎯 Posição Calculada: ${calculatedPosition} (Entre ${prevTask?.position || 'início'} e ${nextTask?.position || 'fim'})`);
+                
+                // ✅ CORREÇÃO CRÍTICA: Sempre enviar group_id quando viewOption === "group" para garantir RLS
+                // Mesmo dentro do mesmo grupo, precisamos do group_id para validação de permissões
+                // Preparar group_id: se viewOption é "group", sempre enviar (mesmo se mesmo grupo)
+                const finalGroupId = viewOption === "group" 
+                    ? (destinationGroupKey === "inbox" || destinationGroupKey === "Inbox" 
+                        ? null 
+                        : destinationGroupKey)
+                    : (isSameGroup ? undefined : updateData.group_id);
+                
+                // Atualizar item arrastado (inclui status/priority/group quando muda de grupo)
+                console.log("📤 [handleDragEnd] Enviando update para tarefa ativa:", {
+                    taskId: activeIdStr,
+                    calculatedPosition,
+                    status: isSameGroup ? undefined : updateData.status,
+                    priority: isSameGroup ? undefined : updateData.priority,
+                    group_id: finalGroupId,
+                    viewOption,
+                    isSameGroup,
+                    destinationGroupKey,
+                    sourceGroupKey
+                });
+                
+                // ✅ CORREÇÃO: Adicionar tratamento de erro mais robusto para server actions
+                let resMain;
+                try {
+                    resMain = await updateTaskPosition({
+                        taskId: activeIdStr,
+                        newPosition: calculatedPosition,
+                        status: isSameGroup ? undefined : updateData.status,
+                        priority: isSameGroup ? undefined : updateData.priority,
+                        group_id: finalGroupId,
+                        assignee_id: isSameGroup ? undefined : updateData.assignee_id,
+                        workspace_id: movingFinal?.workspaceId ?? null,
+                    });
+                } catch (error: any) {
+                    console.error("❌ [handleDragEnd] Erro ao chamar updateTaskPosition:", error);
+                    toast.error("Erro ao salvar a nova ordem. Tente novamente.");
+                    await reloadTasks();
+                    return;
+                }
+                
+                if (!resMain?.success) {
+                    console.error("❌ [handleDragEnd] Falha ao salvar posição (item ativo):", resMain?.error);
+                    toast.error("Erro ao salvar a nova ordem. Tente novamente.");
+                    await reloadTasks();
+                } else {
+                    console.log("✅ [handleDragEnd] Tarefa ativa salva com sucesso:", {
+                        taskId: activeIdStr,
+                        calculatedPosition
+                    });
+                }
             }
+        } catch (error) {
+            console.error("Erro ao atualizar posição:", error);
+            await reloadTasks();
         }
     };
 
-    const handleTaskClick = async (taskId: string) => {
-        setSelectedTaskId(taskId);
+    const handleDragCancel = () => {
+        setActiveTask(null);
+    };
+
+    const handleTaskClick = async (taskId: string | number) => {
+        setSelectedTaskId(String(taskId));
         setIsModalOpen(true);
         setIsLoadingTaskDetails(true);
 
         try {
             // Buscar dados completos da tarefa usando getTaskDetails
-            const taskDetails = await getTaskDetails(taskId);
+            const taskDetails = await getTaskDetails(String(taskId));
             
             if (!taskDetails) {
-                console.error("Tarefa não encontrada");
+                console.error("Tarefa nÃ£o encontrada");
                 setIsModalOpen(false);
                 return;
             }
@@ -1135,7 +1993,7 @@ export default function TasksPage() {
                 if (context.audio_url) {
                     contextMessage = {
                         type: "audio" as const,
-                        content: context.message || "Mensagem de áudio",
+                        content: context.message || "Mensagem de Ã¡udio",
                         timestamp: context.timestamp || taskDetails.created_at,
                     };
                 } else if (context.message) {
@@ -1151,7 +2009,7 @@ export default function TasksPage() {
                 }
             }
 
-            // Mapear comentários para atividades
+            // Mapear comentÃ¡rios para atividades
             const activities = taskDetails.comments
                 .filter((c) => c.type === "log" || c.type === "comment")
                 .map((comment) => {
@@ -1213,7 +2071,7 @@ export default function TasksPage() {
                 tags,
                 breadcrumbs,
                 contextMessage,
-                subTasks: [], // Subtarefas não estão implementadas no schema ainda
+                subTasks: [], // Subtarefas nÃ£o estÃ£o implementadas no schema ainda
                 activities,
                 attachments: mappedAttachments,
             });
@@ -1224,8 +2082,11 @@ export default function TasksPage() {
         }
     };
 
+    // ✅ Variável para controlar se drag está habilitado
+    const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
+
     return (
-        <div className="min-h-screen bg-gray-50/50 pb-20">
+        <div className="min-h-screen bg-gray-50/50 pb-20" suppressHydrationWarning>
             {/* HEADER AREA - LINE 1 */}
             <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
                 <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1303,40 +2164,10 @@ export default function TasksPage() {
                         </div>
 
                         {/* Ordenar Por */}
-                        <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
-                            <SelectTrigger className="w-[140px] h-9 px-3 rounded-lg border-solid border-gray-200 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700 shadow-sm transition-colors">
-                                <div className="flex items-center gap-2">
-                                    <ArrowUpDown className="w-4 h-4 text-gray-500" />
-                                    <span>Ordenar</span>
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="status">Status</SelectItem>
-                                <SelectItem value="priority">Prioridade</SelectItem>
-                                <SelectItem value="assignee">Responsável</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
 
                         {/* Agrupar por */}
-                        <Select value={viewOption} onValueChange={(value) => setViewOption(value as ViewOption)}>
-                            <SelectTrigger className={cn(
-                                "w-[140px] h-9 px-3 rounded-lg border-solid text-sm font-medium shadow-sm transition-colors",
-                                viewOption !== "group"
-                                    ? "border-green-500 bg-green-50 text-green-700"
-                                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                            )}>
-                                <div className="flex items-center gap-2">
-                                    <LayoutGrid className={cn("w-4 h-4", viewOption !== "group" ? "text-green-600" : "text-gray-500")} />
-                                    <span>Agrupar</span>
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="group">Personalizado</SelectItem>
-                                <SelectItem value="status">Status</SelectItem>
-                                <SelectItem value="priority">Prioridade</SelectItem>
-                                <SelectItem value="date">Data</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <GroupingMenu />
 
                         <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
 
@@ -1370,342 +2201,68 @@ export default function TasksPage() {
                     </div>
                 </div>
 
-                {/* Conteúdo Principal */}
+                {/* ConteÃºdo Principal */}
                 <div className="relative h-full w-full">
+                    {/* Overlay de carregamento ao trocar de workspace / filtros */}
+                    {isLoadingTasks && (
+                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
+                            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-sm border border-gray-200">
+                                <Loader2 className="w-4 h-4 animate-spin text-green-600" />
+                                <span className="text-xs font-medium text-gray-600">
+                                    Atualizando tarefas...
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
                     <AnimatePresence mode="wait">
                         {viewMode === "list" ? (
-                            <motion.div
-                                key="list"
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                transition={{ duration: 0.2 }}
-                                className="h-full"
-                            >
+                            <div className="h-full">
                                 <DndContext
                                     sensors={sensors}
                                     collisionDetection={closestCenter}
                                     onDragStart={handleDragStart}
                                     onDragEnd={handleDragEnd}
+                                    onDragCancel={handleDragCancel}
                                 >
                                 {viewOption === "group" && groupOrder.length > 0 ? (
                                     <SortableContext
                                         items={groupOrder}
                                         strategy={verticalListSortingStrategy}
-                                >
-                                <div className="space-y-0">
-                        {listGroups.length === 0 && (
-                             <div className="h-[calc(100vh-200px)] flex items-center justify-center">
-                                <EmptyState
-                                    icon={CheckSquare}
-                                    title="Nenhuma tarefa encontrada"
-                                    description="Que tal criar sua primeira tarefa agora?"
-                                    actionLabel="Criar Tarefa"
-                                    onClick={() => setIsModalOpen(true)}
-                                />
-                            </div>
-                        )}
-                    {listGroups.map((group) => (
-                        <TaskGroup
-                            key={group.id}
-                                 id={group.id}
-                            title={group.title}
-                            tasks={group.tasks}
-                                 groupColor={group.groupColor || groupColors[group.id]}
-                            onTaskClick={handleTaskClick}
-                                onRenameGroup={async (groupId, newTitle) => {
-                                    console.log("onRenameGroup chamado:", { groupId, newTitle, viewOption });
-                                    
-                                    if (viewOption !== "group") {
-                                        toast.error("Não é possível editar o nome de grupos automáticos.");
-                                         return;
-                                     }
-                                     
-                                    if (groupId === "inbox" || groupId === "Inbox") {
-                                        toast.error("O grupo padrão Inbox não pode ser renomeado.");
-                                        return;
-                                    }
-
-                                    // Verificar se o groupId é um UUID válido
-                                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                                    if (!uuidRegex.test(groupId)) {
-                                        console.error("ID de grupo inválido:", groupId);
-                                        toast.error("ID de grupo inválido");
-                                        return;
-                                    }
-
-                                    // Optimistic Update
-                                    const oldTasks = [...localTasks];
-                                    
-                                    setLocalTasks((prev) => {
-                                        return prev.map((t) => {
-                                            if (t.group?.id === groupId) {
-                                                return {
-                                                    ...t,
-                                                    group: { ...t.group!, name: newTitle },
-                                                };
-                                            }
-                                            return t;
-                                        });
-                                    });
-
-                                    try {
-                                        console.log("Chamando updateTaskGroup:", { groupId, name: newTitle });
-                                        const result = await updateTaskGroup(groupId, { name: newTitle });
-                                        console.log("Resultado updateTaskGroup:", result);
-                                        
-                                        if (result.success) {
-                                            toast.success("Grupo renomeado com sucesso");
-                                            await loadGroups();
-                                            await reloadTasks(); 
-                                        } else {
-                                            setLocalTasks(oldTasks); // Rollback
-                                            console.error("Erro ao renomear grupo:", result.error);
-                                            toast.error(result.error || "Erro ao renomear grupo");
-                                        }
-                                    } catch (error) {
-                                        setLocalTasks(oldTasks); // Rollback
-                                        console.error("Erro ao renomear grupo:", error);
-                                        toast.error("Erro ao renomear grupo");
-                                    }
-                                }}
-                                onColorChange={async (groupId, color) => {
-                                    if (viewOption !== "group") {
-                                        return;
-                                    }
-                                    
-                                    if (groupId === "inbox" || groupId === "Inbox") {
-                                        return; // Não permitir mudar cor do inbox
-                                    }
-
-                                    // Verificar se o groupId é um UUID válido
-                                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                                    if (!uuidRegex.test(groupId)) {
-                                        toast.error("ID de grupo inválido");
-                                        return;
-                                    }
-
-                                    // Optimistic Update
-                                    const oldTasks = [...localTasks];
-                                    const oldGroupColors = { ...groupColors };
-                                    
-                                    // Atualizar tasks
-                                    setLocalTasks((prev) =>
-                                        prev.map((t) => {
-                                            if (t.group?.id === groupId) {
-                                                return {
-                                                    ...t,
-                                                    group: { ...t.group!, color: color },
-                                                };
-                                            }
-                                            return t;
-                                        })
-                                    );
-                                    
-                                    // Atualizar mapa de cores auxiliar
-                                     setGroupColors((prev) => ({
-                                         ...prev,
-                                         [groupId]: color,
-                                     }));
-
-                                    try {
-                                        const result = await updateTaskGroup(groupId, { color });
-                                        if (result.success) {
-                                            toast.success("Cor do grupo atualizada");
-                                            await loadGroups(); // Recarregar grupos
-                                            await reloadTasks();
-                                        } else {
-                                            // Rollback
-                                            setLocalTasks(oldTasks);
-                                            setGroupColors(oldGroupColors);
-                                            console.error("Erro ao atualizar cor:", result.error);
-                                            toast.error(result.error || "Erro ao atualizar cor do grupo");
-                                        }
-                                    } catch (error) {
-                                        // Rollback
-                                        setLocalTasks(oldTasks);
-                                        setGroupColors(oldGroupColors);
-                                        console.error("Erro ao atualizar cor:", error);
-                                        toast.error("Erro ao atualizar cor do grupo");
-                                    }
-                                 }}
-                                 onDeleteGroup={async (groupId) => {
-                                    if (viewOption !== "group") {
-                                        return;
-                                    }
-                                    
-                                    if (groupId === "inbox" || groupId === "Inbox") {
-                                        toast.error("O grupo Inbox não pode ser deletado.");
-                                        return;
-                                    }
-
-                                    // Verificar se o groupId é um UUID válido
-                                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                                    if (!uuidRegex.test(groupId)) {
-                                        toast.error("ID de grupo inválido");
-                                        return;
-                                    }
-
-                                    try {
-                                        const result = await deleteTaskGroup(groupId);
-                                        if (result.success) {
-                                            toast.success("Grupo deletado com sucesso");
-                                            await loadGroups(); // Recarregar grupos
-                                            await reloadTasks();
-                                        } else {
-                                            console.error("Erro ao deletar grupo:", result.error);
-                                            toast.error(result.error || "Erro ao deletar grupo");
-                                        }
-                                    } catch (error) {
-                                        console.error("Erro ao deletar grupo:", error);
-                                        toast.error("Erro ao deletar grupo");
-                                    }
-                                }}
-                                 onClearGroup={async (groupId) => {
-                                     // Buscar tarefas do grupo atual
-                                     const groupTasks = groupedData[groupId] || [];
-                                     if (groupTasks.length === 0) {
-                                         toast.info("Nenhuma tarefa para limpar neste grupo");
-                                         return;
-                                     }
-                                     
-                                     // Atualização otimista: remover tarefas da UI imediatamente
-                                     const previousTasks = [...localTasks];
-                                     const taskIdsToArchive = groupTasks.map(t => t.id);
-                                     
-                                    setLocalTasks((prev) => prev.filter((t) => {
-                                        // Se viewOption for "group", comparar pelo group.id
-                                        if (viewOption === "group") {
-                                            // Se groupId é "inbox", filtrar tarefas sem grupo (group_id === null)
-                                            if (groupId === "inbox") {
-                                                return t.group?.id !== null && t.group?.id !== undefined;
-                                            }
-                                            // Caso contrário, filtrar tarefas que não pertencem a este grupo
-                                            return t.group?.id !== groupId;
-                                        }
-                                        // Caso contrário, usar getTaskGroupKey
-                                        const taskGroupKey = getTaskGroupKey(t);
-                                        return taskGroupKey !== groupId;
-                                    }));
-                                     
-                                     try {
-                                         const archivePromises = taskIdsToArchive.map((taskId) =>
-                                             updateTask({
-                                                 id: taskId,
-                                                 status: "archived",
-                                             })
-                                         );
-                                         
-                                         await Promise.all(archivePromises);
-                                         await reloadTasks();
-                                         toast.success(`${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`);
-                                     } catch (error) {
-                                         // Rollback em caso de erro
-                                         setLocalTasks(previousTasks);
-                                         await reloadTasks();
-                                         console.error("Erro ao limpar grupo:", error);
-                                         toast.error("Erro ao limpar grupo");
-                                     }
-                                 }}
-                                 onTaskUpdated={reloadTasks}
-                                 onTaskDeleted={reloadTasks}
-                                 onToggleComplete={async (taskId, completed) => {
-                                     // Atualização otimista no estado local
-                                     setLocalTasks((prevTasks) =>
-                                         prevTasks.map((task) =>
-                                             task.id === taskId
-                                                 ? { ...task, completed }
-                                                 : task
-                                         )
-                                     );
-
-                                     // Persistir no backend de forma assíncrona
-                                     try {
-                                         const result = await updateTask({
-                                             id: taskId,
-                                             status: completed ? "done" : "todo",
-                                         });
-
-                                         if (!result.success) {
-                                             // Reverter em caso de erro
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId
-                                                         ? { ...task, completed: !completed }
-                                                         : task
-                                                 )
-                                             );
-                                             console.error("Erro ao atualizar tarefa:", result.error);
-                                         } else if (result.data) {
-                                             // Atualizar com dados do servidor para garantir sincronização
-                                             const updatedTask = mapTaskFromDB(result.data);
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId ? updatedTask : task
-                                                 )
-                                             );
-                                         }
-                                     } catch (error) {
-                                         // Reverter em caso de erro
-                                         setLocalTasks((prevTasks) =>
-                                             prevTasks.map((task) =>
-                                                 task.id === taskId
-                                                     ? { ...task, completed: !completed }
-                                                     : task
-                                             )
-                                         );
-                                         console.error("Erro ao atualizar tarefa:", error);
-                                     }
-                                 }}
-                                    onAddTask={async (title, context) => {
-                                        try {
-                                            // Mapear status customizável para status do banco
-                                            const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
-                                                "Não iniciada": "todo",
-                                                "Em progresso": "in_progress",
-                                                "Revisão": "review",
-                                                "Correção": "correction",
-                                                "Finalizado": "done",
-                                                // Aliases para compatibilidade
-                                                "Backlog": "todo",
-                                                "Triagem": "todo",
-                                                "Execução": "in_progress",
-                                            };
-                                            
-                                            const dbStatus = context.status 
-                                                ? statusMap[context.status] || "todo"
-                                                : undefined;
-
-                                            // Se viewOption for "group", usar o ID do grupo atual
-                                            const groupId = viewOption === "group" && group.id !== "inbox" && group.id !== "Inbox" 
-                                                ? group.id 
-                                                : undefined;
-
-                                            const result = await createTask({
-                                                title,
-                                                status: dbStatus as any, // Inclui "review" e "correction"
-                                                priority: context.priority as any,
-                                                workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
-                                                assignee_id: context.assigneeId,
-                                                due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
-                                                group_id: groupId,
-                                            });
-
-                                        if (result.success && result.data) {
-                                            // Recarregar tarefas do banco para garantir sincronização
-                                            await reloadTasks();
-                                        } else {
-                                            console.error("Erro ao criar tarefa:", result.error);
-                                            if (result.error === "Usuário não autenticado") {
-                                                router.push("/login");
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.error("Erro ao criar tarefa:", error);
-                                    }
-                            }}
-                            groupBy={viewOption}
-                        />
+                                    >
+                                        <div className="space-y-0">
+                                            {listGroups.length === 0 && (
+                                                <div className="h-[calc(100vh-200px)] flex items-center justify-center">
+                                                    <EmptyState
+                                                        icon={CheckSquare}
+                                                        title="Nenhuma tarefa encontrada"
+                                                        description="Que tal criar sua primeira tarefa agora?"
+                                                        actionLabel="Criar Tarefa"
+                                                        onClick={() => setIsModalOpen(true)}
+                                                    />
+                                                </div>
+                                            )}
+                                            {listGroups.map((group) => (
+                                                <TaskGroup
+                                                    key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
+                                                    id={group.id}
+                                                    title={group.title}
+                                                    tasks={group.tasks}
+                                                    groupColor={group.groupColor || groupColors[group.id]}
+                                                    onTaskClick={handleTaskClick}
+                                                    isDragDisabled={isDragDisabled}
+                                                    onTaskUpdated={handleTaskUpdated}
+                                                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                    onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                    onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
+                                                    members={workspaceMembers}
+                                                    onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                    onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                    onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                    onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                    showGroupActions={viewOption === "group"}
+                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                />
                                             ))}
                                         </div>
                                     </SortableContext>
@@ -1730,302 +2287,21 @@ export default function TasksPage() {
                                                 tasks={group.tasks}
                                                 groupColor={group.groupColor || groupColors[group.id]}
                                                 onTaskClick={handleTaskClick}
-                                                isGroupSortable={viewOption === "group"}
-                                                onRenameGroup={async (groupId, newTitle) => {
-                                                    console.log("onRenameGroup chamado:", { groupId, newTitle, viewOption });
-                                                    
-                                                    if (viewOption !== "group") {
-                                                        toast.error("Não é possível editar o nome de grupos automáticos.");
-                                                        return;
-                                                    }
-                                                    
-                                                    if (groupId === "inbox" || groupId === "Inbox") {
-                                                        toast.error("O grupo padrão Inbox não pode ser renomeado.");
-                                                        return;
-                                                    }
-
-                                                    // Verificar se o groupId é um UUID válido
-                                                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                                                    if (!uuidRegex.test(groupId)) {
-                                                        console.error("ID de grupo inválido:", groupId);
-                                                        toast.error("ID de grupo inválido");
-                                                        return;
-                                                    }
-
-                                                    // Optimistic Update
-                                                    const oldTasks = [...localTasks];
-                                                    
-                                                    setLocalTasks((prev) => {
-                                                        return prev.map((t) => {
-                                                            if (t.group?.id === groupId) {
-                                                                return {
-                                                                    ...t,
-                                                                    group: { ...t.group!, name: newTitle },
-                                                                };
-                                                            }
-                                                            return t;
-                                                        });
-                                                    });
-
-                                                    try {
-                                                        console.log("Chamando updateTaskGroup:", { groupId, name: newTitle });
-                                                        const result = await updateTaskGroup(groupId, { name: newTitle });
-                                                        console.log("Resultado updateTaskGroup:", result);
-                                                        
-                                                        if (result.success) {
-                                                            toast.success("Grupo renomeado com sucesso");
-                                                            await loadGroups();
-                                                            await reloadTasks(); 
-                                                        } else {
-                                                            setLocalTasks(oldTasks); // Rollback
-                                                            console.error("Erro ao renomear grupo:", result.error);
-                                                            toast.error(result.error || "Erro ao renomear grupo");
-                                                        }
-                                                    } catch (error) {
-                                                        setLocalTasks(oldTasks); // Rollback
-                                                        console.error("Erro ao renomear grupo:", error);
-                                                        toast.error("Erro ao renomear grupo");
-                                                    }
-                                                }}
-                                                onColorChange={async (groupId, color) => {
-                                                    if (viewOption !== "group") {
-                                                        return; // Não permitir mudar cor de grupos automáticos
-                                                    }
-                                                    
-                                                    if (groupId === "inbox" || groupId === "Inbox") {
-                                                        return; // Não permitir mudar cor do inbox
-                                                    }
-
-                                                    // Verificar se o groupId é um UUID válido
-                                                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                                                    if (!uuidRegex.test(groupId)) {
-                                                        toast.error("ID de grupo inválido");
-                                                        return;
-                                                    }
-
-                                                    // Optimistic Update
-                                                    const oldTasks = [...localTasks];
-                                                    const oldGroupColors = { ...groupColors };
-                                                    
-                                                    // Atualizar tasks
-                                                    setLocalTasks((prev) =>
-                                                        prev.map((t) => {
-                                                            if (t.group?.id === groupId) {
-                                                                return {
-                                                                    ...t,
-                                                                    group: { ...t.group!, color },
-                                                                };
-                                                            }
-                                                            return t;
-                                                        })
-                                                    );
-                                                    
-                                                    // Atualizar cores locais
-                                                    setGroupColors((prev) => ({
-                                                        ...prev,
-                                                        [groupId]: color,
-                                                    }));
-
-                                                    try {
-                                                        const result = await updateTaskGroup(groupId, { color });
-                                                        if (result.success) {
-                                                            toast.success("Cor do grupo atualizada");
-                                                            await loadGroups();
-                                                            await reloadTasks();
-                                                        } else {
-                                                            // Rollback
-                                                            setLocalTasks(oldTasks);
-                                                            setGroupColors(oldGroupColors);
-                                                            console.error("Erro ao atualizar cor:", result.error);
-                                                            toast.error(result.error || "Erro ao atualizar cor do grupo");
-                                                        }
-                                                    } catch (error) {
-                                                        // Rollback
-                                                        setLocalTasks(oldTasks);
-                                                        setGroupColors(oldGroupColors);
-                                                        console.error("Erro ao atualizar cor:", error);
-                                                        toast.error("Erro ao atualizar cor do grupo");
-                                                    }
-                                                }}
-                                                onDeleteGroup={async (groupId) => {
-                                                    if (viewOption !== "group") {
-                                                        return;
-                                                    }
-                                                    
-                                                    if (groupId === "inbox" || groupId === "Inbox") {
-                                                        toast.error("O grupo Inbox não pode ser deletado.");
-                                                        return;
-                                                    }
-
-                                                    // Verificar se o groupId é um UUID válido
-                                                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                                                    if (!uuidRegex.test(groupId)) {
-                                                        toast.error("ID de grupo inválido");
-                                                        return;
-                                                    }
-
-                                                    try {
-                                                        const result = await deleteTaskGroup(groupId);
-                                                        if (result.success) {
-                                                            toast.success("Grupo deletado com sucesso");
-                                                            await loadGroups(); // Recarregar grupos
-                                                            await reloadTasks();
-                                                        } else {
-                                                            console.error("Erro ao deletar grupo:", result.error);
-                                                            toast.error(result.error || "Erro ao deletar grupo");
-                                                        }
-                                                    } catch (error) {
-                                                        console.error("Erro ao deletar grupo:", error);
-                                                        toast.error("Erro ao deletar grupo");
-                                     }
-                                 }}
-                                 onClearGroup={async (groupId) => {
-                                                    // Buscar tarefas do grupo atual
-                                     const groupTasks = groupedData[groupId] || [];
-                                                    if (groupTasks.length === 0) {
-                                                        toast.info("Nenhuma tarefa para limpar neste grupo");
-                                                        return;
-                                                    }
-                                                    
-                                                    // Atualização otimista: remover tarefas da UI imediatamente
-                                                    const previousTasks = [...localTasks];
-                                                    const taskIdsToArchive = groupTasks.map(t => t.id);
-                                                    
-                                                    setLocalTasks((prev) => prev.filter((t) => {
-                                                        // Se viewOption for "group", comparar pelo group.id
-                                                        if (viewOption === "group") {
-                                                            // Se groupId é "inbox", filtrar tarefas sem grupo (group_id === null)
-                                                            if (groupId === "inbox") {
-                                                                return t.group?.id !== null && t.group?.id !== undefined;
-                                                            }
-                                                            // Caso contrário, filtrar tarefas que não pertencem a este grupo
-                                                            return t.group?.id !== groupId;
-                                                        }
-                                                        // Caso contrário, usar getTaskGroupKey
-                                                        const taskGroupKey = getTaskGroupKey(t);
-                                                        return taskGroupKey !== groupId;
-                                                    }));
-                                                    
-                                                    try {
-                                                        const archivePromises = taskIdsToArchive.map((taskId) =>
-                                             updateTask({
-                                                                id: taskId,
-                                                 status: "archived",
-                                             })
-                                         );
-                                         
-                                         await Promise.all(archivePromises);
-                                         await reloadTasks();
-                                                        toast.success(`${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`);
-                                     } catch (error) {
-                                                        // Rollback em caso de erro
-                                                        setLocalTasks(previousTasks);
-                                                        await reloadTasks();
-                                         console.error("Erro ao limpar grupo:", error);
-                                                        toast.error("Erro ao limpar grupo");
-                                     }
-                                 }}
-                                 onTaskUpdated={reloadTasks}
-                                 onTaskDeleted={reloadTasks}
-                                 onToggleComplete={async (taskId, completed) => {
-                                     // Atualização otimista no estado local
-                                     setLocalTasks((prevTasks) =>
-                                         prevTasks.map((task) =>
-                                             task.id === taskId
-                                                 ? { ...task, completed }
-                                                 : task
-                                         )
-                                     );
-
-                                     // Persistir no backend de forma assíncrona
-                                     try {
-                                         const result = await updateTask({
-                                             id: taskId,
-                                             status: completed ? "done" : "todo",
-                                         });
-
-                                         if (!result.success) {
-                                             // Reverter em caso de erro
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId
-                                                         ? { ...task, completed: !completed }
-                                                         : task
-                                                 )
-                                             );
-                                             console.error("Erro ao atualizar tarefa:", result.error);
-                                         } else if (result.data) {
-                                             // Atualizar com dados do servidor para garantir sincronização
-                                             const updatedTask = mapTaskFromDB(result.data);
-                                             setLocalTasks((prevTasks) =>
-                                                 prevTasks.map((task) =>
-                                                     task.id === taskId ? updatedTask : task
-                                                 )
-                                             );
-                                         }
-                                     } catch (error) {
-                                         // Reverter em caso de erro
-                                         setLocalTasks((prevTasks) =>
-                                             prevTasks.map((task) =>
-                                                 task.id === taskId
-                                                     ? { ...task, completed: !completed }
-                                                     : task
-                                             )
-                                         );
-                                         console.error("Erro ao atualizar tarefa:", error);
-                                     }
-                                 }}
-                                    onAddTask={async (title, context) => {
-                                        try {
-                                            // Mapear status customizável para status do banco
-                                            const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
-                                                "Não iniciada": "todo",
-                                                "Em progresso": "in_progress",
-                                                "Revisão": "review",
-                                                "Correção": "correction",
-                                                "Finalizado": "done",
-                                                // Aliases para compatibilidade
-                                                "Backlog": "todo",
-                                                "Triagem": "todo",
-                                                "Execução": "in_progress",
-                                            };
-                                            
-                                            const dbStatus = context.status 
-                                                ? statusMap[context.status] || "todo"
-                                                : undefined;
-
-                                            // Se viewOption for "group", usar o ID do grupo atual
-                                            const groupId = viewOption === "group" && group.id !== "inbox" && group.id !== "Inbox" 
-                                                ? group.id 
-                                                : undefined;
-
-                                            const result = await createTask({
-                                                title,
-                                                status: dbStatus as any, // Inclui "review" e "correction"
-                                                priority: context.priority as any,
-                                                workspace_id: activeTab === "minhas" ? null : undefined, // TODO: Pegar workspace_id real
-                                                assignee_id: context.assigneeId,
-                                                due_date: context.dueDate ? context.dueDate.toISOString() : undefined,
-                                                group_id: groupId,
-                                            });
-
-                                        if (result.success && result.data) {
-                                            // Recarregar tarefas do banco para garantir sincronização
-                                            await reloadTasks();
-                                        } else {
-                                            console.error("Erro ao criar tarefa:", result.error);
-                                            if (result.error === "Usuário não autenticado") {
-                                                router.push("/login");
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.error("Erro ao criar tarefa:", error);
-                                    }
-                            }}
-                            groupBy={viewOption}
-                        />
-                    ))}
-                </div>
+                                                isDragDisabled={isDragDisabled}
+                                                onTaskUpdated={handleTaskUpdated}
+                                                onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
+                                                members={workspaceMembers}
+                                                onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                showGroupActions={viewOption === "group"}
+                                                onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                            />
+                                        ))}
+                                    </div>
                                 )}
                     <DragOverlay>
                         {activeTask ? (
@@ -2035,82 +2311,43 @@ export default function TasksPage() {
                         ) : null}
                     </DragOverlay>
                                 </DndContext>
-                            </motion.div>
+                            </div>
                         ) : (
-                            <motion.div
-                                key="kanban"
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                transition={{ duration: 0.2 }}
-                                className="h-full"
-                            >
-                                <TaskBoard
-                                    columns={kanbanColumns}
-                                    onTaskClick={handleTaskClick}
-                                    onTaskMoved={reloadTasks}
-                                    onToggleComplete={handleToggleComplete}
-                                    onAddTask={async (columnId, title, dueDate, assigneeId) => {
-                                        try {
-                                            // Mapear status/priority baseado no viewOption e columnId
-                                            const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
-                                                "Não iniciada": "todo",
-                                                "Em progresso": "in_progress",
-                                                "Revisão": "review",
-                                                "Correção": "correction",
-                                                "Finalizado": "done",
-                                                // Aliases para compatibilidade
-                                                "Backlog": "todo",
-                                                "Triagem": "todo",
-                                                "Execução": "in_progress",
-                                            };
-
-                                            let dbStatus: "todo" | "in_progress" | "review" | "correction" | "done" | undefined;
-                                            let priority: "low" | "medium" | "high" | "urgent" | undefined;
-                                            let groupId: string | null | undefined;
-
-                                            if (viewOption === "status") {
-                                                dbStatus = statusMap[columnId] || "todo";
-                                            } else if (viewOption === "priority") {
-                                                priority = columnId as "low" | "medium" | "high" | "urgent";
-                                            } else if (viewOption === "group") {
-                                                // Se estiver na visão de grupos, o columnId é o ID do grupo
-                                                // Se for "inbox", groupId é null (explicitamente)
-                                                if (columnId === "inbox" || columnId === "Inbox") {
-                                                    groupId = null;
-                                                } else {
-                                                    groupId = columnId;
-                                                }
-                                                // Status padrão para novas tarefas em grupos
-                                                dbStatus = "todo";
-                                            }
-
-                                            const result = await createTask({
-                                                title,
-                                                status: dbStatus as any, // Inclui "review" e "correction"
-                                                priority: priority,
-                                                assignee_id: assigneeId || undefined,
-                                                due_date: dueDate ? dueDate.toISOString() : undefined,
-                                                workspace_id: activeTab === "minhas" ? null : undefined,
-                                                group_id: groupId,
-                                            });
-
-                                            if (result.success && result.data) {
-                                                await reloadTasks();
-                                            } else {
-                                                console.error("Erro ao criar tarefa:", result.error);
-                                                if (result.error === "Usuário não autenticado") {
-                                                    router.push("/login");
-                                                }
-                                            }
-                                        } catch (error) {
-                                            console.error("Erro ao criar tarefa:", error);
-                                        }
-                                    }}
+                            <div className="h-full" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
+                                {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
+                                <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCenter}
+                                    onDragStart={handleDragStart}
+                                    onDragEnd={handleDragEnd}
+                                    onDragCancel={handleDragCancel}
+                                >
+                                    <TaskBoard
+                                        columns={kanbanColumns}
+                                        onTaskClick={handleTaskClick}
+                                        onTaskMoved={reloadTasks}
+                                        onToggleComplete={handleToggleComplete}
+                                        onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                        isDragDisabled={isDragDisabled}
+                                        onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                        onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                        onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                        onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                        showGroupActions={viewOption === "group"}
+                                        viewOption={viewOption}
+                                    onAddTask={handleAddTaskToKanban}
                                     members={workspaceMembers}
                                     groupBy={viewOption}
                                 />
-                            </motion.div>
+                                    <DragOverlay>
+                                        {activeTask ? (
+                                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
+                                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                                            </div>
+                                        ) : null}
+                                    </DragOverlay>
+                                </DndContext>
+                            </div>
                         )}
                     </AnimatePresence>
                 </div>
@@ -2129,10 +2366,10 @@ export default function TasksPage() {
                 task={taskDetails}
                 mode={selectedTaskId ? "edit" : "create"}
                 onTaskCreated={reloadTasks}
-                onTaskUpdated={reloadTasks}
+                onTaskUpdated={handleTaskUpdated}
             />
 
-            {/* Modal de Criação de Grupo */}
+            {/* Modal de CriaÃ§Ã£o de Grupo */}
             <Dialog open={isCreateGroupModalOpen} onOpenChange={setIsCreateGroupModalOpen}>
                 <DialogContent>
                     <DialogHeader>
@@ -2171,7 +2408,7 @@ export default function TasksPage() {
                                     { name: "Laranja", value: "#f97316", class: "bg-orange-500" },
                                     { name: "Cinza", value: "#64748b", class: "bg-slate-500" },
                                     { name: "Ciano", value: "#06b6d4", class: "bg-cyan-500" },
-                                    { name: "Índigo", value: "#6366f1", class: "bg-indigo-500" },
+                                    { name: "Ãndigo", value: "#6366f1", class: "bg-indigo-500" },
                                 ].map((color) => (
                                     <button
                                         key={color.value}
@@ -2215,3 +2452,6 @@ export default function TasksPage() {
         </div>
     );
 }
+
+
+

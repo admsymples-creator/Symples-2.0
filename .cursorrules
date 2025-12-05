@@ -8,3 +8,24 @@ This is a Next.js 14+ project using App Router, TypeScript, Tailwind CSS, and Su
 - Use TypeScript interfaces for props.
 - Use `lucide-react` for icons.
 - Use `shadcn/ui` for components (if applicable).
+
+# Task Components Architecture
+
+## TaskRowMinify
+- **Layout**: CSS Grid with fixed columns for vertical alignment
+- **Indicators**: Data, Status, Assignee, Comments, Focus (⚡), Urgent (⚠)
+- **Smart Triggers**: Focus (moves to next Sunday) and Urgent (marks as urgent + sets due date to today)
+- **Optimistic UI**: All updates use optimistic UI pattern with rollback on error
+- **Group Color**: Vertical bar indicator on the left side (1px width)
+- **Hover Actions**: Focus, Urgent, and Comments appear on hover within title column
+- **Column Order**: Drag Handle | Title (with hover indicators) | Date | Assignee | Status | Menu
+
+## TaskGroup
+- **Group Color Indicator**: Small colored circle next to group title (via TaskSectionHeader)
+- **Spacing**: `gap-6` between groups, `mt-4` on group headers
+
+## Optimistic UI Pattern
+- Update local state immediately before Server Action
+- Call `onTaskUpdatedOptimistic` callback with updates
+- Rollback on error by calling `onTaskUpdatedOptimistic` with previous values
+- Ensure immutability in state updates (create new array/object references)
