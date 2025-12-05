@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
     DndContext,
     DragOverlay,
@@ -37,6 +37,7 @@ interface TaskListProps {
     workspaceId?: string | null;
     onTaskClick?: (taskId: string | number) => void;
     onTaskUpdated?: () => void;
+    onTaskDeleted?: () => void;
     members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
@@ -59,12 +60,18 @@ const extractColorFromClass = (colorClass?: string): string | undefined => {
     return match ? match[1] : undefined;
 };
 
-export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated, members }: TaskListProps) {
+export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated, onTaskDeleted, members }: TaskListProps) {
     void workspaceId;
     const [tasks, setTasks] = useState<MinimalTask[]>(() => [...initialTasks]);
     const [activeId, setActiveId] = useState<string | null>(null);
     const tasksRef = useRef(tasks);
     tasksRef.current = tasks;
+    
+    // Log quando tasks mudam
+    useEffect(() => {
+        console.log("🟪 [TaskList] Estado tasks mudou, nova quantidade:", tasks.length);
+        console.log("🟪 [TaskList] IDs das tarefas:", tasks.map(t => String(t.id)));
+    }, [tasks]);
 
     // ✅ Atualização otimista: atualiza estado local imediatamente
     const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
@@ -90,12 +97,62 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
         });
     }, []);
 
+    // ✅ Optimistic Delete: Remove tarefa instantaneamente
+    const handleOptimisticDelete = useCallback((taskId: string) => {
+        console.log("🔴 [TaskList] handleOptimisticDelete chamado para taskId:", taskId);
+        console.log("🔴 [TaskList] tasksRef.current.length:", tasksRef.current.length);
+        setTasks((prev) => {
+            console.log("🔴 [TaskList] Tarefas antes de remover:", prev.length);
+            const filtered = prev.filter(t => String(t.id) !== String(taskId));
+            console.log("🔴 [TaskList] Tarefas depois de remover:", filtered.length);
+            console.log("🔴 [TaskList] IDs das tarefas removidas/restantes:", {
+                antes: prev.map(t => String(t.id)),
+                depois: filtered.map(t => String(t.id)),
+                removido: taskId
+            });
+            return filtered;
+        });
+    }, []);
+
+    // ✅ Optimistic Duplicate: Adiciona tarefa duplicada instantaneamente
+    const handleOptimisticDuplicate = useCallback((duplicatedTaskData: any) => {
+        console.log("🟢 [TaskList] handleOptimisticDuplicate chamado com dados:", duplicatedTaskData);
+        // Mapear dados do backend para MinimalTask
+        const newTask: MinimalTask = {
+            id: duplicatedTaskData.id,
+            title: duplicatedTaskData.title,
+            status: duplicatedTaskData.status || 'todo',
+            position: duplicatedTaskData.position || null,
+            dueDate: duplicatedTaskData.due_date,
+            completed: duplicatedTaskData.status === 'done',
+            priority: duplicatedTaskData.priority || 'medium',
+            assignees: duplicatedTaskData.assignee_id ? [
+                {
+                    id: duplicatedTaskData.assignee_id,
+                    name: duplicatedTaskData.assignee?.full_name || duplicatedTaskData.assignee?.email || 'Usuário',
+                    avatar: duplicatedTaskData.assignee?.avatar_url
+                }
+            ] : undefined,
+            commentCount: 0,
+            commentsCount: 0,
+        };
+        
+        console.log("🟢 [TaskList] Nova tarefa mapeada:", newTask);
+        setTasks((prev) => {
+            console.log("🟢 [TaskList] Tarefas antes de adicionar:", prev.length);
+            const updated = [...prev, newTask];
+            console.log("🟢 [TaskList] Tarefas depois de adicionar:", updated.length);
+            return updated;
+        });
+    }, []);
+
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
     const tasksByGroup = useMemo(() => {
+        console.log("🟦 [TaskList] tasksByGroup recalculando, tasks.length:", tasks.length);
         const groups: Record<string, MinimalTask[]> = {};
         GROUPS.forEach((g) => (groups[g.id] = []));
         tasks.forEach((task) => {
@@ -114,6 +171,7 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
             // Criar novos objetos para cada task também (spread operator cria shallow copy)
             newGroups[key] = groups[key].map(task => ({ ...task }));
         });
+        console.log("🟦 [TaskList] tasksByGroup calculado, grupos:", Object.keys(newGroups).map(k => ({ key: k, count: newGroups[k].length })));
         return newGroups;
     }, [tasks]);
 
@@ -211,6 +269,12 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
                 {GROUPS.map((group) => {
                     // ✅ Garantir que sempre passamos uma nova referência de array
                     const groupTasks = tasksByGroup[group.id] || [];
+                    console.log("🟦 [TaskList] Renderizando TaskGroup:", {
+                        groupId: group.id,
+                        tasksCount: groupTasks.length,
+                        hasOnTaskDeletedOptimistic: !!handleOptimisticDelete,
+                        hasOnTaskDuplicatedOptimistic: !!handleOptimisticDuplicate,
+                    });
                     return (
                         <TaskGroup
                             key={group.id}
@@ -218,9 +282,13 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
                             title={group.title}
                             tasks={groupTasks}
                             groupColor={extractColorFromClass(group.color)}
+                            workspaceId={workspaceId}
                             onTaskClick={onTaskClick}
                             onTaskUpdated={onTaskUpdated}
+                            onTaskDeleted={onTaskDeleted}
                             onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                            onTaskDeletedOptimistic={handleOptimisticDelete}
+                            onTaskDuplicatedOptimistic={handleOptimisticDuplicate}
                             members={members}
                         />
                     );

@@ -1,9 +1,9 @@
 "use client";
 
-import React, { memo, useMemo, useState, useEffect } from "react";
+import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, MoreHorizontal, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -14,6 +14,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command,
   CommandEmpty,
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/command";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
-import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES } from "@/lib/config/tasks";
+import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, TASK_STATUS } from "@/lib/config/tasks";
 import { Avatar } from "./Avatar";
 import {
   Tooltip,
@@ -32,6 +33,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TaskActionsMenu } from "./TaskActionsMenu";
+import { InlineTextEdit } from "@/components/ui/inline-text-edit";
 
 interface TaskRowMinifyProps {
   task: {
@@ -42,6 +45,7 @@ interface TaskRowMinifyProps {
     completed?: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    workspace_id?: string | null;
     commentCount?: number;
     commentsCount?: number;
   };
@@ -52,7 +56,10 @@ interface TaskRowMinifyProps {
   onActionClick?: () => void;
   onClick?: (taskId: string | number) => void;
   onTaskUpdated?: () => void;
-  onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+  onTaskDeleted?: () => void;
+  onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ title?: string; dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+  onTaskDeletedOptimistic?: (taskId: string) => void;
+  onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
 }
 
@@ -94,7 +101,10 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskUpdatedOptimistic, members }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
+  // Log para debug
+  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
+  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
   const {
     attributes,
     listeners,
@@ -160,8 +170,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
     position: "relative" as const,
   };
 
-  const menuTriggerId = useMemo(() => `menu-${String(task.id)}`, [task.id]);
-
   // Lógica de Data (mesma do KanbanCard)
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
   const isToday = task.dueDate && isTodayFunc(task.dueDate);
@@ -195,6 +203,20 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   // Configuração Visual do Status
   const dbStatus = mapLabelToStatus(task.status || "Não iniciado");
   const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
+  
+  // Verificar se a tarefa está concluída
+  const isCompleted = dbStatus === TASK_STATUS.DONE || task.completed === true;
+
+  // Memoizar objeto task para TaskActionsMenu (versão simplificada)
+  const taskForActionsMenu = useMemo(() => ({
+    id: String(task.id),
+    title: task.title,
+  }), [task.id, task.title]);
+
+  // Memoizar callback para abrir detalhes
+  const handleOpenDetails = useCallback(() => {
+    onClick?.(task.id);
+  }, [onClick, task.id]);
 
   // Função para parar propagação de eventos
   const stopProp = (e: React.MouseEvent | React.PointerEvent) => {
@@ -312,18 +334,106 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
     }
   };
 
+  // Handler para toggle de conclusão com Optimistic UI
+  const handleToggleComplete = async (checked: boolean) => {
+    const previousStatus = task.status || "Não iniciado";
+    const previousDbStatus = mapLabelToStatus(previousStatus);
+    
+    // Determinar novo status
+    const newStatus = checked ? TASK_STATUS.DONE : (previousDbStatus === TASK_STATUS.DONE ? TASK_STATUS.TODO : previousDbStatus);
+    const newStatusLabel = TASK_CONFIG[newStatus]?.label || (checked ? "Concluido" : previousStatus);
+    
+    // ✅ Optimistic UI: Atualizar interface imediatamente
+    onTaskUpdatedOptimistic?.(task.id, { status: newStatusLabel });
+    
+    try {
+      const result = await updateTask({
+        id: String(task.id),
+        status: newStatus,
+      });
+      
+      if (result.success) {
+        toast.success(checked ? "Tarefa concluída" : "Tarefa reaberta");
+        onTaskUpdated?.();
+      } else {
+        // ❌ Rollback: Restaurar status anterior em caso de erro
+        onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
+        toast.error(result.error || "Erro ao atualizar tarefa");
+      }
+    } catch (error) {
+      // ❌ Rollback: Restaurar status anterior em caso de erro
+      onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
+      toast.error("Erro ao atualizar tarefa");
+      console.error(error);
+    }
+  };
+
+  // Handler para atualizar título com Optimistic UI
+  const handleTitleUpdate = async (newTitle: string) => {
+    // Validar título não vazio
+    if (!newTitle.trim()) {
+      toast.error("O título não pode estar vazio");
+      return;
+    }
+
+    const trimmedTitle = newTitle.trim();
+    
+    // Se não mudou, não fazer nada
+    if (trimmedTitle === task.title) {
+      return;
+    }
+
+    const previousTitle = task.title;
+    
+    // ✅ Optimistic UI: Atualizar interface imediatamente
+    onTaskUpdatedOptimistic?.(task.id, { title: trimmedTitle });
+
+    try {
+      const result = await updateTask({
+        id: String(task.id),
+        title: trimmedTitle,
+      });
+
+      if (result.success) {
+        onTaskUpdated?.();
+      } else {
+        // ❌ Rollback: Restaurar título anterior em caso de erro
+        onTaskUpdatedOptimistic?.(task.id, { title: previousTitle });
+        toast.error(result.error || "Erro ao atualizar título");
+      }
+    } catch (error) {
+      // ❌ Rollback: Restaurar título anterior em caso de erro
+      onTaskUpdatedOptimistic?.(task.id, { title: previousTitle });
+      toast.error("Erro ao atualizar título");
+      console.error(error);
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
         "group grid items-center h-11 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1 relative",
-        "grid-cols-[40px_1fr_90px_32px_100px_40px] gap-1",
-        // Drag | Título (com Focus, Urgente e Comentários) | Data | Responsável | Status | Menu
+        "grid-cols-[40px_24px_1fr_90px_32px_130px_40px] gap-1",
+        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Data | Responsável | Status | Menu
         (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
         disabled && "opacity-75"
       )}
-      onClick={() => onClick?.(task.id)}
+      onClick={(e) => {
+        // Só abrir modal se não for clique no título ou em elementos interativos
+        const target = e.target as HTMLElement;
+        const isTitleClick = target.closest('[data-inline-edit="true"]') ||
+                           target.closest('.cursor-text') || 
+                           target.closest('input') ||
+                           target.closest('[role="textbox"]') ||
+                           target.classList.contains('cursor-text') ||
+                           target.hasAttribute('data-inline-edit');
+        
+        if (!isTitleClick && onClick) {
+          onClick(task.id);
+        }
+      }}
     >
       {/* Barra Lateral Colorida (linha contínua) - APENAS Cor do Grupo */}
       {(groupColorClass || isHexColor) && (
@@ -351,11 +461,32 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
         <GripVertical className="w-4 h-4" />
       </div>
 
+      {/* Checkbox */}
+      <div 
+        onClick={stopProp}
+        onPointerDown={stopProp}
+        className="flex items-center justify-center"
+      >
+        <Checkbox 
+          checked={isCompleted} 
+          onCheckedChange={handleToggleComplete}
+          className="border-gray-200 hover:border-gray-300 transition-colors data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
+        />
+      </div>
+
       {/* Título com indicadores no hover */}
       <div className="flex items-center min-w-0 pr-2 gap-2">
-        <span className="truncate font-medium text-gray-700 text-sm flex-1">
-          {task.title}
-        </span>
+        <div className="flex-1 min-w-0">
+          <InlineTextEdit
+            value={task.title}
+            onSave={handleTitleUpdate}
+            className={cn(
+              "text-sm font-medium text-gray-700",
+              isCompleted && "line-through text-gray-500"
+            )}
+            inputClassName="text-sm font-medium text-gray-700"
+          />
+        </div>
         
         {/* Indicadores que aparecem no hover */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
@@ -430,20 +561,13 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           <PopoverTrigger asChild>
             <div className="flex items-center gap-1.5">
               {task.dueDate ? (
-                <>
-                  <CalendarIcon className={cn("w-3.5 h-3.5", 
-                    isOverdue ? "text-red-600" : 
-                    isToday ? "text-green-600" : 
-                    "text-gray-400"
-                  )} />
-                  <span className={cn("text-xs font-medium whitespace-nowrap",
-                    isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                    isToday ? "text-green-600" : 
-                    "text-gray-500"
-                  )}>
-                    {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
-                  </span>
-                </>
+                <span className={cn("text-xs font-medium whitespace-nowrap",
+                  isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
+                  isToday ? "text-green-600" : 
+                  "text-gray-500"
+                )}>
+                  {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                </span>
               ) : (
                 <span className="text-xs text-gray-400 flex items-center gap-1 hover:text-gray-600">
                   <CalendarIcon className="w-3.5 h-3.5" />
@@ -584,20 +708,16 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       </div>
 
       {/* Coluna: Menu Ações */}
-      <div className="flex items-center justify-center">
-        <button
-          type="button"
-          id={menuTriggerId}
-          suppressHydrationWarning
-          className="rounded p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          aria-label="Abrir ações da tarefa"
-          onClick={(e) => {
-            e.stopPropagation();
-            onActionClick?.();
-          }}
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <TaskActionsMenu
+          task={taskForActionsMenu}
+          onOpenDetails={handleOpenDetails}
+          onTaskUpdated={onTaskUpdated}
+          onTaskDeleted={onTaskDeleted}
+          onTaskDeletedOptimistic={onTaskDeletedOptimistic}
+          onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
+          className="opacity-50 hover:opacity-100 transition-opacity"
+        />
       </div>
     </div>
   );
@@ -613,6 +733,7 @@ export const TaskRowMinify = memo(
       prev.task.status === next.task.status &&
       prev.task.dueDate === next.task.dueDate &&
       prev.task.completed === next.task.completed &&
+      (mapLabelToStatus(prev.task.status || "Não iniciado") === TASK_STATUS.DONE) === (mapLabelToStatus(next.task.status || "Não iniciado") === TASK_STATUS.DONE) &&
       prev.task.priority === next.task.priority &&
       (prev.task.commentCount || 0) === (next.task.commentCount || 0) &&
       (prev.task.commentsCount || 0) === (next.task.commentsCount || 0) &&
@@ -624,7 +745,10 @@ export const TaskRowMinify = memo(
       prev.onClick === next.onClick &&
       prev.onActionClick === next.onActionClick &&
       prev.onTaskUpdated === next.onTaskUpdated &&
-      prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic
+      prev.onTaskDeleted === next.onTaskDeleted &&
+      prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic &&
+      prev.onTaskDeletedOptimistic === next.onTaskDeletedOptimistic &&
+      prev.onTaskDuplicatedOptimistic === next.onTaskDuplicatedOptimistic
     );
   }
 );

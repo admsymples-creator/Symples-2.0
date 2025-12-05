@@ -405,7 +405,6 @@ function KanbanCardComponent({
           onOpenDetails={onClick}
           onTaskUpdated={onTaskUpdated}
           onTaskDeleted={onDelete}
-          members={members}
         />
       </div>
 

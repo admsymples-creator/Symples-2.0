@@ -87,6 +87,7 @@ const TaskListViewComponent = ({
             workspaceId={workspaceId}
             onTaskClick={onTaskClick}
             onTaskUpdated={onTaskUpdated}
+            onTaskDeleted={onTaskDeleted}
             members={members}
         />
     );
