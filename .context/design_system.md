@@ -640,7 +640,35 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
 
-### 14.2. TaskRow (Home) (`components/home/TaskRow.tsx`)
+### 14.2. WorkspaceCard (`components/home/WorkspaceCard.tsx`)
+- **Componente**: Card de workspace na seção "Visão por Workspace" da home
+- **Layout**: Card branco com borda arredondada (`rounded-xl`), sombra suave e hover effect
+- **Estrutura**:
+  - **Header**: Logo do workspace (ou imagem fallback) + Menu dropdown (MoreHorizontal)
+  - **Corpo**: Nome do workspace em destaque
+  - **Progresso da Semana**: 
+    - Título "Progresso da Semana" (uppercase, cinza claro)
+    - Percentual de conclusão (negrito, cinza escuro)
+    - Barra de progresso verde (`bg-green-500`)
+    - Quantidades abaixo da barra, alinhadas à direita: `[finalizadas] / [pendentes]`
+  - **Rodapé**: Avatares dos membros (até 3) + Métricas (tarefas pendentes, comentários)
+- **Funcionalidades**:
+  - **Navegação**: Clique no card navega para `/{slug}/tasks` ou `/{id}/tasks`
+  - **Integração com Contexto**: Atualiza workspace ativo no `SidebarProvider` ao clicar
+  - **Menu Dropdown**: 
+    - "Abrir workspace" (ícone FolderOpen) - navega para tarefas
+    - "Configurações" (ícone Settings) - navega para `/settings` com workspace ativo
+  - **Logo Real**: Usa `logo_url` do workspace quando disponível, fallback para imagens mockadas
+  - **Membros Reais**: Exibe avatares reais dos membros do workspace (até 3), com fallback para avatares mockados
+- **Dados**:
+  - Recebe: `id`, `name`, `slug`, `logo_url`, `pendingCount`, `totalCount`, `members[]`
+  - `pendingCount`: Tarefas pendentes da semana (status != "done" && != "archived")
+  - `totalCount`: Total de tarefas da semana (filtradas por `due_date` entre início e fim da semana)
+  - `completedCount`: Calculado como `totalCount - pendingCount`
+- **Cálculo do Progresso**: `(totalCount - pendingCount) / totalCount * 100`
+- **Estilo**: Hover effect com sombra aumentada e borda verde (`hover:border-green-200`)
+
+### 14.3. TaskRow (Home) (`components/home/TaskRow.tsx`)
 - **Indicador de Horário**: Badge cinza claro ao lado do título
   - Aparece apenas para tarefas pessoais com hora específica
   - Formato: `HH:MM` (24 horas)

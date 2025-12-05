@@ -35,6 +35,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     
     // Calculate progress
     const progress = totalCount > 0 ? ((totalCount - pendingCount) / totalCount) * 100 : 0;
+    const completedCount = totalCount - pendingCount;
 
     const handleCardClick = () => {
         // Atualizar workspace ativo no contexto
@@ -130,7 +131,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
             {/* 4. Indicador de Progresso */}
             <div className="mt-6">
                 <div className="flex justify-between items-end mb-2">
-                    <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Progresso do Time</span>
+                    <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Progresso da Semana</span>
                     <span className="text-xs font-bold text-gray-700">{Math.round(progress)}%</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-full">
@@ -138,6 +139,9 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
                         className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
                         style={{ width: `${progress}%` }}
                     />
+                </div>
+                <div className="flex justify-end mt-1">
+                    <span className="text-xs text-gray-500">{completedCount} / {pendingCount}</span>
                 </div>
             </div>
 
