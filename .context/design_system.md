@@ -142,6 +142,21 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - "Grip" (Drag handle) na esquerda.
   - Botões "Raio" (Semana) e "Exclamação" (Urgente) na direita.
 
+### 7.6. Visão Semanal (DayColumn)
+- **Componente:** `components/home/DayColumn.tsx`
+- **Layout:** Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
+- **Quick Add:** Input no rodapé com seletor de data/hora (`TaskDateTimePicker`)
+  - Ícone de calendário ao lado do campo de texto
+  - Permite selecionar data e hora específica para tarefas pessoais
+  - Atualização imediata ao selecionar (não precisa clicar em "Confirmar")
+- **Ordenação de Tarefas:**
+  1. Tarefas pessoais com horário específico (não 00:00)
+  2. Tarefas pessoais sem horário (00:00 ou sem data)
+  3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Filtro de Workspace:**
+  - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
+  - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
+
 ### 7.3. Modal de Tarefa (Task Detail)
 - **Dimensões:** Widescreen (`max-w-6xl` ou `w-[90vw]`).
 - **Layout:** Split-Screen Rígido.
@@ -296,6 +311,15 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Preview de imagens e documentos
   - Estados de upload (loading, success, error)
 
+- **TaskDateTimePicker (`components/tasks/pickers/TaskDateTimePicker.tsx`):**
+  - Seletor de data e hora para tarefas pessoais
+  - Popover com calendário e seletores de hora/minuto
+  - Atalhos rápidos: Hoje, Amanhã, Próxima Semana
+  - Atualização imediata no componente pai ao selecionar data/hora
+  - Renderização apenas no cliente para evitar problemas de hidratação
+  - Formato de exibição: `HH:MM` (24 horas)
+  - Opções de minuto: 0, 15, 30, 45
+
 - **TaskBoard (`components/tasks/TaskBoard.tsx`):**
   - Board Kanban com drag & drop (@dnd-kit)
   - Colunas com scroll interno
@@ -323,6 +347,24 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
     - Rollback automático em caso de erro
     - Garantia de imutabilidade em atualizações de estado
     - Toast de feedback (sucesso/erro) para melhor UX
+
+- **TaskRow (Home/Dashboard) (`components/home/TaskRow.tsx`):**
+  - Componente específico para visão semanal da home
+  - **Indicador de Horário**: Badge cinza claro ao lado do título mostrando hora (HH:MM) para tarefas pessoais com hora específica
+    - Aparece apenas quando `hasSpecificTime` é true (não é 00:00)
+    - Estilo: `text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100`
+    - Tooltip com horário completo ao passar o mouse
+  - **Badge de Workspace**: Badge colorido ao lado do título para tarefas de workspace
+    - Cor gerada a partir do `workspace_id` usando hash HSL
+    - Estilo: `text-[10px] font-medium px-1.5 py-0.5 rounded text-white`
+    - Truncado com `max-w-[100px]` para nomes longos
+  - **Ações no Hover**:
+    - Editar (lápis)
+    - Calendário (apenas tarefas pessoais) - abre `TaskDateTimePicker` para editar data/hora
+    - Excluir (lixeira)
+    - Ir para detalhes (seta direita, apenas tarefas de workspace) - navega para `/[workspaceSlug]/tasks?taskId=[taskId]`
+    - Mover para Workspace (seta curva, apenas tarefas pessoais)
+  - **Renderização no Cliente**: Componentes Radix UI (DropdownMenu, Popover) renderizam apenas após montagem para evitar problemas de hidratação
 
 - **TaskRowMinify (`components/tasks/TaskRowMinify.tsx`):**
   - **Layout**: CSS Grid com colunas fixas para alinhamento vertical

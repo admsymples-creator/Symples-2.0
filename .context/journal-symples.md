@@ -6,6 +6,80 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - XX:XX (Data a ser preenchida)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Visão Semanal - Seletor de Data/Hora e Melhorias
+- **TaskDateTimePicker**: Novo componente para seleção de data e hora
+  - Popover com calendário e seletores de hora (0-23) e minuto (0, 15, 30, 45)
+  - Atalhos rápidos: Hoje, Amanhã, Próxima Semana
+  - Atualização imediata no componente pai ao selecionar data ou ajustar hora
+  - Renderização apenas no cliente para evitar problemas de hidratação do React
+  - Formato de exibição: `HH:MM` (24 horas)
+  
+- **DayColumn - Seletor de Data/Hora no Quick Add**:
+  - Ícone de calendário clicável ao lado do campo de adicionar tarefa
+  - Permite definir data e hora específica para tarefas pessoais
+  - Data/hora selecionada é aplicada automaticamente ao criar tarefas
+  - Limpa seleção após criar tarefas
+
+- **TaskRow (Home) - Indicador de Horário**:
+  - Badge cinza claro ao lado do título mostrando hora (HH:MM) para tarefas pessoais
+  - Aparece apenas quando a tarefa tem hora específica (não é 00:00)
+  - Estilo minimalista: `text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100`
+  - Tooltip com horário completo ao passar o mouse
+
+- **TaskRow (Home) - Badge de Workspace**:
+  - Badge colorido ao lado do título para tarefas de workspace
+  - Cor gerada a partir do `workspace_id` usando hash HSL
+  - Exibe nome do workspace truncado (`max-w-[100px]`)
+  - Estilo: `text-[10px] font-medium px-1.5 py-0.5 rounded text-white`
+
+- **TaskRow (Home) - Ações Aprimoradas**:
+  - Botão de calendário (apenas tarefas pessoais) para editar data/hora
+  - Botão "Ir" (seta direita, apenas tarefas de workspace) para navegar aos detalhes
+  - Navegação para `/[workspaceSlug]/tasks?taskId=[taskId]`
+  - Renderização condicional para evitar problemas de hidratação
+
+- **Ordenação de Tarefas na Visão Semanal**:
+  - Ordem implementada: pessoais com horário > pessoais sem horário > workspace
+  - Função `sortedTasks` ordena antes de renderizar
+  - Mantém ordem original dentro de cada grupo
+
+- **Correção de Filtro de Tarefas de Workspace**:
+  - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
+  - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
+  - Implementado em `getWeekTasks` e `getDayTasks` com queries separadas
+
+#### 🔧 Correções Técnicas
+- **Problemas de Hidratação do React**:
+  - Componentes Radix UI (Popover, DropdownMenu) renderizam apenas após montagem
+  - Estado `isMounted` para detectar quando componente está no cliente
+  - Evita mismatch de IDs entre servidor e cliente
+
+#### 📝 Arquivos Modificados
+- `components/tasks/pickers/TaskDateTimePicker.tsx`: Novo componente (254 linhas)
+- `components/home/DayColumn.tsx`: Seletor de data/hora e ordenação
+- `components/home/TaskRow.tsx`: Indicadores, badges e ações
+- `lib/actions/dashboard.ts`: Correção de filtro de tarefas de workspace
+
+### 2. O que está sendo trabalhado no momento
+
+- **Validação e testes das novas funcionalidades**
+  - Testes de seleção de data/hora em diferentes cenários
+  - Validação de ordenação de tarefas
+  - Verificação de filtro de tarefas de workspace
+
+### 3. Próximos passos
+
+- **Melhorias de UX no seletor de data/hora**
+  - Considerar melhor feedback visual ao selecionar data/hora
+  - Adicionar validação de data no passado (se necessário)
+  - Suporte para timezone do usuário
+
+---
+
 ## 2025-12-05 - 16:05
 
 ### 1. Melhorias, bugs e features implementadas em preview

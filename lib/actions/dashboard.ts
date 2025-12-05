@@ -12,12 +12,19 @@ export interface WeekTask extends Task {
   assignee_name?: string | null;
 }
 
+export interface WorkspaceMember {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+}
+
 export interface WorkspaceStats {
   id: string;
   name: string;
   slug: string | null;
   pendingCount: number;
   totalCount: number;
+  members: WorkspaceMember[];
 }
 
 /**
@@ -166,7 +173,38 @@ export async function getWorkspacesWeeklyStats(
       return [];
     }
 
-    // 3. Agregar dados
+    // 3. Buscar membros de cada workspace
+    const { data: allMembers, error: allMembersError } = await supabase
+      .from("workspace_members")
+      .select(`
+        workspace_id,
+        profiles:user_id (
+          id,
+          full_name,
+          avatar_url
+        )
+      `)
+      .in("workspace_id", workspaceIds);
+
+    // Agrupar membros por workspace
+    const membersByWorkspace = new Map<string, WorkspaceMember[]>();
+    if (allMembers && !allMembersError) {
+      allMembers.forEach((m: any) => {
+        if (m.profiles) {
+          const workspaceId = m.workspace_id;
+          if (!membersByWorkspace.has(workspaceId)) {
+            membersByWorkspace.set(workspaceId, []);
+          }
+          membersByWorkspace.get(workspaceId)!.push({
+            id: m.profiles.id,
+            full_name: m.profiles.full_name,
+            avatar_url: m.profiles.avatar_url,
+          });
+        }
+      });
+    }
+
+    // 4. Agregar dados
     const statsMap = new Map<string, WorkspaceStats>();
 
     // Inicializar com os workspaces encontrados
@@ -177,7 +215,8 @@ export async function getWorkspacesWeeklyStats(
                 name: m.workspaces.name,
                 slug: m.workspaces.slug || null,
                 pendingCount: 0,
-                totalCount: 0
+                totalCount: 0,
+                members: membersByWorkspace.get(m.workspace_id) || []
             });
         }
     });

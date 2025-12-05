@@ -4,6 +4,13 @@ import { MoreHorizontal, MessageSquare, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { Avatar } from "@/components/tasks/Avatar";
+
+interface WorkspaceMember {
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+}
 
 interface WorkspaceCardProps {
     id: string;
@@ -11,9 +18,10 @@ interface WorkspaceCardProps {
     slug: string | null;
     pendingCount: number;
     totalCount: number;
+    members?: WorkspaceMember[];
 }
 
-export function WorkspaceCard({ id, name, slug, pendingCount, totalCount }: WorkspaceCardProps) {
+export function WorkspaceCard({ id, name, slug, pendingCount, totalCount, members = [] }: WorkspaceCardProps) {
     const router = useRouter();
     const { setActiveWorkspaceId } = useWorkspace();
     
@@ -94,18 +102,31 @@ export function WorkspaceCard({ id, name, slug, pendingCount, totalCount }: Work
             <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-50">
                 {/* Avatar Group */}
                 <div className="flex -space-x-2 overflow-hidden pl-1">
-                    {[1, 2, 3].map((i) => (
-                        <div 
-                            key={i} 
-                            className="relative inline-block h-6 w-6 rounded-full ring-2 ring-white bg-gray-100"
-                        >
-                            <img
-                                className="h-full w-full rounded-full object-cover"
-                                src={`https://i.pravatar.cc/150?img=${(seed + i * 5) % 70}`}
-                                alt="Member"
+                    {members.length > 0 ? (
+                        members.slice(0, 3).map((member) => (
+                            <Avatar
+                                key={member.id}
+                                name={member.full_name || "Usuário"}
+                                avatar={member.avatar_url || undefined}
+                                size="sm"
+                                className="ring-2 ring-white"
                             />
-                        </div>
-                    ))}
+                        ))
+                    ) : (
+                        // Fallback: mostrar avatares mockados se não houver membros
+                        [1, 2, 3].map((i) => (
+                            <div 
+                                key={i} 
+                                className="relative inline-block h-6 w-6 rounded-full ring-2 ring-white bg-gray-100"
+                            >
+                                <img
+                                    className="h-full w-full rounded-full object-cover"
+                                    src={`https://i.pravatar.cc/150?img=${(seed + i * 5) % 70}`}
+                                    alt="Member"
+                                />
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 {/* Metrics */}

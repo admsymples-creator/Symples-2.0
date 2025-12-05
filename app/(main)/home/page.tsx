@@ -73,6 +73,7 @@ export default async function HomePage() {
                   slug={workspace.slug}
                   pendingCount={workspace.pendingCount}
                   totalCount={workspace.totalCount}
+                  members={workspace.members}
                 />
               ))}
             </div>
