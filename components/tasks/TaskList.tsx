@@ -94,10 +94,16 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
     // ✅ Optimistic Delete: Remove tarefa instantaneamente
     const handleOptimisticDelete = useCallback((taskId: string) => {
         console.log("🔴 [TaskList] handleOptimisticDelete chamado para taskId:", taskId);
+        console.log("🔴 [TaskList] tasksRef.current.length:", tasksRef.current.length);
         setTasks((prev) => {
             console.log("🔴 [TaskList] Tarefas antes de remover:", prev.length);
             const filtered = prev.filter(t => String(t.id) !== String(taskId));
             console.log("🔴 [TaskList] Tarefas depois de remover:", filtered.length);
+            console.log("🔴 [TaskList] IDs das tarefas removidas/restantes:", {
+                antes: prev.map(t => String(t.id)),
+                depois: filtered.map(t => String(t.id)),
+                removido: taskId
+            });
             return filtered;
         });
     }, []);
@@ -140,6 +146,7 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
     );
 
     const tasksByGroup = useMemo(() => {
+        console.log("🟦 [TaskList] tasksByGroup recalculando, tasks.length:", tasks.length);
         const groups: Record<string, MinimalTask[]> = {};
         GROUPS.forEach((g) => (groups[g.id] = []));
         tasks.forEach((task) => {
@@ -158,6 +165,7 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
             // Criar novos objetos para cada task também (spread operator cria shallow copy)
             newGroups[key] = groups[key].map(task => ({ ...task }));
         });
+        console.log("🟦 [TaskList] tasksByGroup calculado, grupos:", Object.keys(newGroups).map(k => ({ key: k, count: newGroups[k].length })));
         return newGroups;
     }, [tasks]);
 
