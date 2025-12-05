@@ -55,6 +55,46 @@ export default async function InvitePage({ params }: InvitePageProps) {
 
   // Caso 1: Usuário NÃO logado
   if (!user) {
+    // Se o convite foi encontrado, mostrar detalhes e opção de signup/login
+    if (invite) {
+      const workspaceName = invite.workspaces ? (invite.workspaces as any).name : "um Workspace";
+      const inviterName = invite.invited_by_profile ? (invite.invited_by_profile as any).full_name : "Alguém";
+      
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-2xl font-bold text-indigo-600">
+                {workspaceName.substring(0, 2).toUpperCase()}
+              </div>
+              <CardTitle>Convite para {workspaceName}</CardTitle>
+              <CardDescription>
+                <strong>{inviterName}</strong> convidou você para participar como <strong>{invite.role}</strong>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Para aceitar este convite, você precisa criar uma conta ou fazer login.
+              </p>
+            </CardContent>
+            <CardFooter className="flex-col gap-3">
+              <Link href={`/signup?invite=${inviteId}`} className="w-full">
+                <Button className="w-full text-lg py-6 bg-indigo-600 hover:bg-indigo-700">
+                  Criar Conta e Aceitar
+                </Button>
+              </Link>
+              <Link href={`/login?next=/invite/${inviteId}`} className="w-full">
+                <Button variant="outline" className="w-full">
+                  Já tenho conta - Entrar
+                </Button>
+              </Link>
+            </CardFooter>
+          </Card>
+        </div>
+      );
+    }
+    
+    // Se não encontrou o convite, mostrar mensagem genérica
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
         <Card className="w-full max-w-md">
@@ -130,6 +170,40 @@ export default async function InvitePage({ params }: InvitePageProps) {
   }
 
   // Caso 3: Usuário logado e convite válido encontrado
+  // Verificar se o usuário já é membro do workspace antes de mostrar o convite
+  if (user) {
+    const { data: existingMember } = await supabase
+      .from("workspace_members")
+      .select("user_id")
+      .eq("workspace_id", (invite as any).workspace_id)
+      .eq("user_id", user.id)
+      .single();
+
+    // Se já é membro, mostrar que já foi aceito
+    if (existingMember) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+          <Card className="w-full max-w-md text-center">
+            <CardHeader>
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              </div>
+              <CardTitle>Você já é membro</CardTitle>
+              <CardDescription>
+                Você já faz parte deste workspace.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="justify-center">
+              <Link href="/home">
+                <Button>Ir para Dashboard</Button>
+              </Link>
+            </CardFooter>
+          </Card>
+        </div>
+      );
+    }
+  }
+
   const workspaceName = invite.workspaces ? (invite.workspaces as any).name : "um Workspace";
   const inviterName = invite.invited_by_profile ? (invite.invited_by_profile as any).full_name : "Alguém";
 

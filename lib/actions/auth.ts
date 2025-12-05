@@ -120,16 +120,80 @@ export async function signInWithEmail(email: string) {
 }
 
 /**
+ * Inicia o fluxo de signup com Magic Link (email)
+ * Funciona igual ao login, mas pode incluir token de convite
+ */
+export async function signupWithEmail(formData: FormData) {
+  try {
+    const email = formData.get('email')?.toString().trim();
+    const inviteToken = formData.get('inviteToken')?.toString();
+
+    if (!email) {
+      return {
+        success: false,
+        message: 'Email é obrigatório',
+      };
+    }
+
+    if (!isValidEmail(email)) {
+      return {
+        success: false,
+        message: 'Email inválido. Por favor, insira um email válido.',
+      };
+    }
+
+    const supabase = await createServerClient();
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    
+    // Incluir invite token na URL de callback se houver
+    let emailRedirectTo = `${baseUrl}/auth/callback`;
+    if (inviteToken) {
+      emailRedirectTo += `?invite=${inviteToken}`;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo,
+      },
+    });
+
+    if (error) {
+      console.error('Erro ao enviar Magic Link para signup:', error);
+      return {
+        success: false,
+        message: error.message || 'Erro ao enviar email de autenticação',
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Email de autenticação enviado! Verifique sua caixa de entrada.',
+    };
+  } catch (error) {
+    console.error('Erro inesperado ao criar conta:', error);
+    return {
+      success: false,
+      message: 'Erro inesperado ao processar criação de conta',
+    };
+  }
+}
+
+/**
  * Inicia o fluxo de login com Google OAuth
+ * @param inviteToken - Token de convite opcional para incluir no callback
  * @returns Objeto com success e message
  */
-export async function signInWithGoogle() {
+export async function signInWithGoogle(inviteToken?: string) {
   try {
     const supabase = await createServerClient()
 
     // Obter a URL base do ambiente
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-    const redirectTo = `${baseUrl}/auth/callback`
+    let redirectTo = `${baseUrl}/auth/callback`;
+    if (inviteToken) {
+      redirectTo += `?invite=${inviteToken}`;
+    }
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
