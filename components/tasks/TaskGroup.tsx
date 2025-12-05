@@ -40,8 +40,11 @@ interface TaskGroupProps {
 
 function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskGroupProps) {
     // Log para debug
+    console.log("🟡 [TaskGroup] Renderizado - id:", id, "tasks.length:", tasks.length);
     console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
     console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
+    console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic:", onTaskDeletedOptimistic);
+    console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic:", onTaskDuplicatedOptimistic);
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
 
