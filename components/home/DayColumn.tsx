@@ -6,6 +6,8 @@ import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
 import { createTask, deleteTask, updateTask } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
+import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
+import { useRouter } from "next/navigation";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -17,8 +19,6 @@ interface DayColumnProps {
   isToday?: boolean;
   workspaces?: { id: string; name: string }[];
 }
-
-import { useRouter } from "next/navigation";
 
 export function DayColumn({
   dayName,
@@ -32,6 +32,7 @@ export function DayColumn({
   const [quickAddValue, setQuickAddValue] = useState("");
   const [isQuickAddFocused, setIsQuickAddFocused] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [selectedDateTime, setSelectedDateTime] = useState<Date | null>(null);
 
   /**
    * Processa texto e detecta se há múltiplas linhas (batch create)
@@ -90,10 +91,18 @@ export function DayColumn({
     setIsCreating(true);
     try {
       let dueDateISO: string | undefined = undefined;
-      if (dateObj) {
+      
+      // Priorizar data/hora selecionada, senão usar dateObj padrão
+      if (selectedDateTime) {
+        dueDateISO = selectedDateTime.toISOString();
+        console.log("Criando tarefa com data/hora selecionada:", dueDateISO, "Data original:", selectedDateTime);
+      } else if (dateObj) {
         const dueDate = new Date(dateObj);
         dueDate.setHours(0, 0, 0, 0);
         dueDateISO = dueDate.toISOString();
+        console.log("Criando tarefa com data padrão do dia:", dueDateISO);
+      } else {
+        console.log("Criando tarefa sem data");
       }
 
       // Criar todas as tarefas em paralelo usando Promise.all
@@ -106,6 +115,9 @@ export function DayColumn({
           is_personal: true,
         })
       );
+      
+      // Limpar data/hora selecionada após criar
+      setSelectedDateTime(null);
 
       const results = await Promise.all(createPromises);
 
@@ -177,6 +189,42 @@ export function DayColumn({
       }
   }
 
+  // Função para verificar se a tarefa tem horário específico
+  const hasSpecificTime = (task: Task): boolean => {
+    if (!task.due_date) return false;
+    const date = new Date(task.due_date);
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    return hours !== 0 || minutes !== 0;
+  };
+
+  // Função para ordenar tarefas: pessoais com horário > pessoais sem horário > workspace
+  const sortedTasks = [...tasks].sort((a, b) => {
+    const aIsPersonal = a.is_personal || !a.workspace_id;
+    const bIsPersonal = b.is_personal || !b.workspace_id;
+    const aHasTime = hasSpecificTime(a);
+    const bHasTime = hasSpecificTime(b);
+
+    // Tarefas pessoais com horário vêm primeiro
+    if (aIsPersonal && aHasTime && !(bIsPersonal && bHasTime)) return -1;
+    if (bIsPersonal && bHasTime && !(aIsPersonal && aHasTime)) return 1;
+
+    // Se ambas são pessoais com horário, manter ordem original
+    if (aIsPersonal && aHasTime && bIsPersonal && bHasTime) return 0;
+
+    // Tarefas pessoais sem horário vêm depois das com horário, mas antes das de workspace
+    if (aIsPersonal && !aHasTime && !bIsPersonal) return -1;
+    if (bIsPersonal && !bHasTime && !aIsPersonal) return 1;
+
+    // Se ambas são pessoais sem horário, manter ordem original
+    if (aIsPersonal && !aHasTime && bIsPersonal && !bHasTime) return 0;
+
+    // Tarefas de workspace vêm por último
+    if (!aIsPersonal && !bIsPersonal) return 0;
+
+    return 0;
+  });
+
   // Determinar cor de fundo baseada no estado
   const bgColor = isToday ? "bg-green-50/20" : "bg-gray-50/50";
 
@@ -197,9 +245,9 @@ export function DayColumn({
       {/* Tasks List - Flex-1 (Ocupa espaço restante) com Scroll */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0 flex flex-col px-3">
         <div className="flex-1">
-          {tasks.length > 0 ? (
+          {sortedTasks.length > 0 ? (
             <div className="px-2 space-y-0"> 
-              {tasks.map((task) => (
+              {sortedTasks.map((task) => (
                 <TaskRow
                   key={task.id}
                   task={task}
@@ -208,6 +256,7 @@ export function DayColumn({
                   onDelete={handleDelete}
                   onEdit={handleEdit}
                   onMoveToWorkspace={handleMoveToWorkspace}
+                  onDateUpdate={() => router.refresh()}
                 />
               ))}
             </div>
@@ -228,7 +277,7 @@ export function DayColumn({
                 isQuickAddFocused && "border-green-500"
               )}
             >
-              <div className="flex items-center gap-3 pl-2">
+              <div className="flex items-center gap-2 pl-2">
                 <div className="w-4 h-4 flex-shrink-0" />
                 {/* Textarea para suportar múltiplas linhas ao colar */}
                 <textarea
@@ -251,6 +300,15 @@ export function DayColumn({
                   className="text-sm h-8 flex-1 bg-transparent border-0 outline-none placeholder:text-gray-400 text-gray-700 focus:placeholder:text-gray-300 disabled:opacity-50 resize-none overflow-hidden py-1.5"
                   style={{ minHeight: '2rem' }}
                 />
+                {/* Date/Time Picker para tarefas pessoais */}
+                <div className="flex-shrink-0">
+                  <TaskDateTimePicker
+                    date={selectedDateTime}
+                    onSelect={setSelectedDateTime}
+                    align="end"
+                    side="top"
+                  />
+                </div>
               </div>
             </div>
           </form>

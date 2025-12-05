@@ -12,11 +12,20 @@ export interface WeekTask extends Task {
   assignee_name?: string | null;
 }
 
+export interface WorkspaceMember {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+}
+
 export interface WorkspaceStats {
   id: string;
   name: string;
+  slug: string | null;
+  logo_url: string | null;
   pendingCount: number;
   totalCount: number;
+  members: WorkspaceMember[];
 }
 
 /**
@@ -47,30 +56,55 @@ export async function getWeekTasks(
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
-    // Buscar tarefas onde:
-    // 1. assignee_id = user.id OU created_by = user.id (minhas tarefas)
-    // 2. due_date está entre start e end
-    const { data: tasks, error } = await supabase
+    // Buscar tarefas pessoais (workspace_id IS NULL)
+    // Aparecem se o usuário criou OU está atribuído
+    const { data: personalTasks, error: personalError } = await supabase
       .from("tasks")
       .select(`
         *,
         workspaces(name),
         assignee:profiles!tasks_assignee_id_fkey(full_name)
       `)
+      .is("workspace_id", null)
       .or(`assignee_id.eq.${user.id},created_by.eq.${user.id}`)
       .gte("due_date", startISO)
-      .lte("due_date", endISO)
-      .order("due_date", { ascending: true })
-      .order("created_at", { ascending: false });
+      .lte("due_date", endISO);
 
-    if (error) {
-      console.error("Erro ao buscar tarefas:", error);
+    // Buscar tarefas de workspace (workspace_id IS NOT NULL)
+    // Aparecem APENAS se o usuário está atribuído (assignee_id = user.id)
+    const { data: workspaceTasks, error: workspaceError } = await supabase
+      .from("tasks")
+      .select(`
+        *,
+        workspaces(name),
+        assignee:profiles!tasks_assignee_id_fkey(full_name)
+      `)
+      .not("workspace_id", "is", null)
+      .eq("assignee_id", user.id) // APENAS tarefas atribuídas ao usuário
+      .gte("due_date", startISO)
+      .lte("due_date", endISO);
+
+    if (personalError || workspaceError) {
+      console.error("Erro ao buscar tarefas:", personalError || workspaceError);
       // Retornar array vazio em caso de erro (não quebrar a UI)
       return [];
     }
 
+    // Combinar resultados
+    const allTasks = [...(personalTasks || []), ...(workspaceTasks || [])];
+
+    // Ordenar por data e depois por data de criação
+    const sortedTasks = allTasks.sort((a, b) => {
+      const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;
+      const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;
+      if (dateA !== dateB) return dateA - dateB;
+      const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return createdB - createdA;
+    });
+
     // Mapear dados para incluir informações relacionadas
-    const weekTasks: WeekTask[] = (tasks || []).map((task: any) => ({
+    const weekTasks: WeekTask[] = sortedTasks.map((task: any) => ({
       ...task,
       workspace_name: task.workspaces?.name || null,
       assignee_name: task.assignee?.full_name || null,
@@ -109,7 +143,9 @@ export async function getWorkspacesWeeklyStats(
         workspace_id,
         workspaces (
           id,
-          name
+          name,
+          slug,
+          logo_url
         )
       `)
       .eq("user_id", user.id);
@@ -139,7 +175,38 @@ export async function getWorkspacesWeeklyStats(
       return [];
     }
 
-    // 3. Agregar dados
+    // 3. Buscar membros de cada workspace
+    const { data: allMembers, error: allMembersError } = await supabase
+      .from("workspace_members")
+      .select(`
+        workspace_id,
+        profiles:user_id (
+          id,
+          full_name,
+          avatar_url
+        )
+      `)
+      .in("workspace_id", workspaceIds);
+
+    // Agrupar membros por workspace
+    const membersByWorkspace = new Map<string, WorkspaceMember[]>();
+    if (allMembers && !allMembersError) {
+      allMembers.forEach((m: any) => {
+        if (m.profiles) {
+          const workspaceId = m.workspace_id;
+          if (!membersByWorkspace.has(workspaceId)) {
+            membersByWorkspace.set(workspaceId, []);
+          }
+          membersByWorkspace.get(workspaceId)!.push({
+            id: m.profiles.id,
+            full_name: m.profiles.full_name,
+            avatar_url: m.profiles.avatar_url,
+          });
+        }
+      });
+    }
+
+    // 4. Agregar dados
     const statsMap = new Map<string, WorkspaceStats>();
 
     // Inicializar com os workspaces encontrados
@@ -148,8 +215,11 @@ export async function getWorkspacesWeeklyStats(
             statsMap.set(m.workspace_id, {
                 id: m.workspaces.id,
                 name: m.workspaces.name,
+                slug: m.workspaces.slug || null,
+                logo_url: m.workspaces.logo_url || null,
                 pendingCount: 0,
-                totalCount: 0
+                totalCount: 0,
+                members: membersByWorkspace.get(m.workspace_id) || []
             });
         }
     });
@@ -189,7 +259,8 @@ export async function getUserWorkspaces() {
         workspace_id,
         workspaces (
           id,
-          name
+          name,
+          slug
         )
       `)
       .eq("user_id", user.id);
@@ -201,7 +272,7 @@ export async function getUserWorkspaces() {
 
     return members
       .map((m: any) => m.workspaces)
-      .filter((w) => w !== null) as { id: string; name: string }[];
+      .filter((w) => w !== null) as { id: string; name: string; slug?: string | null }[];
   } catch (error) {
     console.error("Erro inesperado ao buscar workspaces:", error);
     return [];
@@ -238,25 +309,53 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
     const startISO = startOfDay.toISOString();
     const endISO = endOfDay.toISOString();
 
-    const { data: tasks, error } = await supabase
+    // Buscar tarefas pessoais (workspace_id IS NULL)
+    // Aparecem se o usuário criou OU está atribuído
+    const { data: personalTasks, error: personalError } = await supabase
       .from("tasks")
       .select(`
         *,
         workspaces(name),
         assignee:profiles!tasks_assignee_id_fkey(full_name)
       `)
+      .is("workspace_id", null)
       .or(`assignee_id.eq.${user.id},created_by.eq.${user.id}`)
       .gte("due_date", startISO)
-      .lte("due_date", endISO)
-      .order("due_date", { ascending: true })
-      .order("created_at", { ascending: false });
+      .lte("due_date", endISO);
 
-    if (error) {
-      console.error("Erro ao buscar tarefas do dia:", error);
+    // Buscar tarefas de workspace (workspace_id IS NOT NULL)
+    // Aparecem APENAS se o usuário está atribuído (assignee_id = user.id)
+    const { data: workspaceTasks, error: workspaceError } = await supabase
+      .from("tasks")
+      .select(`
+        *,
+        workspaces(name),
+        assignee:profiles!tasks_assignee_id_fkey(full_name)
+      `)
+      .not("workspace_id", "is", null)
+      .eq("assignee_id", user.id) // APENAS tarefas atribuídas ao usuário
+      .gte("due_date", startISO)
+      .lte("due_date", endISO);
+
+    if (personalError || workspaceError) {
+      console.error("Erro ao buscar tarefas do dia:", personalError || workspaceError);
       return [];
     }
 
-    const dayTasks: WeekTask[] = (tasks || []).map((task: any) => ({
+    // Combinar resultados
+    const allTasks = [...(personalTasks || []), ...(workspaceTasks || [])];
+
+    // Ordenar por data e depois por data de criação
+    const sortedTasks = allTasks.sort((a, b) => {
+      const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;
+      const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;
+      if (dateA !== dateB) return dateA - dateB;
+      const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return createdB - createdA;
+    });
+
+    const dayTasks: WeekTask[] = sortedTasks.map((task: any) => ({
       ...task,
       workspace_name: task.workspaces?.name || null,
       assignee_name: task.assignee?.full_name || null,
