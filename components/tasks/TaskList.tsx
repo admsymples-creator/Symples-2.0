@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
     DndContext,
     DragOverlay,
@@ -66,6 +66,12 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
     const [activeId, setActiveId] = useState<string | null>(null);
     const tasksRef = useRef(tasks);
     tasksRef.current = tasks;
+    
+    // Log quando tasks mudam
+    useEffect(() => {
+        console.log("🟪 [TaskList] Estado tasks mudou, nova quantidade:", tasks.length);
+        console.log("🟪 [TaskList] IDs das tarefas:", tasks.map(t => String(t.id)));
+    }, [tasks]);
 
     // ✅ Atualização otimista: atualiza estado local imediatamente
     const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
