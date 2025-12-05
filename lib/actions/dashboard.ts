@@ -15,6 +15,7 @@ export interface WeekTask extends Task {
 export interface WorkspaceStats {
   id: string;
   name: string;
+  slug: string | null;
   pendingCount: number;
   totalCount: number;
 }
@@ -86,10 +87,12 @@ export async function getWeekTasks(
 
     // Ordenar por data e depois por data de criação
     const sortedTasks = allTasks.sort((a, b) => {
-      const dateA = new Date(a.due_date).getTime();
-      const dateB = new Date(b.due_date).getTime();
+      const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;
+      const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;
       if (dateA !== dateB) return dateA - dateB;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return createdB - createdA;
     });
 
     // Mapear dados para incluir informações relacionadas
@@ -132,7 +135,8 @@ export async function getWorkspacesWeeklyStats(
         workspace_id,
         workspaces (
           id,
-          name
+          name,
+          slug
         )
       `)
       .eq("user_id", user.id);
@@ -171,6 +175,7 @@ export async function getWorkspacesWeeklyStats(
             statsMap.set(m.workspace_id, {
                 id: m.workspaces.id,
                 name: m.workspaces.name,
+                slug: m.workspaces.slug || null,
                 pendingCount: 0,
                 totalCount: 0
             });
@@ -300,10 +305,12 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
 
     // Ordenar por data e depois por data de criação
     const sortedTasks = allTasks.sort((a, b) => {
-      const dateA = new Date(a.due_date).getTime();
-      const dateB = new Date(b.due_date).getTime();
+      const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;
+      const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;
       if (dateA !== dateB) return dateA - dateB;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return createdB - createdA;
     });
 
     const dayTasks: WeekTask[] = sortedTasks.map((task: any) => ({

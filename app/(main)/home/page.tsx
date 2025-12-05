@@ -68,7 +68,9 @@ export default async function HomePage() {
               {workspaceStats.map((workspace) => (
                 <WorkspaceCard
                   key={workspace.id}
+                  id={workspace.id}
                   name={workspace.name}
+                  slug={workspace.slug}
                   pendingCount={workspace.pendingCount}
                   totalCount={workspace.totalCount}
                 />

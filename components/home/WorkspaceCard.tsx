@@ -2,16 +2,32 @@
 
 import { MoreHorizontal, MessageSquare, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 
 interface WorkspaceCardProps {
+    id: string;
     name: string;
+    slug: string | null;
     pendingCount: number;
     totalCount: number;
 }
 
-export function WorkspaceCard({ name, pendingCount, totalCount }: WorkspaceCardProps) {
+export function WorkspaceCard({ id, name, slug, pendingCount, totalCount }: WorkspaceCardProps) {
+    const router = useRouter();
+    const { setActiveWorkspaceId } = useWorkspace();
+    
     // Calculate progress
     const progress = totalCount > 0 ? ((totalCount - pendingCount) / totalCount) * 100 : 0;
+
+    const handleCardClick = () => {
+        // Atualizar workspace ativo no contexto
+        setActiveWorkspaceId(id);
+        
+        // Navegar para a página de tarefas do workspace
+        const workspaceBase = slug || id;
+        router.push(`/${workspaceBase}/tasks`);
+    };
 
     // Mock Data Generator (Deterministic based on name length)
     const seed = name.length;
@@ -28,7 +44,10 @@ export function WorkspaceCard({ name, pendingCount, totalCount }: WorkspaceCardP
     const workspaceImage = workspaceImages[seed % workspaceImages.length];
 
     return (
-        <div className="group bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-200 cursor-pointer relative flex flex-col h-full">
+        <div 
+            onClick={handleCardClick}
+            className="group bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-200 cursor-pointer relative flex flex-col h-full"
+        >
             {/* 2. Header (Topo) */}
             <div className="flex justify-between items-start mb-4">
                 {/* Workspace Image */}
@@ -40,7 +59,12 @@ export function WorkspaceCard({ name, pendingCount, totalCount }: WorkspaceCardP
                     />
                 </div>
                 
-                <button className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50">
+                <button 
+                    onClick={(e) => {
+                        e.stopPropagation(); // Prevenir navegação ao clicar no menu
+                    }}
+                    className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
+                >
                     <MoreHorizontal size={16} />
                 </button>
             </div>
