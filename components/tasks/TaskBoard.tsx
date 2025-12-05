@@ -6,6 +6,7 @@ import { KanbanCard } from "./KanbanCard";
 import { KanbanEmptyCard } from "./KanbanEmptyCard";
 import { TaskSectionHeader } from "./TaskSectionHeader";
 import { QuickTaskAdd } from "./QuickTaskAdd";
+import { GroupActionMenu } from "./GroupActionMenu";
 import { MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
@@ -54,6 +55,13 @@ interface TaskBoardProps {
   onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
   onDelete?: () => void;
   isDragDisabled?: boolean;
+  // Props para GroupActionMenu (apenas para viewOption === "group")
+  onRenameGroup?: (groupId: string, newTitle: string) => void;
+  onColorChange?: (groupId: string, color: string) => void;
+  onDeleteGroup?: (groupId: string) => void;
+  onClearGroup?: (groupId: string) => void;
+  showGroupActions?: boolean;
+  viewOption?: string; // Para saber se é "group" ou outro tipo
 }
 
 // Componente de Coluna Droppable
@@ -68,6 +76,12 @@ function DroppableColumn({
   onTaskUpdatedOptimistic,
   onDelete,
   isDragDisabled = false,
+  onRenameGroup,
+  onColorChange,
+  onDeleteGroup,
+  onClearGroup,
+  showGroupActions = true,
+  viewOption,
 }: {
   column: Column;
   onTaskClick?: (taskId: string) => void;
@@ -79,6 +93,12 @@ function DroppableColumn({
   onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
   onDelete?: () => void;
   isDragDisabled?: boolean;
+  onRenameGroup?: (groupId: string, newTitle: string) => void;
+  onColorChange?: (groupId: string, color: string) => void;
+  onDeleteGroup?: (groupId: string) => void;
+  onClearGroup?: (groupId: string) => void;
+  showGroupActions?: boolean;
+  viewOption?: string;
 }) {
   // Configura a coluna inteira como uma zona de drop
   const { setNodeRef, isOver } = useDroppable({
@@ -133,6 +153,22 @@ function DroppableColumn({
           count={tasks.length}
           color={column.color}
           actions={
+            viewOption === "group" && 
+            showGroupActions && 
+            column.id !== "inbox" && 
+            column.id !== "Inbox" &&
+            (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup) ? (
+              <GroupActionMenu
+                groupId={column.id}
+                groupTitle={column.title}
+                currentColor={column.color}
+                onRename={onRenameGroup}
+                onColorChange={onColorChange}
+                onDelete={onDeleteGroup}
+                onClear={onClearGroup}
+              />
+            ) : (
+              onAddTask ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -155,6 +191,8 @@ function DroppableColumn({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+              ) : undefined
+            )
           }
         />
       </div>
@@ -228,7 +266,13 @@ function TaskBoardComponent({
   onTaskUpdated, 
   onTaskUpdatedOptimistic, 
   onDelete, 
-  isDragDisabled = false 
+  isDragDisabled = false,
+  onRenameGroup,
+  onColorChange,
+  onDeleteGroup,
+  onClearGroup,
+  showGroupActions = true,
+  viewOption,
 }: TaskBoardProps) {
   
   // 🔍 DEBUG: Verificar se callback está chegando no TaskBoardComponent
@@ -247,6 +291,12 @@ function TaskBoardComponent({
           onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
           onDelete={onDelete}
           isDragDisabled={isDragDisabled}
+          onRenameGroup={onRenameGroup}
+          onColorChange={onColorChange}
+          onDeleteGroup={onDeleteGroup}
+          onClearGroup={onClearGroup}
+          showGroupActions={showGroupActions}
+          viewOption={viewOption}
         />
       ))}
     </div>
@@ -272,7 +322,13 @@ export const TaskBoard = memo(TaskBoardComponent, (prev, next) => {
     prev.onToggleComplete !== next.onToggleComplete ||
     prev.onTaskUpdated !== next.onTaskUpdated ||
     prev.onTaskUpdatedOptimistic !== next.onTaskUpdatedOptimistic ||
-    prev.onDelete !== next.onDelete
+    prev.onDelete !== next.onDelete ||
+    prev.onRenameGroup !== next.onRenameGroup ||
+    prev.onColorChange !== next.onColorChange ||
+    prev.onDeleteGroup !== next.onDeleteGroup ||
+    prev.onClearGroup !== next.onClearGroup ||
+    prev.showGroupActions !== next.showGroupActions ||
+    prev.viewOption !== next.viewOption
   ) {
     return false; // Re-renderizar
   }

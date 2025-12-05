@@ -56,6 +56,7 @@ import {
     updateTaskPosition,
     updateTaskPositionsBulk,
     getWorkspaceMembers,
+    deleteTask,
     type Task as TaskFromDB 
 } from "@/lib/actions/tasks";
 import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups } from "@/lib/actions/task-groups";
@@ -461,6 +462,227 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [effectiveWorkspaceId, activeTab]);
 
+    // ✅ Optimistic Create: Adiciona tarefa instantaneamente ao estado local
+    const handleTaskCreatedOptimistic = useCallback((taskData: {
+        id: string; // ID temporário ou real
+        title: string;
+        status: string;
+        priority?: "low" | "medium" | "high" | "urgent";
+        assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        dueDate?: string;
+        groupId?: string | null;
+        workspaceId?: string | null;
+    }) => {
+        const newTask: Task = {
+            id: taskData.id,
+            title: taskData.title,
+            completed: taskData.status === "done",
+            priority: taskData.priority || "medium",
+            status: taskData.status,
+            assignees: taskData.assignees || [],
+            assigneeId: taskData.assignees?.[0]?.id || null,
+            dueDate: taskData.dueDate,
+            tags: [],
+            hasUpdates: false,
+            workspaceId: taskData.workspaceId || null,
+            group: taskData.groupId ? {
+                id: taskData.groupId,
+                name: availableGroups.find(g => g.id === taskData.groupId)?.name || "Grupo",
+                color: availableGroups.find(g => g.id === taskData.groupId)?.color || undefined
+            } : undefined,
+            hasComments: false,
+            commentCount: 0,
+            position: undefined,
+        };
+
+        setLocalTasks((prev) => {
+            return [newTask, ...prev];
+        });
+    }, [availableGroups]);
+
+    // ✅ Optimistic Delete: Remove tarefa instantaneamente do estado local
+    const handleOptimisticDelete = useCallback((taskId: string | number) => {
+        const id = String(taskId);
+        setLocalTasks((prev) => {
+            return prev.filter(t => String(t.id) !== id);
+        });
+    }, []);
+
+    // Handler para adicionar tarefa em grupo (usado no TaskGroup) com Optimistic UI
+    const handleAddTaskToGroup = useCallback(async (
+        groupId: string,
+        title: string,
+        dueDate?: Date | null,
+        assigneeId?: string | null
+    ) => {
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
+
+        // Mapear status/priority baseado no viewOption e groupId (columnId)
+        const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
+            "Não iniciada": "todo",
+            "Em progresso": "in_progress",
+            "Revisão": "review",
+            "Correção": "correction",
+            "Finalizado": "done",
+            // Aliases para compatibilidade
+            "Backlog": "todo",
+            "Triagem": "todo",
+            "Execução": "in_progress",
+        };
+
+        let dbStatus: "todo" | "in_progress" | "review" | "correction" | "done" | undefined = "todo";
+        let priority: "low" | "medium" | "high" | "urgent" | undefined;
+        let finalGroupId: string | null | undefined = null;
+        let statusLabel: string = STATUS_TO_LABEL.todo;
+
+        if (viewOption === "status") {
+            dbStatus = statusMap[groupId] || "todo";
+            statusLabel = groupId;
+        } else if (viewOption === "priority") {
+            priority = groupId as "low" | "medium" | "high" | "urgent";
+            dbStatus = "todo";
+            statusLabel = STATUS_TO_LABEL.todo;
+        } else if (viewOption === "group") {
+            // Se estiver na visão de grupos, usar o groupId recebido
+            // Se for "inbox", groupId é null (explicitamente)
+            if (groupId === "inbox" || groupId === "Inbox") {
+                finalGroupId = null;
+            } else {
+                finalGroupId = groupId;
+            }
+            dbStatus = "todo";
+            statusLabel = STATUS_TO_LABEL.todo;
+        } else if (viewOption === "assignee") {
+            // Encontrar o membro pelo nome para obter o ID
+            if (groupId === "Sem responsável") {
+                assigneeId = null;
+            } else {
+                const member = workspaceMembers.find(m => m.name === groupId);
+                if (member) {
+                    assigneeId = member.id;
+                }
+            }
+            dbStatus = "todo";
+            statusLabel = STATUS_TO_LABEL.todo;
+        }
+
+        // ✅ 2. Atualização otimista: adicionar tarefa ao estado local imediatamente
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const assignee = assigneeId ? workspaceMembers.find(m => m.id === assigneeId) : undefined;
+        
+        handleTaskCreatedOptimistic({
+            id: tempId,
+            title,
+            status: statusLabel,
+            priority: priority,
+            assignees: assignee ? [{
+                id: assignee.id,
+                name: assignee.name,
+                avatar: assignee.avatar
+            }] : undefined,
+            dueDate: dueDate ? dueDate.toISOString() : undefined,
+            groupId: finalGroupId,
+            workspaceId: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+        });
+
+        try {
+            // ✅ 3. Backend em background
+            const result = await createTask({
+                title,
+                status: dbStatus as any,
+                priority: priority,
+                assignee_id: assigneeId || undefined,
+                due_date: dueDate ? dueDate.toISOString() : undefined,
+                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+                group_id: finalGroupId,
+            });
+
+            if (result.success && 'data' in result && result.data) {
+                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend
+                const createdTask = result.data;
+                setLocalTasks((prev) => {
+                    return prev.map((task) => {
+                        if (task.id === tempId) {
+                            return {
+                                ...task,
+                                id: createdTask.id,
+                                status: createdTask.status ? mapStatusToLabel(createdTask.status as string) || task.status : task.status,
+                                priority: (createdTask.priority as "low" | "medium" | "high" | "urgent") || task.priority,
+                                dueDate: createdTask.due_date || task.dueDate,
+                            } as Task;
+                        }
+                        return task;
+                    });
+                });
+            } else {
+                // ✅ 5. Erro: rollback - remover tarefa otimista
+                setLocalTasks(previousTasks);
+                console.error("Erro ao criar tarefa:", result.error);
+                if (result.error === "Usuário não autenticado") {
+                    router.push("/login");
+                } else {
+                    toast.error("Erro ao criar tarefa: " + (result.error || "Erro desconhecido"));
+                }
+            }
+        } catch (error) {
+            // ✅ 5. Erro: rollback - remover tarefa otimista
+            setLocalTasks(previousTasks);
+            console.error("Erro ao criar tarefa:", error);
+            toast.error("Erro ao criar tarefa");
+        }
+    }, [viewOption, effectiveWorkspaceId, activeTab, router, workspaceMembers, handleTaskCreatedOptimistic, availableGroups]);
+
+    // Handler para adicionar tarefa no kanban (TaskBoard) com Optimistic UI
+    // Reutiliza a mesma lógica do handleAddTaskToGroup
+    const handleAddTaskToKanban = useCallback(async (
+        columnId: string,
+        title: string,
+        dueDate?: Date | null,
+        assigneeId?: string | null
+    ) => {
+        // Usar o mesmo handler que funciona para TaskGroup
+        // O columnId funciona da mesma forma que groupId
+        return handleAddTaskToGroup(columnId, title, dueDate, assigneeId);
+    }, [handleAddTaskToGroup]);
+
+    // ✅ Handler para excluir tarefa com Optimistic UI e rollback
+    const handleDeleteTaskWithOptimistic = useCallback(async (taskId: string | number) => {
+        const id = String(taskId);
+        
+        // ✅ 1. Snapshot do estado anterior (para rollback)
+        const previousTasks = [...localTasksRef.current];
+        
+        // ✅ 2. Optimistic UI: Remover tarefa do estado local imediatamente
+        handleOptimisticDelete(id);
+
+        try {
+            // ✅ 3. Backend em background
+            const result = await deleteTask(id);
+
+            if (result.success) {
+                // ✅ 4. Sucesso: Tarefa já foi removida otimisticamente
+                toast.success("Tarefa excluída com sucesso");
+                // Invalidar cache para sincronizar
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+            } else {
+                // ✅ 5. Erro: Rollback - restaurar tarefa
+                setLocalTasks(previousTasks);
+                console.error("Erro ao excluir tarefa:", result.error);
+                if (result.error === "Usuário não autenticado") {
+                    router.push("/login");
+                } else {
+                    toast.error("Erro ao excluir tarefa: " + (result.error || "Erro desconhecido"));
+                }
+            }
+        } catch (error) {
+            // ✅ 5. Erro: Rollback - restaurar tarefa
+            setLocalTasks(previousTasks);
+            console.error("Erro ao excluir tarefa:", error);
+            toast.error("Erro ao excluir tarefa");
+        }
+    }, [handleOptimisticDelete, effectiveWorkspaceId, activeTab, router]);
+
     // Ref para groupedData (serÃ¡ atualizado apÃ³s groupedData ser definido)
     const groupedDataRef = useRef<Record<string, Task[]>>({});
 
@@ -658,6 +880,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
 
+
     // Filtrar tarefas por busca
     // FunÃ§Ã£o para alternar status de conclusÃ£o
     const handleToggleComplete = async (taskId: string, completed: boolean) => {
@@ -835,7 +1058,20 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Converter grupos para formato de colunas (Kanban)
     const kanbanColumns = useMemo(() => {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
-        const columns = Object.entries(dataToUse).map(([key, tasks]) => {
+        const columns = Object.entries(dataToUse)
+            .filter(([key, tasks]) => {
+                // ✅ Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
+                // verificar se o grupo ainda existe em availableGroups
+                if (viewOption === "group" && key !== "inbox") {
+                    const groupExists = availableGroups.some(g => g.id === key);
+                    // Se o grupo não existe mais e não há tarefas, filtrar
+                    if (!groupExists && tasks.length === 0) {
+                        return false;
+                    }
+                }
+                return true;
+            })
+            .map(([key, tasks]) => {
             let title = key;
             let color: string | undefined;
             
@@ -922,7 +1158,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         return columns;
-    }, [groupedData, viewOption]);
+    }, [groupedData, orderedGroupedData, viewOption, availableGroups]);
 
     // Converter grupos para formato de lista (TaskGroup) com ordenaÃ§Ã£o
     const listGroups = useMemo(() => {
@@ -2017,7 +2253,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     isDragDisabled={isDragDisabled}
                                                     onTaskUpdated={handleTaskUpdated}
                                                     onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                    onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                    onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
                                                     members={workspaceMembers}
+                                                    onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                    onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                    onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                    onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                    showGroupActions={viewOption === "group"}
+                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                                 />
                                             ))}
                                         </div>
@@ -2046,7 +2290,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 isDragDisabled={isDragDisabled}
                                                 onTaskUpdated={handleTaskUpdated}
                                                 onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
                                                 members={workspaceMembers}
+                                                onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                showGroupActions={viewOption === "group"}
+                                                onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                             />
                                         ))}
                                     </div>
@@ -2077,77 +2329,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                         onToggleComplete={handleToggleComplete}
                                         onTaskUpdatedOptimistic={handleOptimisticUpdate}
                                         isDragDisabled={isDragDisabled}
-                                    onAddTask={async (columnId, title, dueDate, assigneeId) => {
-                                        try {
-                                            // Mapear status/priority baseado no viewOption e columnId
-                                            const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
-                                                "NÃ£o iniciada": "todo",
-                                                "Em progresso": "in_progress",
-                                                "RevisÃ£o": "review",
-                                                "CorreÃ§Ã£o": "correction",
-                                                "Finalizado": "done",
-                                                // Aliases para compatibilidade
-                                                "Backlog": "todo",
-                                                "Triagem": "todo",
-                                                "ExecuÃ§Ã£o": "in_progress",
-                                            };
-
-                                            let dbStatus: "todo" | "in_progress" | "review" | "correction" | "done" | undefined;
-                                            let priority: "low" | "medium" | "high" | "urgent" | undefined;
-                                            let groupId: string | null | undefined;
-
-                                            if (viewOption === "status") {
-                                                dbStatus = statusMap[columnId] || "todo";
-                                            } else if (viewOption === "priority") {
-                                                priority = columnId as "low" | "medium" | "high" | "urgent";
-                                            } else if (viewOption === "group") {
-                                                // Se estiver na visÃ£o de grupos, o columnId Ã© o ID do grupo
-                                                // Se for "inbox", groupId Ã© null (explicitamente)
-                                                if (columnId === "inbox" || columnId === "Inbox") {
-                                                    groupId = null;
-                                                } else {
-                                                    groupId = columnId;
-                                                }
-                                                // Status padrÃ£o para novas tarefas em grupos
-                                                dbStatus = "todo";
-                                            } else if (viewOption === "assignee") {
-                                                // Encontrar o membro pelo nome para obter o ID
-                                                if (columnId === "Sem responsável") {
-                                                    assigneeId = null;
-                                                } else {
-                                                    const member = workspaceMembers.find(m => m.name === columnId);
-                                                    if (member) {
-                                                        assigneeId = member.id;
-                                                    }
-                                                }
-                                                // Status padrão para novas tarefas
-                                                dbStatus = "todo";
-                                            }
-
-                                            const result = await createTask({
-                                                title,
-                                                status: dbStatus as any, // Inclui "review" e "correction"
-                                                priority: priority,
-                                                assignee_id: assigneeId || undefined,
-                                                due_date: dueDate ? dueDate.toISOString() : undefined,
-                                                // Se estiver na aba "minhas", tarefa pessoal (sem workspace)
-                                                // Caso contrÃ¡rio, associar ao workspace ativo
-                                                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
-                                                group_id: groupId,
-                                            });
-
-                                            if (result.success && 'data' in result && result.data) {
-                                                await reloadTasks();
-                                            } else {
-                                                console.error("Erro ao criar tarefa:", result.error);
-                                                if (result.error === "UsuÃ¡rio nÃ£o autenticado") {
-                                                    router.push("/login");
-                                                }
-                                            }
-                                        } catch (error) {
-                                            console.error("Erro ao criar tarefa:", error);
-                                        }
-                                    }}
+                                        onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                        onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                        onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                        onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                        showGroupActions={viewOption === "group"}
+                                        viewOption={viewOption}
+                                    onAddTask={handleAddTaskToKanban}
                                     members={workspaceMembers}
                                     groupBy={viewOption}
                                 />

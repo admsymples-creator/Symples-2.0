@@ -74,7 +74,7 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
     }, [tasks]);
 
     // ✅ Atualização otimista: atualiza estado local imediatamente
-    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ title?: string; dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
         setTasks((prev) => {
             const taskIndex = prev.findIndex(t => String(t.id) === String(taskId));
             if (taskIndex === -1) {
@@ -84,6 +84,7 @@ export function TaskList({ initialTasks, workspaceId, onTaskClick, onTaskUpdated
             const updated = prev.map((task, index) => {
                 if (index === taskIndex) {
                     const taskUpdates: Partial<MinimalTask> = {};
+                    if (updates.title) taskUpdates.title = updates.title;
                     if (updates.dueDate !== undefined) taskUpdates.dueDate = updates.dueDate;
                     if (updates.status) taskUpdates.status = updates.status;
                     if (updates.priority) taskUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";

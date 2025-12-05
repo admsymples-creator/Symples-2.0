@@ -43,6 +43,7 @@ interface TaskRowProps {
     onToggleComplete?: (id: string, completed: boolean) => void;
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
+    onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
     isLast?: boolean;
     groupColor?: string;
     hasComments?: boolean;
@@ -126,6 +127,7 @@ function TaskRowComponent({
     onToggleComplete,
     onTaskUpdated,
     onTaskDeleted,
+    onTaskUpdatedOptimistic,
     isLast = false,
     groupColor,
     hasComments = false,
@@ -222,20 +224,42 @@ function TaskRowComponent({
         }
     };
 
-    // Handler para atualizar título
+    // Handler para atualizar título com Optimistic UI
     const handleTitleUpdate = async (newTitle: string) => {
+        // Validar título não vazio
+        if (!newTitle.trim()) {
+            toast.error("O título não pode estar vazio");
+            return;
+        }
+
+        const trimmedTitle = newTitle.trim();
+        
+        // Se não mudou, não fazer nada
+        if (trimmedTitle === title) {
+            return;
+        }
+
+        const previousTitle = title;
+        
+        // ✅ Optimistic UI: Atualizar interface imediatamente
+        onTaskUpdatedOptimistic?.(id, { title: trimmedTitle });
+
         try {
             const result = await updateTask({
                 id,
-                title: newTitle,
+                title: trimmedTitle,
             });
 
             if (result.success) {
                 onTaskUpdated?.();
             } else {
+                // ❌ Rollback: Restaurar título anterior em caso de erro
+                onTaskUpdatedOptimistic?.(id, { title: previousTitle });
                 toast.error(result.error || "Erro ao atualizar título");
             }
         } catch (error) {
+            // ❌ Rollback: Restaurar título anterior em caso de erro
+            onTaskUpdatedOptimistic?.(id, { title: previousTitle });
             toast.error("Erro ao atualizar título");
             console.error(error);
         }
@@ -286,6 +310,20 @@ function TaskRowComponent({
                 )}
                 onMouseEnter={() => preloadTask(id, workspaceId)}
                 onMouseLeave={cancelPreload}
+                onClick={(e) => {
+                    // Só abrir modal se não for clique no título ou em elementos interativos
+                    const target = e.target as HTMLElement;
+                    const isTitleClick = target.closest('[data-inline-edit="true"]') ||
+                                       target.closest('.cursor-text') || 
+                                       target.closest('input') ||
+                                       target.closest('[role="textbox"]') ||
+                                       target.classList.contains('cursor-text') ||
+                                       target.hasAttribute('data-inline-edit');
+                    
+                    if (!isTitleClick && onClick) {
+                        onClick();
+                    }
+                }}
             >
             {/* Barra Lateral Colorida (linha contínua) - APENAS Cor do Grupo */}
             {(groupColorClass || isHexColor) && (
@@ -323,24 +361,25 @@ function TaskRowComponent({
 
             {/* Título (Truncate, flex-1, mr-4) - Área clicável */}
             <div 
-                className="flex items-center gap-2 min-w-0 flex-1 mr-4 cursor-pointer"
-                onClick={onClick}
+                className="flex items-center gap-2 min-w-0 flex-1 mr-4"
             >
                 {/* Indicador de atualização não lida */}
                 {hasUpdates && (
                     <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
                 )}
                 
-                <InlineTextEdit
-                    value={title}
-                    onSave={handleTitleUpdate}
-                    className={cn(
-                        "text-sm text-gray-900 leading-tight",
-                        hasUpdates ? "font-semibold" : "font-medium",
-                        completed && "line-through text-gray-500"
-                    )}
-                    inputClassName="text-sm font-medium text-gray-900"
-                />
+                <div className="flex-1 min-w-0">
+                    <InlineTextEdit
+                        value={title}
+                        onSave={handleTitleUpdate}
+                        className={cn(
+                            "text-sm text-gray-900 leading-tight",
+                            hasUpdates ? "font-semibold" : "font-medium",
+                            completed && "line-through text-gray-500"
+                        )}
+                        inputClassName="text-sm font-medium text-gray-900"
+                    />
+                </div>
 
                 {/* Indicador de comentários - mais sutil */}
                 {hasComments && commentCount > 0 && (

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Pencil } from "lucide-react";
 
 interface InlineTextEditProps {
     value: string;
@@ -71,32 +72,63 @@ export function InlineTextEdit({
                 onKeyDown={handleKeyDown}
                 onBlur={handleSave}
                 className={cn(
-                    "h-6 py-0 px-1 bg-white border border-gray-200 focus-visible:ring-2 focus-visible:ring-gray-100 focus-visible:border-gray-300 transition-all shadow-sm text-sm",
+                    "h-auto py-0 px-1 bg-transparent border-0 focus-visible:ring-0 transition-colors text-sm rounded-none",
+                    "focus-visible:outline-none focus-visible:shadow-none focus-visible:border-0",
                     inputClassName
                 )}
                 placeholder={placeholder}
-                onClick={(e) => e.stopPropagation()} // Impedir clique de propagar para a linha
+                onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }}
+                onMouseDown={(e) => {
+                    e.stopPropagation();
+                }}
             />
         );
     }
 
     return (
-        <span
-            onClick={(e) => {
-                if (!disabled) {
-                    e.stopPropagation(); // Impedir clique de abrir modal
-                    setIsEditing(true);
-                }
-            }}
-            className={cn(
-                "cursor-text truncate rounded px-1 -ml-1 border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-all duration-200",
-                disabled && "cursor-default hover:border-transparent hover:bg-transparent",
-                className
+        <div className="flex items-center gap-1.5 group/title">
+            <span
+                data-inline-edit="true"
+                onClick={(e) => {
+                    if (!disabled) {
+                        e.stopPropagation(); // Impedir clique de abrir modal
+                        e.preventDefault();
+                        setIsEditing(true);
+                    }
+                }}
+                onMouseDown={(e) => {
+                    if (!disabled) {
+                        e.stopPropagation(); // Impedir também no mousedown
+                        e.preventDefault();
+                    }
+                }}
+                className={cn(
+                    "cursor-text truncate",
+                    disabled && "cursor-default",
+                    className
+                )}
+                title={tempValue}
+            >
+                {tempValue || placeholder}
+            </span>
+            {!disabled && (
+                <Pencil 
+                    className="w-3 h-3 text-gray-400 opacity-0 group-hover/title:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setIsEditing(true);
+                    }}
+                    onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                    }}
+                />
             )}
-            title={tempValue}
-        >
-            {tempValue || placeholder}
-        </span>
+        </div>
     );
 }
 
