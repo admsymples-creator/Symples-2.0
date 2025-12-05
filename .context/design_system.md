@@ -315,9 +315,15 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 - **TaskRowMinify (`components/tasks/TaskRowMinify.tsx`):**
   - **Layout**: CSS Grid com colunas fixas para alinhamento vertical
-  - **Colunas**: `grid-cols-[40px_1fr_90px_32px_100px_40px]`
-    - Drag Handle (40px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (100px) | Menu (40px)
+  - **Colunas**: `grid-cols-[40px_24px_1fr_90px_32px_130px_40px]`
+    - Drag Handle (40px) | Checkbox (24px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (130px) | Menu (40px)
   - **Altura**: `h-11` (44px) - Interface compacta
+  - **Checkbox de Conclusão**: 
+    - Posicionado após drag handle, antes do título
+    - Visual verde quando marcado (`data-[state=checked]:bg-green-500`)
+    - Título com `line-through` quando concluída
+    - Integração com sistema de status (done/todo)
+    - Optimistic UI com rollback automático
   - **Indicadores Visuais**:
     - **Data**: Date picker funcional com calendário, cores dinâmicas (vermelho/verde/cinza)
     - **Status**: Badge editável com popover para mudança rápida

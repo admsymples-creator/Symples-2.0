@@ -131,26 +131,28 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
 
 // Memo para estabilidade do DnD
 export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
-    // ✅ Se a referência das tasks mudou, sempre re-renderizar
-    if (prev.tasks !== next.tasks) {
-        return false; // Re-renderizar
-    }
-
-    // Comparar título e ID do grupo
-    if (prev.id !== next.id || prev.title !== next.title) {
-        return false;
-    }
-
-    // Comparar callbacks
-    if (prev.onTaskClick !== next.onTaskClick || 
+    // Log para debug
+    const shouldRender = 
+        prev.tasks !== next.tasks ||
+        prev.id !== next.id ||
+        prev.title !== next.title ||
+        prev.onTaskClick !== next.onTaskClick ||
         prev.onTaskUpdated !== next.onTaskUpdated ||
         prev.onTaskDeleted !== next.onTaskDeleted ||
         prev.onTaskUpdatedOptimistic !== next.onTaskUpdatedOptimistic ||
         prev.onTaskDeletedOptimistic !== next.onTaskDeletedOptimistic ||
         prev.onTaskDuplicatedOptimistic !== next.onTaskDuplicatedOptimistic ||
-        prev.members !== next.members) {
-        return false;
-    }
-
-    return true; // Não re-renderizar
+        prev.members !== next.members;
+    
+    console.log("🟨 [TaskGroup] memo comparando:", {
+        groupId: next.id,
+        tasksChanged: prev.tasks !== next.tasks,
+        onTaskDeletedOptimisticChanged: prev.onTaskDeletedOptimistic !== next.onTaskDeletedOptimistic,
+        onTaskDuplicatedOptimisticChanged: prev.onTaskDuplicatedOptimistic !== next.onTaskDuplicatedOptimistic,
+        shouldRender,
+        prevHasCallback: !!prev.onTaskDeletedOptimistic,
+        nextHasCallback: !!next.onTaskDeletedOptimistic,
+    });
+    
+    return !shouldRender; // Retorna true se NÃO deve re-renderizar
 });

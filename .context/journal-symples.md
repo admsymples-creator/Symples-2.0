@@ -6,13 +6,30 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
-## 2025-12-XX - [Hora]
+## 2025-01-XX - [Hora]
 
 ### 1. Melhorias, bugs e features implementadas em preview
 
+#### ✅ TaskRowMinify - Checkbox de Conclusão com Optimistic UI
+- **Checkbox de Conclusão**: Adicionado checkbox ao lado esquerdo do título para marcar tarefa como concluída
+  - Posicionado após o drag handle na coluna do grid
+  - Visual: Checkbox verde quando marcado (`data-[state=checked]:bg-green-500`)
+  - Título com `line-through` quando tarefa está concluída
+  - Integração completa com sistema de status (marca como "done" quando marcado, volta para "todo" quando desmarcado)
+  
+- **Optimistic UI Pattern**:
+  - Atualização instantânea da interface antes da chamada ao servidor
+  - Rollback automático em caso de erro, restaurando status anterior
+  - Toast de feedback (sucesso/erro) para melhor UX
+  - Callback `onTaskUpdatedOptimistic` para sincronização de estado local
+  
+- **Layout Atualizado**: Grid ajustado para incluir checkbox
+  - Colunas: `grid-cols-[40px_24px_1fr_90px_32px_130px_40px]`
+  - Drag Handle (40px) | Checkbox (24px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (130px) | Menu (40px)
+
 #### 🎯 TaskRowMinify - Indicadores Visuais Completos
 - **Layout em Grid**: Implementado CSS Grid com colunas fixas para alinhamento vertical
-  - Colunas: Drag Handle | Título (com hover indicators) | Data | Responsável | Status | Menu
+  - Colunas: Drag Handle | Checkbox | Título (com hover indicators) | Data | Responsável | Status | Menu
   - Altura reduzida para `h-11` (44px) para interface mais compacta
   - Gap de `gap-1` entre colunas para espaçamento consistente
   
