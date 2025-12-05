@@ -1,10 +1,17 @@
 "use client";
 
-import { MoreHorizontal, MessageSquare, CheckSquare } from "lucide-react";
+import { MoreHorizontal, MessageSquare, CheckSquare, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { Avatar } from "@/components/tasks/Avatar";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface WorkspaceMember {
     id: string;
@@ -16,12 +23,13 @@ interface WorkspaceCardProps {
     id: string;
     name: string;
     slug: string | null;
+    logo_url?: string | null;
     pendingCount: number;
     totalCount: number;
     members?: WorkspaceMember[];
 }
 
-export function WorkspaceCard({ id, name, slug, pendingCount, totalCount, members = [] }: WorkspaceCardProps) {
+export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [] }: WorkspaceCardProps) {
     const router = useRouter();
     const { setActiveWorkspaceId } = useWorkspace();
     
@@ -37,11 +45,24 @@ export function WorkspaceCard({ id, name, slug, pendingCount, totalCount, member
         router.push(`/${workspaceBase}/tasks`);
     };
 
+    const handleOpenWorkspace = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        handleCardClick();
+    };
+
+    const handleOpenSettings = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        // Atualizar workspace ativo no contexto
+        setActiveWorkspaceId(id);
+        // Navegar para configurações
+        router.push("/settings");
+    };
+
     // Mock Data Generator (Deterministic based on name length)
     const seed = name.length;
     const commentsCount = (seed * 3) % 12;
     
-    // Workspace Image (Mock based on seed)
+    // Workspace Image - usar logo real ou fallback para imagem mockada
     // Using Unsplash source for consistent, nice-looking workspace/office/tech images
     const workspaceImages = [
         "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=150&h=150&q=80", // Office
@@ -49,7 +70,8 @@ export function WorkspaceCard({ id, name, slug, pendingCount, totalCount, member
         "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=150&h=150&q=80", // Tech
         "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&w=150&h=150&q=80"  // Creative
     ];
-    const workspaceImage = workspaceImages[seed % workspaceImages.length];
+    const fallbackImage = workspaceImages[seed % workspaceImages.length];
+    const workspaceImage = logo_url || fallbackImage;
 
     return (
         <div 
@@ -67,14 +89,35 @@ export function WorkspaceCard({ id, name, slug, pendingCount, totalCount, member
                     />
                 </div>
                 
-                <button 
-                    onClick={(e) => {
-                        e.stopPropagation(); // Prevenir navegação ao clicar no menu
-                    }}
-                    className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
-                >
-                    <MoreHorizontal size={16} />
-                </button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation(); // Prevenir navegação ao clicar no menu
+                            }}
+                            className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
+                        >
+                            <MoreHorizontal size={16} />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem 
+                            onClick={handleOpenWorkspace}
+                            className="cursor-pointer"
+                        >
+                            <FolderOpen className="mr-2 h-4 w-4" />
+                            <span>Abrir workspace</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem 
+                            onClick={handleOpenSettings}
+                            className="cursor-pointer"
+                        >
+                            <Settings className="mr-2 h-4 w-4" />
+                            <span>Configurações</span>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
             {/* 3. Corpo (Info Principal) */}

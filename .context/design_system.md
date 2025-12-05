@@ -1,5 +1,5 @@
 **\# SYMPLES — Design System & Tech Specs**  
-\*\*Versão:\*\* 2.2 (Atualizado - Dez 2025)  
+\*\*Versão:\*\* 2.3 (Atualizado - Jan 2025)  
 \*\*Source of Truth:\*\* Screenshots do MVP atual.  
 \*\*Stack:\*\* Next.js 16.0.5, React 19.2.0, TypeScript 5, Tailwind CSS 4, Lucide React, Shadcn UI (base).
 
@@ -624,7 +624,49 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ---
 
-## 14. Journal Visual de Preview
+## 14. VISÃO SEMANAL - COMPONENTES E FUNCIONALIDADES (v2.3)
+
+### 14.1. DayColumn (`components/home/DayColumn.tsx`)
+- **Layout**: Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
+- **Quick Add**: Input no rodapé com seletor de data/hora
+  - Ícone de calendário clicável ao lado do campo de texto
+  - Permite definir data e hora específica para tarefas pessoais
+  - Data/hora selecionada é aplicada automaticamente ao criar tarefas
+- **Ordenação de Tarefas**:
+  1. Tarefas pessoais com horário específico (não 00:00)
+  2. Tarefas pessoais sem horário (00:00 ou sem data)
+  3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Filtro de Workspace**:
+  - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
+  - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
+
+### 14.2. TaskRow (Home) (`components/home/TaskRow.tsx`)
+- **Indicador de Horário**: Badge cinza claro ao lado do título
+  - Aparece apenas para tarefas pessoais com hora específica
+  - Formato: `HH:MM` (24 horas)
+  - Estilo: `text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100`
+- **Badge de Workspace**: Badge colorido ao lado do título
+  - Cor gerada a partir do `workspace_id` usando hash HSL
+  - Exibe nome do workspace truncado
+  - Estilo: `text-[10px] font-medium px-1.5 py-0.5 rounded text-white`
+- **Ações no Hover**:
+  - Editar (lápis)
+  - Calendário (apenas tarefas pessoais) - edita data/hora
+  - Excluir (lixeira)
+  - Ir para detalhes (seta direita, apenas workspace) - navega para `/[workspaceSlug]/tasks?taskId=[taskId]`
+  - Mover para Workspace (seta curva, apenas pessoais)
+
+### 14.3. TaskDateTimePicker (`components/tasks/pickers/TaskDateTimePicker.tsx`)
+- **Componente**: Seletor de data e hora com popover
+- **Funcionalidades**:
+  - Calendário para seleção de data
+  - Seletores de hora (0-23) e minuto (0, 15, 30, 45)
+  - Atalhos rápidos: Hoje, Amanhã, Próxima Semana
+  - Atualização imediata no componente pai
+  - Renderização apenas no cliente (evita problemas de hidratação)
+- **Formato**: Exibe data e hora no formato `d MMM, HH:mm` (pt-BR)
+
+## 15. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  

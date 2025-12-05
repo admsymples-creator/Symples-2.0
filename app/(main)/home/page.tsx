@@ -71,6 +71,7 @@ export default async function HomePage() {
                   id={workspace.id}
                   name={workspace.name}
                   slug={workspace.slug}
+                  logo_url={workspace.logo_url}
                   pendingCount={workspace.pendingCount}
                   totalCount={workspace.totalCount}
                   members={workspace.members}

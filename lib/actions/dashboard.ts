@@ -22,6 +22,7 @@ export interface WorkspaceStats {
   id: string;
   name: string;
   slug: string | null;
+  logo_url: string | null;
   pendingCount: number;
   totalCount: number;
   members: WorkspaceMember[];
@@ -143,7 +144,8 @@ export async function getWorkspacesWeeklyStats(
         workspaces (
           id,
           name,
-          slug
+          slug,
+          logo_url
         )
       `)
       .eq("user_id", user.id);
@@ -214,6 +216,7 @@ export async function getWorkspacesWeeklyStats(
                 id: m.workspaces.id,
                 name: m.workspaces.name,
                 slug: m.workspaces.slug || null,
+                logo_url: m.workspaces.logo_url || null,
                 pendingCount: 0,
                 totalCount: 0,
                 members: membersByWorkspace.get(m.workspace_id) || []
