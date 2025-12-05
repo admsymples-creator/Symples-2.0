@@ -6,7 +6,7 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
-## 2025-01-XX - [Hora]
+## 2025-12-05 - 15:51
 
 ### 1. Melhorias, bugs e features implementadas em preview
 
