@@ -6,6 +6,109 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-01 - Sistema Completo de Convites e Gestão de Membros
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Sistema Completo de Convites e Gestão de Membros (RBAC)
+- **Infraestrutura de Email (Resend):**
+  - ✅ Integração completa com Resend para emails transacionais
+  - ✅ Abstração em `lib/email/send-invite.ts` para envio de convites
+  - ✅ Templates React usando `@react-email/components` e `@react-email/render`
+  - ✅ Template elegante de email de convite (`lib/email/templates/invite-email.tsx`)
+  - ✅ Script de teste standalone (`scripts/test-email.js`) e API de teste (`/api/test-email`)
+
+- **Backend (Server Actions):**
+  - ✅ `inviteMember()`: Sistema completo de convites com dois cenários
+    - Cenário A: Usuário já existe → Adiciona diretamente ao workspace
+    - Cenário B: Usuário novo → Cria convite pendente e envia email
+  - ✅ `revokeInvite()`: Cancelamento de convites pendentes
+  - ✅ `resendInvite()`: Reenvio de convites
+  - ✅ `acceptInvite()`: Aceite de convites com validações
+  - ✅ `updateMemberRole()`: Alteração de roles com verificação de permissões
+  - ✅ `removeMember()`: Remoção de membros com permissões
+  - ✅ `getPendingInvites()`: Lista de convites pendentes
+  - ✅ `getInviteDetails()`: Detalhes públicos de convites para página de aceite
+  - ✅ Validações robustas: email, workspaceId, permissões (apenas owner/admin podem convidar)
+  - ✅ Tratamento de erros com try-catch e logging detalhado
+
+- **Frontend (UI de Gestão):**
+  - ✅ Página `/settings` com aba "Membros" completa
+  - ✅ Lista de membros: Avatar, Nome, Email, Role (badge colorida), Status
+  - ✅ Lista de convites pendentes com badges de status
+  - ✅ Modal de convite com seleção de role (admin, member, viewer)
+  - ✅ Ações por membro: Remover, Alterar Role
+  - ✅ Ações por convite: Cancelar, Reenviar
+  - ✅ Contador de convites pendentes no cabeçalho
+  - ✅ Roles traduzidas para português na UI
+  - ✅ Feedback visual com toasts para todas as ações
+
+- **Fluxo de Aceite de Convite:**
+  - ✅ Página `/invite/[token]` para visualização e aceite de convites
+  - ✅ Suporte para usuários não autenticados (mostra opções de login/signup)
+  - ✅ Fluxo de signup com token de convite (`/signup?invite={token}`)
+  - ✅ Aceite automático após login via Google ou signup
+  - ✅ Callback de autenticação atualizado para aceitar convites automaticamente
+  - ✅ Redirecionamento inteligente (evita onboarding após aceitar convite)
+
+- **Políticas RLS (Row Level Security):**
+  - ✅ Migração `20241201_allow_public_invite_read.sql`: Permite leitura pública de convites pendentes
+  - ✅ Migração `20241201_allow_users_accept_invites.sql`: Permite que usuários aceitem convites inserindo-se em workspace_members
+  - ✅ Validações de segurança em todas as ações de membros
+
+- **Correções e Melhorias:**
+  - ✅ Correção de erro 500 ao tentar convidar quando já existe convite (mensagens claras)
+  - ✅ Correção de redirecionamento para onboarding após aceitar convite
+  - ✅ Correção de problemas de hidratação em componentes Radix UI (UserNav, Tabs)
+  - ✅ Validação de email e workspaceId antes de processar convites
+  - ✅ Melhor tratamento de erros com mensagens amigáveis
+  - ✅ Layout ajustado com retry para evitar redirecionamento prematuro
+
+- **Documentação:**
+  - ✅ `IMPLEMENTACAO_CONVITES.md`: Documentação completa do sistema
+  - ✅ `TROUBLESHOOTING_EMAIL.md`: Guia de troubleshooting de emails
+  - ✅ `DIAGNOSTICO_ERRO_500_INVITE.md`: Diagnóstico de erros
+  - ✅ `CORRECAO_CONVITE_DUPLICADO.md`: Correção de erro de convite duplicado
+  - ✅ `SOLUCAO_REDIRECIONAMENTO_ONBOARDING.md`: Solução para redirecionamento
+
+#### 📝 Arquivos Criados/Modificados
+- **Novos arquivos:**
+  - `app/(auth)/signup/page.tsx`: Página de cadastro
+  - `components/landing/SignupForm.tsx`: Formulário de cadastro
+  - `lib/email/send-invite.ts`: Abstração de envio de emails
+  - `lib/email/templates/invite-email.tsx`: Template de email
+  - `app/invite/[token]/page.tsx`: Página de aceite de convite
+  - `app/api/test-email/route.ts`: API de teste de emails
+  - `scripts/test-email.js`: Script de teste standalone
+  - `supabase/migrations/20241201_allow_public_invite_read.sql`: RLS pública
+  - `supabase/migrations/20241201_allow_users_accept_invites.sql`: RLS de aceite
+
+- **Arquivos modificados:**
+  - `lib/actions/members.ts`: Sistema completo de gestão (900+ linhas)
+  - `lib/actions/auth.ts`: Suporte a token de convite no signup
+  - `app/auth/callback/route.ts`: Aceite automático de convites
+  - `app/(main)/layout.tsx`: Retry para evitar redirecionamento prematuro
+  - `app/(main)/settings/settings-client.tsx`: UI completa de gestão
+  - `components/layout/UserNav.tsx`: Correção de hidratação
+
+### 2. O que está sendo trabalhado no momento
+
+- **Validação e testes do sistema de convites:**
+  - Testes de fluxo completo de convite → email → signup → aceite
+  - Validação de permissões RBAC em todas as ações
+  - Testes de casos edge (convite expirado, email já usado, etc.)
+
+### 3. Próximos passos
+
+- **Melhorias futuras:**
+  - Notificações de convites no dashboard
+  - Histórico de convites (aceitos, cancelados, expirados)
+  - Convites em massa (múltiplos emails de uma vez)
+  - Personalização de templates de email por workspace
+  - Integração com notificações push para novos convites
+
+---
+
 ## 2025-01-XX - XX:XX (Data a ser preenchida)
 
 ### 1. Melhorias, bugs e features implementadas em preview
