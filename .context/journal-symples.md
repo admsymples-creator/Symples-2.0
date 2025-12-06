@@ -22,6 +22,17 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
   - Visível apenas quando `viewOption === "group"`
   - Funciona dentro e fora do `SortableContext`
   - Ao clicar, abre modal de criação de grupo (`setIsCreateGroupModalOpen`)
+- **Refinamento Visual**:
+  - Altura fixa `h-24` para melhor presença visual
+  - Ícone maior (w-8 h-8) com container arredondado e sombra
+  - Texto em uppercase com tracking-wide para destaque
+  - Background sutil (`bg-gray-50/30`) visível por padrão
+  - Espaçamento melhorado (`mt-6 mb-2`)
+  - Border radius `rounded-xl` para consistência visual
+- **Comportamento de Posicionamento**:
+  - Props customizáveis: `label` (padrão: "Novo Grupo") e `className`
+  - Novo grupo criado aparece no final da lista de grupos (após todos os grupos existentes)
+  - Ordem gerenciada pelo `groupOrder` state e localStorage
 - **Design e UX**:
   - Estilo minimalista e discreto (bordas tracejadas, background transparente)
   - Hover effects: borda verde, background sutil, sombra leve

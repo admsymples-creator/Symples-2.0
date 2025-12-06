@@ -19,36 +19,39 @@ export function GhostGroup({
             type="button"
             onClick={onClick}
             className={cn(
-                // Layout & Dimensões (Estilo Barra Horizontal)
-                "group relative w-full flex items-center justify-center gap-2.5",
-                "py-3 px-4 mt-4", // Margem superior para separar do último grupo
+                // Layout & Dimensões
+                "group relative w-full flex items-center justify-center gap-3",
+                "h-24 mt-6 mb-2",
                 
-                // Bordas & Fundo (Sutil até o hover)
-                "border-2 border-dashed border-gray-200 rounded-lg", // rounded-lg conforme Design Tokens 
-                "bg-transparent hover:bg-gray-50/50",
+                // Bordas & Forma
+                "border-2 border-dashed border-gray-200",
+                "rounded-xl",
                 
-                // Interação & Transições
+                // Cores & Fundo
+                "bg-gray-50/30 hover:bg-green-50/40",
+                
+                // Interação
                 "cursor-pointer transition-all duration-200 ease-in-out",
                 "hover:border-green-400 hover:shadow-sm",
-                "active:scale-[0.99]", // Feedback tátil sutil
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1",
+                "active:scale-[0.99]", 
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2",
                 
                 className
             )}
             aria-label={`Criar ${label}`}
         >
-            {/* Ícone */}
+            {/* Ícone com Container de Fundo */}
             <div className={cn(
-                "flex items-center justify-center w-6 h-6 rounded-md",
+                "flex items-center justify-center w-8 h-8 rounded-lg",
                 "bg-gray-100 text-gray-400",
-                "transition-colors group-hover:bg-green-100 group-hover:text-green-600"
+                "transition-colors group-hover:bg-green-100 group-hover:text-green-600 shadow-sm"
             )}>
-                <Plus className="w-4 h-4" strokeWidth={2.5} />
+                <Plus className="w-5 h-5" strokeWidth={2.5} />
             </div>
 
-            {/* Texto */}
+            {/* Texto com destaque */}
             <span className={cn(
-                "text-sm font-medium text-gray-500",
+                "text-sm font-semibold text-gray-500 uppercase tracking-wide",
                 "transition-colors group-hover:text-green-700"
             )}>
                 {label}
