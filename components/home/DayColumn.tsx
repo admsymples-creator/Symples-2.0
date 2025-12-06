@@ -296,15 +296,16 @@ export function DayColumn({
                     onSelect={setSelectedDateTime}
                     align="start"
                     side="top"
-                  >
-                    <button type="button" className={cn(
-                      "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
-                      selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
-                    )}>
-                      <CalendarIcon className="w-3.5 h-3.5" />
-                      {selectedDateTime ? "Data definida" : "Agendar"}
-                    </button>
-                  </TaskDateTimePicker>
+                    trigger={
+                      <button type="button" className={cn(
+                        "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
+                        selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
+                      )}>
+                        <CalendarIcon className="w-3.5 h-3.5" />
+                        {selectedDateTime ? "Data definida" : "Agendar"}
+                      </button>
+                    }
+                  />
                 </div>
                 
                 <div className="text-[10px] text-gray-400 font-medium">

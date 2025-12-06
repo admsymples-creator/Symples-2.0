@@ -363,6 +363,66 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          id: string
+          recipient_id: string
+          triggering_user_id: string | null
+          category: string
+          resource_type: string
+          resource_id: string | null
+          title: string
+          content: string | null
+          action_url: string | null
+          metadata: Json | null
+          read_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          recipient_id: string
+          triggering_user_id?: string | null
+          category?: string
+          resource_type: string
+          resource_id?: string | null
+          title: string
+          content?: string | null
+          action_url?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          recipient_id?: string
+          triggering_user_id?: string | null
+          category?: string
+          resource_type?: string
+          resource_id?: string | null
+          title?: string
+          content?: string | null
+          action_url?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_triggering_user_id_fkey"
+            columns: ["triggering_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
