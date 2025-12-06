@@ -38,12 +38,22 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Corrigido `getWorkspaceMembers` para incluir o usuário atual mesmo que não esteja em `workspace_members`
   - Removido filtro que excluía o usuário logado da lista
   - Corrigido loop infinito de renderização em `TaskActionsMenu` e `TaskAssigneePicker`
+- **Correção de timezone na data do TaskDetailModal**: 
+  - Corrigido problema onde a data aparecia com um dia antes devido à conversão de timezone
+  - Implementada função `parseLocalDate` para criar datas no timezone local ao invés de UTC
+- **Cores dinâmicas no TaskDatePicker**:
+  - Implementada lógica de cores baseada no status da data e conclusão da tarefa
+  - **Vermelho**: Data vencida (passada) e tarefa não completada
+  - **Verde**: Data é hoje
+  - **Cinza**: Data futura ou tarefa completada (mesmo que a data seja passada)
 
 ### Technical
 - Implementado layout CSS Grid em TaskRowMinify para alinhamento vertical consistente
 - Adicionado suporte para cores de grupo (nomeadas e hex) em TaskRowMinify e TaskGroup
 - Melhorada imutabilidade em atualizações de estado para garantir re-renders corretos
 - Adicionado `useMemo` para conversão de cores de grupo em TaskGroup
+- Adicionada prop `isCompleted` ao `TaskDatePicker` para calcular cores dinâmicas baseadas no status da tarefa
+- Implementada função `getDateColor()` no `TaskDatePicker` para determinar cor baseada em data e status de conclusão
 
 
 

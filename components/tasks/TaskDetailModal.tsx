@@ -19,7 +19,7 @@ import {
     generateTaskShareLink
 } from "@/lib/actions/task-details";
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
-import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TaskStatus } from "@/lib/config/tasks";
+import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
     DialogHeader,
@@ -1562,6 +1562,13 @@ export function TaskDetailModal({
         }
     };
 
+    // Helper para converter string YYYY-MM-DD para Date no timezone local
+    // Isso evita o problema de timezone onde new Date("YYYY-MM-DD") interpreta como UTC
+    const parseLocalDate = (dateString: string): Date => {
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    };
+
     const handleDueDateChange = async (date: Date | null) => {
         const dateString = date ? date.toISOString().split("T")[0] : "";
         const oldDate = dueDate;
@@ -1807,9 +1814,10 @@ export function TaskDetailModal({
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
                                     <TaskDatePicker
-                                        date={dueDate ? new Date(dueDate) : null}
+                                        date={dueDate ? parseLocalDate(dueDate) : null}
                                         onSelect={handleDueDateChange}
                                         align="start"
+                                        isCompleted={status === TASK_STATUS.DONE}
                                     />
                                 </div>
                             </div>
