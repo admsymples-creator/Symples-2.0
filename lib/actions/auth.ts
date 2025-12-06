@@ -120,16 +120,84 @@ export async function signInWithEmail(email: string) {
 }
 
 /**
+ * Inicia o fluxo de signup com Magic Link (email)
+ * Funciona igual ao login, mas pode incluir token de convite
+ */
+export async function signupWithEmail(formData: FormData) {
+  try {
+    const email = formData.get('email')?.toString().trim();
+    const inviteToken = formData.get('inviteToken')?.toString();
+
+    if (!email) {
+      return {
+        success: false,
+        message: 'Email é obrigatório',
+      };
+    }
+
+    if (!isValidEmail(email)) {
+      return {
+        success: false,
+        message: 'Email inválido. Por favor, insira um email válido.',
+      };
+    }
+
+    const supabase = await createServerClient();
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    
+    // ✅ CORREÇÃO 3: Magic Link Stripping - Persistência Híbrida
+    // Tentamos incluir na URL primeiro (melhor para OAuth e quando funciona)
+    // O cookie já foi salvo na página /invite/[token], então temos fallback
+    let emailRedirectTo = `${baseUrl}/auth/callback`;
+    if (inviteToken) {
+      emailRedirectTo += `?invite=${inviteToken}`;
+      // Nota: Se o provedor de email remover o parâmetro, o callback
+      // vai usar o cookie como fallback (já foi salvo na página de invite)
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo,
+      },
+    });
+
+    if (error) {
+      console.error('Erro ao enviar Magic Link para signup:', error);
+      return {
+        success: false,
+        message: error.message || 'Erro ao enviar email de autenticação',
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Email de autenticação enviado! Verifique sua caixa de entrada.',
+    };
+  } catch (error) {
+    console.error('Erro inesperado ao criar conta:', error);
+    return {
+      success: false,
+      message: 'Erro inesperado ao processar criação de conta',
+    };
+  }
+}
+
+/**
  * Inicia o fluxo de login com Google OAuth
+ * @param inviteToken - Token de convite opcional para incluir no callback
  * @returns Objeto com success e message
  */
-export async function signInWithGoogle() {
+export async function signInWithGoogle(inviteToken?: string) {
   try {
     const supabase = await createServerClient()
 
     // Obter a URL base do ambiente
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-    const redirectTo = `${baseUrl}/auth/callback`
+    let redirectTo = `${baseUrl}/auth/callback`;
+    if (inviteToken) {
+      redirectTo += `?invite=${inviteToken}`;
+    }
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

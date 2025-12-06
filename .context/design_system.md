@@ -298,6 +298,17 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Badge de contador
   - Lista de notificações com ações
 
+- **WelcomeEmptyState (`components/home/WelcomeEmptyState.tsx`):**
+  - Estado vazio para First Time User Experience (FTUX)
+  - Card centralizado com ícone Sparkles
+  - Botão CTA verde para criar primeira tarefa
+  - Integração com TaskDetailModal
+
+- **WeeklyViewWrapper (`components/home/WeeklyViewWrapper.tsx`):**
+  - Wrapper que gerencia estado vazio vs. grid semanal
+  - Integra modal de criação de tarefas
+  - Atualização automática após criação
+
 ### 9.2. Componentes de Tarefas
 - **TaskDetailModal (`components/tasks/TaskDetailModal.tsx`):**
   - Modal widescreen (`max-w-6xl`)
@@ -693,6 +704,31 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Atualização imediata no componente pai
   - Renderização apenas no cliente (evita problemas de hidratação)
 - **Formato**: Exibe data e hora no formato `d MMM, HH:mm` (pt-BR)
+
+### 14.4. WelcomeEmptyState (`components/home/WelcomeEmptyState.tsx`)
+- **Componente**: Estado vazio para First Time User Experience (FTUX) no Dashboard
+- **Props**: `workspaceName` (string, opcional), `onAction` (função callback)
+- **Layout**: Card centralizado (`bg-white`, `border-gray-200`, `shadow-sm`) com padding generoso (`p-12`)
+- **Elementos**:
+  - **Ícone**: `Sparkles` (Lucide) em círculo verde claro (`bg-green-50`, `text-green-600`)
+  - **Título**: "Bem-vindo ao [workspaceName]!" em `text-2xl font-bold text-gray-900`
+  - **Subtítulo**: "Tudo pronto para começar? Crie sua primeira tarefa ou explore o menu." em `text-gray-600`
+  - **CTA Button**: "Criar minha primeira tarefa" (`bg-green-600 hover:bg-green-700`)
+- **Uso**: Aparece quando o usuário não tem tarefas na semana, substituindo o grid vazio
+
+### 14.5. WeeklyViewWrapper (`components/home/WeeklyViewWrapper.tsx`)
+- **Componente**: Wrapper client que gerencia estado do modal e lógica condicional
+- **Props**: `tasks` (Task[]), `workspaces` (Array de workspaces)
+- **Funcionalidades**:
+  - Verifica se `tasks.length === 0`
+  - Se vazio: renderiza `<WelcomeEmptyState />`
+  - Se há tarefas: renderiza `<WeeklyView />` normalmente
+  - Integra `TaskDetailModal` para criação de tarefas
+  - Gerencia estado do modal (`isModalOpen`)
+- **Callbacks**:
+  - `handleCreateTask()`: Abre o modal em modo create
+  - `handleTaskCreated()`: Fecha modal e atualiza página via `router.refresh()`
+  - `handleTaskUpdated()`: Atualiza página após edição
 
 ## 15. Journal Visual de Preview
 

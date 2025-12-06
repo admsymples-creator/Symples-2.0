@@ -118,6 +118,12 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Evitar erro de hidratação renderizando Popovers apenas após montagem
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   // Estado para armazenar o usuário atual
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; avatar?: string } | null>(null);
@@ -557,44 +563,63 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
         onClick={stopProp}
         onPointerDown={stopProp}
       >
-        <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
-          <PopoverTrigger asChild>
-            <div className="flex items-center gap-1.5">
-              {task.dueDate ? (
-                <span className={cn("text-xs font-medium whitespace-nowrap",
-                  isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                  isToday ? "text-green-600" : 
-                  "text-gray-500"
-                )}>
-                  {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400 flex items-center gap-1 hover:text-gray-600">
-                  <CalendarIcon className="w-3.5 h-3.5" />
-                </span>
-              )}
-            </div>
-          </PopoverTrigger>
-          <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp} onPointerDown={stopProp}>
-            <Calendar
-              mode="single"
-              selected={task.dueDate ? new Date(task.dueDate) : undefined}
-              onSelect={handleDateUpdate}
-              initialFocus
-            />
-            <div className="p-2 border-t">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                onClick={() => handleDateUpdate(undefined)}
-              >
-                <X className="w-3 h-3 mr-2" />
-                Remover data
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
+        {isMounted ? (
+          <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
+            <PopoverTrigger asChild>
+              <div className="flex items-center gap-1.5">
+                {task.dueDate ? (
+                  <span className={cn("text-xs font-medium whitespace-nowrap",
+                    isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
+                    isToday ? "text-green-600" : 
+                    "text-gray-500"
+                  )}>
+                    {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400 flex items-center gap-1 hover:text-gray-600">
+                    <CalendarIcon className="w-3.5 h-3.5" />
+                  </span>
+                )}
+              </div>
+            </PopoverTrigger>
+            <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp} onPointerDown={stopProp}>
+              <Calendar
+                mode="single"
+                selected={task.dueDate ? new Date(task.dueDate) : undefined}
+                onSelect={handleDateUpdate}
+                initialFocus
+              />
+              <div className="p-2 border-t">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="w-full text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => handleDateUpdate(undefined)}
+                >
+                  <X className="w-3 h-3 mr-2" />
+                  Remover data
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <div className="flex items-center gap-1.5">
+            {task.dueDate ? (
+              <span className={cn("text-xs font-medium whitespace-nowrap",
+                isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
+                isToday ? "text-green-600" : 
+                "text-gray-500"
+              )}>
+                {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400 flex items-center gap-1">
+                <CalendarIcon className="w-3.5 h-3.5" />
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Coluna: Responsável */}
@@ -603,6 +628,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
         onClick={stopProp}
         onPointerDown={stopProp}
       >
+        {isMounted ? (
           <Popover open={isAssigneeOpen} onOpenChange={setIsAssigneeOpen}>
             <PopoverTrigger asChild>
               <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
@@ -655,56 +681,88 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               </Command>
             </PopoverContent>
           </Popover>
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <button className="outline-none rounded-full" disabled>
+            {task.assignees && task.assignees.length > 0 ? (
+              <Avatar
+                name={task.assignees[0].name}
+                avatar={task.assignees[0].avatar}
+                size="sm"
+                className="border border-white shadow-sm"
+              />
+            ) : (
+              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
+                <User size={12} />
+              </div>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Coluna: Status */}
       <div className="flex items-center justify-center">
-        <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
-          <PopoverTrigger asChild>
-            <div
-              onClick={stopProp}
-              onPointerDown={stopProp}
-            >
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-2 py-0.5 h-5 font-medium cursor-pointer hover:bg-gray-50 transition-colors",
-                  statusConfig.lightColor
-                )}
+        {isMounted ? (
+          <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
+            <PopoverTrigger asChild>
+              <div
+                onClick={stopProp}
+                onPointerDown={stopProp}
               >
-                <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
-                {statusConfig.label}
-                <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
-              </Badge>
-            </div>
-          </PopoverTrigger>
-          <PopoverContent className="p-0 w-48" align="start" onClick={stopProp} onPointerDown={stopProp}>
-            <Command>
-              <CommandList>
-                <CommandGroup>
-                  {ORDERED_STATUSES.map((statusKey) => {
-                    const config = TASK_CONFIG[statusKey];
-                    const isSelected = dbStatus === statusKey;
-                    return (
-                      <CommandItem
-                        key={statusKey}
-                        onSelect={() => handleStatusUpdate(config.label)}
-                        className={cn(
-                          "text-xs cursor-pointer",
-                          isSelected && "bg-gray-100"
-                        )}
-                      >
-                        <div className={cn("w-1.5 h-1.5 rounded-full mr-2", config.color.replace("fill-", "bg-"))} />
-                        {config.label}
-                        {isSelected && <CheckCircle2 className="w-3 h-3 ml-auto text-green-600" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] px-2 py-0.5 h-5 font-medium cursor-pointer hover:bg-gray-50 transition-colors",
+                    statusConfig.lightColor
+                  )}
+                >
+                  <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
+                  {statusConfig.label}
+                  <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+                </Badge>
+              </div>
+            </PopoverTrigger>
+            <PopoverContent className="p-0 w-48" align="start" onClick={stopProp} onPointerDown={stopProp}>
+              <Command>
+                <CommandList>
+                  <CommandGroup>
+                    {ORDERED_STATUSES.map((statusKey) => {
+                      const config = TASK_CONFIG[statusKey];
+                      const isSelected = dbStatus === statusKey;
+                      return (
+                        <CommandItem
+                          key={statusKey}
+                          onSelect={() => handleStatusUpdate(config.label)}
+                          className={cn(
+                            "text-xs cursor-pointer",
+                            isSelected && "bg-gray-100"
+                          )}
+                        >
+                          <div className={cn("w-1.5 h-1.5 rounded-full mr-2", config.color.replace("fill-", "bg-"))} />
+                          {config.label}
+                          {isSelected && <CheckCircle2 className="w-3 h-3 ml-auto text-green-600" />}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[10px] px-2 py-0.5 h-5 font-medium",
+              statusConfig.lightColor
+            )}
+          >
+            <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
+            {statusConfig.label}
+            <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+          </Badge>
+        )}
       </div>
 
       {/* Coluna: Menu Ações */}

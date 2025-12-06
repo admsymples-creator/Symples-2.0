@@ -33,6 +33,27 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
+  // ✅ CORREÇÃO: Interceptar rotas /invite/* para criar cookie pending_invite
+  // Isso permite que o token sobreviva a redirects OAuth e Magic Link
+  if (pathname.startsWith('/invite/')) {
+    // Extrair o token da URL (ex: /invite/abc123 -> abc123)
+    const tokenMatch = pathname.match(/^\/invite\/([^/]+)/);
+    const inviteToken = tokenMatch?.[1];
+    
+    if (inviteToken) {
+      // Criar cookie com configurações especificadas
+      response.cookies.set('pending_invite', inviteToken, {
+        httpOnly: false, // Precisamos ler no client também
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 3600, // 1 hora
+        path: '/',
+      });
+      
+      console.log('🍪 Cookie pending_invite criado para token:', inviteToken);
+    }
+  }
+
   // Rotas públicas (acessíveis sem autenticação)
   const publicRoutes = ['/login', '/onboarding']
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))

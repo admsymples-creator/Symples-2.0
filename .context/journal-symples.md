@@ -6,6 +6,212 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-02 - Empty State Gold Standard e Welcome Modal (FTUX)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Empty State Gold Standard para Visão Semanal
+- **Componente EmptyWeekState:**
+  - ✅ Design "Ghost Grid" que mantém contexto visual do calendário
+  - ✅ Container com borda tracejada (`border-dashed border-slate-100`)
+  - ✅ Altura fixa de 500px para consistência visual
+  - ✅ Fundo sutil (`bg-slate-50/30`)
+  - ✅ 4 divisores verticais internos sugerindo as 5 colunas do calendário
+  - ✅ Ilustração SVG personalizada (`empty-state-coffee-weekly.svg`)
+  - ✅ Título: "Por enquanto, nada por aqui..."
+  - ✅ Subtítulo: "Aproveite o momento para tomar um café e planejar os próximos passos."
+  - ✅ CTA: Botão ghost "Adicionar tarefa rápida"
+
+- **Integração e UX:**
+  - ✅ Substitui o conteúdo do grid quando `tasks.length === 0`
+  - ✅ Mantém cabeçalho "Visão Semanal" para consistência
+  - ✅ Grid com 5 colunas (`lg:grid-cols-5`) para ocupar toda largura
+  - ✅ Corrigido erro de hidratação usando estado `isMounted`
+  - ✅ CTA conectado ao fluxo de criação de tarefas existente
+
+## 2025-01-02 - Welcome Modal (FTUX) e Melhorias de Email
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Welcome Modal (First Time User Experience - FTUX)
+- **Componente OnboardingModal:**
+  - ✅ Modal de boas-vindas usando Shadcn Dialog
+  - ✅ Ilustração SVG personalizada (`/welcome-popup.svg`)
+  - ✅ Título: "Sua operação, finalmente sob controle"
+  - ✅ Texto de boas-vindas explicando o valor do Symples
+  - ✅ Botão "Fechar" para dismissar o modal
+  - ✅ Persistência em `localStorage` (`symples-welcome-seen`)
+  - ✅ Aparece automaticamente quando usuário não tem tarefas e ainda não viu
+
+- **Integração no Dashboard:**
+  - ✅ Componente `HomePageClient` para orquestrar modal e visão semanal
+  - ✅ Hook `useShouldShowOnboarding` para controlar exibição
+  - ✅ Detecção de aceitação de invite para resetar flag de "visto"
+  - ✅ Suporte para detectar invite aceito via URL (`invite_accepted=true`) ou cookie (`newly_accepted_workspace_id`)
+
+- **Empty State da Visão Semanal:**
+  - ✅ Placeholder minimalista "Tudo limpo por aqui" quando modal foi fechado
+  - ✅ Grid vazio quando modal ainda não foi visto (aguardando exibição do modal)
+
+#### ✅ Melhorias nos Emails Transacionais
+- **Logo nos Emails:**
+  - ✅ Logo do Symples (`/logo-black.svg`) agora aparece nos emails de convite
+  - ✅ Mesmo logo usado no sidebar (consistência visual)
+  - ✅ URL dinâmica baseada no domínio do inviteLink
+  - ✅ Componente `Img` do `@react-email/components` para renderização correta
+
+#### ✅ Refinamentos no Fluxo de Convites
+- **Detecção de Invite Aceito:**
+  - ✅ Resetar localStorage quando usuário aceita invite em novo workspace
+  - ✅ Suporte para cookie `newly_accepted_workspace_id` (setado por `acceptInvite`)
+  - ✅ Suporte para parâmetro URL `invite_accepted=true`
+  - ✅ Limpeza automática do cookie após uso
+
+## 2025-12-01 - Sistema Completo de Convites e Gestão de Membros
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Sistema Completo de Convites e Gestão de Membros (RBAC)
+- **Infraestrutura de Email (Resend):**
+  - ✅ Integração completa com Resend para emails transacionais
+  - ✅ Abstração em `lib/email/send-invite.ts` para envio de convites
+  - ✅ Templates React usando `@react-email/components` e `@react-email/render`
+  - ✅ Template elegante de email de convite (`lib/email/templates/invite-email.tsx`)
+  - ✅ Script de teste standalone (`scripts/test-email.js`) e API de teste (`/api/test-email`)
+
+- **Backend (Server Actions):**
+  - ✅ `inviteMember()`: Sistema completo de convites com dois cenários
+    - Cenário A: Usuário já existe → Adiciona diretamente ao workspace
+    - Cenário B: Usuário novo → Cria convite pendente e envia email
+  - ✅ `revokeInvite()`: Cancelamento de convites pendentes
+  - ✅ `resendInvite()`: Reenvio de convites
+  - ✅ `acceptInvite()`: Aceite de convites com validações
+  - ✅ `updateMemberRole()`: Alteração de roles com verificação de permissões
+  - ✅ `removeMember()`: Remoção de membros com permissões
+  - ✅ `getPendingInvites()`: Lista de convites pendentes
+  - ✅ `getInviteDetails()`: Detalhes públicos de convites para página de aceite
+  - ✅ Validações robustas: email, workspaceId, permissões (apenas owner/admin podem convidar)
+  - ✅ Tratamento de erros com try-catch e logging detalhado
+
+- **Frontend (UI de Gestão):**
+  - ✅ Página `/settings` com aba "Membros" completa
+  - ✅ Lista de membros: Avatar, Nome, Email, Role (badge colorida), Status
+  - ✅ Lista de convites pendentes com badges de status
+  - ✅ Modal de convite com seleção de role (admin, member, viewer)
+  - ✅ Ações por membro: Remover, Alterar Role
+  - ✅ Ações por convite: Cancelar, Reenviar
+  - ✅ Contador de convites pendentes no cabeçalho
+  - ✅ Roles traduzidas para português na UI
+  - ✅ Feedback visual com toasts para todas as ações
+
+- **Fluxo de Aceite de Convite:**
+  - ✅ Página `/invite/[token]` para visualização e aceite de convites
+  - ✅ Suporte para usuários não autenticados (mostra opções de login/signup)
+  - ✅ Fluxo de signup com token de convite (`/signup?invite={token}`)
+  - ✅ Aceite automático após login via Google ou signup
+  - ✅ Callback de autenticação atualizado para aceitar convites automaticamente
+  - ✅ Redirecionamento inteligente (evita onboarding após aceitar convite)
+
+- **Políticas RLS (Row Level Security):**
+  - ✅ Migração `20241201_allow_public_invite_read.sql`: Permite leitura pública de convites pendentes
+  - ✅ Migração `20241201_allow_users_accept_invites.sql`: Permite que usuários aceitem convites inserindo-se em workspace_members
+  - ✅ Validações de segurança em todas as ações de membros
+
+- **Correções e Melhorias:**
+  - ✅ Correção de erro 500 ao tentar convidar quando já existe convite (mensagens claras)
+  - ✅ Correção de redirecionamento para onboarding após aceitar convite
+  - ✅ Correção de problemas de hidratação em componentes Radix UI (UserNav, Tabs)
+  - ✅ Validação de email e workspaceId antes de processar convites
+  - ✅ Melhor tratamento de erros com mensagens amigáveis
+  - ✅ Layout ajustado com retry para evitar redirecionamento prematuro
+
+- **Documentação:**
+  - ✅ `IMPLEMENTACAO_CONVITES.md`: Documentação completa do sistema
+  - ✅ `TROUBLESHOOTING_EMAIL.md`: Guia de troubleshooting de emails
+  - ✅ `DIAGNOSTICO_ERRO_500_INVITE.md`: Diagnóstico de erros
+  - ✅ `CORRECAO_CONVITE_DUPLICADO.md`: Correção de erro de convite duplicado
+  - ✅ `SOLUCAO_REDIRECIONAMENTO_ONBOARDING.md`: Solução para redirecionamento
+
+---
+
+## 🐛 Correções - Login Tradicional e Hidratação (2024-12)
+
+### Problemas Corrigidos
+
+- **Redirecionamento Incorreto para Onboarding:**
+  - ❌ Após login tradicional (sem convite), usuários com workspaces eram redirecionados para `/onboarding`
+  - ✅ **Correção:** Melhorada lógica no `MainLayout` e `auth/callback/route.ts`:
+    - Adicionado `revalidatePath` após login tradicional para limpar cache
+    - Busca usuário primeiro para garantir sessão estabelecida antes de buscar workspaces
+    - Aguarda 100ms antes de buscar workspaces para evitar race conditions
+    - Logs detalhados adicionados para diagnóstico
+
+- **Erro de Hidratação em Popovers (TaskRowMinify):**
+  - ❌ Popovers do Radix UI geravam IDs dinâmicos causando erro de hidratação
+  - ✅ **Correção:** Implementado estado `isMounted` para renderizar Popovers apenas após montagem:
+    - Popovers de Data, Responsável e Status agora renderizam placeholders durante SSR
+    - Evita mismatch entre HTML do servidor e cliente
+
+- **Erro de Hidratação em WeeklyViewWrapper:**
+  - ❌ Extensões do navegador (ex: Bitdefender) adicionavam atributos como `bis_skin_checked` causando erro
+  - ✅ **Correção:** Adicionado `suppressHydrationWarning` aos elementos placeholder:
+    - Permite que extensões modifiquem HTML sem causar erros de hidratação
+
+### Melhorias Técnicas
+
+- **`lib/actions/user.ts` (`getUserWorkspaces`):**
+  - ✅ Logs detalhados adicionados para diagnóstico
+  - ✅ Melhor tratamento de joins que retornam arrays ou objetos
+  - ✅ Tratamento de erro melhorado com informações detalhadas
+
+- **`app/(main)/layout.tsx`:**
+  - ✅ Busca usuário primeiro para garantir sessão estabelecida
+  - ✅ Aguarda 100ms antes de buscar workspaces
+  - ✅ Logs adicionais para diagnóstico de problemas de workspace
+
+- **`app/auth/callback/route.ts`:**
+  - ✅ Adicionado `revalidatePath` após login tradicional
+  - ✅ Aguarda 200ms antes de verificar workspaces
+  - ✅ Melhor validação de tokens de convite (não processa convites inválidos/expirados em logins tradicionais)
+
+#### 📝 Arquivos Criados/Modificados
+- **Novos arquivos:**
+  - `app/(auth)/signup/page.tsx`: Página de cadastro
+  - `components/landing/SignupForm.tsx`: Formulário de cadastro
+  - `lib/email/send-invite.ts`: Abstração de envio de emails
+  - `lib/email/templates/invite-email.tsx`: Template de email
+  - `app/invite/[token]/page.tsx`: Página de aceite de convite
+  - `app/api/test-email/route.ts`: API de teste de emails
+  - `scripts/test-email.js`: Script de teste standalone
+  - `supabase/migrations/20241201_allow_public_invite_read.sql`: RLS pública
+  - `supabase/migrations/20241201_allow_users_accept_invites.sql`: RLS de aceite
+
+- **Arquivos modificados:**
+  - `lib/actions/members.ts`: Sistema completo de gestão (900+ linhas)
+  - `lib/actions/auth.ts`: Suporte a token de convite no signup
+  - `app/auth/callback/route.ts`: Aceite automático de convites
+  - `app/(main)/layout.tsx`: Retry para evitar redirecionamento prematuro
+  - `app/(main)/settings/settings-client.tsx`: UI completa de gestão
+  - `components/layout/UserNav.tsx`: Correção de hidratação
+
+### 2. O que está sendo trabalhado no momento
+
+- **Validação e testes do sistema de convites:**
+  - Testes de fluxo completo de convite → email → signup → aceite
+  - Validação de permissões RBAC em todas as ações
+  - Testes de casos edge (convite expirado, email já usado, etc.)
+
+### 3. Próximos passos
+
+- **Melhorias futuras:**
+  - Notificações de convites no dashboard
+  - Histórico de convites (aceitos, cancelados, expirados)
+  - Convites em massa (múltiplos emails de uma vez)
+  - Personalização de templates de email por workspace
+  - Integração com notificações push para novos convites
+
+---
+
 ## 2025-01-XX - XX:XX (Data a ser preenchida)
 
 ### 1. Melhorias, bugs e features implementadas em preview

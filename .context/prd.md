@@ -48,6 +48,8 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 \- \*\*Foco:\*\* O que é crítico para \*hoje\*.  
 \- \*\*KPIs Rápidos:\*\* "Tarefas pendentes hoje" e "Saldo Atual Previsto".  
 \- \*\*Grid Semanal:\*\* Visualização dos próximos 5 dias (colunas).  
+\- \*\*Welcome Modal (FTUX):\*\* Modal de boas-vindas com ilustração personalizada que aparece automaticamente quando usuário não tem tarefas. Botão "Fechar" para dismissar. Persistência em localStorage.  
+\- \*\*Empty State (Gold Standard):\*\* Quando modal foi fechado e não há tarefas, exibe "Ghost Grid" com design sofisticado que mantém contexto visual do calendário (4 divisores verticais sugerindo 5 colunas). Inclui ilustração SVG personalizada de café, mensagem "Por enquanto, nada por aqui..." e CTA "Adicionar tarefa rápida".  
 \- \*\*Smart Highlight:\*\* Tarefas atrasadas ganham destaque visual (borda vermelha).
 
 **\#\#\# 3.3. Módulo: Tarefas (Core)**  
@@ -261,7 +263,16 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
   - ✅ Integração com Supabase Storage via hook `useFileUpload`
   - ✅ Componentes `AttachmentCard` e `AudioMessageBubble` para exibição
 - ✅ **Módulo Financeiro:** Dashboard com KPIs, extrato e modal de criação de transações
-- ✅ **Gestão de Time:** Sistema de membros, convites (`workspace_invites`) e permissões
+- ✅ **Gestão de Time e Convites:** Sistema completo de membros, convites e permissões (RBAC)
+  - ✅ Tabela `workspace_invites` com status (pending, accepted, expired, cancelled)
+  - ✅ Tabela `workspace_members` com roles (owner, admin, member, viewer)
+  - ✅ Sistema de convites por email com integração Resend
+  - ✅ Templates de email usando @react-email/components
+  - ✅ Página de aceite de convite `/invite/[token]`
+  - ✅ Fluxo de signup com token de convite
+  - ✅ Políticas RLS para leitura pública de convites e aceite
+  - ✅ UI completa em `/settings` com lista de membros e convites pendentes
+  - ✅ Ações: convidar, cancelar, reenviar, remover membro, alterar role
 - ✅ **Assistente IA:** Página `/assistant` com componente AIOrb e interface de chat
 - ✅ **Configurações:** Página completa com abas para Geral, Membros e Faturamento
 - ✅ **Logs de Auditoria:** Tabela `audit_logs` para rastreamento de ações
@@ -409,18 +420,27 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
      - Upload e playback de áudios (áudio do usuário e áudios vindos do WhatsApp/n8n).  
      - Sincronização completa com `task_attachments` e Supabase Storage, incluindo estados de upload e tratamento de erro.
 
-2. **Gestão de Usuários (User Management Completo)**  
-   - Evoluir o módulo de membros/time para:
-     - Gerenciar roles detalhadas (owner, admin, member, viewer) com permissões claras por módulo (Tasks, Finance, Settings, Billing).  
-     - Interface de administração de usuários (ativar/desativar acesso, reset de permissões).  
-     - Logs de auditoria dedicados para ações sensíveis (remoção de membros, mudança de role, etc.).
+2. ✅ **Gestão de Usuários (User Management Completo) - IMPLEMENTADO**  
+   - ✅ Sistema completo de gestão de membros com roles (owner, admin, member, viewer)
+   - ✅ Interface de administração em `/settings` com lista de membros e convites
+   - ✅ Ações: convidar, remover, alterar role, cancelar/reenviar convites
+   - ✅ Sistema de convites por email com integração Resend
+   - ✅ Fluxo completo: convite → email → signup → aceite automático
+   - ✅ Políticas RLS para segurança e controle de acesso
+   - 🔄 **Próximas melhorias:**
+     - Notificações de convites no dashboard
+     - Histórico completo de convites (aceitos, cancelados, expirados)
+     - Convites em massa (múltiplos emails)
+     - Permissões granulares por módulo (Tasks, Finance, Settings, Billing)
 
-3. **E-mails Transacionais com Resend**  
-   - Integrar Resend para envio de:
-     - Convites de workspace (`workspace_invites`).  
-     - Notificações de tarefa (atribuição, mudança de status, comentários).  
-     - E-mails de onboarding e reset de senha (quando aplicável).  
-   - Criar camada de abstração (`lib/email/`) para centralizar templates e chamadas ao Resend.
+3. ✅ **E-mails Transacionais com Resend (IMPLEMENTADO)**  
+   - ✅ Integração Resend completa para envio de:
+     - ✅ Convites de workspace (`workspace_invites`) com templates React
+     - 🔄 Notificações de tarefa (atribuição, mudança de status, comentários) - Próximo passo
+     - 🔄 E-mails de onboarding e reset de senha - Próximo passo
+   - ✅ Camada de abstração (`lib/email/`) criada para centralizar templates e chamadas ao Resend
+   - ✅ Templates usando `@react-email/components` e `@react-email/render`
+   - ✅ Scripts de teste (`scripts/test-email.js`) e API de teste (`/api/test-email`)
 
 4. **Playbook Operacional (Onboarding & Sucesso do Cliente)**  
    - Definir e documentar um playbook de uso do Symples:
