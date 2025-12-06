@@ -19,7 +19,7 @@ import {
     generateTaskShareLink
 } from "@/lib/actions/task-details";
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
-import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TaskStatus } from "@/lib/config/tasks";
+import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
     DialogHeader,
@@ -251,6 +251,73 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
     return <canvas ref={canvasRef} width={240} height={32} className="w-full h-full max-w-[240px]" />;
 };
 
+// ------------------------------------------------------------------
+// Audio Recorder Display Component (Isolated Timer for Performance)
+// ------------------------------------------------------------------
+
+interface AudioRecorderDisplayProps {
+    stream: MediaStream | null;
+    onCancel: () => void;
+    onStop: (duration: number) => void;
+}
+
+const AudioRecorderDisplay = memo(({ stream, onCancel, onStop }: AudioRecorderDisplayProps) => {
+    const [recordingTime, setRecordingTime] = useState(0);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        interval = setInterval(() => {
+            setRecordingTime(t => t + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const handleStop = () => {
+        onStop(recordingTime);
+    };
+
+    return (
+        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
+                <div className="flex-1 flex items-center justify-center gap-4">
+                    <div className="flex-1 h-8 flex items-center justify-center">
+                        {stream && <RecordingVisualizer stream={stream} />}
+                    </div>
+                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
+                        {formatTime(recordingTime)}
+                    </span>
+                </div>
+            </div>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="text-red-500"
+                onClick={onCancel}
+                title="Cancelar gravação"
+            >
+                <Trash2 className="w-4 h-4" />
+            </Button>
+            <Button
+                size="icon"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={handleStop}
+                title="Finalizar gravação"
+            >
+                <Check className="w-4 h-4" />
+            </Button>
+        </div>
+    );
+});
+
+AudioRecorderDisplay.displayName = "AudioRecorderDisplay";
+
 // Feature flag
 const ENABLE_AUDIO_TO_TASK = false;
 
@@ -282,13 +349,16 @@ export function TaskDetailModal({
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const descriptionRef = useRef<HTMLDivElement>(null);
+    const [showExpandButton, setShowExpandButton] = useState(false);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingTimeRef = useRef<number>(0);
+    const finalDurationRef = useRef<number>(0); // Armazena duração final passada pelo AudioRecorderDisplay
     const mimeTypeRef = useRef<string>("audio/webm");
     const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
     const [selectedAudioForTask, setSelectedAudioForTask] = useState<{ url: string; duration: number } | null>(null);
@@ -613,7 +683,8 @@ export function TaskDetailModal({
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
     // Dados básicos prontos = isDataReady === true
-    const shouldShowSkeleton = open && !isCreateMode && task?.id && !isDataReady;
+    // Removida dependência de task?.id para evitar flash branco quando task ainda não está disponível
+    const shouldShowSkeleton = open && !isCreateMode && !isDataReady;
     
     // Determinar quais seções ainda estão carregando
     const showAttachmentsSkeleton = isLoadingAttachments;
@@ -920,16 +991,12 @@ export function TaskDetailModal({
                 }
             };
             
-            // Carregar dados básicos primeiro
-            loadBasicData();
-            
-            // Carregar dados estendidos em paralelo (mas depois dos básicos)
-            // Pequeno delay para garantir que dados básicos sejam processados primeiro
-            setTimeout(() => {
+            // Carregar dados básicos primeiro, depois estendidos
+            loadBasicData().then(() => {
                 if (active) {
                     loadExtendedData();
                 }
-            }, 50);
+            });
         } else if (open && isCreateMode) {
             setTitle("");
             setDescription("");
@@ -966,20 +1033,7 @@ export function TaskDetailModal({
         };
     }, [open, isCreateMode, task?.id ?? null, initialDueDate]);
 
-    // Audio recording timer
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (isRecording) {
-            interval = setInterval(() => {
-                setRecordingTime(t => {
-                    const newTime = t + 1;
-                    recordingTimeRef.current = newTime;
-                    return newTime;
-                });
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isRecording]);
+    // Audio recording timer removed - now handled by AudioRecorderDisplay component
 
     // Função para carregar mais comentários
     const loadMoreComments = useCallback(async () => {
@@ -1416,7 +1470,7 @@ export function TaskDetailModal({
                 if (audioChunksRef.current.length > 0) {
                     const blob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
                     const url = URL.createObjectURL(blob);
-                    const finalDuration = recordingTimeRef.current || 1;
+                    const finalDuration = finalDurationRef.current || recordingTimeRef.current || 1;
                     
                     if (currentTaskId && !isCreateMode) {
                         try {
@@ -1454,8 +1508,8 @@ export function TaskDetailModal({
                 stream.getTracks().forEach(track => track.stop());
                 setMediaStream(null);
                 setMediaRecorder(null);
-                setRecordingTime(0);
                 recordingTimeRef.current = 0;
+                finalDurationRef.current = 0;
                 audioChunksRef.current = [];
             };
             
@@ -1469,16 +1523,17 @@ export function TaskDetailModal({
             setMediaRecorder(recorder);
             setMediaStream(stream);
             setIsRecording(true);
-            setRecordingTime(0);
+            finalDurationRef.current = 0;
         } catch (error) {
             console.error("Erro ao acessar microfone:", error);
             toast.error("Permissão de microfone necessária para gravar.");
         }
     };
 
-    const handleStopRecording = () => {
+    const handleStopRecording = (duration: number) => {
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
-            recordingTimeRef.current = recordingTime;
+            finalDurationRef.current = duration;
+            recordingTimeRef.current = duration;
             mediaRecorder.stop();
         }
         setIsRecording(false);
@@ -1497,15 +1552,71 @@ export function TaskDetailModal({
         
         setMediaRecorder(null);
         setIsRecording(false);
-        setRecordingTime(0);
+        finalDurationRef.current = 0;
+        recordingTimeRef.current = 0;
         audioChunksRef.current = [];
     };
 
-    const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    // formatTime removido - agora está no AudioRecorderDisplay
+
+    // Constante para limite de caracteres na descrição
+    const MAX_DESCRIPTION_LENGTH = 3000;
+
+    // Função auxiliar para extrair texto puro do HTML (strip tags)
+    const stripHtmlTags = (html: string): string => {
+        if (!html) return "";
+        const tmp = document.createElement("DIV");
+        tmp.innerHTML = html;
+        return tmp.textContent || tmp.innerText || "";
     };
+
+    // Contar caracteres do texto puro (sem HTML)
+    const getDescriptionCharCount = useMemo(() => {
+        return stripHtmlTags(description).length;
+    }, [description]);
+
+    const isDescriptionOverLimit = getDescriptionCharCount > MAX_DESCRIPTION_LENGTH;
+
+    // Detectar se o conteúdo excede 160px de altura (para mostrar botão "Ver mais")
+    useEffect(() => {
+        if (!isEditingDescription && descriptionRef.current) {
+            const element = descriptionRef.current;
+            // Resetar altura para medir o tamanho real
+            element.style.maxHeight = "none";
+            const height = element.scrollHeight;
+            element.style.maxHeight = "";
+            
+            // Se altura real > 160px (40 * 4px = 160px), mostrar botão
+            setShowExpandButton(height > 160);
+        } else {
+            setShowExpandButton(false);
+        }
+    }, [description, isEditingDescription]);
+
+    // Handler memoizado para salvar descrição
+    const handleSaveDescription = useCallback(async () => {
+        setIsDescriptionExpanded(false);
+        setIsEditingDescription(false);
+        if (currentTaskId && !isCreateMode) {
+            const oldDescription = description; // Guardar para rollback
+            try {
+                const result = await updateTaskField(currentTaskId, "description", description);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    await reloadActivities(currentTaskId);
+                } else {
+                    // ✅ REVERTER se falhar
+                    setDescription(oldDescription);
+                    toast.error(result.error || "Erro ao salvar descrição");
+                }
+            } catch (error) {
+                // ✅ REVERTER em caso de exceção
+                console.error("Erro ao salvar descrição:", error);
+                setDescription(oldDescription);
+                toast.error("Erro ao salvar descrição");
+            }
+        }
+    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
 
     const handleAssigneeChange = async (userId: string | null) => {
         if (!currentTaskId || isCreateMode) return;
@@ -1560,6 +1671,13 @@ export function TaskDetailModal({
             onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldAssignees });
             toast.error("Erro ao atualizar responsável");
         }
+    };
+
+    // Helper para converter string YYYY-MM-DD para Date no timezone local
+    // Isso evita o problema de timezone onde new Date("YYYY-MM-DD") interpreta como UTC
+    const parseLocalDate = (dateString: string): Date => {
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
     };
 
     const handleDueDateChange = async (date: Date | null) => {
@@ -1807,9 +1925,10 @@ export function TaskDetailModal({
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
                                     <TaskDatePicker
-                                        date={dueDate ? new Date(dueDate) : null}
+                                        date={dueDate ? parseLocalDate(dueDate) : null}
                                         onSelect={handleDueDateChange}
                                         align="start"
+                                        isCompleted={status === TASK_STATUS.DONE}
                                     />
                                 </div>
                             </div>
@@ -1819,7 +1938,10 @@ export function TaskDetailModal({
                                 <div className="flex items-center justify-between mb-2">
                                     <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
                                     {!isEditingDescription && (
-                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => setIsEditingDescription(true)}>
+                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => {
+                                            setIsDescriptionExpanded(false);
+                                            setIsEditingDescription(true);
+                                        }}>
                                             <Pencil className="w-3 h-3 mr-1" /> Editar
                                         </Button>
                                     )}
@@ -1831,37 +1953,77 @@ export function TaskDetailModal({
                                             onChange={setDescription}
                                             placeholder="Adicione uma descrição..."
                                         />
-                                        <div className="flex justify-end mt-2 p-2">
-                                            <Button size="sm" onClick={async () => {
-                                                setIsEditingDescription(false);
-                                                if (currentTaskId && !isCreateMode) {
-                                                    const oldDescription = description; // Guardar para rollback
-                                                    try {
-                                                        const result = await updateTaskField(currentTaskId, "description", description);
-                                                        if (result.success) {
-                                                            invalidateCacheAndNotify(currentTaskId);
-                                                            await reloadActivities(currentTaskId);
-                                                        } else {
-                                                            // ✅ REVERTER se falhar
-                                                            setDescription(oldDescription);
-                                                            toast.error(result.error || "Erro ao salvar descrição");
-                                                        }
-                                                    } catch (error) {
-                                                        // ✅ REVERTER em caso de exceção
-                                                        console.error("Erro ao salvar descrição:", error);
-                                                        setDescription(oldDescription);
-                                                        toast.error("Erro ao salvar descrição");
-                                                    }
-                                                }
-                                            }}>Concluir</Button>
+                                        <div className="flex items-center justify-between mt-2 p-2">
+                                            <div className="flex flex-col">
+                                                <span className={cn(
+                                                    "text-xs",
+                                                    isDescriptionOverLimit ? "text-red-500" : "text-gray-400"
+                                                )}>
+                                                    {getDescriptionCharCount}/{MAX_DESCRIPTION_LENGTH}
+                                                </span>
+                                                {isDescriptionOverLimit && (
+                                                    <span className="text-xs text-red-500 mt-0.5">
+                                                        Limite de caracteres excedido.
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <Button 
+                                                size="sm" 
+                                                onClick={handleSaveDescription}
+                                                disabled={isDescriptionOverLimit}
+                                            >
+                                                Concluir
+                                            </Button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div 
-                                        className="min-h-[80px] p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200"
-                                        onClick={() => setIsEditingDescription(true)}
-                                        dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
-                                    />
+                                    <div className="relative">
+                                        <div 
+                                            ref={descriptionRef}
+                                            className={cn(
+                                                "p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200 outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
+                                            )}
+                                            onClick={() => {
+                                                setIsDescriptionExpanded(false);
+                                                setIsEditingDescription(true);
+                                            }}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            tabIndex={-1}
+                                            dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
+                                        />
+                                        {!isDescriptionExpanded && showExpandButton && (
+                                            <>
+                                                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                                                <div className="flex justify-center mt-2">
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setIsDescriptionExpanded(true);
+                                                        }}
+                                                    >
+                                                        Ver mais
+                                                    </Button>
+                                                </div>
+                                            </>
+                                        )}
+                                        {isDescriptionExpanded && showExpandButton && (
+                                            <div className="flex justify-center mt-2">
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setIsDescriptionExpanded(false);
+                                                    }}
+                                                >
+                                                    Ver menos
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
@@ -2083,36 +2245,11 @@ export function TaskDetailModal({
                                     )}
                                     
                                     {isRecording ? (
-                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
-                                                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
-                                                <div className="flex-1 flex items-center justify-center gap-4">
-                                                    <div className="flex-1 h-8 flex items-center justify-center">
-                                                        {mediaStream && <RecordingVisualizer stream={mediaStream} />}
-                                                    </div>
-                                                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
-                                                        {formatTime(recordingTime)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-red-500"
-                                                onClick={handleCancelRecording}
-                                                title="Cancelar gravação"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                size="icon"
-                                                className="bg-green-600 hover:bg-green-700"
-                                                onClick={handleStopRecording}
-                                                title="Finalizar gravação"
-                                            >
-                                                <Check className="w-4 h-4" />
-                                            </Button>
-                                        </div>
+                                        <AudioRecorderDisplay
+                                            stream={mediaStream}
+                                            onCancel={handleCancelRecording}
+                                            onStop={handleStopRecording}
+                                        />
                                     ) : (
                                         <div className="relative">
                                             <input {...getCommentInputProps()} />

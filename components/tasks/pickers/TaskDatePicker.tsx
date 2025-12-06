@@ -15,6 +15,7 @@ interface TaskDatePickerProps {
     trigger?: React.ReactElement; // Trigger customizado - deve ser um único elemento React válido
     align?: "start" | "center" | "end";
     side?: "top" | "bottom" | "left" | "right";
+    isCompleted?: boolean; // Indica se a tarefa está completada (para calcular cor da data)
 }
 
 // Funções utilitárias para atalhos
@@ -44,8 +45,27 @@ export function TaskDatePicker({
     trigger,
     align = "end",
     side = "left",
+    isCompleted = false,
 }: TaskDatePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
+
+    // Função helper para calcular a cor da data baseada no status
+    const getDateColor = (): string => {
+        if (!date) return "text-gray-400";
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const dateOnly = new Date(date);
+        dateOnly.setHours(0, 0, 0, 0);
+        
+        const isToday = dateOnly.getTime() === today.getTime();
+        const isOverdue = dateOnly < today && !isCompleted;
+        
+        if (isOverdue) return "text-red-600";
+        if (isToday) return "text-green-600";
+        return "text-gray-500";
+    };
 
     const handleSelect = (selectedDate: Date | undefined) => {
         onSelect(selectedDate || null);
@@ -68,11 +88,11 @@ export function TaskDatePicker({
             type="button"
             className={cn(
                 "p-1 rounded hover:bg-gray-100 transition-colors",
-                date && "text-green-600"
+                date && getDateColor()
             )}
         >
             {date ? (
-                <span className="text-xs text-green-600">
+                <span className={cn("text-xs", getDateColor())}>
                     {format(date, "d MMM", { locale: ptBR })}
                 </span>
             ) : (

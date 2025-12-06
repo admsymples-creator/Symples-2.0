@@ -6,6 +6,143 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Limite de Caracteres, Truncamento Visual e Melhorias de UI no TaskDetailModal
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Limite de Caracteres e Truncamento Visual na Descrição
+- **Limite Hard de 3000 Caracteres**:
+  - Constante `MAX_DESCRIPTION_LENGTH = 3000` definida
+  - Função `stripHtmlTags()` para extrair texto puro do HTML e contar caracteres precisamente
+  - Contagem considera apenas texto visível, ignorando tags HTML
+  
+- **Contador de Caracteres no Modo de Edição**:
+  - Exibido no canto inferior esquerdo: `${current}/${max}`
+  - Estilo normal: `text-xs text-gray-400`
+  - Quando excede limite: `text-xs text-red-500`
+  - Mensagem de erro: "Limite de caracteres excedido." em vermelho
+  - Botão "Concluir" desabilitado quando `current > max`
+  
+- **Truncamento Visual no Modo de Visualização**:
+  - Apenas quando `!isEditingDescription`
+  - Conteúdo truncado a `max-h-40` (160px) quando não expandido
+  - Overlay com gradiente branco (`from-transparent to-white`) na parte inferior
+  - Botão "Ver mais" centralizado abaixo do conteúdo truncado
+  - Botão "Ver menos" quando expandido
+  - `useRef` e `useEffect` para detectar se altura excede 160px
+  - Botão aparece apenas quando necessário (evita mostrar em textos curtos)
+  
+- **Edição ao Clicar na Descrição**:
+  - Clicar na descrição sempre entra em modo de edição
+  - Botões "Ver mais/Ver menos" usam `stopPropagation()` para não ativar edição
+
+#### ✅ Remoção de Bordas Cinzas (UI/UX)
+- **Descrição no Modo de Visualização**:
+  - Removidos outlines: `outline-none focus:outline-none focus-visible:outline-none active:outline-none`
+  - Adicionado `tabIndex={-1}` para evitar foco via teclado
+  - Adicionado `onMouseDown={(e) => e.preventDefault()}` para prevenir seleção de texto
+  
+- **Editor (Modo de Edição)**:
+  - Removido `focus-within:ring-1 focus-within:ring-ring` do container externo
+  - Substituído por `focus-within:ring-0 focus-within:outline-none`
+  - Removido `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` do conteúdo
+  - Substituído por `focus-visible:ring-0`
+  - Mantida apenas borda padrão `border-gray-200`
+
+## 2025-01-XX - Otimizações de Performance e Correções no TaskDetailModal
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Otimizações de Performance no TaskDetailModal
+- **Isolamento do Timer do Gravador de Áudio (Performance Crítica)**:
+  - Criado componente memoizado `AudioRecorderDisplay` que gerencia seu próprio estado de `recordingTime`
+  - Timer agora atualiza apenas o componente filho, eliminando re-renders do modal inteiro a cada segundo
+  - Componente recebe props: `stream`, `onCancel`, e `onStop(duration: number)`
+  - Duração final é passada via callback `onStop` para o componente pai usar no upload
+  
+- **Otimização do Carregamento de Dados (Waterfall)**:
+  - Removido `setTimeout` artificial de 50ms que causava delay desnecessário
+  - `loadExtendedData()` agora é chamado via `.then()` após `loadBasicData()` concluir
+  - Eliminado delay artificial, melhorando tempo de carregamento total
+  
+- **Memoização do Handler de Descrição**:
+  - Extraída função anônima do botão "Concluir" para `handleSaveDescription` com `useCallback`
+  - Reduz re-renders desnecessários do componente
+  
+- **Correção de UI Flickering (Flash Branco)**:
+  - Removida dependência de `task?.id` na condição `shouldShowSkeleton`
+  - Skeleton agora aparece imediatamente quando modal abre em modo edição, antes mesmo de `task` estar disponível
+  - Elimina flash branco ao abrir o modal
+
+#### ✅ Correção de Timezone na Data do TaskDetailModal
+
+#### ✅ Correção de Timezone na Data do TaskDetailModal
+- **Problema Identificado**: Data aparecia com um dia antes da data selecionada devido à conversão de timezone UTC para local
+- **Causa Raiz**: `new Date("YYYY-MM-DD")` interpreta a string como UTC midnight, causando deslocamento ao converter para timezone local
+- **Solução Implementada**:
+  - Criada função `parseLocalDate()` que constrói a data diretamente no timezone local usando componentes de ano, mês e dia
+  - Evita problemas de conversão UTC → local timezone
+  - Aplicada na linha 1817 do `TaskDetailModal.tsx` ao passar data para `TaskDatePicker`
+
+#### ✅ Cores Dinâmicas no TaskDatePicker
+- **Implementação de Lógica de Cores Baseada em Status**:
+  - **Vermelho (`text-red-600`)**: Data vencida (passada) e tarefa não completada
+  - **Verde (`text-green-600`)**: Data é hoje
+  - **Cinza (`text-gray-500`)**: Data futura ou tarefa completada (mesmo que a data seja passada)
+  
+- **Mudanças Técnicas**:
+  - Adicionada prop opcional `isCompleted?: boolean` ao `TaskDatePicker`
+  - Implementada função `getDateColor()` que calcula cor baseada em:
+    - Comparação de data com hoje (usando apenas componentes de data, ignorando hora)
+    - Status de conclusão da tarefa (`isCompleted`)
+  - Atualizado trigger padrão para usar `getDateColor()` ao invés de sempre verde
+  - `TaskDetailModal` agora passa `isCompleted={status === TASK_STATUS.DONE}` para o picker
+
+- **Compatibilidade**:
+  - Prop `isCompleted` é opcional (padrão `false`), mantendo compatibilidade com outros usos do componente
+  - Outros componentes que usam `TaskDatePicker` continuam funcionando sem alterações
+
+#### 📝 Arquivos Modificados
+- `components/tasks/TaskDetailModal.tsx`:
+  - Criado componente `AudioRecorderDisplay` memoizado (isolamento do timer)
+  - Removido estado `recordingTime` e `useEffect` do timer do componente principal
+  - Adicionada ref `finalDurationRef` para armazenar duração final
+  - Removido `setTimeout` de 50ms, usando `.then()` para encadear carregamento
+  - Criado `handleSaveDescription` com `useCallback`
+  - Corrigida condição `shouldShowSkeleton` removendo dependência de `task?.id`
+  - Adicionada função `parseLocalDate()` para conversão correta de timezone
+  - Importado `TASK_STATUS` do arquivo de configuração
+  - Passada prop `isCompleted` para `TaskDatePicker`
+  - **Novo**: Implementado limite de 3000 caracteres com contador e validação
+  - **Novo**: Implementado truncamento visual com "Ver mais/Ver menos"
+  - **Novo**: Função `stripHtmlTags()` para contar caracteres sem HTML
+  - **Novo**: Estados `isDescriptionExpanded`, `showExpandButton` e ref `descriptionRef`
+  - **Novo**: `useEffect` para detectar altura do conteúdo e mostrar botão quando necessário
+  - **Novo**: Removidos outlines da descrição no modo visualização
+- `components/tasks/pickers/TaskDatePicker.tsx`:
+  - Adicionada prop `isCompleted?: boolean` à interface
+  - Implementada função `getDateColor()` para cálculo dinâmico de cores
+  - Atualizado trigger padrão para usar cores dinâmicas
+- `components/ui/editor.tsx`:
+  - Removidos rings e outlines ao focar/clicar no editor
+  - Substituído `focus-within:ring-1 focus-within:ring-ring` por `focus-within:ring-0 focus-within:outline-none`
+  - Substituído `focus-visible:ring-2 focus-visible:ring-ring` por `focus-visible:ring-0`
+
+**Total**: ~200+ inserções e ~40 deleções em 3 arquivos (commits anteriores + novas features)
+
+### 2. O que está sendo trabalhado no momento
+
+- ✅ **Correções concluídas e testadas**
+
+### 3. Próximos passos
+
+- **Melhorias futuras de UX**:
+  - Considerar aplicar mesma lógica de cores em outros componentes que exibem datas (TaskRow, TaskCard, etc.)
+  - Adicionar tooltip explicativo sobre o significado das cores
+  - Suporte para timezone do usuário em configurações
+
+---
+
 ## 2025-01-02 - Empty State Gold Standard e Welcome Modal (FTUX)
 
 ### 1. Melhorias, bugs e features implementadas em preview
