@@ -29,7 +29,7 @@ export function Header({ user }: HeaderProps) {
             {/* Ações & Perfil */}
             <div className="flex items-center gap-2 ml-4">
                 {/* Notificações */}
-                <NotificationsPopover userRole={user?.role} />
+                <NotificationsPopover userRole={user?.role} useMockData={false} />
 
                 {/* Configurações */}
                 <Link href="/settings">

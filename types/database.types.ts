@@ -599,7 +599,10 @@ export type NotificationMetadata = {
   actor_avatar?: string; // Avatar de quem fez a ação
   file_type?: 'image' | 'pdf' | 'audio' | 'document' | 'other'; // Para anexos
   file_count?: number; // Para agrupamento (ex: "5 arquivos")
+  file_name?: string; // Nome do arquivo anexado
   role_changed_to?: string; // Para alertas de admin
+  role?: string; // Role do usuário (para convites)
   task_title?: string; // Título da tarefa relacionada
   workspace_name?: string; // Nome do workspace relacionado
+  days_overdue?: number; // Dias de atraso (para tarefas atrasadas)
 };

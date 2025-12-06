@@ -221,3 +221,118 @@ export async function getUnreadCount(): Promise<number> {
   return count || 0;
 }
 
+/**
+ * Cria notificações de teste para o usuário atual
+ * Útil para testar o sistema sem precisar de outra conta
+ */
+export async function createTestNotifications(): Promise<{ success: boolean; error?: string; count?: number }> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Não autenticado" };
+  }
+
+  // Buscar perfil do usuário para usar como "triggering_user"
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, avatar_url")
+    .eq("id", user.id)
+    .single();
+
+  const actorName = profile?.full_name || "Você mesmo";
+  const now = new Date();
+
+  // Criar várias notificações de teste
+  const testNotifications = [
+    {
+      recipient_id: user.id,
+      triggering_user_id: user.id,
+      category: "operational" as NotificationCategory,
+      resource_type: "task",
+      resource_id: null,
+      title: `${actorName} comentou em Tarefa de Teste`,
+      content: "Este é um comentário de teste para verificar o sistema de notificações.",
+      action_url: "/tasks",
+      metadata: {
+        actor_name: actorName,
+        task_title: "Tarefa de Teste"
+      } as NotificationMetadata
+    },
+    {
+      recipient_id: user.id,
+      triggering_user_id: user.id,
+      category: "operational" as NotificationCategory,
+      resource_type: "attachment",
+      resource_id: null,
+      title: `${actorName} anexou um arquivo em Tarefa de Teste`,
+      content: "audio-teste.ogg",
+      action_url: "/tasks",
+      metadata: {
+        actor_name: actorName,
+        file_type: "audio" as const,
+        task_title: "Tarefa de Teste",
+        file_name: "audio-teste.ogg",
+        color: "text-purple-600",
+        bg: "bg-purple-50"
+      } as NotificationMetadata
+    },
+    {
+      recipient_id: user.id,
+      triggering_user_id: user.id,
+      category: "operational" as NotificationCategory,
+      resource_type: "task",
+      resource_id: null,
+      title: `${actorName} atribuiu a tarefa "Teste de Atribuição" para você`,
+      content: "Esta é uma tarefa de teste para verificar notificações de atribuição.",
+      action_url: "/tasks",
+      metadata: {
+        actor_name: actorName,
+        task_title: "Teste de Atribuição"
+      } as NotificationMetadata
+    },
+    {
+      recipient_id: user.id,
+      triggering_user_id: user.id,
+      category: "admin" as NotificationCategory,
+      resource_type: "member",
+      resource_id: null,
+      title: `${actorName} convidou você para Workspace de Teste`,
+      content: "Você foi convidado como member",
+      action_url: "/settings",
+      metadata: {
+        actor_name: actorName,
+        workspace_name: "Workspace de Teste",
+        role: "member"
+      } as NotificationMetadata
+    },
+    {
+      recipient_id: user.id,
+      triggering_user_id: null,
+      category: "system" as NotificationCategory,
+      resource_type: "task",
+      resource_id: null,
+      title: "Tarefa \"Teste Atrasada\" está atrasada",
+      content: "A tarefa está atrasada há 2 dia(s)",
+      action_url: "/tasks",
+      metadata: {
+        task_title: "Teste Atrasada",
+        days_overdue: 2
+      } as NotificationMetadata
+    }
+  ];
+
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert(testNotifications)
+    .select("id");
+
+  if (error) {
+    console.error("Error creating test notifications:", error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath("/");
+  return { success: true, count: data?.length || 0 };
+}
+
