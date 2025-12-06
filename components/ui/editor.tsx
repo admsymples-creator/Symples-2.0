@@ -56,7 +56,7 @@ export function Editor({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-[150px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 prose prose-sm max-w-none outline-none",
+          "min-h-[150px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 prose prose-sm max-w-none outline-none",
           className
         ),
       },
@@ -68,7 +68,7 @@ export function Editor({
   }
 
   return (
-    <div className="flex flex-col border border-gray-200 rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-ring bg-white">
+    <div className="flex flex-col border border-gray-200 rounded-md overflow-hidden focus-within:ring-0 focus-within:outline-none bg-white">
       {editable && (
         <div className="flex items-center gap-1 p-1 bg-gray-50 border-b border-gray-200 flex-wrap">
           <ToolbarButton

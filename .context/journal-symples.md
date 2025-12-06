@@ -6,6 +6,49 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Limite de Caracteres, Truncamento Visual e Melhorias de UI no TaskDetailModal
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Limite de Caracteres e Truncamento Visual na Descrição
+- **Limite Hard de 3000 Caracteres**:
+  - Constante `MAX_DESCRIPTION_LENGTH = 3000` definida
+  - Função `stripHtmlTags()` para extrair texto puro do HTML e contar caracteres precisamente
+  - Contagem considera apenas texto visível, ignorando tags HTML
+  
+- **Contador de Caracteres no Modo de Edição**:
+  - Exibido no canto inferior esquerdo: `${current}/${max}`
+  - Estilo normal: `text-xs text-gray-400`
+  - Quando excede limite: `text-xs text-red-500`
+  - Mensagem de erro: "Limite de caracteres excedido." em vermelho
+  - Botão "Concluir" desabilitado quando `current > max`
+  
+- **Truncamento Visual no Modo de Visualização**:
+  - Apenas quando `!isEditingDescription`
+  - Conteúdo truncado a `max-h-40` (160px) quando não expandido
+  - Overlay com gradiente branco (`from-transparent to-white`) na parte inferior
+  - Botão "Ver mais" centralizado abaixo do conteúdo truncado
+  - Botão "Ver menos" quando expandido
+  - `useRef` e `useEffect` para detectar se altura excede 160px
+  - Botão aparece apenas quando necessário (evita mostrar em textos curtos)
+  
+- **Edição ao Clicar na Descrição**:
+  - Clicar na descrição sempre entra em modo de edição
+  - Botões "Ver mais/Ver menos" usam `stopPropagation()` para não ativar edição
+
+#### ✅ Remoção de Bordas Cinzas (UI/UX)
+- **Descrição no Modo de Visualização**:
+  - Removidos outlines: `outline-none focus:outline-none focus-visible:outline-none active:outline-none`
+  - Adicionado `tabIndex={-1}` para evitar foco via teclado
+  - Adicionado `onMouseDown={(e) => e.preventDefault()}` para prevenir seleção de texto
+  
+- **Editor (Modo de Edição)**:
+  - Removido `focus-within:ring-1 focus-within:ring-ring` do container externo
+  - Substituído por `focus-within:ring-0 focus-within:outline-none`
+  - Removido `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` do conteúdo
+  - Substituído por `focus-visible:ring-0`
+  - Mantida apenas borda padrão `border-gray-200`
+
 ## 2025-01-XX - Otimizações de Performance e Correções no TaskDetailModal
 
 ### 1. Melhorias, bugs e features implementadas em preview
@@ -70,12 +113,22 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
   - Adicionada função `parseLocalDate()` para conversão correta de timezone
   - Importado `TASK_STATUS` do arquivo de configuração
   - Passada prop `isCompleted` para `TaskDatePicker`
+  - **Novo**: Implementado limite de 3000 caracteres com contador e validação
+  - **Novo**: Implementado truncamento visual com "Ver mais/Ver menos"
+  - **Novo**: Função `stripHtmlTags()` para contar caracteres sem HTML
+  - **Novo**: Estados `isDescriptionExpanded`, `showExpandButton` e ref `descriptionRef`
+  - **Novo**: `useEffect` para detectar altura do conteúdo e mostrar botão quando necessário
+  - **Novo**: Removidos outlines da descrição no modo visualização
 - `components/tasks/pickers/TaskDatePicker.tsx`:
   - Adicionada prop `isCompleted?: boolean` à interface
   - Implementada função `getDateColor()` para cálculo dinâmico de cores
   - Atualizado trigger padrão para usar cores dinâmicas
+- `components/ui/editor.tsx`:
+  - Removidos rings e outlines ao focar/clicar no editor
+  - Substituído `focus-within:ring-1 focus-within:ring-ring` por `focus-within:ring-0 focus-within:outline-none`
+  - Substituído `focus-visible:ring-2 focus-visible:ring-ring` por `focus-visible:ring-0`
 
-**Total**: ~150+ inserções e ~30 deleções em 2 arquivos (commits `a2e0f30` + otimizações)
+**Total**: ~200+ inserções e ~40 deleções em 3 arquivos (commits anteriores + novas features)
 
 ### 2. O que está sendo trabalhado no momento
 

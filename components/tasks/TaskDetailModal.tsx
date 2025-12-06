@@ -349,6 +349,9 @@ export function TaskDetailModal({
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const descriptionRef = useRef<HTMLDivElement>(null);
+    const [showExpandButton, setShowExpandButton] = useState(false);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
@@ -1556,8 +1559,43 @@ export function TaskDetailModal({
 
     // formatTime removido - agora está no AudioRecorderDisplay
 
+    // Constante para limite de caracteres na descrição
+    const MAX_DESCRIPTION_LENGTH = 3000;
+
+    // Função auxiliar para extrair texto puro do HTML (strip tags)
+    const stripHtmlTags = (html: string): string => {
+        if (!html) return "";
+        const tmp = document.createElement("DIV");
+        tmp.innerHTML = html;
+        return tmp.textContent || tmp.innerText || "";
+    };
+
+    // Contar caracteres do texto puro (sem HTML)
+    const getDescriptionCharCount = useMemo(() => {
+        return stripHtmlTags(description).length;
+    }, [description]);
+
+    const isDescriptionOverLimit = getDescriptionCharCount > MAX_DESCRIPTION_LENGTH;
+
+    // Detectar se o conteúdo excede 160px de altura (para mostrar botão "Ver mais")
+    useEffect(() => {
+        if (!isEditingDescription && descriptionRef.current) {
+            const element = descriptionRef.current;
+            // Resetar altura para medir o tamanho real
+            element.style.maxHeight = "none";
+            const height = element.scrollHeight;
+            element.style.maxHeight = "";
+            
+            // Se altura real > 160px (40 * 4px = 160px), mostrar botão
+            setShowExpandButton(height > 160);
+        } else {
+            setShowExpandButton(false);
+        }
+    }, [description, isEditingDescription]);
+
     // Handler memoizado para salvar descrição
     const handleSaveDescription = useCallback(async () => {
+        setIsDescriptionExpanded(false);
         setIsEditingDescription(false);
         if (currentTaskId && !isCreateMode) {
             const oldDescription = description; // Guardar para rollback
@@ -1900,7 +1938,10 @@ export function TaskDetailModal({
                                 <div className="flex items-center justify-between mb-2">
                                     <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
                                     {!isEditingDescription && (
-                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => setIsEditingDescription(true)}>
+                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => {
+                                            setIsDescriptionExpanded(false);
+                                            setIsEditingDescription(true);
+                                        }}>
                                             <Pencil className="w-3 h-3 mr-1" /> Editar
                                         </Button>
                                     )}
@@ -1912,16 +1953,77 @@ export function TaskDetailModal({
                                             onChange={setDescription}
                                             placeholder="Adicione uma descrição..."
                                         />
-                                        <div className="flex justify-end mt-2 p-2">
-                                            <Button size="sm" onClick={handleSaveDescription}>Concluir</Button>
+                                        <div className="flex items-center justify-between mt-2 p-2">
+                                            <div className="flex flex-col">
+                                                <span className={cn(
+                                                    "text-xs",
+                                                    isDescriptionOverLimit ? "text-red-500" : "text-gray-400"
+                                                )}>
+                                                    {getDescriptionCharCount}/{MAX_DESCRIPTION_LENGTH}
+                                                </span>
+                                                {isDescriptionOverLimit && (
+                                                    <span className="text-xs text-red-500 mt-0.5">
+                                                        Limite de caracteres excedido.
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <Button 
+                                                size="sm" 
+                                                onClick={handleSaveDescription}
+                                                disabled={isDescriptionOverLimit}
+                                            >
+                                                Concluir
+                                            </Button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div 
-                                        className="min-h-[80px] p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200"
-                                        onClick={() => setIsEditingDescription(true)}
-                                        dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
-                                    />
+                                    <div className="relative">
+                                        <div 
+                                            ref={descriptionRef}
+                                            className={cn(
+                                                "p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200 outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
+                                            )}
+                                            onClick={() => {
+                                                setIsDescriptionExpanded(false);
+                                                setIsEditingDescription(true);
+                                            }}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            tabIndex={-1}
+                                            dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
+                                        />
+                                        {!isDescriptionExpanded && showExpandButton && (
+                                            <>
+                                                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                                                <div className="flex justify-center mt-2">
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setIsDescriptionExpanded(true);
+                                                        }}
+                                                    >
+                                                        Ver mais
+                                                    </Button>
+                                                </div>
+                                            </>
+                                        )}
+                                        {isDescriptionExpanded && showExpandButton && (
+                                            <div className="flex justify-center mt-2">
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setIsDescriptionExpanded(false);
+                                                    }}
+                                                >
+                                                    Ver menos
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 

@@ -5,6 +5,18 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 ## [Unreleased]
 
 ### Added
+- **Limite de Caracteres e Truncamento Visual na Descrição (TaskDetailModal)**:
+  - Limite hard de 3000 caracteres para descrição de tarefas
+  - Contador de caracteres no modo de edição (`${current}/${max}`)
+  - Contador fica vermelho quando excede o limite
+  - Mensagem de erro "Limite de caracteres excedido." quando excede
+  - Botão "Concluir" desabilitado quando excede o limite
+  - Truncamento visual no modo de visualização (max-h-40 = 160px)
+  - Botão "Ver mais/Ver menos" para expandir/colapsar descrição longa
+  - Overlay com gradiente branco na parte inferior do texto truncado
+  - Detecção automática de altura do conteúdo para mostrar botão apenas quando necessário
+  - Edição ao clicar na descrição (modo visualização)
+
 - **TaskRowMinify - Indicadores Visuais Completos**:
   - **Data**: Date picker funcional com calendário, cores dinâmicas (vermelho para atrasado, verde para hoje)
   - **Status**: Badge editável com popover para mudança rápida de status
@@ -59,6 +71,12 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Removido `setTimeout` artificial de 50ms no carregamento de dados, usando `.then()` para encadear `loadBasicData()` e `loadExtendedData()`
   - Memoizado handler de descrição (`handleSaveDescription`) com `useCallback` para reduzir re-renders
   - Corrigido flickering visual removendo dependência de `task?.id` na condição `shouldShowSkeleton`
+- **Remoção de Bordas Cinzas (UI/UX)**:
+  - Removidos outlines e rings do componente Editor ao focar/clicar
+  - Removidos outlines da descrição no modo de visualização
+  - Adicionadas classes `outline-none`, `focus:outline-none`, `focus-visible:outline-none`, `active:outline-none`
+  - Adicionado `tabIndex={-1}` na descrição para evitar foco via teclado
+  - Removidos `focus-within:ring` e `focus-visible:ring` do Editor
 
 
 
