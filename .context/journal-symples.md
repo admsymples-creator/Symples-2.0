@@ -6,6 +6,183 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Sistema de Notificações Unificado (Universal Inbox) - Finalizado
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🔔 Sistema de Notificações Completo
+- **Tabela de Notificações**:
+  - Tabela `notifications` criada com suporte a categorização semântica
+  - Campos: `recipient_id`, `triggering_user_id`, `category`, `resource_type`, `resource_id`, `title`, `content`, `action_url`, `metadata`
+  - Índices otimizados para queries de "não lidas" e ordenação por data
+  - Realtime habilitado para notificações em tempo real
+  - RLS policies configuradas para segurança
+- **Tipos TypeScript**:
+  - `NotificationCategory`: 'operational' | 'admin' | 'system'
+  - `NotificationMetadata`: Interface rica com campos para visualização (icon, color, bg) e contexto (actor_name, file_type, task_title, etc.)
+- **Server Actions** (`lib/actions/notifications.ts`):
+  - `getNotifications()`: Busca notificações com filtros por categoria e status de leitura
+  - `markAsRead()`: Marca uma notificação como lida
+  - `markAllAsRead()`: Marca todas como lidas
+  - `createNotification()`: Utilitário para criar notificações programaticamente
+  - `getUnreadCount()`: Conta notificações não lidas
+- **Componentes UI**:
+  - `NotificationItem`: Card individual com lógica inteligente de ícones
+    - Prioridade para áudio (ícone Mic, cor roxa)
+    - Detecção automática de tipo de arquivo (image, pdf, audio, document)
+    - Ícones contextuais por categoria (ShieldAlert para admin, PartyPopper para novos membros, etc.)
+    - Formatação de datas com `date-fns` e locale ptBR
+  - `NotificationsPopover`: Popover completo com abas
+    - Aba "Todas": Lista geral mixada
+    - Aba "Admin": Apenas para owners/admins, filtra por category = 'admin'
+    - Aba "Não Lidas": Filtro rápido de não lidas
+    - Integração com Supabase Realtime para notificações instantâneas
+    - Empty state gamificado: "Tudo limpo! Você está em dia." quando não há notificações
+    - Optimistic UI com rollback em caso de erro
+- **Triggers Automáticos**:
+  - `trigger_notify_task_comment`: Notifica quando comentário é criado
+    - Detecta automaticamente se é áudio (prioridade visual roxa)
+    - Notifica criador da tarefa e responsável (exceto autor)
+  - `trigger_notify_task_attachment`: Notifica quando arquivo é anexado
+    - Prioridade visual para áudios (roxo), imagens (azul), PDFs (vermelho)
+    - Notifica criador e responsável (exceto uploader)
+  - `trigger_notify_task_assignment`: Notifica quando tarefa é atribuída
+    - Notifica o novo responsável
+  - `trigger_notify_workspace_invite`: Notifica quando convite é criado
+    - Complementa o email de convite
+    - Notifica apenas se usuário já tem conta
+  - `check_overdue_tasks()`: Função para tarefas atrasadas (chamada por cron)
+    - Evita spam (não notifica mais de uma vez por dia)
+    - Calcula dias de atraso automaticamente
+
+#### 🎨 UX e Design
+- **Lógica de Ícones Inteligente**:
+  - Prioridade 1: Anexos (especialmente áudio - roxo)
+  - Prioridade 2: Admin/Segurança (ShieldAlert - vermelho)
+  - Prioridade 3: Operacional (UserPlus, MessageSquare, CheckCircle2)
+  - Fallback: AlertCircle para sistema
+- **Estados Visuais**:
+  - Não lido: Fundo `bg-slate-50` + dot azul à direita
+  - Lido: Fundo branco/transparente
+  - Hover effects suaves
+- **Integração com Header**:
+  - Badge de contador de não lidas no ícone Bell
+  - Popover alinhado à direita
+  - Suporte a `userRole` para mostrar aba Admin apenas para admins
+
+#### 🔧 Correções Técnicas
+- **Migração SQL**:
+  - Ordem correta de parâmetros na função `create_notification()` (obrigatórios primeiro, opcionais depois)
+  - Todas as chamadas atualizadas para usar ordem correta
+  - Funções com `SECURITY DEFINER` para permissão de criar notificações
+  - Tratamento de erros gracioso (não quebra operações principais)
+- **Performance**:
+  - Índices otimizados para queries frequentes
+  - Queries com relacionamentos otimizados (busca de profiles separada)
+  - Realtime configurado corretamente com unsubscribe no cleanup
+
+#### 📚 Documentação
+- **Guia Completo** (`docs/NOTIFICACOES_SETUP.md`):
+  - Instruções de configuração passo a passo
+  - Como configurar cron job para tarefas atrasadas
+  - Testes e troubleshooting
+  - Exemplos de queries SQL para monitoramento
+- **Guia de Execução** (`docs/NOTIFICACOES_EXECUCAO.md`):
+  - Passo a passo para ativar em produção
+  - Queries de verificação
+  - Checklist completo
+
+#### 🎨 Refinamentos Finais
+- **Scroll Suave e Limpo**:
+  - Scrollbar fina (6px) com visual discreto
+  - Scroll suave (`scroll-smooth`) para melhor UX
+  - Suporte touch para iOS (`-webkit-overflow-scrolling: touch`)
+  - Scrollbar cinza sutil que escurece no hover
+- **Alinhamento de Abas**:
+  - Abas alinhadas à esquerda com mesmo padding do título
+  - Visual mais organizado e consistente
+- **Dados Mock**:
+  - Sistema de dados mock implementado para visualização do design
+  - 10 notificações de exemplo cobrindo todos os tipos
+  - Desativado por padrão (pronto para produção)
+- **Função de Teste**:
+  - `createTestNotifications()` criada para testes manuais
+  - Cria 5 notificações de teste automaticamente
+  - Útil para testar sem precisar de outra conta
+- **Limpeza de Código**:
+  - Todos os logs de debug removidos
+  - Código limpo e pronto para produção
+  - Apenas `console.error` mantido para erros reais
+
+### 2. Trabalho em andamento
+- Nenhum no momento
+
+### 3. Próximos passos imediatos
+- ✅ Executar migrações SQL no Supabase (produção)
+- ⏳ Configurar cron job para tarefas atrasadas (pg_cron ou n8n)
+- ⏳ Testar triggers manualmente em ambiente de preview
+- ⏳ Monitorar criação de notificações em produção
+- (Opcional) Adicionar mais triggers para outros eventos (mudança de status, conclusão de tarefa)
+
+---
+
+## 2025-01-XX - Redesign Completo do DayColumn
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🎨 Redesign Visual do DayColumn
+- **Layout Refinado**:
+  - Altura dinâmica (`min-h-[500px] max-h-[80vh]`) ao invés de fixa
+  - Gradiente sutil para dia atual: `bg-gradient-to-b from-green-50/60 to-white`
+  - Bordas mais sutis: `border-[1.5px] border-green-200/80` para hoje
+  - Hover effects em dias inativos com transições suaves
+  - Border radius aumentado: `rounded-2xl` para visual mais moderno
+- **Header Aprimorado**:
+  - Nome do dia em uppercase com tracking-wider e font-bold
+  - Badge de contador de tarefas pendentes no canto superior direito
+  - Cores dinâmicas: verde para hoje (`text-green-700`), cinza para outros dias
+  - Data em destaque com `text-lg font-semibold`
+  - Border inferior que aparece no hover para dias inativos
+- **Quick Add Redesenhado**:
+  - Input area com design card-like: `rounded-xl border shadow-sm`
+  - Textarea com auto-resize inteligente (máximo 120px)
+  - Ícone Plus que transforma em ponto verde pulsante quando focado
+  - Toolbar inferior que aparece condicionalmente (focado ou com texto):
+    - Botão customizado do TaskDateTimePicker com estado visual claro
+    - Dica "ENTER para salvar" no canto direito
+    - Background sutil (`bg-gray-50/50`) para separação visual
+  - Blur effect no topo do footer para conteúdo scrollando por trás
+  - Estados visuais aprimorados: ring verde (`ring-4 ring-green-500/10`) e shadow quando focado
+  - Transform no focus: `transform -translate-y-1` para feedback tátil
+  - Tutorial highlight com animação pulse quando `highlightInput` está ativo
+- **Empty State Refinado**:
+  - Aparece apenas no hover do container (`opacity-0 group-hover/column:opacity-100`)
+  - Design minimalista com ícone FolderOpen em círculo cinza
+  - Texto "Tudo limpo" com subtítulo explicativo
+  - Transição suave de opacidade
+- **Performance**:
+  - Ordenação de tarefas memoizada com `useMemo` para evitar recálculos
+  - Contador de pendências memoizado
+  - Handlers simplificados e otimizados
+- **UX Melhorias**:
+  - Toast notifications para erros (via `sonner`)
+  - Rollback automático do input em caso de erro na criação
+  - Espaço extra no final do scroll (`h-16`) para não bater no input
+  - Auto-resize do textarea para melhor experiência de digitação
+  - Feedback visual imediato em todas as interações
+
+#### 🔧 Correções Técnicas
+- **Importações Otimizadas**:
+  - Adicionado `useMemo` do React para performance
+  - Adicionado `toast` do `sonner` para notificações
+  - Ícones adicionais: `Plus`, `Calendar as CalendarIcon`
+- **Código Limpo**:
+  - Handlers simplificados e mais diretos
+  - Remoção de código redundante
+  - Melhor organização de estados e efeitos
+
+---
+
 ## 2025-12-06 - Reposicionamento de Indicadores e Reset de Filtro ao Mover Tarefa
 
 ### 1. Melhorias, bugs e features implementadas em preview

@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { FolderOpen } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { FolderOpen, Plus, Calendar as CalendarIcon } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
 import { createTask, deleteTask, updateTask } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner"; 
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
 interface DayColumnProps {
   dayName: string;
-  date: string; // Formato "DD/MM"
-  dateObj?: Date; // Data completa para conversão ISO
+  date: string; 
+  dateObj?: Date;
   tasks: Task[];
   isToday?: boolean;
   workspaces?: { id: string; name: string }[];
@@ -38,264 +39,181 @@ export function DayColumn({
   const [showTutorialHint, setShowTutorialHint] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Tutorial: Scroll para input e mostrar hint quando highlightInput está ativo
   useEffect(() => {
     if (highlightInput && isToday && inputRef.current) {
-      // Mostrar hint
       setShowTutorialHint(true);
-      
-      // Scroll suave para o input
       setTimeout(() => {
-        inputRef.current?.scrollIntoView({ 
-          behavior: 'smooth', 
+        inputRef.current?.scrollIntoView({
+          behavior: 'smooth',
           block: 'center',
           inline: 'nearest'
         });
-      }, 300); // Pequeno delay para garantir que o componente foi renderizado
+      }, 300);
     }
   }, [highlightInput, isToday]);
 
-  // Esconder hint quando usuário interage com o input
   const handleInputFocus = () => {
     setIsQuickAddFocused(true);
-    if (showTutorialHint) {
-      setShowTutorialHint(false);
-    }
+    if (showTutorialHint) setShowTutorialHint(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setQuickAddValue(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+    
     if (showTutorialHint && e.target.value.trim().length > 0) {
       setShowTutorialHint(false);
     }
   };
 
-  /**
-   * Processa texto e detecta se há múltiplas linhas (batch create)
-   */
   const processBatchInput = (text: string): string[] => {
-    if (!text.includes("\n") && !text.includes("\r")) {
-      return [text.trim()].filter(Boolean);
-    }
+    if (!text.includes("\n") && !text.includes("\r")) return [text.trim()].filter(Boolean);
+    return text.split(/\r?\n/)
+      .map(line => line.replace(/^[-*•]\s+/, "").replace(/^\d+\.\s+/, "").trim())
+      .filter(line => line.length > 0);
+  };
 
-    const lines = text.split(/\r?\n/);
-    
-    // Função para limpar marcadores de lista
-    const cleanListItem = (line: string): string => {
-      let cleaned = line.trim();
-      cleaned = cleaned.replace(/^[-*•]\s+/, ""); // Remove "- ", "* ", "• "
-      cleaned = cleaned.replace(/^\d+\.\s+/, ""); // Remove "1. ", "2. ", etc.
-      cleaned = cleaned.replace(/^[-\u2022\u2023\u25E6\u2043]\s+/, ""); // Remove outros bullets Unicode
-      return cleaned.trim();
+  const sortedTasks = useMemo(() => {
+    const hasSpecificTime = (task: Task) => {
+      if (!task.due_date) return false;
+      const d = new Date(task.due_date);
+      return d.getHours() !== 0 || d.getMinutes() !== 0;
     };
 
-    const cleanedLines = lines
-      .map(cleanListItem)
-      .filter((line) => line.length > 0);
+    return [...tasks].sort((a, b) => {
+      const aIsPersonal = a.is_personal || !a.workspace_id;
+      const bIsPersonal = b.is_personal || !b.workspace_id;
+      const aHasTime = hasSpecificTime(a);
+      const bHasTime = hasSpecificTime(b);
 
-    return cleanedLines;
-  };
+      if (aIsPersonal && aHasTime && !(bIsPersonal && bHasTime)) return -1;
+      if (bIsPersonal && bHasTime && !(aIsPersonal && aHasTime)) return 1;
+      if (aIsPersonal && !aHasTime && !bIsPersonal) return -1;
+      if (bIsPersonal && !bHasTime && !aIsPersonal) return 1;
+      if (!aIsPersonal && !bIsPersonal) return 0;
+      return 0;
+    });
+  }, [tasks]);
+
+  const pendingCount = useMemo(() => 
+    tasks.filter(t => t.status !== 'done').length, 
+  [tasks]);
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedValue = quickAddValue; // Don't trim here to preserve line breaks
-    if (!trimmedValue.trim()) return;
+    const rawValue = quickAddValue;
+    if (!rawValue.trim()) return;
 
-    // Processar input (detectar batch ou single)
-    const tasksToCreate = processBatchInput(trimmedValue);
+    const tasksToCreate = processBatchInput(rawValue);
+    if (tasksToCreate.length === 0) return;
 
-    if (tasksToCreate.length === 0) {
-      setQuickAddValue("");
-      return;
-    }
-
-    // Limite de segurança para criação em lote
-    const HARD_LIMIT = 20;
-    if (tasksToCreate.length > HARD_LIMIT) {
-      const confirmed = window.confirm(
-        `Você está prestes a criar ${tasksToCreate.length} tarefas de uma vez. O limite recomendado é ${HARD_LIMIT}. Deseja continuar?`
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    // Limpar input imediatamente (Optimistic UI)
     setQuickAddValue("");
-    
-    // Criar tarefas no backend (batch create)
+    if (inputRef.current) inputRef.current.style.height = 'auto';
     setIsCreating(true);
+
     try {
       let dueDateISO: string | undefined = undefined;
-      
-      // Priorizar data/hora selecionada, senão usar dateObj padrão
       if (selectedDateTime) {
         dueDateISO = selectedDateTime.toISOString();
-        console.log("Criando tarefa com data/hora selecionada:", dueDateISO, "Data original:", selectedDateTime);
       } else if (dateObj) {
-        const dueDate = new Date(dateObj);
-        dueDate.setHours(0, 0, 0, 0);
-        dueDateISO = dueDate.toISOString();
-        console.log("Criando tarefa com data padrão do dia:", dueDateISO);
-      } else {
-        console.log("Criando tarefa sem data");
+        const d = new Date(dateObj);
+        d.setHours(0, 0, 0, 0);
+        dueDateISO = d.toISOString();
       }
 
-      // Criar todas as tarefas em paralelo usando Promise.all
       const createPromises = tasksToCreate.map((title) =>
         createTask({
           title,
           due_date: dueDateISO,
-          workspace_id: null, // Tarefas do Quick Add são pessoais
+          workspace_id: null,
           status: "todo",
           is_personal: true,
         })
       );
-      
-      // Limpar data/hora selecionada após criar
+
       setSelectedDateTime(null);
-
       const results = await Promise.all(createPromises);
+      
+      if (results.some((r) => r.success)) router.refresh();
+      else throw new Error("Falha ao criar");
 
-      // Verificar se houve erros
-      const errors = results.filter((result) => !result.success);
-      if (errors.length > 0) {
-        console.error("Erros ao criar tarefas:", errors);
-        const authError = errors.find((e) => e.error === "Usuário não autenticado");
-        if (authError) {
-          router.push("/login");
-        }
-      }
-
-      // Recarregar a página para mostrar as novas tarefas se pelo menos uma funcionou
-      if (results.some((r) => r.success)) {
-        router.refresh();
-      }
     } catch (error) {
-      console.error("Erro ao criar tarefas:", error);
+      toast.error("Erro ao criar tarefa");
+      setQuickAddValue(rawValue);
     } finally {
       setIsCreating(false);
     }
   };
 
   const handleToggle = async (id: string, checked: boolean) => {
-      try {
-          await updateTask({
-              id,
-              status: checked ? "done" : "todo"
-          });
-          router.refresh();
-      } catch (error) {
-          console.error("Erro ao atualizar status:", error);
-      }
+    await updateTask({ id, status: checked ? "done" : "todo" });
+    router.refresh();
   };
-
   const handleDelete = async (id: string) => {
-      if (!confirm("Tem certeza que deseja excluir esta tarefa?")) return;
-      try {
-          await deleteTask(id);
-          router.refresh();
-      } catch (error) {
-          console.error("Erro ao excluir tarefa:", error);
-      }
+    if(confirm("Excluir?")) { await deleteTask(id); router.refresh(); }
   };
-
-  const handleEdit = async (id: string, newTitle: string) => {
-      try {
-          await updateTask({
-              id,
-              title: newTitle
-          });
-          router.refresh();
-      } catch (error) {
-          console.error("Erro ao editar tarefa:", error);
-      }
+  const handleEdit = async (id: string, title: string) => {
+    await updateTask({ id, title });
+    router.refresh();
   };
-
-  const handleMoveToWorkspace = async (id: string, workspaceId: string) => {
-      try {
-          await updateTask({
-              id,
-              workspace_id: workspaceId,
-              is_personal: false
-          });
-          router.refresh();
-      } catch (error) {
-          console.error("Erro ao mover tarefa:", error);
-      }
-  }
-
-  // Função para verificar se a tarefa tem horário específico
-  const hasSpecificTime = (task: Task): boolean => {
-    if (!task.due_date) return false;
-    const date = new Date(task.due_date);
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    return hours !== 0 || minutes !== 0;
+  const handleMove = async (id: string, wid: string) => {
+    await updateTask({ id, workspace_id: wid, is_personal: false });
+    router.refresh();
   };
-
-  // Função para ordenar tarefas: pessoais com horário > pessoais sem horário > workspace
-  const sortedTasks = [...tasks].sort((a, b) => {
-    const aIsPersonal = a.is_personal || !a.workspace_id;
-    const bIsPersonal = b.is_personal || !b.workspace_id;
-    const aHasTime = hasSpecificTime(a);
-    const bHasTime = hasSpecificTime(b);
-
-    // Tarefas pessoais com horário vêm primeiro
-    if (aIsPersonal && aHasTime && !(bIsPersonal && bHasTime)) return -1;
-    if (bIsPersonal && bHasTime && !(aIsPersonal && aHasTime)) return 1;
-
-    // Se ambas são pessoais com horário, manter ordem original
-    if (aIsPersonal && aHasTime && bIsPersonal && bHasTime) return 0;
-
-    // Tarefas pessoais sem horário vêm depois das com horário, mas antes das de workspace
-    if (aIsPersonal && !aHasTime && !bIsPersonal) return -1;
-    if (bIsPersonal && !bHasTime && !aIsPersonal) return 1;
-
-    // Se ambas são pessoais sem horário, manter ordem original
-    if (aIsPersonal && !aHasTime && bIsPersonal && !bHasTime) return 0;
-
-    // Tarefas de workspace vêm por último
-    if (!aIsPersonal && !bIsPersonal) return 0;
-
-    return 0;
-  });
-
-  // Determinar cor de fundo baseada no estado
-  const bgColor = isToday ? "bg-green-50/20" : "bg-gray-50/50";
 
   return (
     <div
       className={cn(
-        "h-[420px] rounded-xl flex flex-col relative",
-        isToday ? "border-2 border-green-500" : "border border-gray-200",
-        bgColor
+        "group/column flex flex-col h-full min-h-[500px] max-h-[80vh] rounded-2xl transition-all duration-300",
+        isToday 
+          ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md" 
+          : "bg-surface border border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
       )}
     >
-      {/* Tutorial Tooltip - Posicionado acima do card, fora do overflow */}
-      {showTutorialHint && highlightInput && isToday && (
-        <div className="absolute -top-20 left-1/2 -translate-x-1/2 z-[100] animate-bounce-slow w-[240px] pointer-events-none">
-          {/* Tooltip Container */}
-          <div className="bg-slate-900 text-white text-xs font-medium py-2 px-4 rounded-lg shadow-xl text-center">
-            Digite aqui para criar sua primeira tarefa
-            {/* Seta apontando para baixo */}
-            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
-              <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-            </div>
-          </div>
+      {/* --- HEADER --- */}
+      <div className={cn(
+        "flex-none p-4 border-b border-transparent transition-colors",
+        isToday ? "border-gray-200" : "group-hover/column:border-gray-100"
+      )}>
+        <div className="flex items-center justify-between mb-1">
+          <span className={cn(
+            "text-[10px] font-bold uppercase tracking-wider",
+            isToday ? "text-gray-900" : "text-gray-500"
+          )}>
+            {dayName}
+          </span>
+          {pendingCount > 0 && (
+            <span className={cn(
+              "text-[10px] font-medium px-2 py-0.5 rounded-full",
+              isToday ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+            )}>
+              {pendingCount}
+            </span>
+          )}
         </div>
-      )}
-      {/* Header - Flex None (Altura Fixa) */}
-      <div className="flex-none p-5 pb-2">
-        <h3 className="font-medium text-gray-900 text-sm">{dayName}</h3>
-        <p className="text-xs text-gray-500 mt-0.5">{date}</p>
+        <div className={cn(
+          "text-lg font-semibold tracking-tight",
+          isToday ? "text-gray-900" : "text-gray-700"
+        )}>
+          {date}
+        </div>
       </div>
 
-      {/* Tasks List - Flex-1 (Ocupa espaço restante) com Scroll */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0 flex flex-col px-3 relative">
-        <div className="flex-1">
-          {sortedTasks.length > 0 ? (
-            <div className="px-2 space-y-0"> 
+      {/* --- TASK LIST (SCROLL AREA) --- */}
+      <div 
+        className={cn(
+          "flex-1 px-2 py-2 relative flex flex-col",
+          // CORREÇÃO: Scroll apenas se houver itens. Hidden se vazio para travar o layout.
+          sortedTasks.length > 0 
+            ? "overflow-y-auto overflow-x-hidden custom-scrollbar" 
+            : "overflow-hidden"
+        )}
+      >
+        {sortedTasks.length > 0 ? (
+          <>
+            {/* CORREÇÃO: Gap reduzido para space-y-0.5 (2px) para maior densidade */}
+            <div className="space-y-0.5">
               {sortedTasks.map((task) => (
                 <TaskRow
                   key={task.id}
@@ -304,76 +222,99 @@ export function DayColumn({
                   onToggle={handleToggle}
                   onDelete={handleDelete}
                   onEdit={handleEdit}
-                  onMoveToWorkspace={handleMoveToWorkspace}
+                  onMoveToWorkspace={handleMove}
                   onDateUpdate={() => router.refresh()}
                 />
               ))}
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-32 px-2">
-              <FolderOpen className="w-12 h-12 text-gray-200 mb-2" />
-              <p className="text-xs text-gray-400">Sem tarefas</p>
+            <div className="h-16 shrink-0" />
+          </>
+        ) : (
+          /* Empty State Centralizado sem Scroll */
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-4 opacity-0 group-hover/column:opacity-100 transition-opacity duration-300">
+            <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center mb-2">
+              <FolderOpen className="w-4 h-4 text-gray-300" />
             </div>
-          )}
-        </div>
+            <p className="text-xs font-medium text-gray-400">Vazio</p>
+          </div>
+        )}
+      </div>
 
-        {/* Quick Add Input - Integrado ao Scroll, estilo linha */}
-        <div className="px-2 pb-2 mt-6 relative">
-          <form onSubmit={handleQuickAddSubmit}>
-            {/* Tutorial Highlight Wrapper */}
-            <div
-              className={cn(
-                "relative py-2 border-b border-transparent hover:border-gray-200 transition-all rounded-md",
-                isQuickAddFocused && "border-green-500"
-              )}
-            >
-              {/* Aura verde absoluta com animação de glow - apenas box-shadow, sem borda */}
-              {highlightInput && isToday && !isQuickAddFocused && (
-                <div 
-                  className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
-                  style={{
-                    boxShadow: '0 0 15px rgba(34, 197, 94, 0.4), 0 0 30px rgba(34, 197, 94, 0.2)',
-                  }}
-                />
-              )}
+      {/* --- FOOTER / INPUT AREA --- */}
+      <div className="flex-none px-3 pb-3 pt-2 relative">
+        <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+        
+        <form onSubmit={handleQuickAddSubmit} className="relative z-10">
+          <div
+            className={cn(
+              "flex flex-col bg-white rounded-xl border shadow-sm transition-all duration-200 overflow-hidden",
+              isQuickAddFocused 
+                ? "border-gray-400 ring-4 ring-gray-100 shadow-md transform -translate-y-1" 
+                : "border-gray-200 hover:border-gray-300"
+            )}
+          >
+            {highlightInput && isToday && !isQuickAddFocused && (
+              <div 
+                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl" 
+                style={{ backgroundColor: 'rgba(0,0,0,0.03)' }}
+              />
+            )}
 
-              <div className="flex items-center gap-2 pl-2">
-                <div className="w-4 h-4 flex-shrink-0" />
-                {/* Textarea para suportar múltiplas linhas ao colar */}
-                <textarea
-                  ref={inputRef}
-                  placeholder="+ Adicionar item..."
-                  value={quickAddValue}
-                  onChange={handleInputChange}
-                  onFocus={handleInputFocus}
-                  onBlur={() => setIsQuickAddFocused(false)}
-                  onKeyDown={(e) => {
-                    // Permitir Enter para enviar (se não for Shift+Enter)
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      // Disparar submit manualmente
-                      const form = e.currentTarget.closest('form');
-                      if (form) form.requestSubmit();
-                    }
-                  }}
-                  disabled={isCreating}
-                  rows={1}
-                  className="text-sm h-8 flex-1 bg-transparent border-0 outline-none placeholder:text-gray-400 text-gray-700 focus:placeholder:text-gray-300 disabled:opacity-50 resize-none overflow-hidden py-1.5"
-                  style={{ minHeight: '2rem' }}
-                />
-                {/* Date/Time Picker para tarefas pessoais */}
-                <div className="flex-shrink-0">
+            <div className="flex items-start gap-2 p-2">
+              <div className="mt-1.5 ml-1">
+                {isQuickAddFocused ? (
+                  <div className="w-2 h-2 bg-gray-900 rounded-full animate-pulse" />
+                ) : (
+                  <Plus className="w-4 h-4 text-gray-400" />
+                )}
+              </div>
+              
+              <textarea
+                ref={inputRef}
+                placeholder="Nova tarefa..."
+                value={quickAddValue}
+                onChange={handleInputChange}
+                onFocus={handleInputFocus}
+                onBlur={() => setIsQuickAddFocused(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                disabled={isCreating}
+                rows={1}
+                className="flex-1 bg-transparent border-none outline-none text-sm text-gray-800 placeholder:text-gray-400 resize-none py-1 min-h-[24px] max-h-[120px]"
+              />
+            </div>
+
+            {(isQuickAddFocused || quickAddValue) && (
+              <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50">
+                <div className="flex items-center gap-1">
                   <TaskDateTimePicker
                     date={selectedDateTime}
                     onSelect={setSelectedDateTime}
-                    align="end"
+                    align="start"
                     side="top"
+                    trigger={
+                      <button type="button" className={cn(
+                        "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
+                        selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
+                      )}>
+                        <CalendarIcon className="w-3.5 h-3.5" />
+                        {selectedDateTime ? "Data definida" : "Agendar"}
+                      </button>
+                    }
                   />
                 </div>
+                
+                <div className="text-[10px] text-gray-400 font-medium">
+                  ENTER para salvar
+                </div>
               </div>
-            </div>
-          </form>
-        </div>
+            )}
+          </div>
+        </form>
       </div>
     </div>
   );
