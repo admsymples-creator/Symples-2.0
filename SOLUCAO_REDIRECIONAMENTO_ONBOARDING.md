@@ -89,3 +89,4 @@ AND policyname = 'Users can accept invites and add themselves';
 2. **Verifique no Supabase** - Veja se o registro foi criado em `workspace_members`
 3. **Verifique as políticas RLS** - Use a query SQL acima para confirmar que a política existe
 
+

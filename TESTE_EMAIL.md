@@ -171,3 +171,4 @@ Depois de confirmar que o email está funcionando:
 - [Dashboard do Resend](https://resend.com/emails)
 - [Troubleshooting de Email](./TROUBLESHOOTING_EMAIL.md)
 
+

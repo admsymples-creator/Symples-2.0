@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { SidebarProvider, useSidebar } from "@/components/providers/SidebarProvider";
 import { WorkspaceUrlSync } from "@/components/layout/WorkspaceUrlSync";
+import { WorkspaceSyncAfterInvite } from "@/components/providers/WorkspaceSyncAfterInvite";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ function LayoutContent({ children, user, workspaces }: AppShellProps) {
     return (
         <div className="min-h-screen bg-gray-50">
             <WorkspaceUrlSync workspaces={workspaces} />
+            <WorkspaceSyncAfterInvite />
             <Sidebar workspaces={workspaces} />
             <div 
                 className={cn(

@@ -270,67 +270,31 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     throw new Error("Workspace ID inválido.");
   }
 
-  // Buscar o ID do usuário pelo email (se existir no banco)
-  // Nota: public.profiles tem email, mas auth.users é o principal. 
-  // Como profiles é espelho, podemos consultar profiles.
-  // Usamos maybeSingle() para não lançar erro se não encontrar
-  const { data: existingProfile, error: profileError } = await supabase
+  // 3. Verificar se o usuário já é membro do workspace
+  // Buscar o ID do usuário pelo email (se existir no banco) para verificar membership
+  const { data: existingProfile } = await supabase
     .from("profiles")
     .select("id")
     .eq("email", normalizedEmail)
     .maybeSingle();
   
-  // Se houver erro (não relacionado a "não encontrado"), logar mas continuar
-  if (profileError && profileError.code !== 'PGRST116') {
-    console.error("Erro ao verificar perfil existente:", profileError);
-  }
-
-  // CENÁRIO A: Se o usuário já existe, adicionar diretamente ao workspace
+  // Se o usuário existe, verificar se já é membro
   if (existingProfile) {
-    // Verificar se já é membro
-    // Usamos maybeSingle() para não lançar erro se não encontrar
-    const { data: isMember, error: memberCheckError } = await supabase
+    const { data: isMember } = await supabase
       .from("workspace_members")
       .select("user_id")
       .eq("workspace_id", workspaceId)
       .eq("user_id", existingProfile.id)
       .maybeSingle();
-    
-    // Se houver erro (não relacionado a "não encontrado"), logar mas continuar
-    if (memberCheckError && memberCheckError.code !== 'PGRST116') {
-      console.error("Erro ao verificar se é membro:", memberCheckError);
-    }
       
     if (isMember) {
       throw new Error("Este usuário já é membro do workspace.");
     }
-
-    // Adicionar usuário existente diretamente ao workspace
-    const { error: addMemberError } = await supabase
-      .from("workspace_members")
-      .insert({
-        workspace_id: workspaceId,
-        user_id: existingProfile.id,
-        role: role,
-      });
-
-    if (addMemberError) {
-      console.error("Erro ao adicionar membro existente:", addMemberError);
-      throw new Error("Erro ao adicionar membro ao workspace.");
-    }
-
-    revalidatePath("/settings");
-    revalidatePath("/team");
-
-    return {
-      success: true,
-      message: "Usuário adicionado ao workspace com sucesso!",
-      userExists: true,
-    };
   }
 
-  // CENÁRIO B: Usuário não existe - criar convite pendente
-  // 3. Verificar se já existe convite pendente (ou qualquer convite com esse email)
+  // 4. Verificar se já existe convite pendente (ou qualquer convite com esse email)
+  // ✅ SEGURANÇA: Sempre criar convite pendente, mesmo para usuários existentes
+  // Isso garante consentimento explícito antes de adicionar ao workspace
   // Verificamos todos os status para dar uma mensagem mais clara
   const { data: existingInvite, error: inviteCheckError } = await supabase
     .from("workspace_invites")
@@ -348,7 +312,54 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     if (existingInvite.status === 'pending') {
       throw new Error("Já existe um convite pendente para este email. Você pode cancelar o convite existente antes de criar um novo.");
     } else if (existingInvite.status === 'accepted') {
-      throw new Error("Este email já foi aceito neste workspace. Verifique se o usuário já é membro.");
+      // ✅ CORREÇÃO: Se o convite foi aceito, verificar se o usuário ainda é membro
+      // Se não for mais membro (foi removido), permitir criar novo convite
+      if (existingProfile) {
+        const { data: stillMember } = await supabase
+          .from("workspace_members")
+          .select("user_id")
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", existingProfile.id)
+          .maybeSingle();
+        
+        if (stillMember) {
+          // Ainda é membro - não permitir novo convite
+          throw new Error("Este email já foi aceito neste workspace. O usuário já é membro.");
+        } else {
+          // Não é mais membro - limpar convite antigo e permitir criar novo
+          console.log("🔄 Convite aceito encontrado, mas usuário não é mais membro. Limpando convite antigo para permitir reinvite:", existingInvite.id);
+          
+          // Deletar o convite antigo (accepted) para permitir criar novo
+          const { error: deleteError } = await supabase
+            .from("workspace_invites")
+            .delete()
+            .eq("id", existingInvite.id);
+          
+          if (deleteError) {
+            console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
+            throw new Error("Erro ao limpar convite antigo. Tente novamente.");
+          }
+          
+          console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
+          // Continuar o fluxo normalmente para criar o novo convite
+        }
+      } else {
+        // Não encontrou perfil do usuário - pode ser que o convite seja de um email que nunca foi usado
+        // Nesse caso, deletar o convite aceito antigo e permitir criar novo
+        console.log("🔄 Convite aceito encontrado, mas usuário não existe. Limpando convite antigo:", existingInvite.id);
+        
+        const { error: deleteError } = await supabase
+          .from("workspace_invites")
+          .delete()
+          .eq("id", existingInvite.id);
+        
+        if (deleteError) {
+          console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
+          throw new Error("Erro ao limpar convite antigo. Tente novamente.");
+        }
+        
+        console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
+      }
     } else if (existingInvite.status === 'cancelled') {
       // Se o convite foi cancelado, excluir o registro antigo antes de criar um novo
       console.log("🗑️ Excluindo convite cancelado antes de criar novo:", existingInvite.id);
@@ -369,7 +380,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     }
   }
 
-  // 4. Buscar informações do workspace e do usuário que está convidando
+  // 5. Buscar informações do workspace e do usuário que está convidando
   const { data: workspaceData, error: workspaceError } = await supabase
     .from("workspaces")
     .select("name")
@@ -396,7 +407,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     // Não falhamos o fluxo, apenas logamos - podemos continuar sem o nome
   }
 
-  // 5. Criar o convite
+  // 6. Criar o convite (unificado para novos e existentes)
   const { data: newInvite, error: insertError } = await supabase
     .from("workspace_invites")
     .insert({
@@ -432,13 +443,17 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     throw new Error("Erro ao criar convite: ID não foi retornado.");
   }
 
-  // 6. Gerar link de convite - apontar para a página de convite
-  // O link vai para /invite/[token], e a página redireciona para signup se necessário
+  // 7. Gerar link de convite
+  // ✅ UNIFICADO: Todos os convites usam /invite/[token]
+  // A página de convite detecta se o usuário está logado e mostra UI apropriada
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "http://localhost:3000";
   const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
   const inviteLink = `${finalUrl}/invite/${newInvite.id}`;
 
-  // 7. Enviar email de convite via Resend
+  // 8. Enviar email de convite via Resend
+  // ✅ DIFERENCIAÇÃO: Email diferente para usuários novos vs existentes
+  const isNewUser = !existingProfile;
+  
   let emailSent = false;
   let emailError: string | null = null;
   
@@ -446,6 +461,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     to: normalizedEmail,
     workspaceId: workspaceId,
     inviteId: newInvite.id,
+    isNewUser,
     hasApiKey: !!process.env.RESEND_API_KEY,
     fromEmail: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
     inviteLink,
@@ -458,7 +474,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       inviterName: inviterProfile?.full_name || null,
       inviteLink,
       role,
-      isNewUser: true, // Indica que é um novo usuário
+      isNewUser, // ✅ CORRIGIDO: Usa o valor real baseado em existingProfile
     });
     
     emailSent = emailResult.success;
@@ -583,6 +599,7 @@ export async function revokeInvite(inviteId: string) {
 
 /**
  * Reenvia um convite por email
+ * IMPORTANTE: Não auto-adiciona o usuário. Respeita o fluxo de consentimento.
  */
 export async function resendInvite(inviteId: string) {
   const supabase = await createServerActionClient();
@@ -621,12 +638,47 @@ export async function resendInvite(inviteId: string) {
     throw new Error("Apenas convites pendentes podem ser reenviados");
   }
 
+  // ✅ CORREÇÃO: Resetar expires_at para +7 dias a partir de agora
+  // Manter status como 'pending' (não alterar)
+  const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  
+  // Usar supabaseAdmin para garantir que a atualização funcione mesmo com RLS
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!serviceRoleKey) {
+    console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
+    throw new Error("Configuração do servidor inválida. Contate o suporte.");
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  // Atualizar expires_at mantendo status como pending
+  const { error: updateError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ 
+      expires_at: newExpiresAt,
+      // Garantir que o status permanece 'pending'
+      status: 'pending'
+    })
+    .eq("id", inviteId);
+
+  if (updateError) {
+    console.error("Erro ao atualizar expires_at do convite:", updateError);
+    throw new Error("Erro ao atualizar convite");
+  }
+
   // Gerar link de convite
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "http://localhost:3000";
   const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
   const inviteLink = `${finalUrl}/invite/${inviteId}`;
 
-  // Enviar email
+  // Reenviar email de convite
   try {
     await sendInviteEmail({
       to: invite.email,
@@ -647,6 +699,9 @@ export async function resendInvite(inviteId: string) {
 
 /**
  * Remove um membro do workspace
+ * Security: Verifica permissões (owner/admin), previne auto-remoção, valida hierarquia
+ * Audit: Registra a ação em audit_logs
+ * Safety: Alerta se for o último admin sendo removido
  */
 export async function removeMember(workspaceId: string, userId: string) {
   const supabase = await createServerActionClient();
@@ -654,12 +709,12 @@ export async function removeMember(workspaceId: string, userId: string) {
 
   if (!user) throw new Error("Não autenticado");
 
-  // Verificar se o usuário está tentando remover a si mesmo
+  // ✅ SECURITY: Verificar se o usuário está tentando remover a si mesmo
   if (user.id === userId) {
-    throw new Error("Você não pode remover a si mesmo do workspace.");
+    throw new Error("Você não pode remover a si mesmo do workspace. Use a opção 'Deixar workspace' se desejar sair.");
   }
 
-  // Verificar permissões do usuário atual
+  // ✅ SECURITY: Verificar permissões do usuário atual (owner ou admin)
   const { data: currentMember } = await supabase
     .from("workspace_members")
     .select("role")
@@ -671,7 +726,7 @@ export async function removeMember(workspaceId: string, userId: string) {
     throw new Error("Permissão negada. Apenas admins podem remover membros.");
   }
 
-  // Verificar se o membro a ser removido é owner
+  // Verificar dados do membro a ser removido
   const { data: targetMember } = await supabase
     .from("workspace_members")
     .select("role")
@@ -683,13 +738,72 @@ export async function removeMember(workspaceId: string, userId: string) {
     throw new Error("Membro não encontrado");
   }
 
-  // Apenas owner pode remover outro owner
+  // ✅ SECURITY: Apenas owner pode remover outro owner
   if (targetMember.role === "owner" && currentMember.role !== "owner") {
     throw new Error("Apenas o owner pode remover outro owner.");
   }
 
-  // Remover membro
-  const { error } = await supabase
+  // ✅ SAFETY: Verificar se é o último admin sendo removido
+  // Buscar todos os admins do workspace (owner + admin)
+  const { data: allAdmins, error: adminsError } = await supabase
+    .from("workspace_members")
+    .select("user_id, role")
+    .eq("workspace_id", workspaceId)
+    .in("role", ["owner", "admin"]);
+
+  if (adminsError) {
+    console.error("Erro ao verificar admins:", adminsError);
+    // Não bloquear a remoção por causa disso, apenas logar
+  }
+
+  const isLastAdmin = allAdmins && allAdmins.length === 1 && allAdmins[0].user_id === userId;
+  if (isLastAdmin && targetMember.role === "admin") {
+    // Permitir a remoção, mas registrar aviso (será retornado na resposta)
+    console.warn("⚠️ ATENÇÃO: Removendo o último admin do workspace. Workspace ficará sem admins!");
+  }
+
+  // Usar supabaseAdmin para garantir que a remoção funcione mesmo com RLS restritivo
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!serviceRoleKey) {
+    console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
+    throw new Error("Configuração do servidor inválida. Contate o suporte.");
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  // ✅ AUDIT: Registrar ação antes de remover
+  try {
+    const { error: auditError } = await supabaseAdmin
+      .from("audit_logs")
+      .insert({
+        workspace_id: workspaceId,
+        user_id: user.id || null, // Quem executou a ação (pode ser null em edge cases)
+        action: "removed_member",
+        details: {
+          removed_user_id: userId,
+          removed_user_role: targetMember.role,
+          was_last_admin: isLastAdmin || false,
+        },
+      });
+
+    if (auditError) {
+      console.error("⚠️ Erro ao registrar audit log (não bloqueia remoção):", auditError);
+      // Não bloqueamos a remoção se o audit log falhar
+    }
+  } catch (auditErr: any) {
+    console.error("⚠️ Erro ao registrar audit log:", auditErr);
+    // Continuar mesmo se audit log falhar
+  }
+
+  // ✅ LOGIC: Remover membro (não deleta de auth.users ou profiles)
+  const { error } = await supabaseAdmin
     .from("workspace_members")
     .delete()
     .eq("workspace_id", workspaceId)
@@ -702,7 +816,11 @@ export async function removeMember(workspaceId: string, userId: string) {
 
   revalidatePath("/settings");
   revalidatePath("/team");
-  return { success: true };
+  
+  return { 
+    success: true,
+    warning: isLastAdmin ? "Atenção: Este era o último admin do workspace. O workspace ficará sem administradores." : undefined,
+  };
 }
 
 /**
@@ -935,12 +1053,27 @@ export async function acceptInvite(inviteId: string) {
   const cookieStore = await cookies();
   cookieStore.delete('pending_invite');
 
+  // ✅ MULTI-TENANCY: Definir workspace ativo após aceitar convite
+  // O workspace ativo é gerenciado via localStorage no cliente (SidebarProvider),
+  // mas podemos criar um cookie que será lido pelo cliente para atualizar o contexto
+  // Isso garante que ao redirecionar para /home, o novo workspace será ativo
+  cookieStore.set('newly_accepted_workspace_id', invite.workspace_id, {
+    httpOnly: false, // Precisamos que o cliente possa ler
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60, // 1 minuto (suficiente para o cliente ler e atualizar)
+    path: '/',
+  });
+
   // Revalidar caminhos importantes para garantir que o layout encontre os workspaces
   revalidatePath("/", "layout");
   revalidatePath("/home");
   revalidatePath("/settings");
   
-  return { success: true };
+  return { 
+    success: true,
+    workspaceId: invite.workspace_id, // Retornar workspace_id para uso no callback
+  };
 }
 
 /**
@@ -1054,7 +1187,7 @@ export async function getInviteDetails(inviteId: string) {
             const { data: inviterData } = await supabase
                 .from("profiles")
                 .select("full_name")
-                .eq("id", inviteData.invited_by)
+                .eq("id", inviteData.invited_by || '')
                 .maybeSingle();
             
             // Retornar com informações adicionais se disponíveis

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { WeeklyView } from "@/components/home/WeeklyView";
-import { WelcomeEmptyState } from "@/components/home/WelcomeEmptyState";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Database } from "@/types/database.types";
 
@@ -14,18 +13,32 @@ interface WeeklyViewWrapperProps {
   workspaces: { id: string; name: string }[];
 }
 
+const WELCOME_SEEN_KEY = 'symples-welcome-seen';
+
 export function WeeklyViewWrapper({ tasks, workspaces }: WeeklyViewWrapperProps) {
   const router = useRouter();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  const [showPlaceholder, setShowPlaceholder] = useState(false);
 
   const hasTasks = tasks && tasks.length > 0;
 
+  // Verificar se o modal de onboarding foi fechado mas ainda não há tarefas
+  useEffect(() => {
+    if (!hasTasks) {
+      const seen = localStorage.getItem(WELCOME_SEEN_KEY);
+      // Mostrar placeholder apenas se o modal foi fechado
+      setShowPlaceholder(seen === 'true');
+    } else {
+      setShowPlaceholder(false);
+    }
+  }, [hasTasks]);
+
   const handleCreateTask = () => {
-    setIsModalOpen(true);
+    setIsCreateTaskModalOpen(true);
   };
 
   const handleTaskCreated = () => {
-    setIsModalOpen(false);
+    setIsCreateTaskModalOpen(false);
     // Recarregar dados da página para mostrar as novas tarefas
     router.refresh();
   };
@@ -39,19 +52,22 @@ export function WeeklyViewWrapper({ tasks, workspaces }: WeeklyViewWrapperProps)
     <>
       {hasTasks ? (
         <WeeklyView tasks={tasks} workspaces={workspaces} />
+      ) : showPlaceholder ? (
+        // Placeholder minimalista quando não há tarefas e o modal foi fechado
+        <div className="flex items-center justify-center py-12">
+          <p className="text-sm text-gray-400">Tudo limpo por aqui</p>
+        </div>
       ) : (
-        <WelcomeEmptyState
-          workspaceName="Minha Semana"
-          onAction={handleCreateTask}
-        />
+        // Quando ainda não foi visto, o modal será mostrado pelo HomePageClient
+        // Aqui apenas renderizamos o grid vazio com estrutura mínima
+        <div className="min-h-[400px]" />
       )}
 
       {/* Modal de Criação de Tarefa */}
       <TaskDetailModal
-        open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        open={isCreateTaskModalOpen}
+        onOpenChange={setIsCreateTaskModalOpen}
         mode="create"
-        task={null}
         onTaskCreated={handleTaskCreated}
         onTaskUpdated={handleTaskUpdated}
       />

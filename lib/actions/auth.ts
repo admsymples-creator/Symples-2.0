@@ -145,10 +145,14 @@ export async function signupWithEmail(formData: FormData) {
     const supabase = await createServerClient();
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
     
-    // Incluir invite token na URL de callback se houver
+    // ✅ CORREÇÃO 3: Magic Link Stripping - Persistência Híbrida
+    // Tentamos incluir na URL primeiro (melhor para OAuth e quando funciona)
+    // O cookie já foi salvo na página /invite/[token], então temos fallback
     let emailRedirectTo = `${baseUrl}/auth/callback`;
     if (inviteToken) {
       emailRedirectTo += `?invite=${inviteToken}`;
+      // Nota: Se o provedor de email remover o parâmetro, o callback
+      // vai usar o cookie como fallback (já foi salvo na página de invite)
     }
 
     const { error } = await supabase.auth.signInWithOtp({

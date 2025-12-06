@@ -1,8 +1,9 @@
 import { getWeekTasks, getWorkspacesWeeklyStats, getUserWorkspaces } from "@/lib/actions/dashboard";
-import { WeeklyViewWrapper } from "@/components/home/WeeklyViewWrapper";
+import { HomePageClient } from "@/components/home/HomePageClient";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { Database } from "@/types/database.types";
 import { FolderOpen } from "lucide-react";
+import { Suspense } from "react";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -54,8 +55,10 @@ export default async function HomePage() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
-        {/* Weekly View (Client Component with Empty State) */}
-        <WeeklyViewWrapper tasks={typedTasks} workspaces={userWorkspaces} />
+        {/* Weekly View (Client Component with Onboarding Modal) */}
+        <Suspense fallback={<div className="min-h-[400px]" />}>
+          <HomePageClient tasks={typedTasks} workspaces={userWorkspaces} />
+        </Suspense>
 
         {/* Workspaces Overview */}
         <div>

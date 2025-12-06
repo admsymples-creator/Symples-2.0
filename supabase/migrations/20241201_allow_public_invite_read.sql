@@ -17,3 +17,4 @@ CREATE POLICY "Allow public read of pending invites by id"
 -- 2. Apenas convites pendentes podem ser lidos
 -- 3. Apenas informações básicas são expostas (não dados sensíveis do workspace)
 
+

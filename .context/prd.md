@@ -48,7 +48,8 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 \- \*\*Foco:\*\* O que é crítico para \*hoje\*.  
 \- \*\*KPIs Rápidos:\*\* "Tarefas pendentes hoje" e "Saldo Atual Previsto".  
 \- \*\*Grid Semanal:\*\* Visualização dos próximos 5 dias (colunas).  
-\- \*\*Empty State (FTUX):\*\* Quando não há tarefas, exibe card de boas-vindas com CTA para criar primeira tarefa.  
+\- \*\*Welcome Modal (FTUX):\*\* Modal de boas-vindas com ilustração personalizada que aparece automaticamente quando usuário não tem tarefas. Botão "Fechar" para dismissar. Persistência em localStorage.  
+\- \*\*Empty State:\*\* Quando modal foi fechado e não há tarefas, exibe placeholder minimalista "Tudo limpo por aqui".  
 \- \*\*Smart Highlight:\*\* Tarefas atrasadas ganham destaque visual (borda vermelha).
 
 **\#\#\# 3.3. Módulo: Tarefas (Core)**  

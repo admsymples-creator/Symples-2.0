@@ -6,6 +6,44 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-02 - Welcome Modal (FTUX) e Melhorias de Email
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Welcome Modal (First Time User Experience - FTUX)
+- **Componente OnboardingModal:**
+  - ✅ Modal de boas-vindas usando Shadcn Dialog
+  - ✅ Ilustração SVG personalizada (`/welcome-popup.svg`)
+  - ✅ Título: "Sua operação, finalmente sob controle"
+  - ✅ Texto de boas-vindas explicando o valor do Symples
+  - ✅ Botão "Fechar" para dismissar o modal
+  - ✅ Persistência em `localStorage` (`symples-welcome-seen`)
+  - ✅ Aparece automaticamente quando usuário não tem tarefas e ainda não viu
+
+- **Integração no Dashboard:**
+  - ✅ Componente `HomePageClient` para orquestrar modal e visão semanal
+  - ✅ Hook `useShouldShowOnboarding` para controlar exibição
+  - ✅ Detecção de aceitação de invite para resetar flag de "visto"
+  - ✅ Suporte para detectar invite aceito via URL (`invite_accepted=true`) ou cookie (`newly_accepted_workspace_id`)
+
+- **Empty State da Visão Semanal:**
+  - ✅ Placeholder minimalista "Tudo limpo por aqui" quando modal foi fechado
+  - ✅ Grid vazio quando modal ainda não foi visto (aguardando exibição do modal)
+
+#### ✅ Melhorias nos Emails Transacionais
+- **Logo nos Emails:**
+  - ✅ Logo do Symples (`/logo-black.svg`) agora aparece nos emails de convite
+  - ✅ Mesmo logo usado no sidebar (consistência visual)
+  - ✅ URL dinâmica baseada no domínio do inviteLink
+  - ✅ Componente `Img` do `@react-email/components` para renderização correta
+
+#### ✅ Refinamentos no Fluxo de Convites
+- **Detecção de Invite Aceito:**
+  - ✅ Resetar localStorage quando usuário aceita invite em novo workspace
+  - ✅ Suporte para cookie `newly_accepted_workspace_id` (setado por `acceptInvite`)
+  - ✅ Suporte para parâmetro URL `invite_accepted=true`
+  - ✅ Limpeza automática do cookie após uso
+
 ## 2025-12-01 - Sistema Completo de Convites e Gestão de Membros
 
 ### 1. Melhorias, bugs e features implementadas em preview

@@ -21,13 +21,9 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [inviteInfo, setInviteInfo] = useState<{ workspaceName?: string; email?: string } | null>(null);
 
-    // Salvar token de convite para usar após signup
-    useEffect(() => {
-        if (inviteToken) {
-            // Salvar token no localStorage para backup (caso o callback falhe)
-            localStorage.setItem("pending_invite_token", inviteToken);
-        }
-    }, [inviteToken]);
+    // ✅ CORREÇÃO: Token agora é salvo em cookie na página /invite/[token]
+    // Não precisamos mais usar localStorage aqui - o cookie é mais confiável
+    // e funciona em todos os cenários (OAuth, Magic Link, etc)
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -60,10 +56,8 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
     const handleGoogleSignup = async () => {
         setIsGoogleLoading(true);
         try {
-            // Salvar token antes de redirecionar
-            if (inviteToken) {
-                localStorage.setItem("pending_invite_token", inviteToken);
-            }
+            // ✅ CORREÇÃO 1: OAuth usa redirectTo na URL, não precisa de localStorage
+            // O cookie já foi salvo na página /invite/[token] como fallback
             await signInWithGoogle(inviteToken);
         } catch (error) {
             console.error("Erro no signup com Google:", error);

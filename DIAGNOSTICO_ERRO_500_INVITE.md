@@ -147,3 +147,4 @@ Para resolver o problema, preciso que você me envie:
 
 O erro 500 significa que algo inesperado está acontecendo. Com o novo `try-catch` geral, todos os erros devem ser logados com detalhes completos, facilitando a identificação do problema.
 
+

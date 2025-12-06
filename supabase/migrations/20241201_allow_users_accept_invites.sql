@@ -23,3 +23,4 @@ CREATE POLICY "Users can accept invites and add themselves"
 -- 3. Insere o usuário como membro com a role do convite
 -- 4. Atualiza o status do convite para 'accepted'
 
+

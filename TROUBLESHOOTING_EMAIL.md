@@ -213,3 +213,4 @@ Se ainda tiver problemas:
 3. Verifique os logs de erro retornados pelo Resend
 4. Entre em contato com o suporte do Resend se necessário
 
+

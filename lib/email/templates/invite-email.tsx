@@ -10,6 +10,7 @@ import {
   Text,
   Button,
   Hr,
+  Img,
 } from "@react-email/components";
 import * as React from "react";
 
@@ -34,6 +35,10 @@ export function InviteEmail({
     viewer: "Visualizador",
   };
 
+  // Extrair URL base do inviteLink para construir URL do logo
+  const baseUrl = inviteLink ? new URL(inviteLink).origin : 'https://symples.com';
+  const logoUrl = `${baseUrl}/logo-black.svg`;
+
   return (
     <Html>
       <Head />
@@ -43,7 +48,13 @@ export function InviteEmail({
       <Body style={main}>
         <Container style={container}>
           <Section style={logo}>
-            <Text style={logoText}>Symples</Text>
+            <Img
+              src={logoUrl}
+              alt="Symples"
+              width="120"
+              height="36"
+              style={logoImage}
+            />
           </Section>
           
           <Heading style={heading}>
@@ -120,11 +131,11 @@ const logo = {
   marginBottom: "32px",
 };
 
-const logoText = {
-  fontSize: "24px",
-  fontWeight: "bold",
-  color: "#4f46e5",
-  margin: "0",
+const logoImage = {
+  margin: "0 auto",
+  display: "block",
+  maxWidth: "120px",
+  height: "auto",
 };
 
 const heading = {

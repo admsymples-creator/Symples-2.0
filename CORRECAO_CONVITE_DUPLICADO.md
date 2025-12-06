@@ -64,3 +64,4 @@ Se você encontrar convites antigos no banco de dados, pode:
 - Ou excluí-los diretamente no banco (como você fez)
 - O sistema agora vai prevenir que isso aconteça novamente mostrando mensagens claras
 
+

@@ -54,3 +54,4 @@ Este problema deve ser resolvido em futuras versões do Next.js. Mantenha o Next
 
 **Conclusão:** Este aviso pode ser ignorado. Foque nos problemas de funcionalidade reais, não neste aviso de source map.
 
+

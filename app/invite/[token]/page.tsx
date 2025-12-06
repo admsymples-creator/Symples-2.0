@@ -64,8 +64,8 @@ export default async function InvitePage({ params }: InvitePageProps) {
   if (!user) {
     // Se o convite foi encontrado, mostrar detalhes e opção de signup/login
     if (invite) {
-      const workspaceName = invite.workspaces ? (invite.workspaces as any).name : "um Workspace";
-      const inviterName = invite.invited_by_profile ? (invite.invited_by_profile as any).full_name : "Alguém";
+      const workspaceName = (invite as any).workspaces ? ((invite as any).workspaces as any).name : "um Workspace";
+      const inviterName = (invite as any).invited_by_profile ? ((invite as any).invited_by_profile as any).full_name : "Alguém";
       
       return (
         <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
@@ -177,8 +177,62 @@ export default async function InvitePage({ params }: InvitePageProps) {
   }
 
   // Caso 3: Usuário logado e convite válido encontrado
-  // Verificar se o usuário já é membro do workspace antes de mostrar o convite
-  if (user) {
+  // ✅ SEGURANÇA: Verificar se o email do usuário bate com o do convite ANTES de mostrar botão de aceitar
+  if (user && invite) {
+    // Verificar se o email do usuário logado bate com o do convite
+    const emailMatches = invite.email.toLowerCase() === user.email?.toLowerCase();
+    
+    if (!emailMatches) {
+      // Email não bate - mostrar UI de erro com opção de trocar conta
+      const workspaceName = (invite as any).workspaces ? ((invite as any).workspaces as any).name : "um Workspace";
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+          <Card className="w-full max-w-md border-red-100">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <CardTitle className="text-red-900">Email não corresponde</CardTitle>
+              <CardDescription>
+                Este convite foi enviado para outro email.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-4">
+              <div className="rounded-md bg-slate-50 p-3 text-sm space-y-2">
+                <div>
+                  <p className="text-slate-500 mb-1">Convite enviado para:</p>
+                  <p className="font-medium text-slate-900">{invite.email}</p>
+                </div>
+                <div className="border-t border-slate-200 pt-2 mt-2">
+                  <p className="text-slate-500 mb-1">Você está logado como:</p>
+                  <p className="font-medium text-slate-900">{user.email}</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Para aceitar este convite, você precisa fazer login com o email <strong>{invite.email}</strong>.
+              </p>
+            </CardContent>
+            <CardFooter className="flex-col gap-2">
+              <form action={async () => {
+                "use server";
+                const supabase = await createServerActionClient();
+                await supabase.auth.signOut();
+                redirect(`/login?next=/invite/${inviteId}`);
+              }} className="w-full">
+                <Button variant="outline" className="w-full">
+                  Trocar de conta
+                </Button>
+              </form>
+              <Link href="/home" className="text-sm text-muted-foreground hover:underline">
+                Voltar para Home
+              </Link>
+            </CardFooter>
+          </Card>
+        </div>
+      );
+    }
+
+    // Email bate - verificar se já é membro
     const { data: existingMember } = await supabase
       .from("workspace_members")
       .select("user_id")
@@ -211,8 +265,9 @@ export default async function InvitePage({ params }: InvitePageProps) {
     }
   }
 
-  const workspaceName = invite.workspaces ? (invite.workspaces as any).name : "um Workspace";
-  const inviterName = invite.invited_by_profile ? (invite.invited_by_profile as any).full_name : "Alguém";
+  // Caso 4: Usuário logado, email bate, não é membro - mostrar convite para aceitar
+  const workspaceName = (invite as any).workspaces ? ((invite as any).workspaces as any).name : "um Workspace";
+  const inviterName = (invite as any).invited_by_profile ? ((invite as any).invited_by_profile as any).full_name : "Alguém";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
@@ -230,11 +285,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
            <div className="rounded-md bg-green-50 p-4 border border-green-100">
               <div className="flex items-center gap-3">
                  <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-sm border border-green-100">
-                    {user.email?.substring(0, 2).toUpperCase()}
+                    {user?.email?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="overflow-hidden">
                     <p className="text-xs text-green-600 font-medium uppercase tracking-wider">Aceitar como</p>
-                    <p className="text-sm font-semibold text-green-900 truncate">{user.email}</p>
+                    <p className="text-sm font-semibold text-green-900 truncate">{user?.email}</p>
                  </div>
               </div>
            </div>

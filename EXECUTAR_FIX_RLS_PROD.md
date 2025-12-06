@@ -73,3 +73,4 @@ O erro "RLS policies não configuradas" deve ser resolvido e você conseguirá c
 
 
 
+

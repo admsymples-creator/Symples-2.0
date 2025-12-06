@@ -180,3 +180,4 @@ NEXT_PUBLIC_SITE_URL=https://seu-site.com
 
 **Status:** ✅ Backend completo | ⚠️ Configuração de email pendente | 🎨 UI pode ser melhorada
 
+

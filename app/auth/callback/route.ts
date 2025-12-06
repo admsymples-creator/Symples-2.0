@@ -2,12 +2,23 @@ import { createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from 'next/server'
 import { acceptInvite } from "@/lib/actions/members";
 import { revalidatePath } from "next/cache";
+import { cookies } from 'next/headers';
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  const inviteToken = searchParams.get('invite')
-  const next = searchParams.get('next') ?? '/home'
+  const requestUrl = new URL(request.url);
+  const { searchParams, origin } = requestUrl;
+  const code = searchParams.get('code');
+  const next = searchParams.get('next') ?? '/home';
+
+  // ✅ CORREÇÃO 1: Lógica defensiva - tenta pegar token de múltiplas fontes
+  // 1. Prioridade: Parâmetro da URL (funciona para OAuth e Magic Link quando não é removido)
+  let inviteToken = searchParams.get('invite');
+  
+  // 2. Fallback: Cookie (para casos onde o Magic Link teve os parâmetros removidos)
+  if (!inviteToken) {
+    const cookieStore = await cookies();
+    inviteToken = cookieStore.get('pending_invite')?.value || null;
+  }
 
   if (code) {
     const supabase = await createServerClient()
@@ -20,10 +31,25 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser()
 
       if (user) {
-        // 2. Se houver token de convite, aceitar automaticamente
+        // 2. Se houver token de convite (da URL ou cookie), aceitar automaticamente
         if (inviteToken) {
           try {
+            // acceptInvite retorna { success: true } ou lança erro
             await acceptInvite(inviteToken);
+            
+            // Limpar cookie após aceitar com sucesso e criar cookie de just_accepted
+            const cookieStore = await cookies();
+            cookieStore.delete('pending_invite');
+            
+            // ✅ CORREÇÃO 4: Criar cookie temporário para indicar que acabou de aceitar convite
+            // Isso permite que o layout evite redirecionar para onboarding
+            cookieStore.set('just_accepted_invite', 'true', {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'lax',
+              maxAge: 60, // 1 minuto apenas (suficiente para evitar loop)
+              path: '/',
+            });
             
             // Revalidar o cache para garantir que os workspaces sejam recarregados
             revalidatePath("/", "layout");
@@ -66,6 +92,9 @@ export async function GET(request: Request) {
             }
           } catch (inviteError: any) {
             console.error('Erro ao aceitar convite no callback:', inviteError);
+            // Limpar cookie em caso de erro
+            const cookieStore = await cookies();
+            cookieStore.delete('pending_invite');
             // Se falhar, redirecionar para a página de invite para mostrar o erro
             return NextResponse.redirect(`${origin}/invite/${inviteToken}?error=accept_failed`);
           }

@@ -112,3 +112,4 @@ Se ainda estiver redirecionando para onboarding:
 3. **Verifique o console do navegador** - Veja se há erros ao aceitar o convite
 4. **Verifique no Supabase** - Veja se o registro foi criado em `workspace_members` após aceitar o convite
 
+

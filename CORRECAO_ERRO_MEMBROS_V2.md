@@ -106,3 +106,4 @@ AND user_id = 'SEU_USER_ID';
 
 Se o erro persistir após essas correções, os novos logs devem fornecer informações suficientes para identificar a causa raiz do problema.
 
+
