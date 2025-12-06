@@ -102,9 +102,6 @@ const getNextSunday = (): Date => {
 };
 
 function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
-  // Log para debug
-  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
-  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
   const {
     attributes,
     listeners,
@@ -370,7 +367,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       // ❌ Rollback: Restaurar status anterior em caso de erro
       onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
       toast.error("Erro ao atualizar tarefa");
-      console.error(error);
     }
   };
 
@@ -411,7 +407,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       // ❌ Rollback: Restaurar título anterior em caso de erro
       onTaskUpdatedOptimistic?.(task.id, { title: previousTitle });
       toast.error("Erro ao atualizar título");
-      console.error(error);
     }
   };
 

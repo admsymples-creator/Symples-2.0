@@ -6,6 +6,46 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Correções de Performance e UX na Tela de Tarefas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção de Flicker na Ordem dos Grupos
+- **Problema**: Ao carregar tarefas pela primeira vez, a ordem dos grupos ficava trocada por ~1 segundo
+- **Causa Identificada**:
+  - `initialGroups` (prop do Server Component) não estava sendo usado para inicializar estados
+  - `availableGroups` e `groupOrder` iniciavam vazios
+  - `loadGroups()` era assíncrono e rodava após o primeiro render
+  - `orderedGroupedData` não estava ordenando baseado em `groupOrder`
+  - Renderização condicional mostrava grupos em ordem errada enquanto `groupOrder.length === 0`
+- **Solução Implementada**:
+  - `availableGroups` agora inicializa com `initialGroups` se disponível
+  - `groupOrder` inicializa com ordem correta desde o primeiro render:
+    - Tenta usar ordem salva no localStorage (se existir e válida)
+    - Valida que todos os IDs existem em `initialGroups`
+    - Adiciona grupos novos que não estavam na ordem salva
+    - Fallback para ordem padrão: `["inbox", ...initialGroups.map(g => g.id)]`
+  - `orderedGroupedData` agora ordena grupos baseado em `groupOrder`
+  - `listGroups` ordena grupos quando `viewOption === "group"` usando `groupOrder`
+- **Resultado**: Flicker eliminado - grupos aparecem na ordem correta desde o primeiro render
+
+#### ✨ Melhorias de Performance e Limpeza de Código
+- **Remoção de console.log de debug**:
+  - Removidos logs de debug desnecessários em `TaskRowMinify` e `TaskGroup`
+  - Removidos logs de debug no `handleDragEnd` de `page.tsx`
+  - Mantidos apenas `console.error` e `console.warn` para erros reais
+- **Implementação de router.refresh()**:
+  - Implementado `router.refresh()` no TODO da linha 310
+  - Quando `initialTasks` está presente, página Server Component é recarregada após invalidar cache
+  - Garante dados atualizados quando necessário sem necessidade de reload completo
+
+#### 🔧 Otimizações Técnicas
+- Dependências de `useMemo` corrigidas para incluir `groupOrder`
+- Inicialização de estados otimizada usando funções lazy do `useState`
+- Código mais limpo e manutenível sem logs de debug em produção
+
+---
+
 ## 2025-01-XX - Limite de Caracteres, Truncamento Visual e Melhorias de UI no TaskDetailModal
 
 ### 1. Melhorias, bugs e features implementadas em preview

@@ -49,13 +49,6 @@ interface TaskGroupProps {
 }
 
 function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, showGroupActions = true, onAddTask }: TaskGroupProps) {
-    // Log para debug
-    console.log("🟡 [TaskGroup] Renderizado - id:", id, "tasks.length:", tasks.length);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic:", onTaskDeletedOptimistic);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic:", onTaskDuplicatedOptimistic);
-    
     const [isAdding, setIsAdding] = useState(false);
     
     // Normalizar IDs para string (dnd-kit requer strings)
@@ -237,16 +230,6 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
         prev.onDeleteGroup !== next.onDeleteGroup ||
         prev.onClearGroup !== next.onClearGroup ||
         prev.showGroupActions !== next.showGroupActions;
-    
-    console.log("🟨 [TaskGroup] memo comparando:", {
-        groupId: next.id,
-        tasksChanged: prev.tasks !== next.tasks,
-        onTaskDeletedOptimisticChanged: prev.onTaskDeletedOptimistic !== next.onTaskDeletedOptimistic,
-        onTaskDuplicatedOptimisticChanged: prev.onTaskDuplicatedOptimistic !== next.onTaskDuplicatedOptimistic,
-        shouldRender,
-        prevHasCallback: !!prev.onTaskDeletedOptimistic,
-        nextHasCallback: !!next.onTaskDeletedOptimistic,
-    });
     
     return !shouldRender; // Retorna true se NÃO deve re-renderizar
 });
