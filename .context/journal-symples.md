@@ -6,6 +6,48 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Remoção de "Nada Aplicado" e Garantia de DND Livre
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🗑️ Remoção da Opção "Nada Aplicado" do SortMenu
+- **Mudança Implementada**:
+  - Removida opção "Nada aplicado" (position) da lista de opções de ordenação
+  - Menu agora exibe apenas opções reais de ordenação: Status, Prioridade, Responsável, Título
+  - Quando não há filtro ativo (`sortBy === "position"`), o menu mostra "status" como selecionado visualmente (padrão)
+  - Badge não aparece quando não há filtro ativo (ordem manual)
+  - Badge mostra "Manual" quando não há filtro (via `getCurrentLabel`)
+- **Lógica Ajustada**:
+  - `localSort` inicializa com "status" quando `currentSort === "position"`
+  - `hasPendingChange` permite aplicar quando não há filtro ativo (transição de manual para filtro)
+  - `handleApply` sempre aplica o `localSort` selecionado, removendo comportamento especial para "position"
+- **Benefícios**:
+  - Interface mais limpa e focada em ordenações reais
+  - Remoção de opção redundante (ordem manual é o estado padrão)
+  - UX mais direta: usuário sempre escolhe uma ordenação específica
+
+#### 🔓 DND Sempre Livre (Prioridade Manual)
+- **Problema Identificado**:
+  - Após aplicar filtro de ordenação, o drag & drop podia parecer "travado"
+  - `useEffect` de reordenação automática podia interferir durante o drag
+  - Filtros não deveriam bloquear reorganização manual
+- **Solução Implementada**:
+  - Adicionado `isDraggingRef` para rastrear quando drag está ativo
+  - `useEffect` de reordenação verifica `isDraggingRef.current` e não interfere durante drag
+  - Flag `isDraggingRef` é definida como `true` no `handleDragStart`
+  - Flag é liberada (`false`) no `handleDragEnd` (bloco `finally`) e `handleDragCancel`
+  - DND funciona normalmente mesmo com filtros ativos (ordem manual sempre tem prioridade)
+- **Comportamento**:
+  - Filtros aplicam ordenação automática apenas quando não há drag ativo
+  - Usuário pode reorganizar manualmente a qualquer momento, independente do filtro
+  - Após reorganização manual, a nova ordem é salva no banco (via `updateTaskPosition`)
+  - Filtro permanece ativo após reorganização manual (não é resetado automaticamente)
+- **Benefícios**:
+  - DND sempre funcional, independente de filtros ativos
+  - Ordem manual sempre tem prioridade sobre ordenação automática
+  - UX intuitiva: usuário controla a ordem, filtros são apenas auxiliares temporários
+  - Sem interferência entre ordenação automática e reorganização manual
+
 ## 2025-12-06 - Correção do Filtro "Nada Aplicado" e Remoção da Opção "Limpar"
 
 ### 1. Melhorias, bugs e features implementadas em preview

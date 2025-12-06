@@ -24,7 +24,6 @@ interface SortMenuProps {
 }
 
 const sortOptions: { value: SortOption; label: string }[] = [
-    { value: "position", label: "Nada aplicado" },
     { value: "status", label: "Status" },
     { value: "priority", label: "Prioridade" },
     { value: "assignee", label: "Responsável" },
@@ -40,26 +39,26 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
     const currentSort = (searchParams.get("sort") as SortOption) || "position";
 
     // Estado Local (Seleção Visual)
-    const [localSort, setLocalSort] = useState<SortOption>(currentSort);
+    const [localSort, setLocalSort] = useState<SortOption>(currentSort === "position" ? "status" : currentSort);
     const [isOpen, setIsOpen] = useState(false);
 
     // Sincronizar
     useEffect(() => {
         const urlSort = (searchParams.get("sort") as SortOption) || "position";
-        setLocalSort(urlSort);
+        // Se for "position", usar "status" como padrão visual (mas manter "position" como estado real)
+        setLocalSort(urlSort === "position" ? "status" : urlSort);
     }, [searchParams]);
 
     const hasActiveSort = currentSort !== "position";
-    const hasPendingChange = localSort !== currentSort;
+    // ✅ Quando não há filtro (position), sempre permitir aplicar (localSort será diferente de position)
+    // ✅ Quando há filtro ativo, só permitir aplicar se houver mudança
+    const hasPendingChange = currentSort === "position" 
+        ? localSort !== "position" 
+        : localSort !== currentSort;
 
     const handleApply = async () => {
         const params = new URLSearchParams(searchParams.toString());
-
-        if (localSort === "position") {
-            params.delete("sort");
-        } else {
-            params.set("sort", localSort);
-        }
+        params.set("sort", localSort);
 
         const newUrl = params.toString()
             ? `${pathname}?${params.toString()}`
@@ -68,7 +67,7 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
         router.push(newUrl);
         setIsOpen(false);
 
-        if (onPersistSortOrder && localSort !== "position") {
+        if (onPersistSortOrder) {
             setTimeout(async () => {
                 await onPersistSortOrder();
             }, 200);
@@ -77,6 +76,9 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
 
 
     const getCurrentLabel = () => {
+        if (currentSort === "position") {
+            return "Manual";
+        }
         const option = sortOptions.find(opt => opt.value === currentSort);
         return option?.label || "Ordenar";
     };

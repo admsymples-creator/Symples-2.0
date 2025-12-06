@@ -1451,6 +1451,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
     useEffect(() => {
+        // ✅ Não reordenar automaticamente se drag está ativo (DND manual tem prioridade)
+        if (isDraggingRef.current) {
+            return;
+        }
+
         if (sortBy === "position") {
             // Quando voltar para "position", apenas garantir que as tarefas estão ordenadas por position
             // O listGroups já faz isso, mas precisamos garantir que o estado está sincronizado
@@ -1649,6 +1654,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             console.error("Erro ao persistir ordem:", error);
         }
     }, [effectiveWorkspaceId, activeTab, sortBy, viewOption]);
+    // ✅ Flag para indicar que drag está ativo (previne reordenação automática)
+    const isDraggingRef = useRef(false);
+
     // Handler para quando o drag comeca
     const handleDragStart = (event: DragStartEvent) => {
         // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
@@ -1664,6 +1672,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return; // Evita iniciar o drag
         }
 
+        // ✅ Marcar que drag está ativo (previne reordenação automática)
+        isDraggingRef.current = true;
+
         const { active } = event;
         // ✅ CORREÇÃO: Normalizar ID para string
         const activeIdStr = String(active.id);
@@ -1671,6 +1682,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         
         if (!task) {
             console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
+            isDraggingRef.current = false;
             return;
         }
         
@@ -2046,10 +2058,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         } catch (error) {
             console.error("Erro ao atualizar posição:", error);
             await reloadTasks();
+        } finally {
+            // ✅ Liberar flag de drag após processamento
+            isDraggingRef.current = false;
         }
     };
 
     const handleDragCancel = () => {
+        isDraggingRef.current = false;
         setActiveTask(null);
     };
 
