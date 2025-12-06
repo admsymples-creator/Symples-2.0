@@ -6,6 +6,43 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Correção do Filtro "Nada Aplicado" e Remoção da Opção "Limpar"
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🔧 Correção do Filtro "Nada Aplicado"
+- **Problema Identificado**:
+  - Ao aplicar "Nada aplicado" (position), as tarefas não eram reordenadas corretamente
+  - O `useEffect` retornava imediatamente quando `sortBy === "position"` sem fazer nada
+  - Tarefas não refletiam a ordem manual baseada em `position`
+- **Solução Implementada**:
+  - Modificado `useEffect` para reordenar tarefas por `position` dentro de cada grupo quando `sortBy === "position"`
+  - Agrupa tarefas por `getTaskGroupKey` e ordena por `position` dentro de cada grupo
+  - Garante que a ordem manual (baseada em `position`) seja respeitada visualmente
+  - Mantém sincronização entre estado local e ordem visual
+- **Benefícios**:
+  - Filtro "Nada aplicado" funciona corretamente
+  - Ordem manual sempre respeitada quando filtro é removido
+  - Transição suave entre ordenação automática e manual
+  - Interface reflete corretamente a ordem das tarefas
+
+#### 🗑️ Remoção da Opção "Limpar" do SortMenu
+- **Mudança Implementada**:
+  - Removida opção "Limpar" do menu de ordenação
+  - Removido botão "X" ao lado do botão "Ordenar" quando filtro está ativo
+  - Removida função `handleClear` e import não utilizado (`X` do lucide-react)
+  - Layout ajustado: botão "Aplicar" agora ocupa toda a largura do footer do dropdown
+- **Justificativa**:
+  - Após aplicação de qualquer filtro, o drag & drop manual deve ficar livre
+  - Ordenação manual (DND) tem prioridade sobre filtros automáticos
+  - Não há necessidade de "limpar" filtro, pois ordem manual sempre prevalece após reorganização
+  - Interface mais limpa e focada na ação principal ("Aplicar")
+- **Benefícios**:
+  - Interface mais simples e direta
+  - Menos confusão sobre quando usar "Limpar" vs "Aplicar"
+  - Alinhado com comportamento: ordem manual sempre prevalece
+  - UX mais intuitiva: aplicar filtro = organizar rapidamente, depois reorganizar livremente
+
 ## 2025-12-06 - Reset Automático de Filtro ao Mover Tarefa e Reorganização de Indicadores
 
 ### 1. Melhorias, bugs e features implementadas em preview

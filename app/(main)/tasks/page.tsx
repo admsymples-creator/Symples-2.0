@@ -1452,6 +1452,30 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
     useEffect(() => {
         if (sortBy === "position") {
+            // Quando voltar para "position", apenas garantir que as tarefas estão ordenadas por position
+            // O listGroups já faz isso, mas precisamos garantir que o estado está sincronizado
+            setLocalTasks((prev) => {
+                // Reordenar por position dentro de cada grupo para garantir ordem correta
+                const groupedByKey: Record<string, Task[]> = {};
+                prev.forEach((task) => {
+                    const key = getTaskGroupKey(task);
+                    if (!groupedByKey[key]) groupedByKey[key] = [];
+                    groupedByKey[key].push(task);
+                });
+
+                const recalculated: Task[] = [];
+                Object.entries(groupedByKey).forEach(([_, tasks]) => {
+                    // Ordenar por position dentro do grupo
+                    const sorted = [...tasks].sort((a, b) => {
+                        const posA = a.position ?? 0;
+                        const posB = b.position ?? 0;
+                        return posA - posB;
+                    });
+                    recalculated.push(...sorted);
+                });
+
+                return recalculated;
+            });
             return;
         }
 
@@ -1963,17 +1987,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     console.error("❌ Erro fatal no Rebalanceamento:", resBulk?.error);
                     toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
                     await reloadTasks();
-                } else {
-                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
-                    if (sortBy !== "position") {
-                        setSortBy("position");
-                        const params = new URLSearchParams(searchParams.toString());
-                        params.delete("sort");
-                        const newUrl = params.toString()
-                            ? `${pathname}?${params.toString()}`
-                            : pathname;
-                        router.push(newUrl);
-                    }
                 }
             } else {
                 // ✅ CASO PADRÃO (99% das vezes): Salva APENAS o item movido.
@@ -2028,17 +2041,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         taskId: activeIdStr,
                         calculatedPosition
                     });
-                    
-                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
-                    if (sortBy !== "position") {
-                        setSortBy("position");
-                        const params = new URLSearchParams(searchParams.toString());
-                        params.delete("sort");
-                        const newUrl = params.toString()
-                            ? `${pathname}?${params.toString()}`
-                            : pathname;
-                        router.push(newUrl);
-                    }
                 }
             }
         } catch (error) {
