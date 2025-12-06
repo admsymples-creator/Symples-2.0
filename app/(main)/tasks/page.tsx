@@ -538,9 +538,35 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         };
 
         setLocalTasks((prev) => {
-            return [newTask, ...prev];
+            // ✅ Seguir ordem existente: adicionar no final
+            // Isso mantém consistência com ordenação (position, priority, etc.)
+            // e permite criação rápida sem quebrar o fluxo visual
+            // O QuickTaskAdd está no final, então faz sentido a tarefa aparecer logo acima dele
+            if (sortBy === "position") {
+                // Quando ordenado por position: calcular última posição e adicionar no final
+                // Filtrar tarefas do mesmo grupo se viewOption === "group"
+                const tasksInSameGroup = viewOption === "group" && taskData.groupId
+                    ? prev.filter(t => (t.group?.id || null) === taskData.groupId)
+                    : prev;
+                
+                const maxPosition = tasksInSameGroup.length > 0 
+                    ? Math.max(...tasksInSameGroup.map(t => t.position ?? 0))
+                    : 0;
+                
+                const taskWithPosition = {
+                    ...newTask,
+                    position: maxPosition + 1000 // Adicionar no final da lista/grupo
+                };
+                
+                // Adicionar no final do array completo (a ordenação será reaplicada)
+                return [...prev, taskWithPosition];
+            } else {
+                // Outras ordenações: adicionar no final também para manter consistência
+                // A ordenação será reaplicada automaticamente pelo useMemo
+                return [...prev, newTask];
+            }
         });
-    }, [availableGroups]);
+    }, [availableGroups, sortBy, viewOption]); // ✅ Adicionar sortBy e viewOption nas dependências
 
     // ✅ Optimistic Delete: Remove tarefa instantaneamente do estado local
     const handleOptimisticDelete = useCallback((taskId: string | number) => {

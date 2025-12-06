@@ -6,6 +6,68 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Navegação Rápida via Teclado e Posicionamento de Tarefas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ⌨️ Navegação Rápida via Teclado (Enter)
+- **Foco Imediato Após Criação**:
+  - Usa `requestAnimationFrame` para garantir que DOM atualizou antes de focar
+  - Foco imediato após limpar input (não espera Promise resolver)
+  - Permite criação rápida e contínua sem interrupção
+  - Input sempre pronto para próxima digitação
+
+- **Estado isCreatingSingle para Feedback Visual**:
+  - Novo estado para rastrear criação única (diferente de batch)
+  - Spinner visível durante criação única e batch
+  - Feedback visual discreto e claro sem bloquear input
+
+- **Input Não Bloqueado Durante Criação Única**:
+  - Input permanece habilitado durante criação única
+  - Permite digitação contínua sem interrupção
+  - Apenas batch desabilita input (necessário para controle)
+  - Criação em background não bloqueia UI
+
+- **Preservação de Contexto Entre Criações**:
+  - Data e assignee preservados entre criações
+  - Facilita criar múltiplas tarefas com mesmo contexto
+  - Escape limpa contexto apenas quando input vazio
+  - Comportamento inteligente: Escape com texto limpa só texto, sem contexto
+
+- **Comportamento do Escape Melhorado**:
+  - Input vazio: limpa contexto (data/assignee) e cancela
+  - Input com texto: limpa apenas o texto, mantém contexto
+  - Remove foco do input após Escape
+  - UX intuitiva e previsível
+
+- **Criação em Background**:
+  - Criação única não espera Promise resolver
+  - Permite criação rápida e contínua
+  - Erros tratados em background sem bloquear
+  - Toast de erro aparece sem interromper fluxo
+
+#### 📍 Posicionamento de Tarefas Recém-Criadas
+- **Seguir Ordem Existente (Adicionar no Final)**:
+  - Tarefas adicionadas no final da lista, respeitando ordenação
+  - Quando `sortBy === "position"`: calcula última posição e adiciona no final
+  - Quando outras ordenações: adiciona no final (ordenação reaplicada automaticamente)
+  - Considera grupo quando `viewOption === "group"` (calcula posição dentro do grupo)
+- **Benefícios**:
+  - Mantém consistência com ordenação existente
+  - Permite criação rápida sem quebrar fluxo visual
+  - QuickTaskAdd está no final, tarefa aparece logo acima dele
+  - Respeita sistema de drag & drop (position)
+  - Alinhado com padrões de apps profissionais (Todoist, Linear, Asana)
+
+#### 🎯 Padrões de UX Aplicados
+- **Enter**: Criar tarefa e manter foco para próxima criação
+- **Escape**: Limpar contexto quando input vazio, apenas texto quando tem conteúdo
+- **Feedback Visual**: Spinner discreto durante criação (batch ou single)
+- **Criação Contínua**: Input sempre pronto, não bloqueia durante criação única
+- **Contexto Preservado**: Data/assignee mantidos entre criações para eficiência
+
+---
+
 ## 2025-12-06 - Correção de Layout e Limite de Título em TaskRowMinify
 
 ### 1. Melhorias, bugs e features implementadas em preview
