@@ -212,6 +212,67 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-06 - Correção de Optimistic UI no TaskDetailModal
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Correção de Sincronização TaskDetailModal ↔ TaskRowMinify
+- **Problema Identificado**: Atualizações no TaskDetailModal (status, assignee, dueDate, título) não refletiam imediatamente no TaskRowMinify, exigindo refresh manual da página.
+- **Solução Implementada**: Sistema completo de optimistic updates com rollback automático.
+
+#### 🔧 Mudanças Técnicas
+- **Adicionada prop `onTaskUpdatedOptimistic` ao TaskDetailModal**:
+  - Callback para atualização otimista de estado em componentes pais
+  - Tipagem completa para suportar title, status, dueDate, priority, assignees
+  
+- **Modificado `invalidateCacheAndNotify`**:
+  - Agora chama `onTaskUpdatedOptimistic` antes de invalidar cache
+  - Garante sincronização imediata entre TaskDetailModal e TaskRowMinify
+  - Mantém compatibilidade com código existente (prop opcional)
+
+- **Handlers Atualizados com Optimistic UI**:
+  - `handleStatusChange`: Atualiza TaskRowMinify imediatamente + rollback em erro
+  - `handleAssigneeChange`: Atualiza assignees imediatamente + rollback em erro
+  - `handleDueDateChange`: Atualiza dueDate imediatamente + rollback em erro
+  - Handler de título: Atualiza título imediatamente via optimistic update
+  
+- **Integração nos Componentes Pais**:
+  - `app/(main)/tasks/page.tsx`: Passa `handleOptimisticUpdate` para TaskDetailModal
+  - `app/(main)/tasks/tasks-view.tsx`: Passa `handleOptimisticUpdate` para TaskDetailModal
+  - Ambos atualizados para suportar priority e assigneeId sync
+
+- **Melhorias no `handleOptimisticUpdate`**:
+  - Sincroniza `assigneeId` automaticamente quando `assignees` muda
+  - Mantém consistência entre arrays de assignees e ID único
+  - Suporte completo para todos os campos: title, status, dueDate, priority, assignees
+
+#### 🎯 Padrão Optimistic UI Aplicado
+1. **Atualização Imediata**: UI atualiza ANTES da chamada ao servidor
+2. **Chamada ao Servidor**: Executa em background (não bloqueia UI)
+3. **Rollback Automático**: Em caso de erro, reverte para estado anterior
+4. **Feedback Visual**: Toast notifications para sucesso/erro
+5. **Sincronização de Estado**: Callback `onTaskUpdatedOptimistic` sincroniza com componentes pais
+
+#### 📝 Arquivos Modificados
+- `components/tasks/TaskDetailModal.tsx`: +60 linhas (prop + optimistic updates em handlers)
+- `app/(main)/tasks/page.tsx`: +15 linhas (handleOptimisticUpdate melhorado + passagem de prop)
+- `app/(main)/tasks/tasks-view.tsx`: +15 linhas (atualização de tipos + passagem de prop)
+
+**Total**: ~90 inserções e ~10 deleções em 3 arquivos
+
+### 2. O que está sendo trabalhado no momento
+
+- ✅ **Correção concluída e testada pelo usuário**
+
+### 3. Próximos passos
+
+- **Melhorias futuras de UX**:
+  - Considerar indicador visual de "salvando..." durante chamadas ao servidor
+  - Debounce para atualização de título (evitar salvamentos excessivos)
+  - Suporte para optimistic updates em outros campos (descrição, tags, subtarefas)
+
+---
+
 ## 2025-01-XX - XX:XX (Data a ser preenchida)
 
 ### 1. Melhorias, bugs e features implementadas em preview
