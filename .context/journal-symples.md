@@ -6,6 +6,41 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Reset Automático de Filtro ao Mover Tarefa e Reorganização de Indicadores
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🔄 Reset Automático de Filtro ao Mover Tarefa
+- **Comportamento Implementado**:
+  - Quando usuário move tarefa via drag & drop, o filtro de ordenação é resetado automaticamente
+  - `sortBy` muda para `"position"` para respeitar ordem manual
+  - URL é atualizada removendo parâmetro `?sort=...`
+  - Aplicado em ambos os casos: rebalanceamento em massa e movimentação padrão
+- **Benefícios**:
+  - Ordem manual sempre respeitada após reorganização
+  - Ordenação automática não interfere na ordem manual do usuário
+  - UX intuitiva: reorganizar manualmente = ordem manual ativa
+  - Interface reflete mudança (botão ordenação volta ao estado padrão)
+
+#### 📍 Reorganização de Indicadores Focus e Urgente
+- **Nova Localização**:
+  - Indicadores movidos da coluna do título para a coluna da Data
+  - Posicionados à esquerda da data na mesma coluna
+  - Mantém apenas Comentários na coluna do título (apenas no hover)
+- **Comportamento de Visibilidade**:
+  - Focus (Zap): sempre visível quando ativo (data = próximo domingo)
+  - Urgente (AlertTriangle): sempre visível quando ativo (hoje ou priority high/urgent)
+  - Quando inativos: aparecem apenas no hover (`opacity-0 group-hover:opacity-100`)
+  - Transições suaves entre estados
+- **Lógica de Ativação**:
+  - Focus ativo: `isNextSunday(task.dueDate)` → `text-yellow-600 bg-yellow-50 opacity-100`
+  - Urgente ativo: `isToday || priority === "high" || priority === "urgent"` → `text-red-600 bg-red-50 opacity-100`
+- **Benefícios**:
+  - Indicadores importantes sempre visíveis quando relevantes
+  - Coluna da Data mais informativa e contextual
+  - Interface mais limpa quando indicadores estão inativos
+  - Agrupamento lógico: indicadores relacionados à data ficam próximos da data
+
 ## 2025-12-06 - Ghost Group para Criação Rápida de Grupo
 
 ### 1. Melhorias, bugs e features implementadas em preview

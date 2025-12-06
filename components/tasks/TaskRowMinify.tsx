@@ -499,9 +499,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           </div>
         </div>
         
-        {/* Indicadores que aparecem no hover */}
+        {/* Comentários - aparece apenas no hover */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          {/* Comentários */}
           {(task.commentCount && task.commentCount > 0) || (task.commentsCount && task.commentsCount > 0) ? (
             <div 
               className="flex items-center gap-1 text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
@@ -515,7 +514,17 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               <span className="text-[10px] font-semibold">{task.commentCount || task.commentsCount || 0}</span>
             </div>
           ) : null}
+        </div>
+      </div>
 
+      {/* Coluna: Data com indicadores Focus e Urgente */}
+      <div 
+        className="flex items-center justify-center gap-1 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors"
+        onClick={stopProp}
+        onPointerDown={stopProp}
+      >
+        {/* Indicadores Focus e Urgente - sempre visíveis quando ativos, hover quando inativos */}
+        <div className="flex items-center gap-0.5">
           {/* Focus (Enviar para minha semana) */}
           <TooltipProvider>
             <Tooltip>
@@ -528,7 +537,9 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
                   onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
                     "rounded p-0.5 transition-all",
-                    isFocusActive ? "text-yellow-600 bg-yellow-50 opacity-100" : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
+                    isFocusActive 
+                      ? "text-yellow-600 bg-yellow-50 opacity-100" 
+                      : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-yellow-500 hover:bg-yellow-50"
                   )}
                 >
                   <Zap className="w-3.5 h-3.5 fill-current" />
@@ -550,7 +561,9 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
                   onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
                     "rounded p-0.5 transition-all",
-                    isUrgentActive ? "text-red-600 bg-red-50 opacity-100" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                    isUrgentActive 
+                      ? "text-red-600 bg-red-50 opacity-100" 
+                      : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50"
                   )}
                 >
                   <AlertTriangle className="w-3.5 h-3.5 fill-current" />
@@ -560,14 +573,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
             </Tooltip>
           </TooltipProvider>
         </div>
-      </div>
 
-      {/* Coluna: Data */}
-      <div 
-        className="flex items-center justify-center cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors"
-        onClick={stopProp}
-        onPointerDown={stopProp}
-      >
         {isMounted ? (
           <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
             <PopoverTrigger asChild>
