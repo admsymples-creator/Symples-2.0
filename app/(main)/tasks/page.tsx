@@ -2060,7 +2060,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             await reloadTasks();
         } finally {
             // ✅ Liberar flag de drag após processamento
-            isDraggingRef.current = false;
+            // ✅ Pequeno delay para evitar reordenação imediata após drag (previne conflito com useEffect)
+            setTimeout(() => {
+                isDraggingRef.current = false;
+            }, 100);
         }
     };
 
@@ -2191,6 +2194,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     };
 
     // ✅ Variável para controlar se drag está habilitado
+    // ✅ IMPORTANTE: NUNCA bloqueia baseado em filtros (sortBy) - apenas em viewOption
+    // ✅ DND manual sempre tem prioridade sobre ordenação automática
     const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
 
     return (

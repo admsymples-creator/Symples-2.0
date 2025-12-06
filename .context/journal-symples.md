@@ -6,6 +6,31 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Correção Final: DND Sempre Funcional com Filtros
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🔧 Correção do Bloqueio de DND com Filtros Ativos
+- **Problema Identificado**:
+  - DND ainda estava bloqueado ou interferido quando filtros de ordenação estavam ativos
+  - `useEffect` de reordenação podia interferir durante o drag mesmo com flag de proteção
+  - Race condition entre reordenação automática e drag manual
+- **Solução Implementada**:
+  - Adicionado delay de 100ms antes de liberar `isDraggingRef` no `handleDragEnd` (bloco `finally`)
+  - Delay previne que `useEffect` de reordenação execute imediatamente após drag
+  - Comentários adicionados esclarecendo que `isDragDisabled` NUNCA bloqueia baseado em filtros
+  - Garantia explícita: DND manual sempre tem prioridade sobre ordenação automática
+- **Comportamento Final**:
+  - `isDragDisabled` depende APENAS de `viewOption` (status, priority, group permitem drag)
+  - Filtros de ordenação (`sortBy`) NUNCA afetam `isDragDisabled`
+  - `useEffect` de reordenação respeita `isDraggingRef` e aguarda 100ms após drag
+  - Ordem manual sempre prevalece, independente de filtros ativos
+- **Benefícios**:
+  - DND funciona perfeitamente mesmo com filtros de ordenação ativos
+  - Sem interferência entre ordenação automática e reorganização manual
+  - UX consistente: usuário sempre pode reorganizar manualmente
+  - Performance melhorada com prevenção de race conditions
+
 ## 2025-12-06 - Remoção de "Nada Aplicado" e Garantia de DND Livre
 
 ### 1. Melhorias, bugs e features implementadas em preview
