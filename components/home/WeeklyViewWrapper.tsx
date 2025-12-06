@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { WeeklyView } from "@/components/home/WeeklyView";
+import { EmptyWeekState } from "@/components/home/EmptyWeekState";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Database } from "@/types/database.types";
 
@@ -19,11 +20,19 @@ export function WeeklyViewWrapper({ tasks, workspaces }: WeeklyViewWrapperProps)
   const router = useRouter();
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [showPlaceholder, setShowPlaceholder] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   const hasTasks = tasks && tasks.length > 0;
 
+  // Montar componente no cliente para evitar erro de hidratação
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Verificar se o modal de onboarding foi fechado mas ainda não há tarefas
   useEffect(() => {
+    if (!isMounted) return;
+    
     if (!hasTasks) {
       const seen = localStorage.getItem(WELCOME_SEEN_KEY);
       // Mostrar placeholder apenas se o modal foi fechado
@@ -31,7 +40,7 @@ export function WeeklyViewWrapper({ tasks, workspaces }: WeeklyViewWrapperProps)
     } else {
       setShowPlaceholder(false);
     }
-  }, [hasTasks]);
+  }, [hasTasks, isMounted]);
 
   const handleCreateTask = () => {
     setIsCreateTaskModalOpen(true);
@@ -48,19 +57,42 @@ export function WeeklyViewWrapper({ tasks, workspaces }: WeeklyViewWrapperProps)
     router.refresh();
   };
 
+  // Renderizar estrutura neutra no servidor para evitar erro de hidratação
+  if (!isMounted) {
+    return (
+      <>
+        <div className="min-h-[500px]" />
+        <TaskDetailModal
+          open={isCreateTaskModalOpen}
+          onOpenChange={setIsCreateTaskModalOpen}
+          mode="create"
+          onTaskCreated={handleTaskCreated}
+          onTaskUpdated={handleTaskUpdated}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       {hasTasks ? (
         <WeeklyView tasks={tasks} workspaces={workspaces} />
       ) : showPlaceholder ? (
-        // Placeholder minimalista quando não há tarefas e o modal foi fechado
-        <div className="flex items-center justify-center py-12">
-          <p className="text-sm text-gray-400">Tudo limpo por aqui</p>
+        // Empty State com Ghost Grid quando não há tarefas e o modal foi fechado
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Visão Semanal
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <EmptyWeekState onAction={handleCreateTask} />
+          </div>
         </div>
       ) : (
         // Quando ainda não foi visto, o modal será mostrado pelo HomePageClient
         // Aqui apenas renderizamos o grid vazio com estrutura mínima
-        <div className="min-h-[400px]" />
+        <div className="min-h-[500px]" />
       )}
 
       {/* Modal de Criação de Tarefa */}

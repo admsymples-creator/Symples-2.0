@@ -49,7 +49,7 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 \- \*\*KPIs Rápidos:\*\* "Tarefas pendentes hoje" e "Saldo Atual Previsto".  
 \- \*\*Grid Semanal:\*\* Visualização dos próximos 5 dias (colunas).  
 \- \*\*Welcome Modal (FTUX):\*\* Modal de boas-vindas com ilustração personalizada que aparece automaticamente quando usuário não tem tarefas. Botão "Fechar" para dismissar. Persistência em localStorage.  
-\- \*\*Empty State:\*\* Quando modal foi fechado e não há tarefas, exibe placeholder minimalista "Tudo limpo por aqui".  
+\- \*\*Empty State (Gold Standard):\*\* Quando modal foi fechado e não há tarefas, exibe "Ghost Grid" com design sofisticado que mantém contexto visual do calendário (4 divisores verticais sugerindo 5 colunas). Inclui ilustração SVG personalizada de café, mensagem "Por enquanto, nada por aqui..." e CTA "Adicionar tarefa rápida".  
 \- \*\*Smart Highlight:\*\* Tarefas atrasadas ganham destaque visual (borda vermelha).
 
 **\#\#\# 3.3. Módulo: Tarefas (Core)**  

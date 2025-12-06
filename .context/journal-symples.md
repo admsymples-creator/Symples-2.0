@@ -6,6 +6,29 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-02 - Empty State Gold Standard e Welcome Modal (FTUX)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Empty State Gold Standard para Visão Semanal
+- **Componente EmptyWeekState:**
+  - ✅ Design "Ghost Grid" que mantém contexto visual do calendário
+  - ✅ Container com borda tracejada (`border-dashed border-slate-100`)
+  - ✅ Altura fixa de 500px para consistência visual
+  - ✅ Fundo sutil (`bg-slate-50/30`)
+  - ✅ 4 divisores verticais internos sugerindo as 5 colunas do calendário
+  - ✅ Ilustração SVG personalizada (`empty-state-coffee-weekly.svg`)
+  - ✅ Título: "Por enquanto, nada por aqui..."
+  - ✅ Subtítulo: "Aproveite o momento para tomar um café e planejar os próximos passos."
+  - ✅ CTA: Botão ghost "Adicionar tarefa rápida"
+
+- **Integração e UX:**
+  - ✅ Substitui o conteúdo do grid quando `tasks.length === 0`
+  - ✅ Mantém cabeçalho "Visão Semanal" para consistência
+  - ✅ Grid com 5 colunas (`lg:grid-cols-5`) para ocupar toda largura
+  - ✅ Corrigido erro de hidratação usando estado `isMounted`
+  - ✅ CTA conectado ao fluxo de criação de tarefas existente
+
 ## 2025-01-02 - Welcome Modal (FTUX) e Melhorias de Email
 
 ### 1. Melhorias, bugs e features implementadas em preview
