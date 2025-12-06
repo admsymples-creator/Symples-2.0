@@ -6,6 +6,37 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Empty State Compacto do Inbox
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 📦 Empty State Compacto do Inbox
+- **Altura Reduzida do Container**:
+  - Container do Inbox: `min-h-[60px]` (era `min-h-[200px]`)
+  - Redução de 70% na altura mínima
+  - Outros grupos mantêm `min-h-[200px]` (comportamento original)
+  - Detecção automática do grupo Inbox via `id === "inbox" || id === "Inbox"`
+
+- **Empty State Específico para Inbox**:
+  - Input sempre visível (QuickTaskAdd com variante `ghost`)
+  - Altura ultra-compacta: ~48px total (padding `py-1` + input `h-10`)
+  - Placeholder específico: "Digite para adicionar tarefa ao Inbox..."
+  - Sem necessidade de clicar em botão para iniciar criação
+  - Reutilização do componente `TaskGroupEmpty` com variante `inbox`
+
+- **Reutilização de Componentes**:
+  - `TaskGroupEmpty` estendido com suporte a variante `inbox` e slot customizado
+  - Variante `default`: mantém comportamento original (botão + texto)
+  - Variante `inbox`: renderiza children diretamente com padding mínimo
+  - Consistência de design e código reutilizável
+
+- **Boas Práticas de UX para Inbox**:
+  - Foco em captura rápida de tarefas
+  - Menos elementos visuais decorativos
+  - Input sempre acessível para digitação imediata
+  - Mensagem contextual e direta
+  - Espaçamento mínimo mas funcional
+
 ## 2025-12-06 - Navegação Rápida via Teclado e Posicionamento de Tarefas
 
 ### 1. Melhorias, bugs e features implementadas em preview

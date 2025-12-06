@@ -6,6 +6,7 @@ import { TaskRowSkeleton } from "./TaskRowSkeleton";
 import { TaskSectionHeader } from "./TaskSectionHeader";
 import { GroupActionMenu } from "./GroupActionMenu";
 import { QuickTaskAdd } from "./QuickTaskAdd";
+import { TaskGroupEmpty } from "./TaskGroupEmpty";
 import { cn } from "@/lib/utils";
 import {
     SortableContext,
@@ -132,7 +133,9 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
             <div
                 ref={setNodeRef}
                 className={cn(
-                    "bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-2 min-h-[200px] transition-colors",
+                    "bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-2 transition-colors",
+                    // Altura mínima menor para Inbox (compacto), padrão para outros grupos
+                    id === "inbox" || id === "Inbox" ? "min-h-[60px]" : "min-h-[200px]",
                     isOver && "bg-blue-50 border-blue-300 border-solid"
                 )}
             >
@@ -182,7 +185,19 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                 {tasks.length === 0 && (
                     <>
                         {onAddTask ? (
-                            isAdding ? (
+                            // Empty state específico para Inbox: sempre mostra input compacto
+                            id === "inbox" || id === "Inbox" ? (
+                                <TaskGroupEmpty variant="inbox">
+                                    <QuickTaskAdd
+                                        placeholder="Digite para adicionar tarefa ao Inbox..."
+                                        autoFocus={false}
+                                        onCancel={handleCancelAdd}
+                                        onSubmit={handleSubmitAdd}
+                                        members={members || []}
+                                        variant="ghost"
+                                    />
+                                </TaskGroupEmpty>
+                            ) : isAdding ? (
                                 <div className="p-2">
                                     <QuickTaskAdd
                                         placeholder="Adicionar tarefa aqui..."
