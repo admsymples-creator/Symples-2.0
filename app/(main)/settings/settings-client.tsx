@@ -258,17 +258,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     try {
         const result = await inviteMember(workspace.id, newMember.email, newMember.role as "admin" | "member" | "viewer");
         
-        // Se o usuário já existe e foi adicionado diretamente
-        if (result.userExists) {
-            toast.success("Usuário adicionado!", {
-                description: "O usuário foi adicionado ao workspace com sucesso."
-            });
-            // Recarregar lista de membros
-            if (workspace.id) {
-                const updatedMembers = await getWorkspaceMembers(workspace.id);
-                setMembers(updatedMembers);
-            }
-        } else if (result.inviteLink) {
+        // ✅ CORREÇÃO: Todos os convites agora são pendentes (fluxo unificado)
+        // A função sempre retorna inviteLink quando bem-sucedida
+        if (result.inviteLink) {
             // Se foi criado convite pendente
             setInviteLink(result.inviteLink);
             toast.success("Convite criado!", {
