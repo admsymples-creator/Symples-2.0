@@ -11,9 +11,10 @@ type Task = Database["public"]["Tables"]["tasks"]["Row"];
 interface WeeklyViewProps {
   tasks: Task[];
   workspaces: { id: string; name: string }[];
+  highlightInput?: boolean;
 }
 
-export function WeeklyView({ tasks, workspaces }: WeeklyViewProps) {
+export function WeeklyView({ tasks, workspaces, highlightInput = false }: WeeklyViewProps) {
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
 
@@ -124,6 +125,7 @@ export function WeeklyView({ tasks, workspaces }: WeeklyViewProps) {
                 tasks={day.tasks}
                 isToday={day.isToday}
                 workspaces={workspaces}
+                highlightInput={highlightInput && day.isToday}
               />
             </motion.div>
           ))}

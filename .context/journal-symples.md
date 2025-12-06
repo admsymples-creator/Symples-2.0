@@ -132,6 +132,48 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
   - ✅ `CORRECAO_CONVITE_DUPLICADO.md`: Correção de erro de convite duplicado
   - ✅ `SOLUCAO_REDIRECIONAMENTO_ONBOARDING.md`: Solução para redirecionamento
 
+---
+
+## 🐛 Correções - Login Tradicional e Hidratação (2024-12)
+
+### Problemas Corrigidos
+
+- **Redirecionamento Incorreto para Onboarding:**
+  - ❌ Após login tradicional (sem convite), usuários com workspaces eram redirecionados para `/onboarding`
+  - ✅ **Correção:** Melhorada lógica no `MainLayout` e `auth/callback/route.ts`:
+    - Adicionado `revalidatePath` após login tradicional para limpar cache
+    - Busca usuário primeiro para garantir sessão estabelecida antes de buscar workspaces
+    - Aguarda 100ms antes de buscar workspaces para evitar race conditions
+    - Logs detalhados adicionados para diagnóstico
+
+- **Erro de Hidratação em Popovers (TaskRowMinify):**
+  - ❌ Popovers do Radix UI geravam IDs dinâmicos causando erro de hidratação
+  - ✅ **Correção:** Implementado estado `isMounted` para renderizar Popovers apenas após montagem:
+    - Popovers de Data, Responsável e Status agora renderizam placeholders durante SSR
+    - Evita mismatch entre HTML do servidor e cliente
+
+- **Erro de Hidratação em WeeklyViewWrapper:**
+  - ❌ Extensões do navegador (ex: Bitdefender) adicionavam atributos como `bis_skin_checked` causando erro
+  - ✅ **Correção:** Adicionado `suppressHydrationWarning` aos elementos placeholder:
+    - Permite que extensões modifiquem HTML sem causar erros de hidratação
+
+### Melhorias Técnicas
+
+- **`lib/actions/user.ts` (`getUserWorkspaces`):**
+  - ✅ Logs detalhados adicionados para diagnóstico
+  - ✅ Melhor tratamento de joins que retornam arrays ou objetos
+  - ✅ Tratamento de erro melhorado com informações detalhadas
+
+- **`app/(main)/layout.tsx`:**
+  - ✅ Busca usuário primeiro para garantir sessão estabelecida
+  - ✅ Aguarda 100ms antes de buscar workspaces
+  - ✅ Logs adicionais para diagnóstico de problemas de workspace
+
+- **`app/auth/callback/route.ts`:**
+  - ✅ Adicionado `revalidatePath` após login tradicional
+  - ✅ Aguarda 200ms antes de verificar workspaces
+  - ✅ Melhor validação de tokens de convite (não processa convites inválidos/expirados em logins tradicionais)
+
 #### 📝 Arquivos Criados/Modificados
 - **Novos arquivos:**
   - `app/(auth)/signup/page.tsx`: Página de cadastro

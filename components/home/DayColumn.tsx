@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FolderOpen } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ interface DayColumnProps {
   tasks: Task[];
   isToday?: boolean;
   workspaces?: { id: string; name: string }[];
+  highlightInput?: boolean;
 }
 
 export function DayColumn({
@@ -27,12 +28,47 @@ export function DayColumn({
   tasks,
   isToday,
   workspaces = [],
+  highlightInput = false,
 }: DayColumnProps) {
   const router = useRouter();
   const [quickAddValue, setQuickAddValue] = useState("");
   const [isQuickAddFocused, setIsQuickAddFocused] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedDateTime, setSelectedDateTime] = useState<Date | null>(null);
+  const [showTutorialHint, setShowTutorialHint] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Tutorial: Scroll para input e mostrar hint quando highlightInput está ativo
+  useEffect(() => {
+    if (highlightInput && isToday && inputRef.current) {
+      // Mostrar hint
+      setShowTutorialHint(true);
+      
+      // Scroll suave para o input
+      setTimeout(() => {
+        inputRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center',
+          inline: 'nearest'
+        });
+      }, 300); // Pequeno delay para garantir que o componente foi renderizado
+    }
+  }, [highlightInput, isToday]);
+
+  // Esconder hint quando usuário interage com o input
+  const handleInputFocus = () => {
+    setIsQuickAddFocused(true);
+    if (showTutorialHint) {
+      setShowTutorialHint(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setQuickAddValue(e.target.value);
+    if (showTutorialHint && e.target.value.trim().length > 0) {
+      setShowTutorialHint(false);
+    }
+  };
 
   /**
    * Processa texto e detecta se há múltiplas linhas (batch create)
@@ -231,11 +267,24 @@ export function DayColumn({
   return (
     <div
       className={cn(
-        "h-[420px] rounded-xl flex flex-col relative overflow-hidden",
+        "h-[420px] rounded-xl flex flex-col relative",
         isToday ? "border-2 border-green-500" : "border border-gray-200",
         bgColor
       )}
     >
+      {/* Tutorial Tooltip - Posicionado acima do card, fora do overflow */}
+      {showTutorialHint && highlightInput && isToday && (
+        <div className="absolute -top-20 left-1/2 -translate-x-1/2 z-[100] animate-bounce-slow w-[240px] pointer-events-none">
+          {/* Tooltip Container */}
+          <div className="bg-slate-900 text-white text-xs font-medium py-2 px-4 rounded-lg shadow-xl text-center">
+            Digite aqui para criar sua primeira tarefa
+            {/* Seta apontando para baixo */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
+              <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header - Flex None (Altura Fixa) */}
       <div className="flex-none p-5 pb-2">
         <h3 className="font-medium text-gray-900 text-sm">{dayName}</h3>
@@ -243,7 +292,7 @@ export function DayColumn({
       </div>
 
       {/* Tasks List - Flex-1 (Ocupa espaço restante) com Scroll */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0 flex flex-col px-3">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0 flex flex-col px-3 relative">
         <div className="flex-1">
           {sortedTasks.length > 0 ? (
             <div className="px-2 space-y-0"> 
@@ -269,22 +318,34 @@ export function DayColumn({
         </div>
 
         {/* Quick Add Input - Integrado ao Scroll, estilo linha */}
-        <div className="px-2 pb-2 mt-6">
+        <div className="px-2 pb-2 mt-6 relative">
           <form onSubmit={handleQuickAddSubmit}>
+            {/* Tutorial Highlight Wrapper */}
             <div
               className={cn(
-                "relative py-2 border-b border-transparent hover:border-gray-200 transition-colors",
+                "relative py-2 border-b border-transparent hover:border-gray-200 transition-all rounded-md",
                 isQuickAddFocused && "border-green-500"
               )}
             >
+              {/* Aura verde absoluta com animação de glow - apenas box-shadow, sem borda */}
+              {highlightInput && isToday && !isQuickAddFocused && (
+                <div 
+                  className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
+                  style={{
+                    boxShadow: '0 0 15px rgba(34, 197, 94, 0.4), 0 0 30px rgba(34, 197, 94, 0.2)',
+                  }}
+                />
+              )}
+
               <div className="flex items-center gap-2 pl-2">
                 <div className="w-4 h-4 flex-shrink-0" />
                 {/* Textarea para suportar múltiplas linhas ao colar */}
                 <textarea
+                  ref={inputRef}
                   placeholder="+ Adicionar item..."
                   value={quickAddValue}
-                  onChange={(e) => setQuickAddValue(e.target.value)}
-                  onFocus={() => setIsQuickAddFocused(true)}
+                  onChange={handleInputChange}
+                  onFocus={handleInputFocus}
                   onBlur={() => setIsQuickAddFocused(false)}
                   onKeyDown={(e) => {
                     // Permitir Enter para enviar (se não for Shift+Enter)

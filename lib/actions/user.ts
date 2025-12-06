@@ -28,9 +28,20 @@ export async function getUserWorkspaces() {
   const supabase = await createServerActionClient();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
-  if (!user) return [];
+  if (authError) {
+    console.error("❌ [getUserWorkspaces] Erro ao buscar usuário autenticado:", authError);
+    return [];
+  }
+
+  if (!user) {
+    console.warn("⚠️ [getUserWorkspaces] Usuário não autenticado");
+    return [];
+  }
+
+  console.log("🔍 [getUserWorkspaces] Buscando workspaces para usuário:", user.id);
 
   // Buscar workspaces onde o usuário é membro
   const { data: memberWorkspaces, error } = await supabase
@@ -47,15 +58,29 @@ export async function getUserWorkspaces() {
     .eq("user_id", user.id);
 
   if (error) {
-    console.error("Erro ao buscar workspaces:", error);
+    console.error("❌ [getUserWorkspaces] Erro ao buscar workspaces:", {
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+    });
     return [];
   }
+
+  console.log("📦 [getUserWorkspaces] Member workspaces encontrados:", memberWorkspaces?.length || 0);
 
   // Transformar o retorno para um array plano de workspaces
   // O tipo do retorno do join é um pouco complexo, então fazemos um map seguro
   const workspaces = memberWorkspaces
-    ?.map((item) => item.workspaces)
+    ?.map((item) => {
+      // O join pode retornar como objeto ou array dependendo da relação
+      const workspace = Array.isArray(item.workspaces) ? item.workspaces[0] : item.workspaces;
+      return workspace;
+    })
     .filter((ws): ws is any => ws !== null && typeof ws === "object") as Workspace[] || [];
+
+  console.log("✅ [getUserWorkspaces] Workspaces transformados:", workspaces.length);
 
   return workspaces;
 }

@@ -1,6 +1,6 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from 'next/server'
-import { acceptInvite } from "@/lib/actions/members";
+import { acceptInvite, getInviteDetails } from "@/lib/actions/members";
 import { revalidatePath } from "next/cache";
 import { cookies } from 'next/headers';
 
@@ -13,11 +13,23 @@ export async function GET(request: Request) {
   // ✅ CORREÇÃO 1: Lógica defensiva - tenta pegar token de múltiplas fontes
   // 1. Prioridade: Parâmetro da URL (funciona para OAuth e Magic Link quando não é removido)
   let inviteToken = searchParams.get('invite');
+  let inviteTokenFromCookie = false;
   
   // 2. Fallback: Cookie (para casos onde o Magic Link teve os parâmetros removidos)
+  // MAS só usar cookie se vier do parâmetro 'next' da URL que indica fluxo de convite
   if (!inviteToken) {
     const cookieStore = await cookies();
-    inviteToken = cookieStore.get('pending_invite')?.value || null;
+    const cookieToken = cookieStore.get('pending_invite')?.value || null;
+    
+    // ✅ CORREÇÃO: Só usar cookie se o 'next' indicar fluxo de convite
+    // Isso previne usar cookies residuais em logins tradicionais
+    if (cookieToken && next.includes('/invite/')) {
+      inviteToken = cookieToken;
+      inviteTokenFromCookie = true;
+    } else if (cookieToken) {
+      // Se há cookie mas não é fluxo de convite, limpar cookie residual
+      cookieStore.delete('pending_invite');
+    }
   }
 
   if (code) {
@@ -31,10 +43,35 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser()
 
       if (user) {
-        // 2. Se houver token de convite (da URL ou cookie), aceitar automaticamente
+        // 2. Se houver token de convite (da URL ou cookie), validar e aceitar
         if (inviteToken) {
           try {
-            // acceptInvite retorna { success: true } ou lança erro
+            // ✅ CORREÇÃO: Validar se o convite realmente existe e está pendente
+            // antes de tentar aceitar (evita usar tokens inválidos/expirados em logins tradicionais)
+            const inviteDetails = await getInviteDetails(inviteToken);
+            
+            // Se o convite não existe, já foi aceito, ou está expirado, não processar
+            if (!inviteDetails || inviteDetails.status !== 'pending') {
+              // Limpar cookie se for de cookie residual
+              if (inviteTokenFromCookie) {
+                const cookieStore = await cookies();
+                cookieStore.delete('pending_invite');
+              }
+              // Redirecionar para home normalmente (login tradicional)
+              const { data: member } = await supabase
+                .from('workspace_members')
+                .select('workspace_id')
+                .eq('user_id', user.id)
+                .maybeSingle();
+              
+              if (member) {
+                return NextResponse.redirect(`${origin}/home`);
+              } else {
+                return NextResponse.redirect(`${origin}/onboarding`);
+              }
+            }
+            
+            // Se chegou aqui, o convite é válido e está pendente - processar
             await acceptInvite(inviteToken);
             
             // Limpar cookie após aceitar com sucesso e criar cookie de just_accepted
@@ -100,14 +137,29 @@ export async function GET(request: Request) {
           }
         }
 
-        // 3. Se não há token de convite, verificar se já tem workspace
+        // 3. Se não há token de convite, limpar cookie residual (se existir)
+        // e verificar se já tem workspace
+        const cookieStore = await cookies();
+        if (cookieStore.get('pending_invite')) {
+          // Limpar cookie residual de convites anteriores não utilizados
+          cookieStore.delete('pending_invite');
+        }
+        
+        // ✅ CORREÇÃO: Revalidar cache após login tradicional para garantir
+        // que os workspaces sejam recarregados corretamente
+        revalidatePath("/", "layout");
+        revalidatePath("/home");
+        
+        // Aguardar um pouco para garantir que a sessão esteja totalmente estabelecida
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
         const { data: member } = await supabase
           .from('workspace_members')
           .select('workspace_id')
           .eq('user_id', user.id)
           .maybeSingle()
 
-        // 4. Decidir destino
+        // 4. Decidir destino (sem parâmetro invite_accepted em login tradicional)
         if (member) {
           return NextResponse.redirect(`${origin}/home`)
         } else {
