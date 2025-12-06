@@ -1,8 +1,10 @@
 "use server";
 
 import { createServerActionClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { sendInviteEmail } from "@/lib/email/send-invite";
 
 // Tipo para os membros retornados
@@ -347,6 +349,21 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       throw new Error("Já existe um convite pendente para este email. Você pode cancelar o convite existente antes de criar um novo.");
     } else if (existingInvite.status === 'accepted') {
       throw new Error("Este email já foi aceito neste workspace. Verifique se o usuário já é membro.");
+    } else if (existingInvite.status === 'cancelled') {
+      // Se o convite foi cancelado, excluir o registro antigo antes de criar um novo
+      console.log("🗑️ Excluindo convite cancelado antes de criar novo:", existingInvite.id);
+      const { error: deleteError } = await supabase
+        .from("workspace_invites")
+        .delete()
+        .eq("id", existingInvite.id);
+      
+      if (deleteError) {
+        console.error("❌ Erro ao excluir convite cancelado:", deleteError);
+        throw new Error("Erro ao limpar convite cancelado. Tente novamente.");
+      }
+      
+      // Continuar o fluxo normalmente para criar o novo convite
+      console.log("✅ Convite cancelado removido. Prosseguindo com criação do novo convite.");
     } else {
       throw new Error("Já existe um convite para este email (status: " + existingInvite.status + "). Você pode cancelar o convite existente antes de criar um novo.");
     }
@@ -533,13 +550,30 @@ export async function revokeInvite(inviteId: string) {
     throw new Error("Permissão negada. Apenas admins podem revogar convites.");
   }
 
-  const { error } = await supabase
-    .from("workspace_invites")
-    .update({ status: "cancelled" })
-    .eq("id", inviteId);
+  // Em desenvolvimento, excluir realmente para facilitar debug
+  // Em produção, apenas marcar como cancelled para manter histórico
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  if (isDevelopment) {
+    const { error } = await supabase
+      .from("workspace_invites")
+      .delete()
+      .eq("id", inviteId);
 
-  if (error) {
-    throw new Error("Erro ao revogar convite");
+    if (error) {
+      throw new Error("Erro ao excluir convite");
+    }
+    
+    console.log("🗑️ Convite excluído (modo desenvolvimento):", inviteId);
+  } else {
+    const { error } = await supabase
+      .from("workspace_invites")
+      .update({ status: "cancelled" })
+      .eq("id", inviteId);
+
+    if (error) {
+      throw new Error("Erro ao revogar convite");
+    }
   }
 
   revalidatePath("/settings");
@@ -742,32 +776,13 @@ export async function acceptInvite(inviteId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // 1. Verificar se o convite existe e é válido
-  // Usamos service_role aqui? Não, o RLS permite ler se o email bater.
-  // Mas se o usuário logado tiver email diferente do convite?
-  // O ideal é que o usuário logado corresponda ao email do convite OU 
-  // o sistema permita que ele aceite e vincule (mas nosso RLS restringe visualização).
-  
-  // Se o RLS impedir a leitura do convite por outro email, teremos problema se o usuário
-  // logar com conta diferente da convidada.
-  // Vamos assumir que o usuário deve logar com o email convidado ou que o link é público o suficiente
-  // para a página de aceite ler (mas RLS bloqueia).
-  
-  // Para a action de aceite funcionar, precisamos contornar o RLS de leitura se o email for diferente
-  // ou simplesmente confiar no ID passado se for um token único difícil de adivinhar (UUID é).
-  
-  // Vamos tentar ler. Se falhar, pode ser RLS.
-  // Na verdade, para aceitar, precisamos atualizar.
-  
-  // IMPORTANTE: Para aceitar convite, vamos usar uma query 'sudo' se necessário, 
-  // mas idealmente o usuário logado deve ser o dono do email.
-  
   if (!user) {
     // Se não estiver logado, redirecionar para login com callback
     redirect(`/login?next=/invite/${inviteId}`);
   }
 
-  // Buscar convite (sem RLS check seria melhor aqui para validar token, mas vamos tentar normal)
+  // 1. VALIDAÇÃO: Buscar convite usando cliente normal (validações de RLS e email)
+  // Tentamos ler com o cliente normal primeiro para garantir que o usuário tem permissão
   const { data: invite, error: inviteError } = await supabase
     .from("workspace_invites")
     .select("*")
@@ -775,12 +790,6 @@ export async function acceptInvite(inviteId: string) {
     .single();
 
   if (inviteError || !invite) {
-    // Se não achou, pode ser token inválido ou RLS bloqueando porque email não bate.
-    // Vamos tentar verificar se o email do usuário bate com o convite?
-    // Se o RLS bloqueia, não conseguimos nem ler o email do convite.
-    
-    // WORKAROUND: Se não conseguimos ler, assumimos inválido ou sem permissão.
-    // Mas se o usuário clicou no link, ele tem o token.
     throw new Error("Convite inválido ou não encontrado.");
   }
 
@@ -789,16 +798,102 @@ export async function acceptInvite(inviteId: string) {
   }
   
   // Validar se o email do usuário logado bate com o convite
-  // Nota: Se o convite foi criado para um email e o usuário se cadastrou com esse mesmo email,
-  // a validação passa. Caso contrário, rejeitamos por segurança.
   if (invite.email.toLowerCase() !== user.email?.toLowerCase()) {
     throw new Error(`Este convite foi enviado para ${invite.email}, mas você está logado como ${user.email}.`);
   }
 
-  // 2. Adicionar membro
-  // IMPORTANTE: Esta inserção só funciona se a política RLS permitir
-  // que usuários aceitem convites inserindo-se em workspace_members
-  const { error: memberError } = await supabase
+  // Validar se o convite não expirou
+  if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+    throw new Error("Este convite expirou.");
+  }
+
+  // 2. INSERÇÃO COM PRIVILÉGIOS ADMIN: Criar cliente Admin para bypass de RLS
+  // Como o usuário ainda não é membro, RLS bloqueia a inserção.
+  // Usamos Service Role para bypass, já que todas as validações acima foram feitas.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!serviceRoleKey) {
+    console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
+    throw new Error("Configuração do servidor inválida. Contate o suporte.");
+  }
+
+  // Criar cliente admin (sem cookie handling, apenas para operações privilegiadas)
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  // ✅ CORREÇÃO: Self-Healing Profile - Garantir que o perfil existe antes de inserir em workspace_members
+  // Isso previne erros de Foreign Key quando o trigger não criou o perfil ainda (race condition)
+  try {
+    // Buscar dados do usuário em auth.users usando Admin API
+    const { data: authUserData, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+    
+    if (authUserError || !authUserData?.user) {
+      console.error("❌ Erro ao buscar dados do usuário em auth.users:", authUserError);
+      throw new Error("Não foi possível buscar dados do usuário. Tente novamente.");
+    }
+
+    const authUser = authUserData.user;
+    const userEmail = authUser.email || user.email || '';
+    const userMetadata = authUser.user_metadata || {};
+    
+    // Extrair full_name dos metadados ou gerar a partir do email
+    let fullName = userMetadata.full_name || userMetadata.name || null;
+    if (!fullName && userEmail) {
+      // Se não tiver nome, usar username do email (parte antes do @)
+      const emailUsername = userEmail.split('@')[0];
+      // Capitalizar primeira letra
+      fullName = emailUsername.charAt(0).toUpperCase() + emailUsername.slice(1);
+    }
+
+    // Extrair avatar_url dos metadados
+    const avatarUrl = userMetadata.avatar_url || authUser.user_metadata?.avatar_url || null;
+
+    console.log("🔧 Garantindo que perfil existe para usuário:", {
+      userId: user.id,
+      email: userEmail,
+      fullName,
+      hasAvatar: !!avatarUrl,
+    });
+
+    // UPSERT do perfil (cria se não existe, atualiza se existe)
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .upsert({
+        id: user.id,
+        email: userEmail,
+        full_name: fullName,
+        avatar_url: avatarUrl,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'id',
+      });
+
+    if (profileError) {
+      console.error("❌ Erro ao criar/atualizar perfil:", {
+        error: profileError.message,
+        code: profileError.code,
+        details: profileError.details,
+      });
+      throw new Error(`Erro ao criar perfil: ${profileError.message || 'Erro desconhecido'}`);
+    }
+
+    console.log("✅ Perfil garantido com sucesso");
+  } catch (profileError: any) {
+    // Se falhar no upsert do perfil, ainda tentamos continuar
+    // (pode ser que o perfil já exista e o erro seja outro)
+    if (profileError.message?.includes('perfil')) {
+      throw profileError;
+    }
+    console.warn("⚠️ Aviso ao garantir perfil, mas continuando:", profileError.message);
+  }
+
+  // 3. Agora que o perfil existe, inserir membro usando cliente admin (bypass RLS)
+  const { error: memberError } = await supabaseAdmin
     .from("workspace_members")
     .insert({
       workspace_id: invite.workspace_id,
@@ -823,11 +918,22 @@ export async function acceptInvite(inviteId: string) {
     }
   }
 
-  // 3. Atualizar status do convite
-  await supabase
+  // 4. Atualizar status do convite usando cliente admin (garantia de sucesso)
+  const { error: updateError } = await supabaseAdmin
     .from("workspace_invites")
     .update({ status: 'accepted' })
     .eq("id", inviteId);
+
+  if (updateError) {
+    console.error("❌ Erro ao atualizar status do convite:", updateError);
+    // Não lançamos erro aqui, pois o membro já foi adicionado
+    // O convite pode ficar pendente, mas isso não impede o acesso
+  }
+
+  // ✅ Limpar cookie pending_invite após aceitar convite com sucesso
+  // Previne estado stale se o usuário tentar aceitar novamente
+  const cookieStore = await cookies();
+  cookieStore.delete('pending_invite');
 
   // Revalidar caminhos importantes para garantir que o layout encontre os workspaces
   revalidatePath("/", "layout");
@@ -850,70 +956,130 @@ export async function acceptInvite(inviteId: string) {
  * só vê "Faça login para aceitar".
  */
 export async function getInviteDetails(inviteId: string) {
-    const supabase = await createServerActionClient();
-    
-    // Primeiro, tentar buscar o convite básico (sem joins que podem falhar por RLS)
-    const { data: inviteData, error: inviteError } = await supabase
-        .from("workspace_invites")
-        .select("*")
-        .eq("id", inviteId)
-        .maybeSingle();
-        
-    if (inviteError) {
-        console.error("❌ Erro ao buscar detalhes do convite:", {
-            inviteId,
-            error: inviteError.message || "Erro desconhecido",
-            code: inviteError.code,
-            details: inviteError.details,
-            hint: inviteError.hint,
-            fullError: JSON.stringify(inviteError, Object.getOwnPropertyNames(inviteError), 2),
-        });
-        return null;
-    }
-    
-    if (!inviteData) {
-        console.warn("⚠️ Convite não encontrado:", inviteId);
-        return null;
-    }
-    
-    // Verificar se o convite é válido (pendente e não expirado)
-    if (inviteData.status !== 'pending') {
-        return inviteData; // Retornar mesmo que não esteja pendente para mostrar status
-    }
-    
-    if (inviteData.expires_at && new Date(inviteData.expires_at) < new Date()) {
-        console.warn("⚠️ Convite expirado:", inviteId);
-        return null;
-    }
-    
-    // Tentar buscar informações adicionais (workspace e inviter) se possível
-    // Se falhar, retornamos pelo menos os dados básicos do convite
     try {
-        const { data: workspaceData } = await supabase
-            .from("workspaces")
-            .select("name")
-            .eq("id", inviteData.workspace_id)
+        const supabase = await createServerActionClient();
+        
+        // Verificar autenticação para logs
+        const { data: { user } } = await supabase.auth.getUser();
+        console.log("🔍 Buscando detalhes do convite:", {
+            inviteId,
+            isAuthenticated: !!user,
+            userEmail: user?.email || "não autenticado",
+        });
+        
+        // Primeiro, tentar buscar o convite básico (sem joins que podem falhar por RLS)
+        const { data: inviteData, error: inviteError } = await supabase
+            .from("workspace_invites")
+            .select("*")
+            .eq("id", inviteId)
             .maybeSingle();
             
-        const { data: inviterData } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", inviteData.invited_by)
-            .maybeSingle();
+        if (inviteError) {
+            // Melhorar serialização do erro
+            const errorInfo: any = {
+                inviteId,
+                isAuthenticated: !!user,
+                userEmail: user?.email || "não autenticado",
+            };
+            
+            // Tentar extrair informações do erro de várias formas
+            if (inviteError && typeof inviteError === 'object') {
+                errorInfo.errorMessage = inviteError.message || "Sem mensagem";
+                errorInfo.errorCode = inviteError.code || "Sem código";
+                errorInfo.errorDetails = inviteError.details;
+                errorInfo.errorHint = inviteError.hint;
+                
+                // Tentar serializar o erro completo
+                try {
+                    errorInfo.fullError = JSON.stringify(inviteError, Object.getOwnPropertyNames(inviteError), 2);
+                } catch (e: any) {
+                    errorInfo.fullError = String(inviteError);
+                    errorInfo.serializeError = e?.message;
+                }
+                
+                // Verificar se é um erro de RLS
+                if (inviteError.code === '42501' || inviteError.message?.includes('permission denied') || inviteError.message?.includes('row-level security')) {
+                    errorInfo.isRLSError = true;
+                    errorInfo.suggestion = "Verifique se a política RLS 'Allow public read of pending invites by id' está ativa e foi aplicada";
+                }
+            } else {
+                errorInfo.unknownError = "Erro objeto está vazio, undefined ou não serializável";
+                errorInfo.rawError = String(inviteError);
+                errorInfo.errorType = typeof inviteError;
+            }
+            
+            console.error("❌ Erro ao buscar detalhes do convite:", errorInfo);
+            return null;
+        }
+    
+        if (!inviteData) {
+            console.warn("⚠️ Convite não encontrado:", {
+                inviteId,
+                isAuthenticated: !!user,
+                suggestion: "Verifique se o ID do convite está correto ou se a política RLS permite leitura",
+            });
+            return null;
+        }
         
-        // Retornar com informações adicionais se disponíveis
-        return {
-            ...inviteData,
-            workspaces: workspaceData ? { name: workspaceData.name } : null,
-            invited_by_profile: inviterData ? { full_name: inviterData.full_name } : null,
-        };
-    } catch (joinError: any) {
-        // Se os joins falharem (por RLS), retornar pelo menos os dados básicos
-        console.warn("⚠️ Não foi possível buscar informações adicionais do convite (RLS pode estar bloqueando):", {
+        console.log("✅ Convite encontrado:", {
             inviteId,
-            error: joinError.message,
+            status: inviteData.status,
+            email: inviteData.email,
+            expiresAt: inviteData.expires_at,
         });
-        return inviteData;
+        
+        // Verificar se o convite é válido (pendente e não expirado)
+        if (inviteData.status !== 'pending') {
+            return inviteData; // Retornar mesmo que não esteja pendente para mostrar status
+        }
+        
+        if (inviteData.expires_at && new Date(inviteData.expires_at) < new Date()) {
+            console.warn("⚠️ Convite expirado:", {
+                inviteId,
+                expiresAt: inviteData.expires_at,
+                now: new Date().toISOString(),
+            });
+            return null;
+        }
+        
+        // Tentar buscar informações adicionais (workspace e inviter) se possível
+        // Se falhar, retornamos pelo menos os dados básicos do convite
+        try {
+            const { data: workspaceData } = await supabase
+                .from("workspaces")
+                .select("name")
+                .eq("id", inviteData.workspace_id)
+                .maybeSingle();
+                
+            const { data: inviterData } = await supabase
+                .from("profiles")
+                .select("full_name")
+                .eq("id", inviteData.invited_by)
+                .maybeSingle();
+            
+            // Retornar com informações adicionais se disponíveis
+            return {
+                ...inviteData,
+                workspaces: workspaceData ? { name: workspaceData.name } : null,
+                invited_by_profile: inviterData ? { full_name: inviterData.full_name } : null,
+            };
+        } catch (joinError: any) {
+            // Se os joins falharem (por RLS), retornar pelo menos os dados básicos
+            console.warn("⚠️ Não foi possível buscar informações adicionais do convite (RLS pode estar bloqueando):", {
+                inviteId,
+                error: joinError?.message || String(joinError),
+                suggestion: "Isso é normal se o usuário não tiver permissão para ver dados do workspace",
+            });
+            return inviteData;
+        }
+    } catch (outerError: any) {
+        // Capturar erros não relacionados ao Supabase
+        console.error("❌ Erro inesperado em getInviteDetails:", {
+            inviteId,
+            error: outerError?.message || String(outerError),
+            stack: outerError?.stack,
+        });
+        return null;
     }
 }
 

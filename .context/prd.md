@@ -48,6 +48,7 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 \- \*\*Foco:\*\* O que é crítico para \*hoje\*.  
 \- \*\*KPIs Rápidos:\*\* "Tarefas pendentes hoje" e "Saldo Atual Previsto".  
 \- \*\*Grid Semanal:\*\* Visualização dos próximos 5 dias (colunas).  
+\- \*\*Empty State (FTUX):\*\* Quando não há tarefas, exibe card de boas-vindas com CTA para criar primeira tarefa.  
 \- \*\*Smart Highlight:\*\* Tarefas atrasadas ganham destaque visual (borda vermelha).
 
 **\#\#\# 3.3. Módulo: Tarefas (Core)**  

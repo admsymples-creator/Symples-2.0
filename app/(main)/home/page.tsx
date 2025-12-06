@@ -1,5 +1,5 @@
 import { getWeekTasks, getWorkspacesWeeklyStats, getUserWorkspaces } from "@/lib/actions/dashboard";
-import { WeeklyView } from "@/components/home/WeeklyView";
+import { WeeklyViewWrapper } from "@/components/home/WeeklyViewWrapper";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { Database } from "@/types/database.types";
 import { FolderOpen } from "lucide-react";
@@ -54,8 +54,8 @@ export default async function HomePage() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
-        {/* Weekly View (Client Component) */}
-        <WeeklyView tasks={typedTasks} workspaces={userWorkspaces} />
+        {/* Weekly View (Client Component with Empty State) */}
+        <WeeklyViewWrapper tasks={typedTasks} workspaces={userWorkspaces} />
 
         {/* Workspaces Overview */}
         <div>

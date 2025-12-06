@@ -7,13 +7,20 @@ import { redirect } from "next/navigation";
 import { createServerActionClient } from "@/lib/supabase/server";
 
 interface InvitePageProps {
-  params: {
+  params: Promise<{
     token: string;
-  };
+  }>;
 }
 
 export default async function InvitePage({ params }: InvitePageProps) {
-  const inviteId = params.token;
+  // ✅ CORREÇÃO: Next.js 15+ requer await para params (são Promises)
+  const { token } = await params;
+  const inviteId = token;
+  
+  // ✅ NOTA: O cookie 'pending_invite' é criado automaticamente pelo middleware
+  // quando o usuário acessa /invite/[token]. Isso permite que o token sobreviva
+  // a redirects OAuth e Magic Link sem depender de localStorage ou parâmetros de URL.
+  
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -64,7 +71,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
         <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-2xl font-bold text-indigo-600">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-2xl font-bold text-green-600">
                 {workspaceName.substring(0, 2).toUpperCase()}
               </div>
               <CardTitle>Convite para {workspaceName}</CardTitle>
@@ -79,7 +86,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
             </CardContent>
             <CardFooter className="flex-col gap-3">
               <Link href={`/signup?invite=${inviteId}`} className="w-full">
-                <Button className="w-full text-lg py-6 bg-indigo-600 hover:bg-indigo-700">
+                <Button className="w-full text-lg py-6 bg-green-600 hover:bg-green-700">
                   Criar Conta e Aceitar
                 </Button>
               </Link>
@@ -211,7 +218,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-2xl font-bold text-indigo-600">
+           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-2xl font-bold text-green-600">
               {workspaceName.substring(0, 2).toUpperCase()}
            </div>
           <CardTitle>Convite para {workspaceName}</CardTitle>
@@ -220,21 +227,21 @@ export default async function InvitePage({ params }: InvitePageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-           <div className="rounded-md bg-indigo-50 p-4 border border-indigo-100">
+           <div className="rounded-md bg-green-50 p-4 border border-green-100">
               <div className="flex items-center gap-3">
-                 <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-indigo-600 font-bold text-sm border border-indigo-100">
+                 <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-sm border border-green-100">
                     {user.email?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="overflow-hidden">
-                    <p className="text-xs text-indigo-600 font-medium uppercase tracking-wider">Aceitar como</p>
-                    <p className="text-sm font-semibold text-indigo-900 truncate">{user.email}</p>
+                    <p className="text-xs text-green-600 font-medium uppercase tracking-wider">Aceitar como</p>
+                    <p className="text-sm font-semibold text-green-900 truncate">{user.email}</p>
                  </div>
               </div>
            </div>
         </CardContent>
         <CardFooter className="flex-col gap-3">
           <form action={handleAccept} className="w-full">
-            <Button type="submit" className="w-full text-lg py-6 bg-indigo-600 hover:bg-indigo-700">
+            <Button type="submit" className="w-full text-lg py-6 bg-green-600 hover:bg-green-700">
               Aceitar e Entrar
             </Button>
           </form>
