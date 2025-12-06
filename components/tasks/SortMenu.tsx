@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,6 +24,7 @@ interface SortMenuProps {
 }
 
 const sortOptions: { value: SortOption; label: string }[] = [
+    { value: "position", label: "Nada aplicado" },
     { value: "status", label: "Status" },
     { value: "priority", label: "Prioridade" },
     { value: "assignee", label: "Responsável" },
@@ -39,26 +40,26 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
     const currentSort = (searchParams.get("sort") as SortOption) || "position";
 
     // Estado Local (Seleção Visual)
-    const [localSort, setLocalSort] = useState<SortOption>(currentSort === "position" ? "status" : currentSort);
+    const [localSort, setLocalSort] = useState<SortOption>(currentSort);
     const [isOpen, setIsOpen] = useState(false);
 
     // Sincronizar
     useEffect(() => {
         const urlSort = (searchParams.get("sort") as SortOption) || "position";
-        // Se for "position", usar "status" como padrão visual (mas manter "position" como estado real)
-        setLocalSort(urlSort === "position" ? "status" : urlSort);
+        setLocalSort(urlSort);
     }, [searchParams]);
 
     const hasActiveSort = currentSort !== "position";
-    // ✅ Quando não há filtro (position), sempre permitir aplicar (localSort será diferente de position)
-    // ✅ Quando há filtro ativo, só permitir aplicar se houver mudança
-    const hasPendingChange = currentSort === "position" 
-        ? localSort !== "position" 
-        : localSort !== currentSort;
+    const hasPendingChange = localSort !== currentSort;
 
     const handleApply = async () => {
         const params = new URLSearchParams(searchParams.toString());
-        params.set("sort", localSort);
+
+        if (localSort === "position") {
+            params.delete("sort");
+        } else {
+            params.set("sort", localSort);
+        }
 
         const newUrl = params.toString()
             ? `${pathname}?${params.toString()}`
@@ -67,18 +68,25 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
         router.push(newUrl);
         setIsOpen(false);
 
-        if (onPersistSortOrder) {
+        if (onPersistSortOrder && localSort !== "position") {
             setTimeout(async () => {
                 await onPersistSortOrder();
             }, 200);
         }
     };
 
+    const handleClear = () => {
+        setLocalSort("position");
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("sort");
+        const newUrl = params.toString()
+            ? `${pathname}?${params.toString()}`
+            : pathname;
+        router.push(newUrl);
+        setIsOpen(false);
+    };
 
     const getCurrentLabel = () => {
-        if (currentSort === "position") {
-            return "Manual";
-        }
         const option = sortOptions.find(opt => opt.value === currentSort);
         return option?.label || "Ordenar";
     };
@@ -153,13 +161,24 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
 
                     <DropdownMenuSeparator className="flex-shrink-0" />
 
-                    <div className="flex-shrink-0 bg-popover border-t p-2 flex items-center justify-end gap-2">
+                    <div className="flex-shrink-0 bg-popover border-t p-2 flex items-center justify-between gap-2">
+                        {(hasActiveSort || localSort !== "position") && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleClear}
+                                className="h-8 px-3 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                                Limpar
+                            </Button>
+                        )}
+
                         <Button
                             onClick={handleApply}
                             size="sm"
                             disabled={!hasPendingChange}
                             className={cn(
-                                "h-8 px-4 text-sm font-medium transition-all",
+                                "h-8 px-4 text-sm font-medium transition-all ml-auto",
                                 hasPendingChange
                                     ? "bg-[#22C55E] hover:bg-[#16a34a] text-white shadow-sm"
                                     : "bg-gray-100 text-gray-400 cursor-not-allowed"
@@ -170,6 +189,18 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
                     </div>
                 </DropdownMenuContent>
             </DropdownMenu>
+            
+            {hasActiveSort && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClear}
+                    className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                    title="Limpar filtro de ordenação"
+                >
+                    <X className="h-4 w-4" />
+                </Button>
+            )}
         </div>
     );
 }
