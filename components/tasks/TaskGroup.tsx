@@ -134,8 +134,12 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                 ref={setNodeRef}
                 className={cn(
                     "bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-2 transition-colors",
-                    // Altura mínima menor para Inbox (compacto), padrão para outros grupos
-                    id === "inbox" || id === "Inbox" ? "min-h-[60px]" : "min-h-[200px]",
+                    // Altura dinâmica: abraça o conteúdo (h-fit) com altura mínima apenas quando vazio
+                    // Inbox: altura mínima muito baixa para empty state compacto
+                    // Outros grupos: altura mínima maior para melhor área de drop
+                    id === "inbox" || id === "Inbox" 
+                        ? "h-fit min-h-[60px]" 
+                        : "h-fit min-h-[100px]",
                     isOver && "bg-blue-50 border-blue-300 border-solid"
                 )}
             >

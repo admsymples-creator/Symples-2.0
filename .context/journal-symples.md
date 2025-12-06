@@ -6,6 +6,23 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Altura Dinâmica dos Grupos (Hug Contents)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 📐 Altura Dinâmica dos Grupos (Hug Contents)
+- **Problema**: Container do grupo tinha altura fixa (`min-h-[200px]`), causando espaços em branco excessivos quando havia poucas tarefas
+- **Solução Implementada**:
+  - Substituído altura fixa por `h-fit` para abraçar o conteúdo dinamicamente
+  - Grupos normais: `h-fit min-h-[100px]` (altura mínima reduzida de 200px para 100px)
+  - Inbox: `h-fit min-h-[60px]` (mantido compacto)
+  - Container cresce/shrink conforme quantidade de tarefas
+- **Benefícios**:
+  - Sem espaços em branco desnecessários
+  - Layout mais limpo e eficiente
+  - Área de drop ainda funcional com `min-h` mínimo
+  - Melhor aproveitamento do espaço vertical
+
 ## 2025-12-06 - Empty State Compacto do Inbox
 
 ### 1. Melhorias, bugs e features implementadas em preview
