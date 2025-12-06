@@ -1451,36 +1451,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
     useEffect(() => {
-        // ✅ Não reordenar automaticamente se drag está ativo (DND manual tem prioridade)
-        if (isDraggingRef.current) {
-            return;
-        }
-
         if (sortBy === "position") {
-            // Quando voltar para "position", apenas garantir que as tarefas estão ordenadas por position
-            // O listGroups já faz isso, mas precisamos garantir que o estado está sincronizado
-            setLocalTasks((prev) => {
-                // Reordenar por position dentro de cada grupo para garantir ordem correta
-                const groupedByKey: Record<string, Task[]> = {};
-                prev.forEach((task) => {
-                    const key = getTaskGroupKey(task);
-                    if (!groupedByKey[key]) groupedByKey[key] = [];
-                    groupedByKey[key].push(task);
-                });
-
-                const recalculated: Task[] = [];
-                Object.entries(groupedByKey).forEach(([_, tasks]) => {
-                    // Ordenar por position dentro do grupo
-                    const sorted = [...tasks].sort((a, b) => {
-                        const posA = a.position ?? 0;
-                        const posB = b.position ?? 0;
-                        return posA - posB;
-                    });
-                    recalculated.push(...sorted);
-                });
-
-                return recalculated;
-            });
             return;
         }
 
@@ -1654,9 +1625,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             console.error("Erro ao persistir ordem:", error);
         }
     }, [effectiveWorkspaceId, activeTab, sortBy, viewOption]);
-    // ✅ Flag para indicar que drag está ativo (previne reordenação automática)
-    const isDraggingRef = useRef(false);
-
     // Handler para quando o drag comeca
     const handleDragStart = (event: DragStartEvent) => {
         // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
@@ -1672,9 +1640,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return; // Evita iniciar o drag
         }
 
-        // ✅ Marcar que drag está ativo (previne reordenação automática)
-        isDraggingRef.current = true;
-
         const { active } = event;
         // ✅ CORREÇÃO: Normalizar ID para string
         const activeIdStr = String(active.id);
@@ -1682,7 +1647,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         
         if (!task) {
             console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
-            isDraggingRef.current = false;
             return;
         }
         
@@ -1999,6 +1963,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     console.error("❌ Erro fatal no Rebalanceamento:", resBulk?.error);
                     toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
                     await reloadTasks();
+                } else {
+                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
+                    if (sortBy !== "position") {
+                        setSortBy("position");
+                        const params = new URLSearchParams(searchParams.toString());
+                        params.delete("sort");
+                        const newUrl = params.toString()
+                            ? `${pathname}?${params.toString()}`
+                            : pathname;
+                        router.push(newUrl);
+                    }
                 }
             } else {
                 // ✅ CASO PADRÃO (99% das vezes): Salva APENAS o item movido.
@@ -2053,22 +2028,26 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         taskId: activeIdStr,
                         calculatedPosition
                     });
+                    
+                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
+                    if (sortBy !== "position") {
+                        setSortBy("position");
+                        const params = new URLSearchParams(searchParams.toString());
+                        params.delete("sort");
+                        const newUrl = params.toString()
+                            ? `${pathname}?${params.toString()}`
+                            : pathname;
+                        router.push(newUrl);
+                    }
                 }
             }
         } catch (error) {
             console.error("Erro ao atualizar posição:", error);
             await reloadTasks();
-        } finally {
-            // ✅ Liberar flag de drag após processamento
-            // ✅ Pequeno delay para evitar reordenação imediata após drag (previne conflito com useEffect)
-            setTimeout(() => {
-                isDraggingRef.current = false;
-            }, 100);
         }
     };
 
     const handleDragCancel = () => {
-        isDraggingRef.current = false;
         setActiveTask(null);
     };
 
@@ -2194,8 +2173,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     };
 
     // ✅ Variável para controlar se drag está habilitado
-    // ✅ IMPORTANTE: NUNCA bloqueia baseado em filtros (sortBy) - apenas em viewOption
-    // ✅ DND manual sempre tem prioridade sobre ordenação automática
     const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
 
     return (

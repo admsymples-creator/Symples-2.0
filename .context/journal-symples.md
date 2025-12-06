@@ -6,144 +6,42 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
-## 2025-12-06 - Correção Final: DND Sempre Funcional com Filtros
+## 2025-12-06 - Reposicionamento de Indicadores e Reset de Filtro ao Mover Tarefa
 
 ### 1. Melhorias, bugs e features implementadas em preview
 
-#### 🔧 Correção do Bloqueio de DND com Filtros Ativos
-- **Problema Identificado**:
-  - DND ainda estava bloqueado ou interferido quando filtros de ordenação estavam ativos
-  - `useEffect` de reordenação podia interferir durante o drag mesmo com flag de proteção
-  - Race condition entre reordenação automática e drag manual
-- **Solução Implementada**:
-  - Adicionado delay de 100ms antes de liberar `isDraggingRef` no `handleDragEnd` (bloco `finally`)
-  - Delay previne que `useEffect` de reordenação execute imediatamente após drag
-  - Comentários adicionados esclarecendo que `isDragDisabled` NUNCA bloqueia baseado em filtros
-  - Garantia explícita: DND manual sempre tem prioridade sobre ordenação automática
-- **Comportamento Final**:
-  - `isDragDisabled` depende APENAS de `viewOption` (status, priority, group permitem drag)
-  - Filtros de ordenação (`sortBy`) NUNCA afetam `isDragDisabled`
-  - `useEffect` de reordenação respeita `isDraggingRef` e aguarda 100ms após drag
-  - Ordem manual sempre prevalece, independente de filtros ativos
-- **Benefícios**:
-  - DND funciona perfeitamente mesmo com filtros de ordenação ativos
-  - Sem interferência entre ordenação automática e reorganização manual
-  - UX consistente: usuário sempre pode reorganizar manualmente
-  - Performance melhorada com prevenção de race conditions
-
-## 2025-12-06 - Remoção de "Nada Aplicado" e Garantia de DND Livre
-
-### 1. Melhorias, bugs e features implementadas em preview
-
-#### 🗑️ Remoção da Opção "Nada Aplicado" do SortMenu
-- **Mudança Implementada**:
-  - Removida opção "Nada aplicado" (position) da lista de opções de ordenação
-  - Menu agora exibe apenas opções reais de ordenação: Status, Prioridade, Responsável, Título
-  - Quando não há filtro ativo (`sortBy === "position"`), o menu mostra "status" como selecionado visualmente (padrão)
-  - Badge não aparece quando não há filtro ativo (ordem manual)
-  - Badge mostra "Manual" quando não há filtro (via `getCurrentLabel`)
-- **Lógica Ajustada**:
-  - `localSort` inicializa com "status" quando `currentSort === "position"`
-  - `hasPendingChange` permite aplicar quando não há filtro ativo (transição de manual para filtro)
-  - `handleApply` sempre aplica o `localSort` selecionado, removendo comportamento especial para "position"
-- **Benefícios**:
-  - Interface mais limpa e focada em ordenações reais
-  - Remoção de opção redundante (ordem manual é o estado padrão)
-  - UX mais direta: usuário sempre escolhe uma ordenação específica
-
-#### 🔓 DND Sempre Livre (Prioridade Manual)
-- **Problema Identificado**:
-  - Após aplicar filtro de ordenação, o drag & drop podia parecer "travado"
-  - `useEffect` de reordenação automática podia interferir durante o drag
-  - Filtros não deveriam bloquear reorganização manual
-- **Solução Implementada**:
-  - Adicionado `isDraggingRef` para rastrear quando drag está ativo
-  - `useEffect` de reordenação verifica `isDraggingRef.current` e não interfere durante drag
-  - Flag `isDraggingRef` é definida como `true` no `handleDragStart`
-  - Flag é liberada (`false`) no `handleDragEnd` (bloco `finally`) e `handleDragCancel`
-  - DND funciona normalmente mesmo com filtros ativos (ordem manual sempre tem prioridade)
-- **Comportamento**:
-  - Filtros aplicam ordenação automática apenas quando não há drag ativo
-  - Usuário pode reorganizar manualmente a qualquer momento, independente do filtro
-  - Após reorganização manual, a nova ordem é salva no banco (via `updateTaskPosition`)
-  - Filtro permanece ativo após reorganização manual (não é resetado automaticamente)
-- **Benefícios**:
-  - DND sempre funcional, independente de filtros ativos
-  - Ordem manual sempre tem prioridade sobre ordenação automática
-  - UX intuitiva: usuário controla a ordem, filtros são apenas auxiliares temporários
-  - Sem interferência entre ordenação automática e reorganização manual
-
-## 2025-12-06 - Correção do Filtro "Nada Aplicado" e Remoção da Opção "Limpar"
-
-### 1. Melhorias, bugs e features implementadas em preview
-
-#### 🔧 Correção do Filtro "Nada Aplicado"
-- **Problema Identificado**:
-  - Ao aplicar "Nada aplicado" (position), as tarefas não eram reordenadas corretamente
-  - O `useEffect` retornava imediatamente quando `sortBy === "position"` sem fazer nada
-  - Tarefas não refletiam a ordem manual baseada em `position`
-- **Solução Implementada**:
-  - Modificado `useEffect` para reordenar tarefas por `position` dentro de cada grupo quando `sortBy === "position"`
-  - Agrupa tarefas por `getTaskGroupKey` e ordena por `position` dentro de cada grupo
-  - Garante que a ordem manual (baseada em `position`) seja respeitada visualmente
-  - Mantém sincronização entre estado local e ordem visual
-- **Benefícios**:
-  - Filtro "Nada aplicado" funciona corretamente
-  - Ordem manual sempre respeitada quando filtro é removido
-  - Transição suave entre ordenação automática e manual
-  - Interface reflete corretamente a ordem das tarefas
-
-#### 🗑️ Remoção da Opção "Limpar" do SortMenu
-- **Mudança Implementada**:
-  - Removida opção "Limpar" do menu de ordenação
-  - Removido botão "X" ao lado do botão "Ordenar" quando filtro está ativo
-  - Removida função `handleClear` e import não utilizado (`X` do lucide-react)
-  - Layout ajustado: botão "Aplicar" agora ocupa toda a largura do footer do dropdown
-- **Justificativa**:
-  - Após aplicação de qualquer filtro, o drag & drop manual deve ficar livre
-  - Ordenação manual (DND) tem prioridade sobre filtros automáticos
-  - Não há necessidade de "limpar" filtro, pois ordem manual sempre prevalece após reorganização
-  - Interface mais limpa e focada na ação principal ("Aplicar")
-- **Benefícios**:
-  - Interface mais simples e direta
-  - Menos confusão sobre quando usar "Limpar" vs "Aplicar"
-  - Alinhado com comportamento: ordem manual sempre prevalece
-  - UX mais intuitiva: aplicar filtro = organizar rapidamente, depois reorganizar livremente
-
-## 2025-12-06 - Reset Automático de Filtro ao Mover Tarefa e Reorganização de Indicadores
-
-### 1. Melhorias, bugs e features implementadas em preview
-
-#### 🔄 Reset Automático de Filtro ao Mover Tarefa
-- **Comportamento Implementado**:
-  - Quando usuário move tarefa via drag & drop, o filtro de ordenação é resetado automaticamente
-  - `sortBy` muda para `"position"` para respeitar ordem manual
-  - URL é atualizada removendo parâmetro `?sort=...`
-  - Aplicado em ambos os casos: rebalanceamento em massa e movimentação padrão
-- **Benefícios**:
-  - Ordem manual sempre respeitada após reorganização
-  - Ordenação automática não interfere na ordem manual do usuário
-  - UX intuitiva: reorganizar manualmente = ordem manual ativa
-  - Interface reflete mudança (botão ordenação volta ao estado padrão)
-
-#### 📍 Reorganização de Indicadores Focus e Urgente
-- **Nova Localização**:
-  - Indicadores movidos da coluna do título para a coluna da Data
-  - Posicionados à esquerda da data na mesma coluna
-  - Mantém apenas Comentários na coluna do título (apenas no hover)
-- **Comportamento de Visibilidade**:
-  - Focus (Zap): sempre visível quando ativo (data = próximo domingo)
-  - Urgente (AlertTriangle): sempre visível quando ativo (hoje ou priority high/urgent)
+#### 📍 Reposicionamento de Indicadores Focus e Urgente
+- **Indicadores Movidos para Coluna da Data**:
+  - Focus (Zap) e Urgente (AlertTriangle) agora aparecem na coluna da Data (lado esquerdo)
+  - Removidos da seção de hover do título
+  - Comentários permanecem na seção de hover do título
+- **Visibilidade Inteligente**:
+  - Quando ativos: sempre visíveis (`opacity-100`) com cores destacadas
   - Quando inativos: aparecem apenas no hover (`opacity-0 group-hover:opacity-100`)
-  - Transições suaves entre estados
-- **Lógica de Ativação**:
-  - Focus ativo: `isNextSunday(task.dueDate)` → `text-yellow-600 bg-yellow-50 opacity-100`
-  - Urgente ativo: `isToday || priority === "high" || priority === "urgent"` → `text-red-600 bg-red-50 opacity-100`
+  - Layout flexível com gap adequado na coluna da Data
 - **Benefícios**:
-  - Indicadores importantes sempre visíveis quando relevantes
-  - Coluna da Data mais informativa e contextual
-  - Interface mais limpa quando indicadores estão inativos
-  - Agrupamento lógico: indicadores relacionados à data ficam próximos da data
+  - Indicadores relacionados a data/prioridade agrupados logicamente
+  - Sempre visíveis quando ativos (melhor feedback visual)
+  - Interface mais limpa (menos elementos no hover do título)
+
+#### 🔄 Reset Automático de Filtro de Ordenação ao Mover Tarefa
+- **Comportamento Implementado**:
+  - Ao mover tarefa via drag & drop, o filtro `sortBy` é resetado automaticamente para `"position"`
+  - URL atualizada automaticamente (remove parâmetro `sort`)
+  - Interface reflete a mudança (botão de ordenação volta a "Nada aplicado")
+- **Casos de Uso Cobertos**:
+  - Movimento normal (caso padrão - 99% das vezes)
+  - Movimento com rebalanceamento (quando espaço entre posições fica pequeno)
+  - Funciona em ambos os casos após salvar com sucesso
+- **Lógica de Reset**:
+  - Verifica se `sortBy !== "position"` antes de resetar
+  - Usa `usePathname` para atualizar URL corretamente
+  - Mantém sincronização entre estado, URL e interface
+- **Benefícios UX**:
+  - Ordem manual sempre respeitada após mover tarefa
+  - Não há conflito entre ordenação automática e manual
+  - Feedback claro: usuário sabe que está em modo de ordenação manual
+  - Consistência: comportamento previsível e intuitivo
 
 ## 2025-12-06 - Ghost Group para Criação Rápida de Grupo
 
