@@ -6,6 +6,63 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Redesign Completo do DayColumn
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🎨 Redesign Visual do DayColumn
+- **Layout Refinado**:
+  - Altura dinâmica (`min-h-[500px] max-h-[80vh]`) ao invés de fixa
+  - Gradiente sutil para dia atual: `bg-gradient-to-b from-green-50/60 to-white`
+  - Bordas mais sutis: `border-[1.5px] border-green-200/80` para hoje
+  - Hover effects em dias inativos com transições suaves
+  - Border radius aumentado: `rounded-2xl` para visual mais moderno
+- **Header Aprimorado**:
+  - Nome do dia em uppercase com tracking-wider e font-bold
+  - Badge de contador de tarefas pendentes no canto superior direito
+  - Cores dinâmicas: verde para hoje (`text-green-700`), cinza para outros dias
+  - Data em destaque com `text-lg font-semibold`
+  - Border inferior que aparece no hover para dias inativos
+- **Quick Add Redesenhado**:
+  - Input area com design card-like: `rounded-xl border shadow-sm`
+  - Textarea com auto-resize inteligente (máximo 120px)
+  - Ícone Plus que transforma em ponto verde pulsante quando focado
+  - Toolbar inferior que aparece condicionalmente (focado ou com texto):
+    - Botão customizado do TaskDateTimePicker com estado visual claro
+    - Dica "ENTER para salvar" no canto direito
+    - Background sutil (`bg-gray-50/50`) para separação visual
+  - Blur effect no topo do footer para conteúdo scrollando por trás
+  - Estados visuais aprimorados: ring verde (`ring-4 ring-green-500/10`) e shadow quando focado
+  - Transform no focus: `transform -translate-y-1` para feedback tátil
+  - Tutorial highlight com animação pulse quando `highlightInput` está ativo
+- **Empty State Refinado**:
+  - Aparece apenas no hover do container (`opacity-0 group-hover/column:opacity-100`)
+  - Design minimalista com ícone FolderOpen em círculo cinza
+  - Texto "Tudo limpo" com subtítulo explicativo
+  - Transição suave de opacidade
+- **Performance**:
+  - Ordenação de tarefas memoizada com `useMemo` para evitar recálculos
+  - Contador de pendências memoizado
+  - Handlers simplificados e otimizados
+- **UX Melhorias**:
+  - Toast notifications para erros (via `sonner`)
+  - Rollback automático do input em caso de erro na criação
+  - Espaço extra no final do scroll (`h-16`) para não bater no input
+  - Auto-resize do textarea para melhor experiência de digitação
+  - Feedback visual imediato em todas as interações
+
+#### 🔧 Correções Técnicas
+- **Importações Otimizadas**:
+  - Adicionado `useMemo` do React para performance
+  - Adicionado `toast` do `sonner` para notificações
+  - Ícones adicionais: `Plus`, `Calendar as CalendarIcon`
+- **Código Limpo**:
+  - Handlers simplificados e mais diretos
+  - Remoção de código redundante
+  - Melhor organização de estados e efeitos
+
+---
+
 ## 2025-12-06 - Reposicionamento de Indicadores e Reset de Filtro ao Mover Tarefa
 
 ### 1. Melhorias, bugs e features implementadas em preview

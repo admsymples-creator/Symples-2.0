@@ -144,15 +144,42 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 7.6. Visão Semanal (DayColumn)
 - **Componente:** `components/home/DayColumn.tsx`
-- **Layout:** Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
-- **Quick Add:** Input no rodapé com seletor de data/hora (`TaskDateTimePicker`)
-  - Ícone de calendário ao lado do campo de texto
-  - Permite selecionar data e hora específica para tarefas pessoais
-  - Atualização imediata ao selecionar (não precisa clicar em "Confirmar")
-- **Ordenação de Tarefas:**
+- **Layout:** 
+  - Coluna vertical com altura dinâmica (`min-h-[500px] max-h-[80vh]`)
+  - Scroll interno com custom scrollbar
+  - Design refinado com gradientes sutis e bordas suaves
+  - Destaque visual para dia atual: `bg-gradient-to-b from-green-50/60 to-white border-[1.5px] border-green-200/80`
+  - Hover effects em dias inativos: `hover:border-gray-200 hover:bg-gray-50/50`
+- **Header:**
+  - Nome do dia em uppercase com tracking-wider
+  - Data em destaque abaixo
+  - Badge de contador de tarefas pendentes (aparece quando `pendingCount > 0`)
+  - Cores dinâmicas: verde para hoje, cinza para outros dias
+- **Quick Add (Input Area):**
+  - Input no rodapé com design refinado
+  - Textarea com auto-resize (máximo 120px de altura)
+  - Ícone Plus que muda para ponto verde pulsante quando focado
+  - Toolbar inferior que aparece quando focado ou com texto:
+    - Botão customizado do `TaskDateTimePicker` com estado visual (verde quando data definida)
+    - Dica "ENTER para salvar"
+  - Blur effect no topo do footer para conteúdo scrollando
+  - Estados visuais: ring verde e shadow quando focado
+  - Tutorial highlight com animação pulse quando `highlightInput` está ativo
+- **Ordenação de Tarefas (Memoizada com `useMemo`):**
   1. Tarefas pessoais com horário específico (não 00:00)
   2. Tarefas pessoais sem horário (00:00 ou sem data)
   3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Empty State:**
+  - Aparece apenas no hover do container (`opacity-0 group-hover/column:opacity-100`)
+  - Design minimalista com ícone FolderOpen em círculo cinza
+  - Texto "Tudo limpo" com subtítulo
+- **Performance:**
+  - Ordenação memoizada com `useMemo` para evitar recálculos
+  - Contador de pendências memoizado
+- **UX:**
+  - Toast notifications para erros (via `sonner`)
+  - Rollback automático do input em caso de erro
+  - Espaço extra no final do scroll para não bater no input
 - **Filtro de Workspace:**
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
@@ -638,15 +665,41 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 ## 14. VISÃO SEMANAL - COMPONENTES E FUNCIONALIDADES (v2.3)
 
 ### 14.1. DayColumn (`components/home/DayColumn.tsx`)
-- **Layout**: Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
-- **Quick Add**: Input no rodapé com seletor de data/hora
-  - Ícone de calendário clicável ao lado do campo de texto
-  - Permite definir data e hora específica para tarefas pessoais
-  - Data/hora selecionada é aplicada automaticamente ao criar tarefas
-- **Ordenação de Tarefas**:
+- **Layout**: 
+  - Coluna vertical com altura dinâmica (`min-h-[500px] max-h-[80vh]`)
+  - Scroll interno com custom scrollbar
+  - Design refinado com gradientes sutis e bordas suaves
+  - Destaque visual para dia atual com gradiente verde
+  - Hover effects em dias inativos
+- **Header**:
+  - Nome do dia em uppercase com tracking-wider
+  - Data em destaque abaixo
+  - Badge de contador de tarefas pendentes (quando `pendingCount > 0`)
+  - Cores dinâmicas baseadas em `isToday`
+- **Quick Add**: 
+  - Input no rodapé com design card-like refinado
+  - Textarea com auto-resize (máximo 120px)
+  - Ícone Plus que muda para ponto verde pulsante quando focado
+  - Toolbar inferior condicional com:
+    - Botão customizado do `TaskDateTimePicker` com estado visual
+    - Dica "ENTER para salvar"
+  - Blur effect no topo do footer
+  - Estados visuais aprimorados (ring verde, shadow, transform)
+  - Tutorial highlight com animação pulse
+- **Ordenação de Tarefas** (Memoizada com `useMemo`):
   1. Tarefas pessoais com horário específico (não 00:00)
   2. Tarefas pessoais sem horário (00:00 ou sem data)
   3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Empty State**:
+  - Aparece apenas no hover do container
+  - Design minimalista com ícone e texto explicativo
+- **Performance**:
+  - Ordenação e contadores memoizados
+  - Handlers otimizados
+- **UX**:
+  - Toast notifications para erros
+  - Rollback automático em caso de erro
+  - Espaço extra no final do scroll
 - **Filtro de Workspace**:
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
