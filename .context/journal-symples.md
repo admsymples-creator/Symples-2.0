@@ -6,6 +6,349 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Reposicionamento de Indicadores e Reset de Filtro ao Mover Tarefa
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 📍 Reposicionamento de Indicadores Focus e Urgente
+- **Indicadores Movidos para Coluna da Data**:
+  - Focus (Zap) e Urgente (AlertTriangle) agora aparecem na coluna da Data (lado esquerdo)
+  - Removidos da seção de hover do título
+  - Comentários permanecem na seção de hover do título
+- **Visibilidade Inteligente**:
+  - Quando ativos: sempre visíveis (`opacity-100`) com cores destacadas
+  - Quando inativos: aparecem apenas no hover (`opacity-0 group-hover:opacity-100`)
+  - Layout flexível com gap adequado na coluna da Data
+- **Benefícios**:
+  - Indicadores relacionados a data/prioridade agrupados logicamente
+  - Sempre visíveis quando ativos (melhor feedback visual)
+  - Interface mais limpa (menos elementos no hover do título)
+
+#### 🔄 Reset Automático de Filtro de Ordenação ao Mover Tarefa
+- **Comportamento Implementado**:
+  - Ao mover tarefa via drag & drop, o filtro `sortBy` é resetado automaticamente para `"position"`
+  - URL atualizada automaticamente (remove parâmetro `sort`)
+  - Interface reflete a mudança (botão de ordenação volta a "Nada aplicado")
+- **Casos de Uso Cobertos**:
+  - Movimento normal (caso padrão - 99% das vezes)
+  - Movimento com rebalanceamento (quando espaço entre posições fica pequeno)
+  - Funciona em ambos os casos após salvar com sucesso
+- **Lógica de Reset**:
+  - Verifica se `sortBy !== "position"` antes de resetar
+  - Usa `usePathname` para atualizar URL corretamente
+  - Mantém sincronização entre estado, URL e interface
+- **Benefícios UX**:
+  - Ordem manual sempre respeitada após mover tarefa
+  - Não há conflito entre ordenação automática e manual
+  - Feedback claro: usuário sabe que está em modo de ordenação manual
+  - Consistência: comportamento previsível e intuitivo
+
+## 2025-12-06 - Ghost Group para Criação Rápida de Grupo
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 👻 Ghost Group para Criação Rápida de Grupo
+- **Componente GhostGroup Criado**:
+  - Placeholder visual após o último grupo para incentivar criação de novas seções
+  - Design compacto em estilo botão horizontal (barra)
+  - Bordas tracejadas com hover effects suaves
+  - Ícone Plus centralizado com estados de hover
+  - Label customizável (padrão: "Novo Grupo")
+- **Integração na Página de Tarefas**:
+  - Renderizado após o último grupo na lista
+  - Visível apenas quando `viewOption === "group"`
+  - Funciona dentro e fora do `SortableContext`
+  - Ao clicar, abre modal de criação de grupo (`setIsCreateGroupModalOpen`)
+- **Refinamento Visual**:
+  - Altura fixa `h-24` para melhor presença visual
+  - Ícone maior (w-8 h-8) com container arredondado e sombra
+  - Texto em uppercase com tracking-wide para destaque
+  - Background sutil (`bg-gray-50/30`) visível por padrão
+  - Espaçamento melhorado (`mt-6 mb-2`)
+  - Border radius `rounded-xl` para consistência visual
+- **Comportamento de Posicionamento**:
+  - Props customizáveis: `label` (padrão: "Novo Grupo") e `className`
+  - Novo grupo criado aparece no final da lista de grupos (após todos os grupos existentes)
+  - Ordem gerenciada pelo `groupOrder` state e localStorage
+- **Design e UX**:
+  - Estilo minimalista e discreto (bordas tracejadas, background transparente)
+  - Hover effects: borda verde, background sutil, sombra leve
+  - Feedback tátil: `active:scale-[0.99]` para pressão
+  - Acessibilidade: `aria-label` e `focus-visible` com ring verde
+  - Transições suaves em todos os estados
+- **Benefícios**:
+  - Incentiva criação de grupos (affordance visual clara)
+  - Mantém interface limpa e não intrusiva
+  - Alinhado com padrão de "ghost slots" do design system
+  - Facilita organização e crescimento do workspace
+
+## 2025-12-06 - Altura Dinâmica dos Grupos (Hug Contents)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 📐 Altura Dinâmica dos Grupos (Hug Contents)
+- **Problema**: Container do grupo tinha altura fixa (`min-h-[200px]`), causando espaços em branco excessivos quando havia poucas tarefas
+- **Solução Implementada**:
+  - Substituído altura fixa por `h-fit` para abraçar o conteúdo dinamicamente
+  - Grupos normais: `h-fit min-h-[100px]` (altura mínima reduzida de 200px para 100px)
+  - Inbox: `h-fit min-h-[60px]` (mantido compacto)
+  - Container cresce/shrink conforme quantidade de tarefas
+- **Benefícios**:
+  - Sem espaços em branco desnecessários
+  - Layout mais limpo e eficiente
+  - Área de drop ainda funcional com `min-h` mínimo
+  - Melhor aproveitamento do espaço vertical
+
+## 2025-12-06 - Empty State Compacto do Inbox
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 📦 Empty State Compacto do Inbox
+- **Altura Reduzida do Container**:
+  - Container do Inbox: `min-h-[60px]` (era `min-h-[200px]`)
+  - Redução de 70% na altura mínima
+  - Outros grupos mantêm `min-h-[200px]` (comportamento original)
+  - Detecção automática do grupo Inbox via `id === "inbox" || id === "Inbox"`
+
+- **Empty State Específico para Inbox**:
+  - Input sempre visível (QuickTaskAdd com variante `ghost`)
+  - Altura ultra-compacta: ~48px total (padding `py-1` + input `h-10`)
+  - Placeholder específico: "Digite para adicionar tarefa ao Inbox..."
+  - Sem necessidade de clicar em botão para iniciar criação
+  - Reutilização do componente `TaskGroupEmpty` com variante `inbox`
+
+- **Reutilização de Componentes**:
+  - `TaskGroupEmpty` estendido com suporte a variante `inbox` e slot customizado
+  - Variante `default`: mantém comportamento original (botão + texto)
+  - Variante `inbox`: renderiza children diretamente com padding mínimo
+  - Consistência de design e código reutilizável
+
+- **Boas Práticas de UX para Inbox**:
+  - Foco em captura rápida de tarefas
+  - Menos elementos visuais decorativos
+  - Input sempre acessível para digitação imediata
+  - Mensagem contextual e direta
+  - Espaçamento mínimo mas funcional
+
+## 2025-12-06 - Navegação Rápida via Teclado e Posicionamento de Tarefas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ⌨️ Navegação Rápida via Teclado (Enter)
+- **Foco Imediato Após Criação**:
+  - Usa `requestAnimationFrame` para garantir que DOM atualizou antes de focar
+  - Foco imediato após limpar input (não espera Promise resolver)
+  - Permite criação rápida e contínua sem interrupção
+  - Input sempre pronto para próxima digitação
+
+- **Estado isCreatingSingle para Feedback Visual**:
+  - Novo estado para rastrear criação única (diferente de batch)
+  - Spinner visível durante criação única e batch
+  - Feedback visual discreto e claro sem bloquear input
+
+- **Input Não Bloqueado Durante Criação Única**:
+  - Input permanece habilitado durante criação única
+  - Permite digitação contínua sem interrupção
+  - Apenas batch desabilita input (necessário para controle)
+  - Criação em background não bloqueia UI
+
+- **Preservação de Contexto Entre Criações**:
+  - Data e assignee preservados entre criações
+  - Facilita criar múltiplas tarefas com mesmo contexto
+  - Escape limpa contexto apenas quando input vazio
+  - Comportamento inteligente: Escape com texto limpa só texto, sem contexto
+
+- **Comportamento do Escape Melhorado**:
+  - Input vazio: limpa contexto (data/assignee) e cancela
+  - Input com texto: limpa apenas o texto, mantém contexto
+  - Remove foco do input após Escape
+  - UX intuitiva e previsível
+
+- **Criação em Background**:
+  - Criação única não espera Promise resolver
+  - Permite criação rápida e contínua
+  - Erros tratados em background sem bloquear
+  - Toast de erro aparece sem interromper fluxo
+
+#### 📍 Posicionamento de Tarefas Recém-Criadas
+- **Seguir Ordem Existente (Adicionar no Final)**:
+  - Tarefas adicionadas no final da lista, respeitando ordenação
+  - Quando `sortBy === "position"`: calcula última posição e adiciona no final
+  - Quando outras ordenações: adiciona no final (ordenação reaplicada automaticamente)
+  - Considera grupo quando `viewOption === "group"` (calcula posição dentro do grupo)
+- **Benefícios**:
+  - Mantém consistência com ordenação existente
+  - Permite criação rápida sem quebrar fluxo visual
+  - QuickTaskAdd está no final, tarefa aparece logo acima dele
+  - Respeita sistema de drag & drop (position)
+  - Alinhado com padrões de apps profissionais (Todoist, Linear, Asana)
+
+#### 🎯 Padrões de UX Aplicados
+- **Enter**: Criar tarefa e manter foco para próxima criação
+- **Escape**: Limpar contexto quando input vazio, apenas texto quando tem conteúdo
+- **Feedback Visual**: Spinner discreto durante criação (batch ou single)
+- **Criação Contínua**: Input sempre pronto, não bloqueia durante criação única
+- **Contexto Preservado**: Data/assignee mantidos entre criações para eficiência
+
+---
+
+## 2025-12-06 - Correção de Layout e Limite de Título em TaskRowMinify
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção de Título Quebrando Layout
+- **Problema**: Título da tarefa estava quebrando e passando por cima de outros elementos
+- **Causa Identificada**:
+  - Falta de `overflow-hidden` nos containers hierárquicos
+  - `truncate` CSS não funcionava por falta de `min-w-0` e `block` no span
+  - Estrutura de layout flex não respeitava limites do grid
+- **Solução Implementada**:
+  - Adicionado `overflow-hidden` em todos os níveis do container do título
+  - Estrutura hierárquica corrigida com `min-w-0` em cada nível
+  - Adicionado `block min-w-0` no span do InlineTextEdit para truncate funcionar
+  - Wrapper extra com `overflow-hidden` para garantir isolamento do título
+- **Resultado**: Título agora é truncado corretamente com ellipsis, respeitando layout do grid
+
+#### ✨ Limite de Caracteres e Boas Práticas de UX
+- **Limite de Caracteres no Título**:
+  - Limite de **100 caracteres** no input durante edição
+  - Validação em `handleSave` para garantir limite
+  - Limite HTML nativo aplicado no input (`maxLength`)
+  - Limitação durante digitação para feedback imediato
+- **Tooltip Inteligente**:
+  - Tooltip nativo (`title` attribute) mostra texto completo
+  - Aparece apenas quando título tem mais de 70 caracteres (truncado)
+  - Não mostra tooltip desnecessário em títulos curtos
+- **Melhorias no InlineTextEdit**:
+  - Prop `maxLength` adicionado à interface
+  - Truncamento CSS funcionando corretamente com `block min-w-0`
+  - Container com `overflow-hidden` para garantir isolamento
+  - Layout responsivo mantido
+
+#### 📐 Estrutura de Overflow Corrigida
+```
+Container Grid (min-w-0)
+  └─ Título Container (min-w-0 overflow-hidden)
+      └─ Flex Container (flex-1 min-w-0 overflow-hidden)
+          └─ InlineTextEdit Wrapper (flex-1 min-w-0 overflow-hidden)
+              └─ InlineTextEdit (block min-w-0 truncate)
+```
+- Cada nível da hierarquia tem controle de overflow
+- `min-w-0` permite que flex items encolham abaixo de seu conteúdo mínimo
+- `overflow-hidden` previne quebra de layout
+
+#### 🎯 Padrões de UX Aplicados
+- **Truncamento Visual**: CSS `truncate` com ellipsis funcionando corretamente
+- **Limite de Caracteres**: 100 caracteres (padrão UX para títulos)
+- **Tooltip Acessível**: Mostra título completo quando necessário
+- **Layout Responsivo**: Não quebra o grid CSS, mantém estrutura
+- **Feedback Durante Edição**: Limite aplicado em tempo real
+
+---
+
+## 2025-12-06 - UI Feedback e Optimistic UI para Criação de Tarefas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✨ Feedback Visual Durante Criação de Tarefas (Optimistic UI)
+- **Componente TaskRowSkeleton**:
+  - Novo componente de skeleton para feedback visual durante criação
+  - Mantém consistência com design system (grid layout, cores, animação pulse)
+  - Suporta cor do grupo (barra lateral colorida)
+  - Animação suave e discreta
+
+- **Estado isPending nas Tarefas**:
+  - Campo `isPending` adicionado à interface `Task`
+  - Tarefas otimistas marcadas como `isPending: true` durante criação
+  - Estado removido após confirmação do backend
+  - Suporte completo em todos os componentes de tarefas
+
+- **Feedback Visual no TaskRowMinify**:
+  - Spinner (`Loader2`) ao lado do título quando tarefa está `isPending`
+  - Opacidade reduzida (60%) para toda a linha durante criação
+  - Texto com opacidade reduzida (75%)
+  - Edição inline desabilitada durante pending
+  - Drag & drop desabilitado enquanto tarefa está sendo criada
+  - Feedback visual claro sem ser intrusivo
+
+- **Optimistic UI Pattern Implementado**:
+  - Tarefas aparecem **imediatamente** ao criar (antes da confirmação do Supabase)
+  - Estado de loading visível durante processo de criação
+  - Rollback automático em caso de erro (remove tarefa otimista)
+  - Substituição de ID temporário pelo ID real após sucesso
+  - Snapshot do estado anterior para rollback seguro
+
+- **Suporte a Criação em Lote (Batch)**:
+  - Múltiplas tarefas aparecem instantaneamente ao criar batch
+  - Cada tarefa mostra seu próprio estado de loading
+  - Feedback individual por tarefa
+  - Skeleton adicional mostrado quando necessário durante batch creation
+
+- **Integração com QuickTaskAdd**:
+  - Estado `isCreatingBatch` já existente mantido
+  - Integração perfeita com Optimistic UI
+  - Input limpo imediatamente após submissão
+  - Foco mantido no input após criação
+
+#### 🎯 Benefícios da Implementação
+- **Perceived Performance**: Usuário vê tarefas aparecerem instantaneamente
+- **Redução de Ansiedade**: Feedback visual claro durante processo assíncrono
+- **Consistência**: Usa padrão Optimistic UI já documentado no Journal
+- **Design Clean**: Feedback visual discreto e elegante, mantendo estética SaaS
+- **UX Melhorada**: Interface não "congela" durante criação, mantém responsividade
+
+#### 📝 Arquivos Criados/Modificados (Limite de Título)
+- `components/tasks/TaskRowMinify.tsx` (correção de layout e overflow)
+- `components/ui/inline-text-edit.tsx` (suporte a maxLength e truncamento)
+
+#### 📝 Arquivos Criados/Modificados (Optimistic UI)
+- `components/tasks/TaskRowSkeleton.tsx` (novo componente)
+- `app/(main)/tasks/page.tsx` (estado isPending, handleTaskCreatedOptimistic)
+- `components/tasks/TaskGroup.tsx` (suporte a skeleton e pending state)
+- `components/tasks/TaskRowMinify.tsx` (feedback visual para pending state)
+
+---
+
+## 2025-12-06 - Correções de Performance e UX na Tela de Tarefas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção de Flicker na Ordem dos Grupos
+- **Problema**: Ao carregar tarefas pela primeira vez, a ordem dos grupos ficava trocada por ~1 segundo
+- **Causa Identificada**:
+  - `initialGroups` (prop do Server Component) não estava sendo usado para inicializar estados
+  - `availableGroups` e `groupOrder` iniciavam vazios
+  - `loadGroups()` era assíncrono e rodava após o primeiro render
+  - `orderedGroupedData` não estava ordenando baseado em `groupOrder`
+  - Renderização condicional mostrava grupos em ordem errada enquanto `groupOrder.length === 0`
+- **Solução Implementada**:
+  - `availableGroups` agora inicializa com `initialGroups` se disponível
+  - `groupOrder` inicializa com ordem correta desde o primeiro render:
+    - Tenta usar ordem salva no localStorage (se existir e válida)
+    - Valida que todos os IDs existem em `initialGroups`
+    - Adiciona grupos novos que não estavam na ordem salva
+    - Fallback para ordem padrão: `["inbox", ...initialGroups.map(g => g.id)]`
+  - `orderedGroupedData` agora ordena grupos baseado em `groupOrder`
+  - `listGroups` ordena grupos quando `viewOption === "group"` usando `groupOrder`
+- **Resultado**: Flicker eliminado - grupos aparecem na ordem correta desde o primeiro render
+
+#### ✨ Melhorias de Performance e Limpeza de Código
+- **Remoção de console.log de debug**:
+  - Removidos logs de debug desnecessários em `TaskRowMinify` e `TaskGroup`
+  - Removidos logs de debug no `handleDragEnd` de `page.tsx`
+  - Mantidos apenas `console.error` e `console.warn` para erros reais
+- **Implementação de router.refresh()**:
+  - Implementado `router.refresh()` no TODO da linha 310
+  - Quando `initialTasks` está presente, página Server Component é recarregada após invalidar cache
+  - Garante dados atualizados quando necessário sem necessidade de reload completo
+
+#### 🔧 Otimizações Técnicas
+- Dependências de `useMemo` corrigidas para incluir `groupOrder`
+- Inicialização de estados otimizada usando funções lazy do `useState`
+- Código mais limpo e manutenível sem logs de debug em produção
+
+---
+
 ## 2025-01-XX - Limite de Caracteres, Truncamento Visual e Melhorias de UI no TaskDetailModal
 
 ### 1. Melhorias, bugs e features implementadas em preview

@@ -2,9 +2,11 @@
 
 import React, { useMemo, memo, useState, useCallback } from "react";
 import { TaskRowMinify } from "./TaskRowMinify";
+import { TaskRowSkeleton } from "./TaskRowSkeleton";
 import { TaskSectionHeader } from "./TaskSectionHeader";
 import { GroupActionMenu } from "./GroupActionMenu";
 import { QuickTaskAdd } from "./QuickTaskAdd";
+import { TaskGroupEmpty } from "./TaskGroupEmpty";
 import { cn } from "@/lib/utils";
 import {
     SortableContext,
@@ -22,6 +24,7 @@ type MinimalTask = {
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
     commentCount?: number;
     commentsCount?: number;
+    isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
 };
 
 interface TaskGroupProps {
@@ -49,13 +52,6 @@ interface TaskGroupProps {
 }
 
 function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, showGroupActions = true, onAddTask }: TaskGroupProps) {
-    // Log para debug
-    console.log("🟡 [TaskGroup] Renderizado - id:", id, "tasks.length:", tasks.length);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDeletedOptimistic:", onTaskDeletedOptimistic);
-    console.log("🟡 [TaskGroup] Renderizado - onTaskDuplicatedOptimistic:", onTaskDuplicatedOptimistic);
-    
     const [isAdding, setIsAdding] = useState(false);
     
     // Normalizar IDs para string (dnd-kit requer strings)
@@ -137,7 +133,13 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
             <div
                 ref={setNodeRef}
                 className={cn(
-                    "bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-2 min-h-[200px] transition-colors",
+                    "bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-2 transition-colors",
+                    // Altura dinâmica: abraça o conteúdo (h-fit) com altura mínima apenas quando vazio
+                    // Inbox: altura mínima muito baixa para empty state compacto
+                    // Outros grupos: altura mínima maior para melhor área de drop
+                    id === "inbox" || id === "Inbox" 
+                        ? "h-fit min-h-[60px]" 
+                        : "h-fit min-h-[100px]",
                     isOver && "bg-blue-50 border-blue-300 border-solid"
                 )}
             >
@@ -151,7 +153,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     containerId={id}
                                     groupColor={groupColor}
                                     onClick={onTaskClick}
-                                    disabled={isDragDisabled}
+                                    disabled={isDragDisabled || task.isPending} // ✅ Desabilitar drag enquanto pending
                                     onTaskUpdated={onTaskUpdated}
                                     onTaskDeleted={onTaskDeleted}
                                     onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
@@ -160,6 +162,11 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     members={members}
                                 />
                             ))}
+                            
+                            {/* ✅ Skeleton adicional durante criação batch (mostrar apenas se não houver tarefas pending visíveis) */}
+                            {isAdding && tasks.filter(t => t.isPending).length === 0 && (
+                                <TaskRowSkeleton groupColor={groupColor} />
+                            )}
                             
                             {/* Quick Add no final da lista quando há tarefas */}
                             {onAddTask && tasks.length > 0 && (
@@ -182,7 +189,19 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                 {tasks.length === 0 && (
                     <>
                         {onAddTask ? (
-                            isAdding ? (
+                            // Empty state específico para Inbox: sempre mostra input compacto
+                            id === "inbox" || id === "Inbox" ? (
+                                <TaskGroupEmpty variant="inbox">
+                                    <QuickTaskAdd
+                                        placeholder="Digite para adicionar tarefa ao Inbox..."
+                                        autoFocus={false}
+                                        onCancel={handleCancelAdd}
+                                        onSubmit={handleSubmitAdd}
+                                        members={members || []}
+                                        variant="ghost"
+                                    />
+                                </TaskGroupEmpty>
+                            ) : isAdding ? (
                                 <div className="p-2">
                                     <QuickTaskAdd
                                         placeholder="Adicionar tarefa aqui..."
@@ -237,16 +256,6 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
         prev.onDeleteGroup !== next.onDeleteGroup ||
         prev.onClearGroup !== next.onClearGroup ||
         prev.showGroupActions !== next.showGroupActions;
-    
-    console.log("🟨 [TaskGroup] memo comparando:", {
-        groupId: next.id,
-        tasksChanged: prev.tasks !== next.tasks,
-        onTaskDeletedOptimisticChanged: prev.onTaskDeletedOptimistic !== next.onTaskDeletedOptimistic,
-        onTaskDuplicatedOptimisticChanged: prev.onTaskDuplicatedOptimistic !== next.onTaskDuplicatedOptimistic,
-        shouldRender,
-        prevHasCallback: !!prev.onTaskDeletedOptimistic,
-        nextHasCallback: !!next.onTaskDeletedOptimistic,
-    });
     
     return !shouldRender; // Retorna true se NÃO deve re-renderizar
 });

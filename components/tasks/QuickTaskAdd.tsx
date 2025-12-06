@@ -59,6 +59,7 @@ export function QuickTaskAdd({
     const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
     const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
     const [isCreatingBatch, setIsCreatingBatch] = useState(false);
+    const [isCreatingSingle, setIsCreatingSingle] = useState(false); // ✅ Estado para criação única
     const [showBatchWarning, setShowBatchWarning] = useState(false);
     const [pendingTasks, setPendingTasks] = useState<string[]>([]);
     const [pendingDate, setPendingDate] = useState<Date | null>(null);
@@ -173,8 +174,15 @@ export function QuickTaskAdd({
 
         // Limpar input imediatamente (Optimistic UI)
         setValue("");
-        setSelectedDate(null);
-        setSelectedAssigneeId(null);
+        // ✅ Preservar data e assignee entre criações (não limpar)
+        // setSelectedDate(null);
+        // setSelectedAssigneeId(null);
+
+        // ✅ FOCO IMEDIATO - Não esperar Promise resolver
+        // Usar requestAnimationFrame para garantir que DOM atualizou
+        requestAnimationFrame(() => {
+            inputRef.current?.focus();
+        });
 
         try {
             if (tasks.length > 1) {
@@ -191,17 +199,28 @@ export function QuickTaskAdd({
                 
                 toast.success(`${tasks.length} tarefas criadas com sucesso`);
             } else {
-                // Single create: comportamento original
+                // ✅ Single create: não bloquear input, criar em background
+                setIsCreatingSingle(true);
                 const result = onSubmit(tasks[0], dueDate, assigneeId);
-                await Promise.resolve(result);
+                // Não esperar Promise - permite criação rápida
+                Promise.resolve(result).catch((error) => {
+                    console.error("Erro ao criar tarefa:", error);
+                    toast.error("Erro ao criar tarefa");
+                }).finally(() => {
+                    setIsCreatingSingle(false);
+                });
             }
         } catch (error) {
             console.error("Erro ao criar tarefas:", error);
             toast.error("Erro ao criar algumas tarefas");
         } finally {
             setIsCreatingBatch(false);
-            // Manter foco no input
-            inputRef.current?.focus();
+            // ✅ Foco já foi dado acima, mas garantir aqui também para batch
+            if (tasks.length > 1) {
+                requestAnimationFrame(() => {
+                    inputRef.current?.focus();
+                });
+            }
         }
     };
 
@@ -226,16 +245,23 @@ export function QuickTaskAdd({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
             e.preventDefault();
+            // ✅ Enter: Criar tarefa e manter foco para próxima criação
             handleSubmit();
         } else if (e.key === "Escape") {
+            e.preventDefault();
             if (!value) {
+                // ✅ Se input vazio, limpar contexto (data/assignee) e cancelar
+                setSelectedDate(null);
+                setSelectedAssigneeId(null);
                 onCancel?.();
+            } else {
+                // ✅ Se tem texto, apenas limpar texto (manter data/assignee)
+                setValue("");
             }
-            setValue("");
-            setSelectedDate(null);
-            setSelectedAssigneeId(null);
             inputRef.current?.blur();
         }
+        // ✅ Futuro: Tab para navegar entre campos (data/assignee)
+        // ✅ Futuro: Arrow Up/Down para navegar entre tarefas
     };
 
     const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -250,11 +276,11 @@ export function QuickTaskAdd({
 
     return (
         <>
-            <div className={cn(
+            <div                 className={cn(
                 "flex items-center transition-all relative w-full",
                 variant === "default" && "bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
                 variant === "ghost" && "h-10 px-4 border-b border-transparent hover:bg-gray-50",
-                isCreatingBatch && "opacity-50 pointer-events-none",
+                isCreatingBatch && "opacity-50 pointer-events-none", // ✅ Apenas batch bloqueia interação
                 className
             )}>
                 {/* Ghost Mode Elements */}
@@ -270,8 +296,9 @@ export function QuickTaskAdd({
                     </>
                 )}
 
-                {isCreatingBatch && (
-                    <Loader2 className="size-4 text-gray-400 animate-spin mr-2" />
+                {/* ✅ Feedback visual durante criação (batch ou single) */}
+                {(isCreatingBatch || isCreatingSingle) && (
+                    <Loader2 className="size-4 text-gray-400 animate-spin mr-2 flex-shrink-0" />
                 )}
                 <Input
                     ref={inputRef}
@@ -281,7 +308,7 @@ export function QuickTaskAdd({
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
                     placeholder={placeholder}
-                    disabled={isCreatingBatch}
+                    disabled={isCreatingBatch} // ✅ Apenas desabilitar durante batch (permite criação rápida)
                     className={cn(
                         "flex-1 bg-transparent border-none focus-visible:ring-0 p-0 text-sm placeholder:text-gray-400",
                         variant === "ghost" && "h-full"
