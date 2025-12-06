@@ -20,6 +20,7 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { TaskGroup } from "@/components/tasks/TaskGroup";
+import { GhostGroup } from "@/components/tasks/GhostGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
@@ -2330,6 +2331,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                                 />
                                             ))}
+                                            {/* Ghost Group para criação rápida - apenas na visão de grupos */}
+                                            {viewOption === "group" && (
+                                                <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
+                                            )}
                                         </div>
                                     </SortableContext>
                                 ) : (
@@ -2367,6 +2372,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                             />
                                         ))}
+                                        {/* Ghost Group para criação rápida - apenas na visão de grupos */}
+                                        {viewOption === "group" && (
+                                            <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
+                                        )}
                                     </div>
                                 )}
                     <DragOverlay>

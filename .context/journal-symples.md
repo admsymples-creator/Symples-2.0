@@ -6,6 +6,34 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Ghost Group para Criação Rápida de Grupo
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 👻 Ghost Group para Criação Rápida de Grupo
+- **Componente GhostGroup Criado**:
+  - Placeholder visual após o último grupo para incentivar criação de novas seções
+  - Design compacto em estilo botão horizontal (barra)
+  - Bordas tracejadas com hover effects suaves
+  - Ícone Plus centralizado com estados de hover
+  - Label customizável (padrão: "Novo Grupo")
+- **Integração na Página de Tarefas**:
+  - Renderizado após o último grupo na lista
+  - Visível apenas quando `viewOption === "group"`
+  - Funciona dentro e fora do `SortableContext`
+  - Ao clicar, abre modal de criação de grupo (`setIsCreateGroupModalOpen`)
+- **Design e UX**:
+  - Estilo minimalista e discreto (bordas tracejadas, background transparente)
+  - Hover effects: borda verde, background sutil, sombra leve
+  - Feedback tátil: `active:scale-[0.99]` para pressão
+  - Acessibilidade: `aria-label` e `focus-visible` com ring verde
+  - Transições suaves em todos os estados
+- **Benefícios**:
+  - Incentiva criação de grupos (affordance visual clara)
+  - Mantém interface limpa e não intrusiva
+  - Alinhado com padrão de "ghost slots" do design system
+  - Facilita organização e crescimento do workspace
+
 ## 2025-12-06 - Altura Dinâmica dos Grupos (Hug Contents)
 
 ### 1. Melhorias, bugs e features implementadas em preview
