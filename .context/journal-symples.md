@@ -6,6 +6,61 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Correção de Timezone e Cores Dinâmicas no TaskDatePicker
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Correção de Timezone na Data do TaskDetailModal
+- **Problema Identificado**: Data aparecia com um dia antes da data selecionada devido à conversão de timezone UTC para local
+- **Causa Raiz**: `new Date("YYYY-MM-DD")` interpreta a string como UTC midnight, causando deslocamento ao converter para timezone local
+- **Solução Implementada**:
+  - Criada função `parseLocalDate()` que constrói a data diretamente no timezone local usando componentes de ano, mês e dia
+  - Evita problemas de conversão UTC → local timezone
+  - Aplicada na linha 1817 do `TaskDetailModal.tsx` ao passar data para `TaskDatePicker`
+
+#### ✅ Cores Dinâmicas no TaskDatePicker
+- **Implementação de Lógica de Cores Baseada em Status**:
+  - **Vermelho (`text-red-600`)**: Data vencida (passada) e tarefa não completada
+  - **Verde (`text-green-600`)**: Data é hoje
+  - **Cinza (`text-gray-500`)**: Data futura ou tarefa completada (mesmo que a data seja passada)
+  
+- **Mudanças Técnicas**:
+  - Adicionada prop opcional `isCompleted?: boolean` ao `TaskDatePicker`
+  - Implementada função `getDateColor()` que calcula cor baseada em:
+    - Comparação de data com hoje (usando apenas componentes de data, ignorando hora)
+    - Status de conclusão da tarefa (`isCompleted`)
+  - Atualizado trigger padrão para usar `getDateColor()` ao invés de sempre verde
+  - `TaskDetailModal` agora passa `isCompleted={status === TASK_STATUS.DONE}` para o picker
+
+- **Compatibilidade**:
+  - Prop `isCompleted` é opcional (padrão `false`), mantendo compatibilidade com outros usos do componente
+  - Outros componentes que usam `TaskDatePicker` continuam funcionando sem alterações
+
+#### 📝 Arquivos Modificados
+- `components/tasks/TaskDetailModal.tsx`:
+  - Adicionada função `parseLocalDate()` para conversão correta de timezone
+  - Importado `TASK_STATUS` do arquivo de configuração
+  - Passada prop `isCompleted` para `TaskDatePicker`
+- `components/tasks/pickers/TaskDatePicker.tsx`:
+  - Adicionada prop `isCompleted?: boolean` à interface
+  - Implementada função `getDateColor()` para cálculo dinâmico de cores
+  - Atualizado trigger padrão para usar cores dinâmicas
+
+**Total**: ~42 inserções e ~4 deleções em 2 arquivos (commit `a2e0f30`)
+
+### 2. O que está sendo trabalhado no momento
+
+- ✅ **Correções concluídas e testadas**
+
+### 3. Próximos passos
+
+- **Melhorias futuras de UX**:
+  - Considerar aplicar mesma lógica de cores em outros componentes que exibem datas (TaskRow, TaskCard, etc.)
+  - Adicionar tooltip explicativo sobre o significado das cores
+  - Suporte para timezone do usuário em configurações
+
+---
+
 ## 2025-01-02 - Empty State Gold Standard e Welcome Modal (FTUX)
 
 ### 1. Melhorias, bugs e features implementadas em preview
