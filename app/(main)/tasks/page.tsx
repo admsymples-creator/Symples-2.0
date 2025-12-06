@@ -876,7 +876,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
         if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
         if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
-        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        if (updates.assignees) {
+            localUpdates.assignees = updates.assignees;
+            // ✅ Também atualizar assigneeId para manter consistência
+            localUpdates.assigneeId = updates.assignees[0]?.id || null;
+        }
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
 
@@ -2367,6 +2371,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 mode={selectedTaskId ? "edit" : "create"}
                 onTaskCreated={reloadTasks}
                 onTaskUpdated={handleTaskUpdated}
+                onTaskUpdatedOptimistic={handleOptimisticUpdate}
             />
 
             {/* Modal de CriaÃ§Ã£o de Grupo */}

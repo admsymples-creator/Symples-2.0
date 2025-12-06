@@ -668,7 +668,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     }, []);
 
     // ✅ Callback memoizado para optimistic updates (deve vir depois de updateLocalTask)
-    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
         // Mapear updates para o formato do estado local
         const localUpdates: Partial<Task> = {};
         if (updates.title) localUpdates.title = updates.title;
@@ -677,7 +677,12 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             localUpdates.status = updates.status;
         }
         if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
-        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
+        if (updates.assignees) {
+            localUpdates.assignees = updates.assignees;
+            // ✅ Também atualizar assigneeId se a interface Task tiver esse campo
+            // Nota: tasks-view.tsx não usa assigneeId, mas mantemos para consistência
+        }
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
 
@@ -864,6 +869,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 mode={selectedTaskId ? "edit" : "create"}
                 onTaskCreated={reloadTasks}
                 onTaskUpdated={reloadTasks}
+                onTaskUpdatedOptimistic={handleOptimisticUpdate}
       />
     </div>
   );

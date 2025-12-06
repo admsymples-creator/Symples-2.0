@@ -146,6 +146,13 @@ interface TaskDetailModalProps {
     mode?: "create" | "edit" | "view";
     onTaskCreated?: () => void;
     onTaskUpdated?: () => void;
+    onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{
+        title?: string;
+        status?: string;
+        dueDate?: string;
+        priority?: string;
+        assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    }>) => void;
     task?: {
         id: string;
         title: string;
@@ -255,6 +262,7 @@ export function TaskDetailModal({
     initialDueDate,
     onTaskCreated,
     onTaskUpdated,
+    onTaskUpdatedOptimistic,
 }: TaskDetailModalProps) {
     const isCreateMode = mode === "create";
     const isViewMode = mode === "view";
@@ -328,12 +336,27 @@ export function TaskDetailModal({
     );
     
     // Helper para invalidar cache e notificar atualização (definido antes dos handlers que o usam)
-    const invalidateCacheAndNotify = useCallback((taskId: string | null) => {
+    const invalidateCacheAndNotify = useCallback((
+        taskId: string | null,
+        optimisticUpdates?: Partial<{
+            title?: string;
+            status?: string;
+            dueDate?: string;
+            priority?: string;
+            assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        }>
+    ) => {
+        // ✅ OPTIMISTIC UI: Atualizar estado local primeiro
+        if (taskId && optimisticUpdates && onTaskUpdatedOptimistic) {
+            onTaskUpdatedOptimistic(taskId, optimisticUpdates);
+        }
+        // Invalidar cache
         if (taskId) {
             taskCache.invalidate(taskId);
         }
+        // Notificar atualização (pode fazer refetch se necessário)
         onTaskUpdated?.();
-    }, [taskCache, onTaskUpdated]);
+    }, [taskCache, onTaskUpdated, onTaskUpdatedOptimistic]);
     
     // Memoizar handlers para evitar re-renders desnecessários
     const handleAttachmentDeleteClick = useCallback((id: string) => {
@@ -999,30 +1022,71 @@ export function TaskDetailModal({
         }
     }, [currentTaskId, hasMoreComments, isLoadingComments, commentsOffset]);
 
+    // Função helper para recarregar atividades do banco
+    const reloadActivities = useCallback(async (taskId: string) => {
+        try {
+            const extendedDetails = await getTaskExtendedDetails(taskId, 20, 0);
+            if (extendedDetails) {
+                const mappedActivities: Activity[] = (extendedDetails.comments || []).map((comment) => ({
+                    id: comment.id,
+                    type: comment.type === "comment" ? "commented" : 
+                          comment.type === "file" ? "file_shared" :
+                          comment.type === "log" ? "updated" : 
+                          comment.type === "audio" ? "audio" : "commented",
+                    user: comment.user.full_name || comment.user.email || "Sem nome",
+                    message: comment.type === "audio" ? undefined : comment.content,
+                    timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
+                    attachedFiles: comment.metadata?.attachedFiles,
+                    audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
+                        url: comment.metadata.audio_url || comment.metadata.url,
+                        duration: comment.metadata.duration,
+                        transcription: comment.metadata.transcription,
+                    } : undefined,
+                }));
+                setActivities(mappedActivities);
+            }
+        } catch (error) {
+            console.error("Erro ao recarregar atividades:", error);
+        }
+    }, []);
+
     // Handlers
     const handleStatusChange = async (newStatus: string) => {
         if (status === newStatus) return;
+        const oldStatus = status; // Guardar valor antigo para rollback
         const oldLabel = STATUS_TO_LABEL[status];
         const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
         
+        // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
         setStatus(newStatus as TaskStatus);
         
         if (currentTaskId && !isCreateMode) {
-            const result = await updateTaskField(currentTaskId, "status", newStatus);
-            if (result.success) {
-                invalidateCacheAndNotify(currentTaskId);
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+            onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
+            
+            try {
+                const result = await updateTaskField(currentTaskId, "status", newStatus);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, { status: newLabel });
+                    // Recarregar atividades do banco para garantir que o log foi persistido
+                    await reloadActivities(currentTaskId);
+                    toast.success(`Status alterado para ${newLabel}`);
+                } else {
+                    // ✅ REVERTER se falhar
+                    setStatus(oldStatus);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                    toast.error(result.error || "Erro ao alterar status");
+                }
+            } catch (error) {
+                // ✅ REVERTER em caso de exceção
+                console.error("Erro ao alterar status:", error);
+                setStatus(oldStatus);
+                onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                toast.error("Erro ao alterar status");
             }
+        } else {
+            toast.success(`Status alterado para ${newLabel}`);
         }
-        
-        setActivities(prev => [{
-            id: `act-${Date.now()}`,
-            type: "updated",
-            user: "Você",
-            message: `alterou o status de ${oldLabel} para ${newLabel}`,
-            timestamp: "Agora mesmo"
-        }, ...prev]);
-        
-        toast.success(`Status alterado para ${newLabel}`);
     };
 
     const handleAddSubTask = async () => {
@@ -1039,20 +1103,28 @@ export function TaskDetailModal({
         
         if (currentTaskId && !isCreateMode) {
             try {
+                // Salvar valor antigo para o log
+                const oldSubtasks = subTasks;
                 const result = await updateTaskSubtasks(currentTaskId, updatedSubTasks);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId);
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: `adicionou a sub-tarefa: "${newItem.title}"`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    // Criar log manual para subtarefas (updateTaskSubtasks não cria log diretamente)
+                    await addComment(
+                        currentTaskId,
+                        `adicionou a sub-tarefa: "${newItem.title}"`,
+                        {
+                            field: "subtasks",
+                            action: "subtask_added",
+                            subtask_title: newItem.title
+                        },
+                        "log"
+                    );
+                    // Recarregar atividades do banco
+                    await reloadActivities(currentTaskId);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
-                    setSubTasks(subTasks);
+                    setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
@@ -1077,6 +1149,7 @@ export function TaskDetailModal({
         if (!task) return;
         
         const newCompleted = !task.completed;
+        const oldSubtasks = subTasks;
         const updated = subTasks.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
         setSubTasks(updated);
         
@@ -1085,23 +1158,29 @@ export function TaskDetailModal({
                 const result = await updateTaskSubtasks(currentTaskId, updated);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId);
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: `${newCompleted ? "concluiu" : "reabriu"} a sub-tarefa: "${task.title}"`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    // Criar log manual para subtarefas
+                    await addComment(
+                        currentTaskId,
+                        `${newCompleted ? "concluiu" : "reabriu"} a sub-tarefa: "${task.title}"`,
+                        {
+                            field: "subtasks",
+                            action: newCompleted ? "subtask_completed" : "subtask_reopened",
+                            subtask_title: task.title
+                        },
+                        "log"
+                    );
+                    // Recarregar atividades do banco
+                    await reloadActivities(currentTaskId);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
-                    setSubTasks(subTasks);
+                    setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
                 toast.error("Erro ao salvar sub-tarefa");
                 // Reverter se falhar
-                setSubTasks(subTasks);
+                setSubTasks(oldSubtasks);
             }
         } else {
             setActivities(prev => [{
@@ -1176,29 +1255,12 @@ export function TaskDetailModal({
                     return;
                 }
 
-                // Recarregar dados do backend para garantir que está salvo
+                // Recarregar atividades do banco para garantir que está salvo
+                await reloadActivities(currentTaskId);
+                
+                // Atualizar anexos também
                 const taskDetails = await getTaskDetails(currentTaskId);
                 if (taskDetails) {
-                    // Atualizar atividades com dados do backend
-                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
-                        id: comment.id,
-                        type: comment.type === "comment" ? "commented" : 
-                              comment.type === "file" ? "file_shared" :
-                              comment.type === "log" ? "updated" : 
-                              comment.type === "audio" ? "audio" : "commented",
-                        user: comment.user.full_name || comment.user.email || "Sem nome",
-                        message: comment.type === "audio" ? undefined : comment.content,
-                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                        attachedFiles: comment.metadata?.attachedFiles,
-                        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                            url: comment.metadata.audio_url || comment.metadata.url,
-                            duration: comment.metadata.duration,
-                            transcription: comment.metadata.transcription,
-                        } : undefined,
-                    }));
-                    setActivities(mappedActivities);
-
-                    // Atualizar anexos também
                     const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
                         id: att.id,
                         name: att.file_name,
@@ -1207,16 +1269,6 @@ export function TaskDetailModal({
                         url: att.file_url,
                     }));
                     setAttachments(mappedAttachments);
-                } else {
-                    // Fallback: adicionar localmente se não conseguir recarregar
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: pendingAttachments.length > 0 ? "file_shared" : "commented",
-                        user: "Você",
-                        message: commentText,
-                        attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
                 }
 
                 setComment("");
@@ -1297,23 +1349,28 @@ export function TaskDetailModal({
                         };
                         
                         setAttachments(prev => [...prev, newFile]);
-                        
-                        setActivities(prev => [{
-                            id: `act-${Date.now()}`,
-                            type: "file_shared",
-                            user: "Você",
-                            file: {
-                                name: newFile.name,
-                                type: newFile.type,
-                                size: newFile.size
-                            },
-                            timestamp: "Agora mesmo"
-                        }, ...prev]);
                     }
                 }
             } catch (error) {
                 console.error("Erro ao fazer upload:", error);
                 toast.error("Erro ao fazer upload do arquivo");
+            }
+        }
+        
+        // Recarregar atividades do banco para garantir que logs de upload foram criados
+        if (currentTaskId) {
+            await reloadActivities(currentTaskId);
+            // Recarregar anexos também
+            const taskDetails = await getTaskDetails(currentTaskId);
+            if (taskDetails) {
+                const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
+                    id: att.id,
+                    name: att.file_name,
+                    type: (att.file_type || "other") as "image" | "pdf" | "other",
+                    size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                    url: att.file_url,
+                }));
+                setAttachments(mappedAttachments);
             }
         }
         
@@ -1369,42 +1426,8 @@ export function TaskDetailModal({
                             
                             const result = await uploadAudioComment(currentTaskId, formData);
                             if (result.success && result.data) {
-                                const audioData = result.data as any;
-                                
-                                // Recarregar dados do backend para garantir que está salvo
-                                const taskDetails = await getTaskDetails(currentTaskId);
-                                if (taskDetails) {
-                                    // Atualizar atividades com dados do backend
-                                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
-                                        id: comment.id,
-                                        type: comment.type === "comment" ? "commented" : 
-                                              comment.type === "file" ? "file_shared" :
-                                              comment.type === "log" ? "updated" : 
-                                              comment.type === "audio" ? "audio" : "commented",
-                                        user: comment.user.full_name || comment.user.email || "Sem nome",
-                                        message: comment.type === "audio" ? undefined : comment.content,
-                                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                                        attachedFiles: comment.metadata?.attachedFiles,
-                                        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                            url: comment.metadata.audio_url || comment.metadata.url,
-                                            duration: comment.metadata.duration,
-                                            transcription: comment.metadata.transcription,
-                                        } : undefined,
-                                    }));
-                                    setActivities(mappedActivities);
-                                } else {
-                                    // Fallback: adicionar localmente se não conseguir recarregar
-                                    setActivities(prev => [{
-                                        id: audioData.id || `act-${Date.now()}`,
-                                        type: "audio",
-                                        user: "Você",
-                                        timestamp: new Date().toLocaleString("pt-BR"),
-                                        audio: {
-                                            url: audioData.metadata?.url || url,
-                                            duration: audioData.metadata?.duration || finalDuration
-                                        }
-                                    }, ...prev]);
-                                }
+                                // Recarregar atividades do banco para garantir que está salvo
+                                await reloadActivities(currentTaskId);
                                 
                                 toast.success(`Áudio enviado (${finalDuration}s)`);
                                 invalidateCacheAndNotify(currentTaskId);
@@ -1489,6 +1512,27 @@ export function TaskDetailModal({
         
         const oldAssignee = localAssignee;
         
+        // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
+        let newAssignee: { id: string; name: string; avatar?: string } | null = null;
+        
+        if (userId) {
+            const selectedUser = availableUsers.find(u => u.id === userId);
+            if (selectedUser) {
+                newAssignee = {
+                    id: selectedUser.id,
+                    name: selectedUser.name,
+                    avatar: selectedUser.avatar,
+                };
+            }
+        }
+        
+        // Atualizar UI imediatamente
+        setLocalAssignee(newAssignee);
+        
+        // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+        const optimisticAssignees = newAssignee ? [newAssignee] : [];
+        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: optimisticAssignees });
+        
         try {
             const result = await updateTaskField(
                 currentTaskId,
@@ -1497,62 +1541,23 @@ export function TaskDetailModal({
             );
             
             if (result.success) {
-                let newAssigneeName = "";
-                
-                if (userId) {
-                    const selectedUser = availableUsers.find(u => u.id === userId);
-                    if (selectedUser) {
-                        setLocalAssignee({
-                            id: selectedUser.id,
-                            name: selectedUser.name,
-                            avatar: selectedUser.avatar,
-                        });
-                        newAssigneeName = selectedUser.name;
-                    }
-                } else {
-                    setLocalAssignee(null);
-                }
-                
-                // Recarregar dados do backend para garantir sincronização
-                const taskDetails = await getTaskDetails(currentTaskId);
-                if (taskDetails) {
-                    if (taskDetails.assignee) {
-                        const assigneeName = taskDetails.assignee.full_name || taskDetails.assignee.email || "Sem nome";
-                        setLocalAssignee({
-                            id: taskDetails.assignee.id,
-                            name: assigneeName,
-                            avatar: taskDetails.assignee.avatar_url || undefined,
-                        });
-                        newAssigneeName = assigneeName;
-                    } else {
-                        setLocalAssignee(null);
-                    }
-                }
-                
-                // Adicionar atividade no histórico
-                const activityMessage = userId 
-                    ? (oldAssignee 
-                        ? `atribuiu a tarefa de ${oldAssignee.name} para ${newAssigneeName || "novo responsável"}`
-                        : `atribuiu a tarefa para ${newAssigneeName || "novo responsável"}`)
-                    : (oldAssignee 
-                        ? `removeu ${oldAssignee.name} como responsável`
-                        : `removeu o responsável`);
-                
-                setActivities(prev => [{
-                    id: `act-${Date.now()}`,
-                    type: "updated",
-                    user: "Você",
-                    message: activityMessage,
-                    timestamp: "Agora mesmo"
-                }, ...prev]);
-                
-                invalidateCacheAndNotify(currentTaskId);
+                invalidateCacheAndNotify(currentTaskId, { assignees: optimisticAssignees });
+                // Recarregar apenas atividades (não precisa recarregar dados básicos)
+                await reloadActivities(currentTaskId);
                 toast.success("Responsável atualizado");
             } else {
+                // ✅ REVERTER se falhar
+                setLocalAssignee(oldAssignee);
+                const oldAssignees = oldAssignee ? [{ id: oldAssignee.id, name: oldAssignee.name, avatar: oldAssignee.avatar }] : [];
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldAssignees });
                 toast.error(result.error || "Erro ao atualizar responsável");
             }
         } catch (error) {
+            // ✅ REVERTER em caso de exceção
             console.error("Erro ao atualizar responsável:", error);
+            setLocalAssignee(oldAssignee);
+            const oldAssignees = oldAssignee ? [{ id: oldAssignee.id, name: oldAssignee.name, avatar: oldAssignee.avatar }] : [];
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldAssignees });
             toast.error("Erro ao atualizar responsável");
         }
     };
@@ -1563,6 +1568,10 @@ export function TaskDetailModal({
         setDueDate(dateString);
         
         if (currentTaskId && !isCreateMode) {
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+            const optimisticDueDate = date ? date.toISOString() : undefined;
+            onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
+            
             try {
                 const result = await updateTaskField(
                     currentTaskId,
@@ -1570,33 +1579,24 @@ export function TaskDetailModal({
                     date ? date.toISOString() : null
                 );
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate });
+                    // Recarregar atividades do banco para garantir que o log foi persistido
+                    await reloadActivities(currentTaskId);
                     
-                    // Adicionar atividade no histórico
                     const dateFormatted = date ? date.toLocaleDateString("pt-BR") : "removida";
-                    const oldDateFormatted = oldDate ? new Date(oldDate).toLocaleDateString("pt-BR") : "sem data";
-                    
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: date 
-                            ? (oldDate ? `alterou a data de entrega de ${oldDateFormatted} para ${dateFormatted}` : `definiu a data de entrega para ${dateFormatted}`)
-                            : `removeu a data de entrega`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
-                    
                     toast.success(date ? `Data de entrega atualizada para ${dateFormatted}` : "Data de entrega removida");
                 } else {
                     toast.error(result.error || "Erro ao atualizar data de entrega");
-                    // Reverter se falhar
+                    // ✅ REVERTER se falhar
                     setDueDate(oldDate);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: oldDate || undefined });
                 }
             } catch (error) {
                 console.error("Erro ao atualizar data de entrega:", error);
                 toast.error("Erro ao atualizar data de entrega");
-                // Reverter se falhar
+                // ✅ REVERTER se falhar
                 setDueDate(oldDate);
+                onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: oldDate || undefined });
             }
         } else {
             // Modo create - apenas atualizar localmente
@@ -1739,9 +1739,17 @@ export function TaskDetailModal({
                                     <Input
                                         value={title}
                                         onChange={(e) => {
-                                            setTitle(e.target.value);
+                                            const newTitle = e.target.value;
+                                            setTitle(newTitle);
                                             if (currentTaskId && !isCreateMode) {
-                                                updateTaskField(currentTaskId, "title", e.target.value);
+                                                // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+                                                onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
+                                                // Salvar no backend em background
+                                                updateTaskField(currentTaskId, "title", newTitle).catch((error) => {
+                                                    console.error("Erro ao salvar título:", error);
+                                                    // Reverter em caso de erro
+                                                    onTaskUpdatedOptimistic?.(currentTaskId, { title: task?.title || "" });
+                                                });
                                             }
                                         }}
                                         className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
@@ -1827,8 +1835,23 @@ export function TaskDetailModal({
                                             <Button size="sm" onClick={async () => {
                                                 setIsEditingDescription(false);
                                                 if (currentTaskId && !isCreateMode) {
-                                                    await updateTaskField(currentTaskId, "description", description);
-                                                    invalidateCacheAndNotify(currentTaskId);
+                                                    const oldDescription = description; // Guardar para rollback
+                                                    try {
+                                                        const result = await updateTaskField(currentTaskId, "description", description);
+                                                        if (result.success) {
+                                                            invalidateCacheAndNotify(currentTaskId);
+                                                            await reloadActivities(currentTaskId);
+                                                        } else {
+                                                            // ✅ REVERTER se falhar
+                                                            setDescription(oldDescription);
+                                                            toast.error(result.error || "Erro ao salvar descrição");
+                                                        }
+                                                    } catch (error) {
+                                                        // ✅ REVERTER em caso de exceção
+                                                        console.error("Erro ao salvar descrição:", error);
+                                                        setDescription(oldDescription);
+                                                        toast.error("Erro ao salvar descrição");
+                                                    }
                                                 }
                                             }}>Concluir</Button>
                                         </div>
@@ -1893,23 +1916,38 @@ export function TaskDetailModal({
                                             <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
                                             <span className={cn("flex-1 text-sm", st.completed && "line-through text-gray-400")}>{st.title}</span>
                                             <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
+                                                const oldSubtasks = subTasks; // ✅ Guardar valor antigo para rollback
                                                 const updated = subTasks.filter(t => t.id !== st.id);
+                                                // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
                                                 setSubTasks(updated);
                                                 if (currentTaskId && !isCreateMode) {
                                                     try {
                                                         const result = await updateTaskSubtasks(currentTaskId, updated);
                                                         if (result.success) {
-                                                            onTaskUpdated?.();
+                                                            invalidateCacheAndNotify(currentTaskId);
+                                                            // Criar log manual para subtarefas
+                                                            await addComment(
+                                                                currentTaskId,
+                                                                `removeu a sub-tarefa: "${st.title}"`,
+                                                                {
+                                                                    field: "subtasks",
+                                                                    action: "subtask_removed",
+                                                                    subtask_title: st.title
+                                                                },
+                                                                "log"
+                                                            );
+                                                            // Recarregar atividades do banco
+                                                            await reloadActivities(currentTaskId);
                                                         } else {
+                                                            // ✅ REVERTER se falhar
+                                                            setSubTasks(oldSubtasks);
                                                             toast.error(result.error || "Erro ao remover sub-tarefa");
-                                                            // Reverter se falhar
-                                                            setSubTasks(subTasks);
                                                         }
                                                     } catch (error) {
+                                                        // ✅ REVERTER em caso de exceção
                                                         console.error("Erro ao remover sub-tarefa:", error);
+                                                        setSubTasks(oldSubtasks);
                                                         toast.error("Erro ao remover sub-tarefa");
-                                                        // Reverter se falhar
-                                                        setSubTasks(subTasks);
                                                     }
                                                 }
                                             }}>
