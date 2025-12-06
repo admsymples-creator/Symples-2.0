@@ -6,9 +6,32 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
-## 2025-01-XX - Correção de Timezone e Cores Dinâmicas no TaskDatePicker
+## 2025-01-XX - Otimizações de Performance e Correções no TaskDetailModal
 
 ### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Otimizações de Performance no TaskDetailModal
+- **Isolamento do Timer do Gravador de Áudio (Performance Crítica)**:
+  - Criado componente memoizado `AudioRecorderDisplay` que gerencia seu próprio estado de `recordingTime`
+  - Timer agora atualiza apenas o componente filho, eliminando re-renders do modal inteiro a cada segundo
+  - Componente recebe props: `stream`, `onCancel`, e `onStop(duration: number)`
+  - Duração final é passada via callback `onStop` para o componente pai usar no upload
+  
+- **Otimização do Carregamento de Dados (Waterfall)**:
+  - Removido `setTimeout` artificial de 50ms que causava delay desnecessário
+  - `loadExtendedData()` agora é chamado via `.then()` após `loadBasicData()` concluir
+  - Eliminado delay artificial, melhorando tempo de carregamento total
+  
+- **Memoização do Handler de Descrição**:
+  - Extraída função anônima do botão "Concluir" para `handleSaveDescription` com `useCallback`
+  - Reduz re-renders desnecessários do componente
+  
+- **Correção de UI Flickering (Flash Branco)**:
+  - Removida dependência de `task?.id` na condição `shouldShowSkeleton`
+  - Skeleton agora aparece imediatamente quando modal abre em modo edição, antes mesmo de `task` estar disponível
+  - Elimina flash branco ao abrir o modal
+
+#### ✅ Correção de Timezone na Data do TaskDetailModal
 
 #### ✅ Correção de Timezone na Data do TaskDetailModal
 - **Problema Identificado**: Data aparecia com um dia antes da data selecionada devido à conversão de timezone UTC para local
@@ -38,6 +61,12 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 #### 📝 Arquivos Modificados
 - `components/tasks/TaskDetailModal.tsx`:
+  - Criado componente `AudioRecorderDisplay` memoizado (isolamento do timer)
+  - Removido estado `recordingTime` e `useEffect` do timer do componente principal
+  - Adicionada ref `finalDurationRef` para armazenar duração final
+  - Removido `setTimeout` de 50ms, usando `.then()` para encadear carregamento
+  - Criado `handleSaveDescription` com `useCallback`
+  - Corrigida condição `shouldShowSkeleton` removendo dependência de `task?.id`
   - Adicionada função `parseLocalDate()` para conversão correta de timezone
   - Importado `TASK_STATUS` do arquivo de configuração
   - Passada prop `isCompleted` para `TaskDatePicker`
@@ -46,7 +75,7 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
   - Implementada função `getDateColor()` para cálculo dinâmico de cores
   - Atualizado trigger padrão para usar cores dinâmicas
 
-**Total**: ~42 inserções e ~4 deleções em 2 arquivos (commit `a2e0f30`)
+**Total**: ~150+ inserções e ~30 deleções em 2 arquivos (commits `a2e0f30` + otimizações)
 
 ### 2. O que está sendo trabalhado no momento
 

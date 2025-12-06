@@ -54,6 +54,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 - Adicionado `useMemo` para conversão de cores de grupo em TaskGroup
 - Adicionada prop `isCompleted` ao `TaskDatePicker` para calcular cores dinâmicas baseadas no status da tarefa
 - Implementada função `getDateColor()` no `TaskDatePicker` para determinar cor baseada em data e status de conclusão
+- **Otimizações de Performance no TaskDetailModal**:
+  - Isolado timer do gravador de áudio em componente memoizado `AudioRecorderDisplay` para evitar re-renders do modal inteiro
+  - Removido `setTimeout` artificial de 50ms no carregamento de dados, usando `.then()` para encadear `loadBasicData()` e `loadExtendedData()`
+  - Memoizado handler de descrição (`handleSaveDescription`) com `useCallback` para reduzir re-renders
+  - Corrigido flickering visual removendo dependência de `task?.id` na condição `shouldShowSkeleton`
 
 
 

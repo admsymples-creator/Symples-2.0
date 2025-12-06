@@ -251,6 +251,73 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
     return <canvas ref={canvasRef} width={240} height={32} className="w-full h-full max-w-[240px]" />;
 };
 
+// ------------------------------------------------------------------
+// Audio Recorder Display Component (Isolated Timer for Performance)
+// ------------------------------------------------------------------
+
+interface AudioRecorderDisplayProps {
+    stream: MediaStream | null;
+    onCancel: () => void;
+    onStop: (duration: number) => void;
+}
+
+const AudioRecorderDisplay = memo(({ stream, onCancel, onStop }: AudioRecorderDisplayProps) => {
+    const [recordingTime, setRecordingTime] = useState(0);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        interval = setInterval(() => {
+            setRecordingTime(t => t + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const handleStop = () => {
+        onStop(recordingTime);
+    };
+
+    return (
+        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
+                <div className="flex-1 flex items-center justify-center gap-4">
+                    <div className="flex-1 h-8 flex items-center justify-center">
+                        {stream && <RecordingVisualizer stream={stream} />}
+                    </div>
+                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
+                        {formatTime(recordingTime)}
+                    </span>
+                </div>
+            </div>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="text-red-500"
+                onClick={onCancel}
+                title="Cancelar gravação"
+            >
+                <Trash2 className="w-4 h-4" />
+            </Button>
+            <Button
+                size="icon"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={handleStop}
+                title="Finalizar gravação"
+            >
+                <Check className="w-4 h-4" />
+            </Button>
+        </div>
+    );
+});
+
+AudioRecorderDisplay.displayName = "AudioRecorderDisplay";
+
 // Feature flag
 const ENABLE_AUDIO_TO_TASK = false;
 
@@ -282,13 +349,13 @@ export function TaskDetailModal({
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingTimeRef = useRef<number>(0);
+    const finalDurationRef = useRef<number>(0); // Armazena duração final passada pelo AudioRecorderDisplay
     const mimeTypeRef = useRef<string>("audio/webm");
     const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
     const [selectedAudioForTask, setSelectedAudioForTask] = useState<{ url: string; duration: number } | null>(null);
@@ -613,7 +680,8 @@ export function TaskDetailModal({
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
     // Dados básicos prontos = isDataReady === true
-    const shouldShowSkeleton = open && !isCreateMode && task?.id && !isDataReady;
+    // Removida dependência de task?.id para evitar flash branco quando task ainda não está disponível
+    const shouldShowSkeleton = open && !isCreateMode && !isDataReady;
     
     // Determinar quais seções ainda estão carregando
     const showAttachmentsSkeleton = isLoadingAttachments;
@@ -920,16 +988,12 @@ export function TaskDetailModal({
                 }
             };
             
-            // Carregar dados básicos primeiro
-            loadBasicData();
-            
-            // Carregar dados estendidos em paralelo (mas depois dos básicos)
-            // Pequeno delay para garantir que dados básicos sejam processados primeiro
-            setTimeout(() => {
+            // Carregar dados básicos primeiro, depois estendidos
+            loadBasicData().then(() => {
                 if (active) {
                     loadExtendedData();
                 }
-            }, 50);
+            });
         } else if (open && isCreateMode) {
             setTitle("");
             setDescription("");
@@ -966,20 +1030,7 @@ export function TaskDetailModal({
         };
     }, [open, isCreateMode, task?.id ?? null, initialDueDate]);
 
-    // Audio recording timer
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (isRecording) {
-            interval = setInterval(() => {
-                setRecordingTime(t => {
-                    const newTime = t + 1;
-                    recordingTimeRef.current = newTime;
-                    return newTime;
-                });
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isRecording]);
+    // Audio recording timer removed - now handled by AudioRecorderDisplay component
 
     // Função para carregar mais comentários
     const loadMoreComments = useCallback(async () => {
@@ -1416,7 +1467,7 @@ export function TaskDetailModal({
                 if (audioChunksRef.current.length > 0) {
                     const blob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
                     const url = URL.createObjectURL(blob);
-                    const finalDuration = recordingTimeRef.current || 1;
+                    const finalDuration = finalDurationRef.current || recordingTimeRef.current || 1;
                     
                     if (currentTaskId && !isCreateMode) {
                         try {
@@ -1454,8 +1505,8 @@ export function TaskDetailModal({
                 stream.getTracks().forEach(track => track.stop());
                 setMediaStream(null);
                 setMediaRecorder(null);
-                setRecordingTime(0);
                 recordingTimeRef.current = 0;
+                finalDurationRef.current = 0;
                 audioChunksRef.current = [];
             };
             
@@ -1469,16 +1520,17 @@ export function TaskDetailModal({
             setMediaRecorder(recorder);
             setMediaStream(stream);
             setIsRecording(true);
-            setRecordingTime(0);
+            finalDurationRef.current = 0;
         } catch (error) {
             console.error("Erro ao acessar microfone:", error);
             toast.error("Permissão de microfone necessária para gravar.");
         }
     };
 
-    const handleStopRecording = () => {
+    const handleStopRecording = (duration: number) => {
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
-            recordingTimeRef.current = recordingTime;
+            finalDurationRef.current = duration;
+            recordingTimeRef.current = duration;
             mediaRecorder.stop();
         }
         setIsRecording(false);
@@ -1497,15 +1549,36 @@ export function TaskDetailModal({
         
         setMediaRecorder(null);
         setIsRecording(false);
-        setRecordingTime(0);
+        finalDurationRef.current = 0;
+        recordingTimeRef.current = 0;
         audioChunksRef.current = [];
     };
 
-    const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
+    // formatTime removido - agora está no AudioRecorderDisplay
+
+    // Handler memoizado para salvar descrição
+    const handleSaveDescription = useCallback(async () => {
+        setIsEditingDescription(false);
+        if (currentTaskId && !isCreateMode) {
+            const oldDescription = description; // Guardar para rollback
+            try {
+                const result = await updateTaskField(currentTaskId, "description", description);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    await reloadActivities(currentTaskId);
+                } else {
+                    // ✅ REVERTER se falhar
+                    setDescription(oldDescription);
+                    toast.error(result.error || "Erro ao salvar descrição");
+                }
+            } catch (error) {
+                // ✅ REVERTER em caso de exceção
+                console.error("Erro ao salvar descrição:", error);
+                setDescription(oldDescription);
+                toast.error("Erro ao salvar descrição");
+            }
+        }
+    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
 
     const handleAssigneeChange = async (userId: string | null) => {
         if (!currentTaskId || isCreateMode) return;
@@ -1840,28 +1913,7 @@ export function TaskDetailModal({
                                             placeholder="Adicione uma descrição..."
                                         />
                                         <div className="flex justify-end mt-2 p-2">
-                                            <Button size="sm" onClick={async () => {
-                                                setIsEditingDescription(false);
-                                                if (currentTaskId && !isCreateMode) {
-                                                    const oldDescription = description; // Guardar para rollback
-                                                    try {
-                                                        const result = await updateTaskField(currentTaskId, "description", description);
-                                                        if (result.success) {
-                                                            invalidateCacheAndNotify(currentTaskId);
-                                                            await reloadActivities(currentTaskId);
-                                                        } else {
-                                                            // ✅ REVERTER se falhar
-                                                            setDescription(oldDescription);
-                                                            toast.error(result.error || "Erro ao salvar descrição");
-                                                        }
-                                                    } catch (error) {
-                                                        // ✅ REVERTER em caso de exceção
-                                                        console.error("Erro ao salvar descrição:", error);
-                                                        setDescription(oldDescription);
-                                                        toast.error("Erro ao salvar descrição");
-                                                    }
-                                                }
-                                            }}>Concluir</Button>
+                                            <Button size="sm" onClick={handleSaveDescription}>Concluir</Button>
                                         </div>
                                     </div>
                                 ) : (
@@ -2091,36 +2143,11 @@ export function TaskDetailModal({
                                     )}
                                     
                                     {isRecording ? (
-                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
-                                                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
-                                                <div className="flex-1 flex items-center justify-center gap-4">
-                                                    <div className="flex-1 h-8 flex items-center justify-center">
-                                                        {mediaStream && <RecordingVisualizer stream={mediaStream} />}
-                                                    </div>
-                                                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
-                                                        {formatTime(recordingTime)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-red-500"
-                                                onClick={handleCancelRecording}
-                                                title="Cancelar gravação"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                size="icon"
-                                                className="bg-green-600 hover:bg-green-700"
-                                                onClick={handleStopRecording}
-                                                title="Finalizar gravação"
-                                            >
-                                                <Check className="w-4 h-4" />
-                                            </Button>
-                                        </div>
+                                        <AudioRecorderDisplay
+                                            stream={mediaStream}
+                                            onCancel={handleCancelRecording}
+                                            onStop={handleStopRecording}
+                                        />
                                     ) : (
                                         <div className="relative">
                                             <input {...getCommentInputProps()} />
