@@ -2,6 +2,7 @@
 
 import React, { useMemo, memo, useState, useCallback } from "react";
 import { TaskRowMinify } from "./TaskRowMinify";
+import { TaskRowSkeleton } from "./TaskRowSkeleton";
 import { TaskSectionHeader } from "./TaskSectionHeader";
 import { GroupActionMenu } from "./GroupActionMenu";
 import { QuickTaskAdd } from "./QuickTaskAdd";
@@ -22,6 +23,7 @@ type MinimalTask = {
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
     commentCount?: number;
     commentsCount?: number;
+    isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
 };
 
 interface TaskGroupProps {
@@ -144,7 +146,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     containerId={id}
                                     groupColor={groupColor}
                                     onClick={onTaskClick}
-                                    disabled={isDragDisabled}
+                                    disabled={isDragDisabled || task.isPending} // ✅ Desabilitar drag enquanto pending
                                     onTaskUpdated={onTaskUpdated}
                                     onTaskDeleted={onTaskDeleted}
                                     onTaskUpdatedOptimistic={onTaskUpdatedOptimistic}
@@ -153,6 +155,11 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     members={members}
                                 />
                             ))}
+                            
+                            {/* ✅ Skeleton adicional durante criação batch (mostrar apenas se não houver tarefas pending visíveis) */}
+                            {isAdding && tasks.filter(t => t.isPending).length === 0 && (
+                                <TaskRowSkeleton groupColor={groupColor} />
+                            )}
                             
                             {/* Quick Add no final da lista quando há tarefas */}
                             {onAddTask && tasks.length > 0 && (

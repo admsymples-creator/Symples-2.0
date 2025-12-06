@@ -3,7 +3,7 @@
 import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -48,6 +48,7 @@ interface TaskRowMinifyProps {
     workspace_id?: string | null;
     commentCount?: number;
     commentsCount?: number;
+    isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
   };
   containerId?: string;
   isOverlay?: boolean;
@@ -419,7 +420,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
         "grid-cols-[40px_24px_1fr_90px_32px_130px_40px] gap-1",
         // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Data | Responsável | Status | Menu
         (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
-        disabled && "opacity-75"
+        disabled && "opacity-75",
+        task.isPending && "opacity-60" // ✅ Reduzir opacidade para tarefas pending
       )}
       onClick={(e) => {
         // Só abrir modal se não for clique no título ou em elementos interativos
@@ -477,15 +479,20 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
 
       {/* Título com indicadores no hover */}
       <div className="flex items-center min-w-0 pr-2 gap-2">
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          {task.isPending && (
+            <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
+          )}
           <InlineTextEdit
             value={task.title}
             onSave={handleTitleUpdate}
             className={cn(
               "text-sm font-medium text-gray-700",
-              isCompleted && "line-through text-gray-500"
+              isCompleted && "line-through text-gray-500",
+              task.isPending && "opacity-75" // ✅ Reduzir opacidade do texto quando pending
             )}
             inputClassName="text-sm font-medium text-gray-700"
+            disabled={task.isPending} // ✅ Desabilitar edição enquanto está pending
           />
         </div>
         

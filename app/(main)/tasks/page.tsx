@@ -93,6 +93,7 @@ interface Task {
     hasComments?: boolean;
     commentCount?: number;
     position?: number; // Posição para ordenação (drag & drop)
+    isPending?: boolean; // ✅ Marca tarefas otimistas que ainda estão sendo criadas
 }
 
 interface TasksPageProps {
@@ -511,6 +512,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         dueDate?: string;
         groupId?: string | null;
         workspaceId?: string | null;
+        isPending?: boolean; // ✅ Marca se está sendo criada (para mostrar skeleton)
     }) => {
         const newTask: Task = {
             id: taskData.id,
@@ -532,6 +534,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             hasComments: false,
             commentCount: 0,
             position: undefined,
+            isPending: taskData.isPending ?? true, // ✅ Por padrão, tarefas otimistas estão pending
         };
 
         setLocalTasks((prev) => {
@@ -638,7 +641,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
 
             if (result.success && 'data' in result && result.data) {
-                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend
+                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend e remover pending
                 const createdTask = result.data;
                 setLocalTasks((prev) => {
                     return prev.map((task) => {
@@ -649,6 +652,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 status: createdTask.status ? mapStatusToLabel(createdTask.status as string) || task.status : task.status,
                                 priority: (createdTask.priority as "low" | "medium" | "high" | "urgent") || task.priority,
                                 dueDate: createdTask.due_date || task.dueDate,
+                                isPending: false, // ✅ Marcar como não pending após sucesso
                             } as Task;
                         }
                         return task;

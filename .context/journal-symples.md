@@ -6,6 +6,65 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - UI Feedback e Optimistic UI para Criação de Tarefas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✨ Feedback Visual Durante Criação de Tarefas (Optimistic UI)
+- **Componente TaskRowSkeleton**:
+  - Novo componente de skeleton para feedback visual durante criação
+  - Mantém consistência com design system (grid layout, cores, animação pulse)
+  - Suporta cor do grupo (barra lateral colorida)
+  - Animação suave e discreta
+
+- **Estado isPending nas Tarefas**:
+  - Campo `isPending` adicionado à interface `Task`
+  - Tarefas otimistas marcadas como `isPending: true` durante criação
+  - Estado removido após confirmação do backend
+  - Suporte completo em todos os componentes de tarefas
+
+- **Feedback Visual no TaskRowMinify**:
+  - Spinner (`Loader2`) ao lado do título quando tarefa está `isPending`
+  - Opacidade reduzida (60%) para toda a linha durante criação
+  - Texto com opacidade reduzida (75%)
+  - Edição inline desabilitada durante pending
+  - Drag & drop desabilitado enquanto tarefa está sendo criada
+  - Feedback visual claro sem ser intrusivo
+
+- **Optimistic UI Pattern Implementado**:
+  - Tarefas aparecem **imediatamente** ao criar (antes da confirmação do Supabase)
+  - Estado de loading visível durante processo de criação
+  - Rollback automático em caso de erro (remove tarefa otimista)
+  - Substituição de ID temporário pelo ID real após sucesso
+  - Snapshot do estado anterior para rollback seguro
+
+- **Suporte a Criação em Lote (Batch)**:
+  - Múltiplas tarefas aparecem instantaneamente ao criar batch
+  - Cada tarefa mostra seu próprio estado de loading
+  - Feedback individual por tarefa
+  - Skeleton adicional mostrado quando necessário durante batch creation
+
+- **Integração com QuickTaskAdd**:
+  - Estado `isCreatingBatch` já existente mantido
+  - Integração perfeita com Optimistic UI
+  - Input limpo imediatamente após submissão
+  - Foco mantido no input após criação
+
+#### 🎯 Benefícios da Implementação
+- **Perceived Performance**: Usuário vê tarefas aparecerem instantaneamente
+- **Redução de Ansiedade**: Feedback visual claro durante processo assíncrono
+- **Consistência**: Usa padrão Optimistic UI já documentado no Journal
+- **Design Clean**: Feedback visual discreto e elegante, mantendo estética SaaS
+- **UX Melhorada**: Interface não "congela" durante criação, mantém responsividade
+
+#### 📝 Arquivos Criados/Modificados
+- `components/tasks/TaskRowSkeleton.tsx` (novo componente)
+- `app/(main)/tasks/page.tsx` (estado isPending, handleTaskCreatedOptimistic)
+- `components/tasks/TaskGroup.tsx` (suporte a skeleton e pending state)
+- `components/tasks/TaskRowMinify.tsx` (feedback visual para pending state)
+
+---
+
 ## 2025-12-06 - Correções de Performance e UX na Tela de Tarefas
 
 ### 1. Melhorias, bugs e features implementadas em preview
