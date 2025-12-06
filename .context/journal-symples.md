@@ -6,6 +6,60 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-06 - Correção de Layout e Limite de Título em TaskRowMinify
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção de Título Quebrando Layout
+- **Problema**: Título da tarefa estava quebrando e passando por cima de outros elementos
+- **Causa Identificada**:
+  - Falta de `overflow-hidden` nos containers hierárquicos
+  - `truncate` CSS não funcionava por falta de `min-w-0` e `block` no span
+  - Estrutura de layout flex não respeitava limites do grid
+- **Solução Implementada**:
+  - Adicionado `overflow-hidden` em todos os níveis do container do título
+  - Estrutura hierárquica corrigida com `min-w-0` em cada nível
+  - Adicionado `block min-w-0` no span do InlineTextEdit para truncate funcionar
+  - Wrapper extra com `overflow-hidden` para garantir isolamento do título
+- **Resultado**: Título agora é truncado corretamente com ellipsis, respeitando layout do grid
+
+#### ✨ Limite de Caracteres e Boas Práticas de UX
+- **Limite de Caracteres no Título**:
+  - Limite de **100 caracteres** no input durante edição
+  - Validação em `handleSave` para garantir limite
+  - Limite HTML nativo aplicado no input (`maxLength`)
+  - Limitação durante digitação para feedback imediato
+- **Tooltip Inteligente**:
+  - Tooltip nativo (`title` attribute) mostra texto completo
+  - Aparece apenas quando título tem mais de 70 caracteres (truncado)
+  - Não mostra tooltip desnecessário em títulos curtos
+- **Melhorias no InlineTextEdit**:
+  - Prop `maxLength` adicionado à interface
+  - Truncamento CSS funcionando corretamente com `block min-w-0`
+  - Container com `overflow-hidden` para garantir isolamento
+  - Layout responsivo mantido
+
+#### 📐 Estrutura de Overflow Corrigida
+```
+Container Grid (min-w-0)
+  └─ Título Container (min-w-0 overflow-hidden)
+      └─ Flex Container (flex-1 min-w-0 overflow-hidden)
+          └─ InlineTextEdit Wrapper (flex-1 min-w-0 overflow-hidden)
+              └─ InlineTextEdit (block min-w-0 truncate)
+```
+- Cada nível da hierarquia tem controle de overflow
+- `min-w-0` permite que flex items encolham abaixo de seu conteúdo mínimo
+- `overflow-hidden` previne quebra de layout
+
+#### 🎯 Padrões de UX Aplicados
+- **Truncamento Visual**: CSS `truncate` com ellipsis funcionando corretamente
+- **Limite de Caracteres**: 100 caracteres (padrão UX para títulos)
+- **Tooltip Acessível**: Mostra título completo quando necessário
+- **Layout Responsivo**: Não quebra o grid CSS, mantém estrutura
+- **Feedback Durante Edição**: Limite aplicado em tempo real
+
+---
+
 ## 2025-12-06 - UI Feedback e Optimistic UI para Criação de Tarefas
 
 ### 1. Melhorias, bugs e features implementadas em preview
@@ -57,7 +111,11 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 - **Design Clean**: Feedback visual discreto e elegante, mantendo estética SaaS
 - **UX Melhorada**: Interface não "congela" durante criação, mantém responsividade
 
-#### 📝 Arquivos Criados/Modificados
+#### 📝 Arquivos Criados/Modificados (Limite de Título)
+- `components/tasks/TaskRowMinify.tsx` (correção de layout e overflow)
+- `components/ui/inline-text-edit.tsx` (suporte a maxLength e truncamento)
+
+#### 📝 Arquivos Criados/Modificados (Optimistic UI)
 - `components/tasks/TaskRowSkeleton.tsx` (novo componente)
 - `app/(main)/tasks/page.tsx` (estado isPending, handleTaskCreatedOptimistic)
 - `components/tasks/TaskGroup.tsx` (suporte a skeleton e pending state)

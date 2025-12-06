@@ -478,22 +478,25 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       </div>
 
       {/* Título com indicadores no hover */}
-      <div className="flex items-center min-w-0 pr-2 gap-2">
-        <div className="flex-1 min-w-0 flex items-center gap-2">
+      <div className="flex items-center min-w-0 gap-2 pr-2 overflow-hidden">
+        <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
           {task.isPending && (
             <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
           )}
-          <InlineTextEdit
-            value={task.title}
-            onSave={handleTitleUpdate}
-            className={cn(
-              "text-sm font-medium text-gray-700",
-              isCompleted && "line-through text-gray-500",
-              task.isPending && "opacity-75" // ✅ Reduzir opacidade do texto quando pending
-            )}
-            inputClassName="text-sm font-medium text-gray-700"
-            disabled={task.isPending} // ✅ Desabilitar edição enquanto está pending
-          />
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <InlineTextEdit
+              value={task.title}
+              onSave={handleTitleUpdate}
+              className={cn(
+                "text-sm font-medium text-gray-700",
+                isCompleted && "line-through text-gray-500",
+                task.isPending && "opacity-75" // ✅ Reduzir opacidade do texto quando pending
+              )}
+              inputClassName="text-sm font-medium text-gray-700"
+              disabled={task.isPending} // ✅ Desabilitar edição enquanto está pending
+              maxLength={100} // ✅ Limite de caracteres (padrão UX)
+            />
+          </div>
         </div>
         
         {/* Indicadores que aparecem no hover */}
