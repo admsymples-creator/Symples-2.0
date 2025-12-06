@@ -581,3 +581,25 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+// ============================================
+// TIPOS DE NOTIFICAÇÕES
+// ============================================
+
+export type NotificationCategory = 'operational' | 'admin' | 'system';
+
+export type NotificationMetadata = {
+  // Visual Overrides
+  icon?: string; // Nome do ícone Lucide (ex: 'Mic', 'ShieldAlert')
+  color?: string; // Classe Tailwind de texto (ex: 'text-green-600')
+  bg?: string; // Classe Tailwind de fundo (ex: 'bg-green-50')
+  
+  // Contexto Específico
+  actor_name?: string; // Nome de quem fez a ação
+  actor_avatar?: string; // Avatar de quem fez a ação
+  file_type?: 'image' | 'pdf' | 'audio' | 'document' | 'other'; // Para anexos
+  file_count?: number; // Para agrupamento (ex: "5 arquivos")
+  role_changed_to?: string; // Para alertas de admin
+  task_title?: string; // Título da tarefa relacionada
+  workspace_name?: string; // Nome do workspace relacionado
+};
