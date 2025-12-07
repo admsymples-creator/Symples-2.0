@@ -277,6 +277,24 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - **Interação:** O chat não retorna apenas texto. Retorna JSON que o Frontend renderiza como **UI Components** (Cards de Tarefa, Gráficos).
 - **Empty State:** Exibir "Suggestion Chips" (atalhos rápidos) quando não houver histórico.
 
+**✅ Implementado (v2.3):**
+- **Persistência de Mensagens:** Sistema de armazenamento local por workspace
+  - Mensagens salvas no `localStorage` com chave específica por workspace (`assistant-{workspaceId}-messages`)
+  - Restauração automática de histórico ao abrir o assistente
+  - Isolamento completo de conversas entre diferentes workspaces
+- **Smart Daily Reset:** Reset inteligente de contexto diário
+  - Re-exibe zero state automaticamente após 04:00 AM
+  - Permite começar o dia com interface limpa mesmo com histórico salvo
+  - Reset baseado em data, não em tempo de sessão
+- **Limpeza de Contexto:** Botão de limpar contexto no header do assistente
+  - Insere divisor de contexto (`contextDivider`) que marca onde a IA deve ignorar mensagens anteriores
+  - Permite resetar contexto sem perder histórico visual
+  - Feedback visual com toast de confirmação
+- **HelpDialog:** Componente de diálogo de ajuda integrado
+  - Acesso rápido ao playbook/documentação
+  - Link direto para suporte via WhatsApp
+  - Interface moderna com ícones e descrições claras
+
 ## 10. FUNCIONALIDADES IMPLEMENTADAS (v2.1)
 
 ### 10.1. Módulos Core Implementados
@@ -301,7 +319,16 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
   - ✅ Políticas RLS para leitura pública de convites e aceite
   - ✅ UI completa em `/settings` com lista de membros e convites pendentes
   - ✅ Ações: convidar, cancelar, reenviar, remover membro, alterar role
-- ✅ **Assistente IA:** Página `/assistant` com componente AIOrb e interface de chat
+- ✅ **Assistente IA (Global Sheet):** Chat acessível via FAB em todas as telas autenticadas
+  - ✅ Transcrição de áudio com OpenAI Whisper
+  - ✅ Limite de 2 minutos para gravação com envio automático
+  - ✅ Generative UI com KanbanConfirmationCard para criação de tarefas
+  - ✅ ThinkingIndicator com orb animado e frases rotativas
+  - ✅ Detecção automática de intenção de criar tarefa
+  - ✅ Persistência de mensagens por workspace no localStorage
+  - ✅ Smart Daily Reset (re-exibe zero state após 04:00 AM)
+  - ✅ Limpeza de contexto com divisor visual
+  - ✅ HelpDialog para acesso rápido a documentação e suporte
 - ✅ **Configurações:** Página completa com abas para Geral, Membros e Faturamento
 - ✅ **Logs de Auditoria:** Tabela `audit_logs` para rastreamento de ações
 
@@ -322,6 +349,8 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **TaskGroup:** Agrupamento de tarefas por status, prioridade ou assignee
 - ✅ **AttachmentCard:** Card para exibição de anexos com preview
 - ✅ **AudioMessageBubble:** Componente para playback de mensagens de áudio
+- ✅ **HelpDialog:** Diálogo de ajuda com acesso rápido a documentação e suporte via WhatsApp
+- ✅ **ThinkingIndicator:** Indicador visual de processamento com orb animado e frases rotativas
 
 ### 10.3. APIs e Integrações de IA Implementadas
 - ✅ **API de Transcrição de Áudio:** `/api/audio/transcribe` - Converte áudio em texto usando OpenAI Whisper

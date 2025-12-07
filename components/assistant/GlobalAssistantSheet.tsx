@@ -9,7 +9,8 @@ import {
   Send,
   Mic,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  RotateCcw
 } from "lucide-react";
 import { 
   Sheet, 
@@ -34,15 +35,16 @@ import { cn } from "@/lib/utils";
 // Tipagem preparada para Generative UI
 interface Message {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
-  type?: "text" | "component" | "image" | "audio";
+  type?: "text" | "component" | "image" | "audio" | "divider";
   timestamp: Date;
   imageUrl?: string; // URL da imagem se type for "image"
   audioUrl?: string; // URL do áudio se type for "audio"
   audioDuration?: number; // Duração do áudio em segundos
   audioTranscription?: string; // Transcrição do áudio
   isThinking?: boolean; // Estado de "IA pensando" (apenas para assistente)
+  isContextDivider?: boolean; // Flag para indicar divisor de contexto (IA ignora mensagens anteriores)
   componentData?: {
     type: "task_confirmation";
     data: {
@@ -284,9 +286,31 @@ const mockMessages: Message[] = [
   },
 ];
 
+// Função para obter chave de storage por workspace
+function getStorageKey(workspaceId: string | null, key: string): string {
+  return workspaceId ? `assistant-${workspaceId}-${key}` : `assistant-global-${key}`;
+}
+
+// Função para verificar se é um novo dia (após 04:00 AM)
+function isNewDay(lastDateStr: string | null): boolean {
+  if (!lastDateStr) return true;
+  
+  const now = new Date();
+  const lastDate = new Date(lastDateStr);
+  
+  // Reset às 04:00 AM
+  const resetHour = 4;
+  
+  // Se já passou das 04:00 AM de hoje e a última data foi antes de hoje
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), resetHour, 0, 0);
+  const lastReset = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate(), resetHour, 0, 0);
+  
+  return now >= today && lastReset < today;
+}
+
 export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   const [open, setOpen] = React.useState(false);
-  const [messages, setMessages] = React.useState<Message[]>(mockMessages); // Inicializar com dados mock
+  const [messages, setMessages] = React.useState<Message[]>([]);
   const [inputValue, setInputValue] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -305,11 +329,69 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   const [workspaceMembers, setWorkspaceMembers] = React.useState<Array<{ id: string; name: string; avatar?: string }>>([]);
   const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
   
+  // Estados para Smart Daily Reset e Context Divider
+  const [showZeroState, setShowZeroState] = React.useState(true);
+  const [contextDividerIndex, setContextDividerIndex] = React.useState<number | null>(null);
+  
   // Saudação dinâmica
   const { greeting, name } = React.useMemo(() => getGreeting(user?.name), [user?.name]);
   
   // Ref para auto-scroll
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Carregar mensagens do localStorage por workspace
+  React.useEffect(() => {
+    if (!activeWorkspaceId) return;
+    
+    const storageKey = getStorageKey(activeWorkspaceId, "messages");
+    const savedMessages = localStorage.getItem(storageKey);
+    
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages);
+        // Converter timestamps de string para Date
+        const messagesWithDates = parsed.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp),
+        }));
+        setMessages(messagesWithDates);
+        setShowZeroState(messagesWithDates.length === 0);
+      } catch (error) {
+        console.error("Erro ao carregar mensagens:", error);
+      }
+    } else {
+      // Se não há mensagens salvas, usar mock apenas para visualização inicial
+      setMessages(mockMessages);
+      setShowZeroState(false);
+    }
+  }, [activeWorkspaceId]);
+
+  // Salvar mensagens no localStorage sempre que mudarem
+  React.useEffect(() => {
+    if (!activeWorkspaceId || messages.length === 0) return;
+    
+    const storageKey = getStorageKey(activeWorkspaceId, "messages");
+    // Converter timestamps para string para serialização
+    const serializable = messages.map((msg) => ({
+      ...msg,
+      timestamp: msg.timestamp.toISOString(),
+    }));
+    localStorage.setItem(storageKey, JSON.stringify(serializable));
+  }, [messages, activeWorkspaceId]);
+
+  // Smart Daily Reset: Verificar se é um novo dia e re-exibir zero state
+  React.useEffect(() => {
+    if (!activeWorkspaceId) return;
+    
+    const storageKey = getStorageKey(activeWorkspaceId, "lastResetDate");
+    const lastResetDate = localStorage.getItem(storageKey);
+    
+    if (isNewDay(lastResetDate)) {
+      // É um novo dia - re-exibir zero state mesmo com mensagens
+      setShowZeroState(true);
+      localStorage.setItem(storageKey, new Date().toISOString());
+    }
+  }, [activeWorkspaceId]);
 
   // Carregar membros do workspace quando necessário
   React.useEffect(() => {
@@ -357,8 +439,36 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     };
   }, [mediaRecorder, isRecording]);
 
+  // Handler para limpar contexto (Botão Vassoura)
+  const handleClearContext = () => {
+    const dividerMessage: Message = {
+      id: `divider-${Date.now()}`,
+      role: "system",
+      content: "--- Contexto limpo ---",
+      type: "divider",
+      isContextDivider: true,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => {
+      const newMessages = [...prev, dividerMessage];
+      setContextDividerIndex(newMessages.length - 1);
+      return newMessages;
+    });
+    
+    // Esconder zero state após limpar contexto
+    setShowZeroState(false);
+    
+    toast.success("Contexto limpo. A IA ignorará as mensagens anteriores.");
+  };
+
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
+
+    // Esconder zero state ao enviar primeira mensagem
+    if (showZeroState) {
+      setShowZeroState(false);
+    }
 
     // 1. Adiciona mensagem do usuário (Optimistic UI)
     const userMessage: Message = {
@@ -819,10 +929,25 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       >
         {/* Header com SheetTitle para acessibilidade */}
         <SheetHeader className="px-6 py-4 border-b bg-white/80 backdrop-blur-md z-10 flex-shrink-0">
-          <div className="flex items-center justify-center">
-            <SheetTitle className="font-semibold text-slate-800 m-0 text-center">
+          <div className="flex items-center justify-between">
+            <div className="flex-1" /> {/* Spacer esquerdo */}
+            <SheetTitle className="font-semibold text-slate-800 m-0 text-center flex-1">
               Assistente Symples
             </SheetTitle>
+            <div className="flex-1 flex justify-end">
+              {/* Botão Vassoura (Limpar Contexto) */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleClearContext}
+                className="h-8 w-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                title="Limpar contexto (IA ignorará mensagens anteriores)"
+                disabled={messages.length === 0}
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </SheetHeader>
 
@@ -834,8 +959,8 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           )}>
                 
 
-                {/* ZERO STATE (Só mostra se não houver mensagens) */}
-                {messages.length === 0 && (
+                {/* ZERO STATE (Mostra se não houver mensagens OU se for novo dia) */}
+                {(messages.length === 0 || showZeroState) && (
                   <div className="flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="mb-6 scale-[0.625]">
                     <AIOrb isLoading={false} />
@@ -887,7 +1012,23 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                 )}
 
                 {/* MESSAGE LIST */}
-                {messages.map((message) => {
+                {messages.map((message, index) => {
+                  // Renderizar divisor de contexto
+                  if (message.type === "divider" && message.isContextDivider) {
+                    return (
+                      <div
+                        key={message.id}
+                        className="flex items-center gap-4 w-full my-4"
+                      >
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+                        <span className="text-xs font-medium text-slate-500 px-3 py-1 bg-slate-50 rounded-full border border-slate-200">
+                          {message.content}
+                        </span>
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+                      </div>
+                    );
+                  }
+
                   // Renderizar componente generativo
                   if (message.type === "component" && message.componentData?.type === "task_confirmation") {
                     return (
@@ -911,7 +1052,11 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                     );
                   }
 
-                  // Renderizar mensagem normal
+                  // Renderizar mensagem normal (pular se for system e não for divider)
+                  if (message.role === "system" && message.type !== "divider") {
+                    return null;
+                  }
+
                   return (
                     <div
                       key={message.id}

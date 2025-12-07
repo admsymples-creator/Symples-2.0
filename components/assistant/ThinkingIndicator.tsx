@@ -24,16 +24,16 @@ export function ThinkingIndicator() {
 
   return (
     <div className="flex items-center gap-3 p-3">
-      {/* 1. O ORB (Versão Turbo) - Maior para caber o ícone */}
-      <div className="relative flex h-10 w-10 items-center justify-center">
+      {/* 1. O ORB (Versão Turbo) - Reduzido em 20% */}
+      <div className="relative flex h-8 w-8 items-center justify-center">
         
         {/* Fundo Escuro (Core) */}
         <div className="absolute inset-0 rounded-full bg-slate-950" />
 
         {/* Anel de Carga (Grosso e Rápido) */}
-        {/* 'inset-[-3px]' define a grossura da borda para fora */}
+        {/* 'inset-[-2px]' define a grossura da borda para fora (ajustado proporcionalmente) */}
         {/* 'animate-spin' padrão é 1s. Vamos forçar mais rápido com style ou classe arbitrária */}
-        <div className="absolute inset-[-3px] rounded-full overflow-hidden">
+        <div className="absolute inset-[-2px] rounded-full overflow-hidden">
           <div 
             className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0deg,#22c55e_180deg,transparent_180deg)]" 
             style={{ animation: "thinking-spin 0.6s linear infinite" }} // 0.6s = Muito rápido
@@ -41,14 +41,14 @@ export function ThinkingIndicator() {
         </div>
         
         {/* Miolo com ícone Symples */}
-        <div className="absolute inset-[2px] rounded-full bg-slate-950 z-20 flex items-center justify-center">
-           {/* Ícone Symples no centro */}
+        <div className="absolute inset-[1.5px] rounded-full bg-slate-950 z-20 flex items-center justify-center">
+           {/* Ícone Symples no centro (reduzido proporcionalmente) */}
            <Image
              src="/white-icon-symples.svg"
              alt="Symples"
-             width={16}
-             height={16}
-             className="drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]"
+             width={12}
+             height={12}
+             className="drop-shadow-[0_0_6px_rgba(34,197,94,0.8)]"
            />
         </div>
       </div>
