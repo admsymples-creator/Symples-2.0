@@ -1,6 +1,7 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from 'next/server'
 import { acceptInvite, getInviteDetails } from "@/lib/actions/members";
+import { getUserWorkspaces } from "@/lib/actions/user";
 import { revalidatePath } from "next/cache";
 import { cookies } from 'next/headers';
 
@@ -58,13 +59,23 @@ export async function GET(request: Request) {
                 cookieStore.delete('pending_invite');
               }
               // Redirecionar para home normalmente (login tradicional)
-              const { data: member } = await supabase
-                .from('workspace_members')
-                .select('workspace_id')
-                .eq('user_id', user.id)
-                .maybeSingle();
+              // Usar mesma lógica de retry do login tradicional
+              revalidatePath("/", "layout");
+              revalidatePath("/home");
+              await new Promise(resolve => setTimeout(resolve, 300));
               
-              if (member) {
+              let workspaces = await getUserWorkspaces();
+              if (workspaces.length === 0) {
+                const maxAttempts = 3;
+                const delayMs = 500;
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                  await new Promise(resolve => setTimeout(resolve, delayMs));
+                  workspaces = await getUserWorkspaces();
+                  if (workspaces.length > 0) break;
+                }
+              }
+              
+              if (workspaces.length > 0) {
                 return NextResponse.redirect(`${origin}/home`);
               } else {
                 return NextResponse.redirect(`${origin}/onboarding`);
@@ -150,17 +161,31 @@ export async function GET(request: Request) {
         revalidatePath("/", "layout");
         revalidatePath("/home");
         
-        // Aguardar um pouco para garantir que a sessão esteja totalmente estabelecida
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // ✅ CORREÇÃO: Aguardar e fazer múltiplas tentativas com getUserWorkspaces
+        // para garantir que a sessão e cache estejam totalmente estabelecidos
+        // Isso resolve o problema de timing onde na primeira vez não encontra workspaces
+        await new Promise(resolve => setTimeout(resolve, 300));
         
-        const { data: member } = await supabase
-          .from('workspace_members')
-          .select('workspace_id')
-          .eq('user_id', user.id)
-          .maybeSingle()
+        let workspaces = await getUserWorkspaces();
+        
+        // Se não encontrou na primeira tentativa, fazer retry (mesma lógica do fluxo de convite)
+        if (workspaces.length === 0) {
+          const maxAttempts = 3;
+          const delayMs = 500;
+          
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            workspaces = await getUserWorkspaces();
+            
+            if (workspaces.length > 0) {
+              console.log(`✅ [Auth Callback] Workspaces encontrados na tentativa ${attempt + 1} após login tradicional`);
+              break;
+            }
+          }
+        }
 
         // 4. Decidir destino (sem parâmetro invite_accepted em login tradicional)
-        if (member) {
+        if (workspaces.length > 0) {
           return NextResponse.redirect(`${origin}/home`)
         } else {
           return NextResponse.redirect(`${origin}/onboarding`)
