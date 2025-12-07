@@ -8,28 +8,49 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 // Cliente para uso em Server Components e Server Actions
 export async function createServerClient() {
   if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Variáveis de ambiente do Supabase não configuradas')
+    const error = new Error('Variáveis de ambiente do Supabase não configuradas')
+    console.error('[Supabase] Erro de configuração:', {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseKey,
+      urlLength: supabaseUrl?.length || 0,
+      keyLength: supabaseKey?.length || 0,
+    })
+    throw error
   }
 
-  const cookieStore = await cookies()
+  try {
+    const cookieStore = await cookies()
 
-  return createSSRServerClient<Database>(supabaseUrl, supabaseKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
+    return createSSRServerClient<Database>(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          try {
+            return cookieStore.getAll()
+          } catch (error) {
+            console.warn('[Supabase] Erro ao obter cookies:', error)
+            return []
+          }
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options)
+            })
+          } catch (error) {
+            // A chamada `setAll` foi feita a partir de um Server Component.
+            // Isso pode ser ignorado se você tiver middleware que atualiza os cookies.
+            // Log apenas em desenvolvimento
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('[Supabase] Cookie setAll ignorado (esperado em Server Components):', error)
+            }
+          }
+        },
       },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options)
-          })
-        } catch (error) {
-          // A chamada `setAll` foi feita a partir de um Server Component.
-          // Isso pode ser ignorado se você tiver middleware que atualiza os cookies.
-        }
-      },
-    },
-  })
+    })
+  } catch (error) {
+    console.error('[Supabase] Erro ao criar cliente:', error)
+    throw error
+  }
 }
 
 // Cliente para uso em Server Actions (alias para createServerClient)
@@ -72,6 +93,7 @@ export function createMiddlewareClient(request: Request, response: Response) {
     },
   })
 }
+
 
 
 
