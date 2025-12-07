@@ -295,6 +295,34 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
   - Link direto para suporte via WhatsApp
   - Interface moderna com ícones e descrições claras
 
+**✅ Implementado (v2.4):**
+- **Seletor de Workspaces no Card de Confirmação:**
+  - Dropdown para selecionar workspace ao criar tarefa pelo assistente
+  - Lista todos os workspaces do usuário com logo e nome
+  - Permite criar tarefa em workspace diferente do ativo
+  - Integrado ao KanbanConfirmationCard
+- **Extração Inteligente de Informações pela IA:**
+  - IA extrai título descritivo, descrição completa e resumida
+  - Detecção automática de responsáveis mencionados na mensagem/áudio
+  - Cálculo correto de datas relativas em português (timezone local)
+  - Detecção de múltiplas tarefas e pergunta ao usuário (separadas ou subtarefas)
+  - Melhoria na detecção de prazos (ex: "sexta-feira que vem")
+- **Correções de Timezone:**
+  - Função `formatDateLocal` para evitar problemas de UTC
+  - Datas calculadas no timezone local do usuário
+  - Correção de bug onde datas apareciam um dia antes
+- **Atualização Instantânea de Tarefas:**
+  - Invalidação automática de cache após criar tarefa
+  - `router.refresh()` para atualizar página sem reload manual
+  - Tarefas aparecem imediatamente após criação pelo assistente
+- **Melhorias no Contador de Áudio:**
+  - Timer corrigido para atualizar corretamente durante gravação
+  - Limpeza adequada de timers ao parar gravação
+  - Feedback visual melhorado com tempo decorrido
+- **Ajustes de UI:**
+  - Avatar do responsável no card reduzido para `w-3.5 h-3.5` (padrão com outros ícones)
+  - Correção de erro de renderização do Router com `startTransition`
+
 ## 10. FUNCIONALIDADES IMPLEMENTADAS (v2.1)
 
 ### 10.1. Módulos Core Implementados
