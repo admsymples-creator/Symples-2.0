@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { 
   ListTodo, 
   Calendar, 
@@ -10,7 +12,8 @@ import {
   Mic,
   X,
   Image as ImageIcon,
-  RotateCcw
+  RotateCcw,
+  LifeBuoy
 } from "lucide-react";
 import { 
   Sheet, 
@@ -26,9 +29,18 @@ import { AIOrb } from "./AIOrb";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { KanbanConfirmationCard } from "./KanbanConfirmationCard";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+import { HelpDialog } from "./HelpDialog";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
-import { getWorkspaceMembers } from "@/lib/actions/tasks";
+import { getWorkspaceMembers, getTasks } from "@/lib/actions/tasks";
 import { createTask } from "@/lib/actions/tasks";
+import { getUserWorkspaces, type Workspace } from "@/lib/actions/user";
+import { invalidateTasksCache } from "@/hooks/use-tasks";
+import { 
+  loadAssistantMessages, 
+  saveAssistantMessage, 
+  saveAssistantMessages,
+  type AssistantMessage as DBAssistantMessage 
+} from "@/lib/actions/assistant";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +66,7 @@ interface Message {
       assigneeId?: string | null;
       priority?: "low" | "medium" | "high" | "urgent";
       status?: "todo" | "in_progress" | "done";
+      workspaceId?: string;
     };
   }; // Dados para componentes generativos
 }
@@ -110,182 +123,6 @@ const suggestionChips = [
   },
 ];
 
-// Dados mock para visualização
-const mockMessages: Message[] = [
-  {
-    id: "1",
-    role: "user",
-    content: "Criar uma tarefa para revisar o relatório financeiro",
-    type: "text",
-    timestamp: new Date(Date.now() - 3600000), // 1 hora atrás
-  },
-  {
-    id: "2",
-    role: "assistant",
-    content: "Perfeito! Criei a tarefa 'Revisar relatório financeiro' para você. Ela foi adicionada à sua lista de tarefas pendentes.\n\nQuer que eu defina uma data de vencimento ou adicione algum detalhe específico?",
-    type: "text",
-    timestamp: new Date(Date.now() - 3550000), // ~1 hora atrás
-  },
-  {
-    id: "3",
-    role: "user",
-    content: "O que está atrasado?",
-    type: "text",
-    timestamp: new Date(Date.now() - 1800000), // 30 min atrás
-  },
-  {
-    id: "4",
-    role: "assistant",
-    content: "Encontrei 3 tarefas atrasadas:\n\n1. **Revisar proposta comercial** - Venceu há 2 dias\n2. **Enviar relatório mensal** - Venceu ontem\n3. **Atualizar site** - Venceu há 5 dias\n\nQuer que eu priorize alguma delas ou crie um plano de ação?",
-    type: "text",
-    timestamp: new Date(Date.now() - 1750000), // ~30 min atrás
-  },
-  {
-    id: "5",
-    role: "user",
-    content: "Enviei uma imagem",
-    type: "image",
-    imageUrl: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=400&h=300&fit=crop",
-    timestamp: new Date(Date.now() - 900000), // 15 min atrás
-  },
-  {
-    id: "6",
-    role: "assistant",
-    content: "Recebi sua imagem! Vejo que é um gráfico financeiro. Em breve, poderei analisar automaticamente e extrair informações como:\n\n• Valores e tendências\n• Períodos analisados\n• Insights principais\n\nPor enquanto, posso ajudar você a criar uma tarefa relacionada a essa análise. Quer que eu faça isso?",
-    type: "text",
-    timestamp: new Date(Date.now() - 850000), // ~15 min atrás
-  },
-  {
-    id: "7",
-    role: "user",
-    content: "Mensagem de áudio",
-    type: "audio",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", // URL mock de áudio
-    audioDuration: 45, // 45 segundos
-    audioTranscription: "Preciso revisar o relatório financeiro e enviar para o time até amanhã",
-    timestamp: new Date(Date.now() - 600000), // 10 min atrás
-  },
-  {
-    id: "8",
-    role: "assistant",
-    content: "Entendi sua mensagem de áudio! Você mencionou que precisa:\n\n• Priorizar a revisão do relatório\n• Agendar reunião para amanhã\n• Enviar feedback para a equipe\n\nQuer que eu crie essas tarefas agora?",
-    type: "text",
-    timestamp: new Date(Date.now() - 550000), // ~10 min atrás
-  },
-  {
-    id: "7b",
-    role: "user",
-    content: "Mensagem de áudio - Criar tarefa",
-    type: "audio",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
-    audioDuration: 30, // 30 segundos
-    audioTranscription: "Criar uma tarefa para revisar o relatório financeiro e enviar para o time até amanhã",
-    timestamp: new Date(Date.now() - 480000), // 8 min atrás
-  },
-  {
-    id: "7c",
-    role: "assistant",
-    content: "Transcrevi sua mensagem: \"Criar uma tarefa para revisar o relatório financeiro e enviar para o time até amanhã\"\n\nVou criar a tarefa para você. Confirme os detalhes abaixo:",
-    type: "text",
-    timestamp: new Date(Date.now() - 475000), // ~8 min atrás
-  },
-  {
-    id: "7d",
-    role: "assistant",
-    content: "",
-    type: "component",
-    componentData: {
-      type: "task_confirmation",
-      data: {
-        title: "Revisar o relatório financeiro e enviar para o time",
-        description: "Revisar o relatório financeiro e enviar para o time até amanhã",
-        dueDate: new Date(Date.now() + 86400000).toISOString(), // Amanhã
-        assigneeId: null,
-                      priority: "high",
-                      status: "todo",
-                    },
-                  },
-                  timestamp: new Date(Date.now() - 474000), // ~8 min atrás
-                },
-  {
-    id: "9",
-    role: "user",
-    content: "Minha pauta hoje",
-    type: "text",
-    timestamp: new Date(Date.now() - 300000), // 5 min atrás
-  },
-  {
-    id: "10",
-    role: "assistant",
-    content: "Sua pauta de hoje:\n\n**Prioridade Alta:**\n• Reunião com equipe - 14:00\n• Revisar proposta comercial (atrasada)\n\n**Prioridade Média:**\n• Enviar relatório mensal (atrasado)\n• Revisar relatório financeiro\n\n**Tempo livre estimado:** 2 horas\n\nQuer que eu reorganize algo ou crie lembretes?",
-    type: "text",
-    timestamp: new Date(Date.now() - 250000), // ~5 min atrás
-  },
-  {
-    id: "11",
-    role: "user",
-    content: "Mensagem de áudio longa",
-    type: "audio",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-    audioDuration: 120, // 2 minutos (limite máximo)
-    timestamp: new Date(Date.now() - 120000), // 2 min atrás
-  },
-  {
-    id: "12",
-    role: "assistant",
-    content: "Hey, ninguem merece escutar audio de 2 minutos. Nem mesmo uma IA.",
-    type: "text",
-    timestamp: new Date(Date.now() - 115000), // ~2 min atrás
-  },
-  {
-    id: "12b",
-    role: "assistant",
-    content: "",
-    type: "image",
-    imageUrl: "/audiode2minutos.png",
-    timestamp: new Date(Date.now() - 114000), // ~2 min atrás
-  },
-  {
-    id: "13",
-    role: "user",
-    content: "Qual é o resumo da semana?",
-    type: "text",
-    timestamp: new Date(Date.now() - 60000), // 1 min atrás
-  },
-  {
-    id: "14",
-    role: "assistant",
-    content: "",
-    type: "text",
-    isThinking: true, // Estado de "IA pensando"
-    timestamp: new Date(Date.now() - 55000), // ~1 min atrás
-  },
-  {
-    id: "15",
-    role: "user",
-    content: "Mensagem de áudio de 2 minutos",
-    type: "audio",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-    audioDuration: 120, // Exatamente 2 minutos (limite máximo)
-    timestamp: new Date(Date.now() - 30000), // 30 seg atrás
-  },
-  {
-    id: "16",
-    role: "assistant",
-    content: "Hey, ninguem merece escutar audio de 2 minutos. Nem mesmo uma IA.",
-    type: "text",
-    timestamp: new Date(Date.now() - 25000), // ~30 seg atrás
-  },
-  {
-    id: "17",
-    role: "assistant",
-    content: "",
-    type: "image",
-    imageUrl: "/audiode2minutos.png",
-    timestamp: new Date(Date.now() - 24000), // ~30 seg atrás
-  },
-];
-
 // Função para obter chave de storage por workspace
 function getStorageKey(workspaceId: string | null, key: string): string {
   return workspaceId ? `assistant-${workspaceId}-${key}` : `assistant-global-${key}`;
@@ -309,6 +146,8 @@ function isNewDay(lastDateStr: string | null): boolean {
 }
 
 export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [inputValue, setInputValue] = React.useState("");
@@ -326,8 +165,9 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   
   // Workspace e membros
   const { activeWorkspaceId } = useWorkspace();
-  const [workspaceMembers, setWorkspaceMembers] = React.useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+  const [workspaceMembers, setWorkspaceMembers] = React.useState<Array<{ id: string; name: string; avatar?: string; email?: string }>>([]);
   const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
+  const [workspaces, setWorkspaces] = React.useState<Workspace[]>([]);
   
   // Estados para Smart Daily Reset e Context Divider
   const [showZeroState, setShowZeroState] = React.useState(true);
@@ -339,39 +179,126 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   // Ref para auto-scroll
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  // Carregar mensagens do localStorage por workspace
+  // Carregar mensagens do banco de dados (com fallback para localStorage)
   React.useEffect(() => {
     if (!activeWorkspaceId) return;
     
-    const storageKey = getStorageKey(activeWorkspaceId, "messages");
-    const savedMessages = localStorage.getItem(storageKey);
-    
-    if (savedMessages) {
+    const loadMessages = async () => {
       try {
-        const parsed = JSON.parse(savedMessages);
-        // Converter timestamps de string para Date
-        const messagesWithDates = parsed.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        }));
-        setMessages(messagesWithDates);
-        setShowZeroState(messagesWithDates.length === 0);
+        // 1. Tentar carregar do banco de dados primeiro
+        const result = await loadAssistantMessages(activeWorkspaceId);
+        
+        if (result.success && result.messages && result.messages.length > 0) {
+          // Converter mensagens do banco para formato do componente
+          const messagesWithDates = result.messages.map((msg: DBAssistantMessage) => {
+            const baseMessage = {
+              id: `db-${msg.id}`,
+              role: msg.role as "user" | "assistant" | "system",
+              content: msg.content,
+              type: (msg.type || "text") as "text" | "component" | "image" | "audio" | "divider",
+              timestamp: new Date(msg.created_at),
+              imageUrl: msg.image_url || undefined,
+              audioUrl: msg.audio_url || undefined,
+              audioDuration: msg.audio_duration || undefined,
+              audioTranscription: msg.audio_transcription || undefined,
+              isThinking: msg.is_thinking || false,
+              isContextDivider: msg.is_context_divider || false,
+            };
+            
+            // Adicionar componentData apenas se existir e for do tipo correto
+            if (msg.component_data && msg.component_data.type === "task_confirmation") {
+              return {
+                ...baseMessage,
+                componentData: {
+                  type: "task_confirmation" as const,
+                  data: msg.component_data.data as {
+                    title: string;
+                    description?: string;
+                    dueDate?: string | null;
+                    assigneeId?: string | null;
+                    priority?: "low" | "medium" | "high" | "urgent";
+                    status?: "todo" | "in_progress" | "done";
+                    workspaceId?: string;
+                  },
+                },
+              } as Message;
+            }
+            
+            return baseMessage as Message;
+          });
+          
+          setMessages(messagesWithDates);
+          setShowZeroState(false);
+          
+          // Sincronizar com localStorage como cache
+          const storageKey = getStorageKey(activeWorkspaceId, "messages");
+          const serializable = messagesWithDates.map((msg) => ({
+            ...msg,
+            timestamp: msg.timestamp.toISOString(),
+          }));
+          localStorage.setItem(storageKey, JSON.stringify(serializable));
+        } else {
+          // 2. Fallback: tentar carregar do localStorage
+          const storageKey = getStorageKey(activeWorkspaceId, "messages");
+          const savedMessages = localStorage.getItem(storageKey);
+          
+          if (savedMessages) {
+            try {
+              const parsed = JSON.parse(savedMessages);
+              const messagesWithDates = parsed.map((msg: any) => ({
+                ...msg,
+                timestamp: new Date(msg.timestamp),
+              }));
+              setMessages(messagesWithDates);
+              setShowZeroState(messagesWithDates.length === 0);
+            } catch (error) {
+              console.error("Erro ao carregar mensagens do localStorage:", error);
+              setMessages([]);
+              setShowZeroState(true);
+            }
+          } else {
+            // 3. Nenhuma mensagem encontrada
+            setMessages([]);
+            setShowZeroState(true);
+          }
+        }
       } catch (error) {
-        console.error("Erro ao carregar mensagens:", error);
+        console.error("Erro ao carregar mensagens do banco:", error);
+        
+        // Fallback para localStorage em caso de erro
+        const storageKey = getStorageKey(activeWorkspaceId, "messages");
+        const savedMessages = localStorage.getItem(storageKey);
+        
+        if (savedMessages) {
+          try {
+            const parsed = JSON.parse(savedMessages);
+            const messagesWithDates = parsed.map((msg: any) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp),
+            }));
+            setMessages(messagesWithDates);
+            setShowZeroState(messagesWithDates.length === 0);
+          } catch (localError) {
+            console.error("Erro ao carregar do localStorage:", localError);
+            setMessages([]);
+            setShowZeroState(true);
+          }
+        } else {
+          setMessages([]);
+          setShowZeroState(true);
+        }
       }
-    } else {
-      // Se não há mensagens salvas, usar mock apenas para visualização inicial
-      setMessages(mockMessages);
-      setShowZeroState(false);
-    }
+    };
+    
+    loadMessages();
   }, [activeWorkspaceId]);
 
-  // Salvar mensagens no localStorage sempre que mudarem
+  // Salvar mensagens no localStorage como cache (banco é salvo individualmente)
   React.useEffect(() => {
     if (!activeWorkspaceId || messages.length === 0) return;
     
+    // Salvar no localStorage como cache (sempre atualizado)
     const storageKey = getStorageKey(activeWorkspaceId, "messages");
-    // Converter timestamps para string para serialização
     const serializable = messages.map((msg) => ({
       ...msg,
       timestamp: msg.timestamp.toISOString(),
@@ -408,6 +335,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           id: m.id,
           name: m.full_name || m.email || "Usuário",
           avatar: m.avatar_url || undefined,
+          email: m.email || undefined, // Incluir email para detecção de responsáveis
         }));
         setWorkspaceMembers(mappedMembers);
       } catch (error) {
@@ -419,6 +347,21 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
     loadMembers();
   }, [activeWorkspaceId]);
+
+  // Carregar lista de workspaces
+  React.useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        const userWorkspaces = await getUserWorkspaces();
+        setWorkspaces(userWorkspaces);
+      } catch (error) {
+        console.error("Erro ao carregar workspaces:", error);
+        setWorkspaces([]);
+      }
+    };
+
+    loadWorkspaces();
+  }, []);
 
   // Auto-scroll sempre que mensagens mudarem
   React.useEffect(() => {
@@ -440,26 +383,34 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   }, [mediaRecorder, isRecording]);
 
   // Handler para limpar contexto (Botão Vassoura)
-  const handleClearContext = () => {
-    const dividerMessage: Message = {
-      id: `divider-${Date.now()}`,
-      role: "system",
-      content: "--- Contexto limpo ---",
-      type: "divider",
-      isContextDivider: true,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => {
-      const newMessages = [...prev, dividerMessage];
-      setContextDividerIndex(newMessages.length - 1);
-      return newMessages;
-    });
+  const handleClearContext = async () => {
+    // Salvar divisor no banco antes de limpar
+    if (activeWorkspaceId) {
+      try {
+        await saveAssistantMessage({
+          workspace_id: activeWorkspaceId,
+          role: "system",
+          content: "--- Contexto limpo ---",
+          type: "divider",
+          is_context_divider: true,
+        });
+      } catch (error) {
+        console.error("Erro ao salvar divisor de contexto:", error);
+      }
+    }
     
-    // Esconder zero state após limpar contexto
-    setShowZeroState(false);
+    // Limpar todas as mensagens e mostrar zero state
+    setMessages([]);
+    setContextDividerIndex(null);
+    setShowZeroState(true);
     
-    toast.success("Contexto limpo. A IA ignorará as mensagens anteriores.");
+    // Limpar também do localStorage
+    if (activeWorkspaceId) {
+      const storageKey = getStorageKey(activeWorkspaceId, "messages");
+      localStorage.removeItem(storageKey);
+    }
+    
+    toast.success("Contexto limpo. Começando uma nova conversa.");
   };
 
   const handleSendMessage = async (content: string) => {
@@ -472,7 +423,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
     // 1. Adiciona mensagem do usuário (Optimistic UI)
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `temp-${Date.now()}`,
       role: "user",
       content: content.trim(),
       type: "text",
@@ -483,8 +434,33 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     setInputValue("");
     setIsLoading(true);
 
+    // Salvar mensagem do usuário no banco
+    if (activeWorkspaceId) {
+      saveAssistantMessage({
+        workspace_id: activeWorkspaceId,
+        role: "user",
+        content: content.trim(),
+        type: "text",
+      }).then((result) => {
+        if (result.success && result.messageId) {
+          // Atualizar ID da mensagem com o ID do banco
+          startTransition(() => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === userMessage.id
+                  ? { ...msg, id: `db-${result.messageId}` }
+                  : msg
+              )
+            );
+          });
+        }
+      }).catch((error) => {
+        console.error("Erro ao salvar mensagem no banco:", error);
+      });
+    }
+
     // 2. Adiciona estado de "pensando" (opcional, para mostrar que a IA está processando)
-    const thinkingMessageId = (Date.now() + 1).toString();
+    const thinkingMessageId = `thinking-${Date.now()}`;
     const thinkingMessage: Message = {
       id: thinkingMessageId,
       role: "assistant",
@@ -495,59 +471,225 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     };
     setMessages((prev) => [...prev, thinkingMessage]);
 
-    // 3. Simulação de Network/AI (Substituir por n8n fetch depois)
-    setTimeout(() => {
+    // 3. Chamar API real da OpenAI
+    try {
+      // Preparar histórico de mensagens (apenas últimas mensagens relevantes, ignorando thinking e dividers)
+      const relevantHistory = messages
+        .filter(msg => 
+          msg.role !== "system" && 
+          !msg.isThinking && 
+          !msg.isContextDivider &&
+          msg.content
+        )
+        .slice(-10) // Últimas 10 mensagens
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+
+      // Detectar se precisa buscar tarefas (resumo, pauta, semana, atrasado, etc.)
+      const lowerContent = content.toLowerCase();
+      const needsTasks = lowerContent.includes('resumo') || 
+                        lowerContent.includes('pauta') || 
+                        lowerContent.includes('semana') || 
+                        lowerContent.includes('atrasado') || 
+                        lowerContent.includes('tarefa') ||
+                        lowerContent.includes('task');
+
+      // Buscar tarefas se necessário
+      let tasksData = null;
+      if (needsTasks && activeWorkspaceId) {
+        try {
+          const tasks = await getTasks({ workspaceId: activeWorkspaceId });
+          tasksData = tasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            dueDate: task.dueDate,
+            priority: task.priority,
+            assignee: task.assignee?.name || null,
+            group: task.group?.name || null,
+          }));
+        } catch (error) {
+          console.error("Erro ao buscar tarefas:", error);
+        }
+      }
+
+      // Preparar lista de membros para detecção de responsáveis
+      const membersForAI = workspaceMembers.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        full_name: m.name, // Para compatibilidade
+        email: (m as any).email || undefined,
+      }));
+
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: content.trim(),
+          workspaceId: activeWorkspaceId,
+          conversationHistory: relevantHistory,
+          tasksData: tasksData,
+          workspaceMembers: membersForAI,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao processar mensagem");
+      }
+
+      const data = await response.json();
+
       // Remove mensagem de "pensando" e adiciona resposta
       setMessages((prev) => {
         const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
         
-        // Detectar se é criação de tarefa
-        const isTaskCreation = content.toLowerCase().includes("criar") && 
-                             (content.toLowerCase().includes("tarefa") || 
-                              content.toLowerCase().includes("task"));
-        
-        if (isTaskCreation) {
+        if (data.isTaskCreation && data.taskInfo) {
+          // Verificar se há múltiplas tarefas e precisa confirmação
+          let messageContent = data.message || "Vou criar a tarefa para você. Confirme os detalhes abaixo:";
+          
+          if (data.hasMultipleTasks && data.needsUserConfirmation) {
+            const tasksList = data.taskInfo.multipleTasksList || [];
+            if (tasksList.length > 0) {
+              messageContent = `Detectei ${tasksList.length} tarefas na sua mensagem:\n\n${tasksList.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}\n\nComo você prefere criar?\n• Várias tarefas separadas\n• Uma tarefa com subtarefas\n\nVou criar a primeira tarefa. Você pode editar os detalhes abaixo:`;
+            } else {
+              messageContent = "Detectei múltiplas tarefas na sua mensagem. Vou criar a primeira tarefa. Você pode editar os detalhes abaixo:";
+            }
+          }
+          
+          // Criar tarefa - mostrar card de confirmação
           const assistantMessage: Message = {
-            id: (Date.now() + 2).toString(),
+            id: `temp-${Date.now() + 2}`,
             role: "assistant",
-            content: `Vou criar a tarefa para você. Confirme os detalhes abaixo:`,
+            content: messageContent,
             type: "text",
             timestamp: new Date(),
           };
           
-                const confirmationCardMessage: Message = {
-                  id: (Date.now() + 3).toString(),
-                  role: "assistant",
-                  content: "",
-                  type: "component",
-                  componentData: {
-                    type: "task_confirmation",
-                    data: {
-                      title: content.replace(/criar (uma )?tarefa (para|de|com)?/i, "").trim() || "Nova tarefa",
-                      description: "",
-                      dueDate: null,
-                      assigneeId: null,
-                      priority: "medium",
-                      status: "todo",
-                    },
-                  },
-                  timestamp: new Date(),
-                };
+          const confirmationCardMessage: Message = {
+            id: `temp-${Date.now() + 3}`,
+            role: "assistant",
+            content: "",
+            type: "component",
+            componentData: {
+              type: "task_confirmation",
+              data: {
+                title: data.taskInfo.title || "Nova tarefa",
+                description: data.taskInfo.description || data.taskInfo.descriptionFull || content.trim(), // Usar descriptionFull se disponível
+                dueDate: data.taskInfo.dueDate || null,
+                assigneeId: data.taskInfo.assigneeId || null,
+                priority: data.taskInfo.priority || "medium",
+                status: data.taskInfo.status || "todo",
+                workspaceId: activeWorkspaceId || undefined,
+              },
+            },
+            timestamp: new Date(),
+          };
+          
+          // Salvar mensagens do assistente no banco
+          if (activeWorkspaceId) {
+            Promise.all([
+              saveAssistantMessage({
+                workspace_id: activeWorkspaceId,
+                role: "assistant",
+                content: assistantMessage.content,
+                type: "text",
+              }),
+              saveAssistantMessage({
+                workspace_id: activeWorkspaceId,
+                role: "assistant",
+                content: "",
+                type: "component",
+                component_data: confirmationCardMessage.componentData,
+              }),
+            ]).then((results) => {
+              startTransition(() => {
+                setMessages((prev) => {
+                  let updated = [...prev];
+                  if (results[0].success && results[0].messageId) {
+                    updated = updated.map((msg) =>
+                      msg.id === assistantMessage.id
+                        ? { ...msg, id: `db-${results[0].messageId}` }
+                        : msg
+                    );
+                  }
+                  if (results[1].success && results[1].messageId) {
+                    updated = updated.map((msg) =>
+                      msg.id === confirmationCardMessage.id
+                        ? { ...msg, id: `db-${results[1].messageId}` }
+                        : msg
+                    );
+                  }
+                  return updated;
+                });
+              });
+            }).catch((error) => {
+              console.error("Erro ao salvar mensagens do assistente:", error);
+            });
+          }
           
           return [...withoutThinking, assistantMessage, confirmationCardMessage];
         } else {
+          // Resposta normal da IA
           const assistantMessage: Message = {
-            id: (Date.now() + 2).toString(),
+            id: `temp-${Date.now() + 2}`,
             role: "assistant",
-            content: `Entendi: "${content.trim()}". \n\n(Esta é uma resposta simulada do MVP. Na próxima sprint, conectaremos ao n8n para processar sua solicitação real.)`,
+            content: data.message || "Desculpe, não consegui processar sua mensagem.",
             type: "text",
             timestamp: new Date(),
           };
+          
+          // Salvar mensagem do assistente no banco
+          if (activeWorkspaceId) {
+            saveAssistantMessage({
+              workspace_id: activeWorkspaceId,
+              role: "assistant",
+              content: assistantMessage.content,
+              type: "text",
+            }).then((result) => {
+              if (result.success && result.messageId) {
+                startTransition(() => {
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessage.id
+                        ? { ...msg, id: `db-${result.messageId}` }
+                        : msg
+                    )
+                  );
+                });
+              }
+            }).catch((error) => {
+              console.error("Erro ao salvar mensagem do assistente:", error);
+            });
+          }
+          
           return [...withoutThinking, assistantMessage];
         }
       });
+      
       setIsLoading(false);
-    }, 2000); // Aumentado para 2s para dar tempo de ver o estado "pensando"
+    } catch (error) {
+      console.error("Erro ao chamar API de chat:", error);
+      
+      // Em caso de erro, remover thinking e mostrar mensagem de erro
+      setMessages((prev) => {
+        const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
+        const errorMessage: Message = {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: "Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.",
+          type: "text",
+          timestamp: new Date(),
+        };
+        return [...withoutThinking, errorMessage];
+      });
+      
+      setIsLoading(false);
+      toast.error("Erro ao processar mensagem. Tente novamente.");
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -557,7 +699,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -595,21 +737,90 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     };
     setMessages((prev) => [...prev, thinkingMessage]);
 
-    // Simular resposta da IA
-    setTimeout(() => {
+    // Processar imagem com IA
+    try {
+      const relevantHistory = messages
+        .filter(msg => 
+          msg.role !== "system" && 
+          !msg.isThinking && 
+          !msg.isContextDivider &&
+          msg.content
+        )
+        .slice(-10)
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: "Recebi uma imagem. O que você gostaria que eu fizesse com ela?",
+          workspaceId: activeWorkspaceId,
+          conversationHistory: relevantHistory,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao processar mensagem");
+      }
+
+      const data = await response.json();
+
       setMessages((prev) => {
         const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
         const assistantMessage: Message = {
-          id: (Date.now() + 2).toString(),
+          id: `temp-${Date.now() + 2}`,
           role: "assistant",
-          content: `Recebi sua imagem! Em breve, poderei analisar e processar imagens automaticamente.`,
+          content: data.message || "Recebi sua imagem! Em breve, poderei analisar e processar imagens automaticamente.",
+          type: "text",
+          timestamp: new Date(),
+        };
+        
+        // Salvar no banco
+        if (activeWorkspaceId) {
+          saveAssistantMessage({
+            workspace_id: activeWorkspaceId,
+            role: "assistant",
+            content: assistantMessage.content,
+            type: "text",
+          }).then((result) => {
+            if (result.success && result.messageId) {
+              startTransition(() => {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? { ...msg, id: `db-${result.messageId}` }
+                      : msg
+                  )
+                );
+              });
+            }
+          });
+        }
+        
+        return [...withoutThinking, assistantMessage];
+      });
+      
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Erro ao processar imagem:", error);
+      setMessages((prev) => {
+        const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
+        const assistantMessage: Message = {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: "Recebi sua imagem! Em breve, poderei analisar e processar imagens automaticamente.",
           type: "text",
           timestamp: new Date(),
         };
         return [...withoutThinking, assistantMessage];
       });
       setIsLoading(false);
-    }, 2000);
+    }
 
     // Limpar input
     if (fileInputRef.current) {
@@ -690,15 +901,28 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             )
           );
 
-          // Simular resposta da IA com transcrição
-          setTimeout(() => {
-            setMessages((prev) => {
-              const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
-              
-              // Se atingiu o limite de 2 minutos, mostrar resposta especial com meme
-              if (isMaxDuration) {
+          // Processar transcrição com IA real
+          try {
+            // Preparar histórico de mensagens
+            const relevantHistory = messages
+              .filter(msg => 
+                msg.role !== "system" && 
+                !msg.isThinking && 
+                !msg.isContextDivider &&
+                msg.content
+              )
+              .slice(-10)
+              .map(msg => ({
+                role: msg.role,
+                content: msg.content,
+              }));
+
+            // Se atingiu o limite de 2 minutos, mostrar resposta especial com meme
+            if (isMaxDuration) {
+              setMessages((prev) => {
+                const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
                 const assistantMessage: Message = {
-                  id: (Date.now() + 2).toString(),
+                  id: `temp-${Date.now() + 2}`,
                   role: "assistant",
                   content: "Hey, ninguem merece escutar audio de 2 minutos. Nem mesmo uma IA.",
                   type: "text",
@@ -706,7 +930,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                 };
                 
                 const memeMessage: Message = {
-                  id: (Date.now() + 3).toString(),
+                  id: `temp-${Date.now() + 3}`,
                   role: "assistant",
                   content: "",
                   type: "image",
@@ -714,58 +938,220 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                   timestamp: new Date(),
                 };
                 
+                // Salvar no banco
+                if (activeWorkspaceId) {
+                  Promise.all([
+                    saveAssistantMessage({
+                      workspace_id: activeWorkspaceId,
+                      role: "assistant",
+                      content: assistantMessage.content,
+                      type: "text",
+                    }),
+                    saveAssistantMessage({
+                      workspace_id: activeWorkspaceId,
+                      role: "assistant",
+                      content: "",
+                      type: "image",
+                      image_url: "/audiode2minutos.png",
+                    }),
+                  ]).then((results) => {
+                    startTransition(() => {
+                      setMessages((prev) => {
+                        let updated = [...prev];
+                        if (results[0].success && results[0].messageId) {
+                          updated = updated.map((msg) =>
+                            msg.id === assistantMessage.id
+                              ? { ...msg, id: `db-${results[0].messageId}` }
+                              : msg
+                          );
+                        }
+                        if (results[1].success && results[1].messageId) {
+                          updated = updated.map((msg) =>
+                            msg.id === memeMessage.id
+                              ? { ...msg, id: `db-${results[1].messageId}` }
+                              : msg
+                          );
+                        }
+                        return updated;
+                      });
+                    });
+                  });
+                }
+                
                 return [...withoutThinking, assistantMessage, memeMessage];
+              });
+              setIsLoading(false);
+              setWasAutoStopped(false);
+            } else {
+              // Processar transcrição com IA
+              // Preparar lista de membros para detecção de responsáveis
+              const membersForAI = workspaceMembers.map((m: any) => ({
+                id: m.id,
+                name: m.name,
+                full_name: m.name, // Para compatibilidade
+                email: (m as any).email || undefined,
+              }));
+
+              const response = await fetch("/api/ai/chat", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  message: transcribedText || "Processe esta mensagem de áudio",
+                  workspaceId: activeWorkspaceId,
+                  conversationHistory: relevantHistory,
+                  workspaceMembers: membersForAI,
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error("Erro ao processar mensagem");
               }
-              
-              // Detectar se é criação de tarefa e mostrar card de confirmação
-              const isTaskCreation = transcribedText.toLowerCase().includes("criar") && 
-                                   (transcribedText.toLowerCase().includes("tarefa") || 
-                                    transcribedText.toLowerCase().includes("task"));
-              
-              if (isTaskCreation) {
-                // Extrair informações básicas da transcrição (simulação - depois virá da IA)
-                const assistantMessage: Message = {
-                  id: (Date.now() + 2).toString(),
-                  role: "assistant",
-                  content: `Transcrevi sua mensagem: "${transcribedText}"\n\nVou criar a tarefa para você. Confirme os detalhes abaixo:`,
-                  type: "text",
-                  timestamp: new Date(),
-                };
+
+              const data = await response.json();
+
+              setMessages((prev) => {
+                const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
                 
-                const confirmationCardMessage: Message = {
-                  id: (Date.now() + 3).toString(),
-                  role: "assistant",
-                  content: "",
-                  type: "component",
-                  componentData: {
-                    type: "task_confirmation",
-                    data: {
-                      title: transcribedText.replace(/criar (uma )?tarefa (para|de|com)?/i, "").trim() || "Nova tarefa",
-                      description: "",
-                      dueDate: null,
-                      assigneeId: null,
-                      priority: "medium",
-                      status: "todo",
+                if (data.isTaskCreation && data.taskInfo) {
+                  // Verificar se há múltiplas tarefas e precisa confirmação
+                  let messageContent = data.message || "Vou criar a tarefa para você. Confirme os detalhes abaixo:";
+                  
+                  if (data.hasMultipleTasks && data.needsUserConfirmation) {
+                    const tasksList = data.taskInfo.multipleTasksList || [];
+                    if (tasksList.length > 0) {
+                      messageContent = `Detectei ${tasksList.length} tarefas no seu áudio:\n\n${tasksList.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}\n\nComo você prefere criar?\n• Várias tarefas separadas\n• Uma tarefa com subtarefas\n\nVou criar a primeira tarefa. Você pode editar os detalhes abaixo:`;
+                    } else {
+                      messageContent = "Detectei múltiplas tarefas no seu áudio. Vou criar a primeira tarefa. Você pode editar os detalhes abaixo:";
+                    }
+                  }
+                  
+                  // Criar tarefa - mostrar card de confirmação
+                  const assistantMessage: Message = {
+                    id: `temp-${Date.now() + 2}`,
+                    role: "assistant",
+                    content: messageContent,
+                    type: "text",
+                    timestamp: new Date(),
+                  };
+                  
+                  const confirmationCardMessage: Message = {
+                    id: `temp-${Date.now() + 3}`,
+                    role: "assistant",
+                    content: "",
+                    type: "component",
+                    componentData: {
+                      type: "task_confirmation",
+                      data: {
+                        title: data.taskInfo.title || "Nova tarefa",
+                        description: data.taskInfo.description || data.taskInfo.descriptionFull || transcribedText, // Usar descriptionFull ou transcrição completa
+                        dueDate: data.taskInfo.dueDate || null,
+                        assigneeId: data.taskInfo.assigneeId || null,
+                        priority: data.taskInfo.priority || "medium",
+                        status: data.taskInfo.status || "todo",
+                        workspaceId: activeWorkspaceId || undefined,
+                      },
                     },
-                  },
-                  timestamp: new Date(),
-                };
-                
-                return [...withoutThinking, assistantMessage, confirmationCardMessage];
-              } else {
-                const assistantMessage: Message = {
-                  id: (Date.now() + 2).toString(),
-                  role: "assistant",
-                  content: `Transcrevi sua mensagem: "${transcribedText}"\n\nComo posso ajudar?`,
-                  type: "text",
-                  timestamp: new Date(),
-                };
-                return [...withoutThinking, assistantMessage];
-              }
+                    timestamp: new Date(),
+                  };
+                  
+                  // Salvar no banco
+                  if (activeWorkspaceId) {
+                    Promise.all([
+                      saveAssistantMessage({
+                        workspace_id: activeWorkspaceId,
+                        role: "assistant",
+                        content: assistantMessage.content,
+                        type: "text",
+                      }),
+                      saveAssistantMessage({
+                        workspace_id: activeWorkspaceId,
+                        role: "assistant",
+                        content: "",
+                        type: "component",
+                        component_data: confirmationCardMessage.componentData,
+                      }),
+            ]).then((results) => {
+              startTransition(() => {
+                setMessages((prev) => {
+                  let updated = [...prev];
+                  if (results[0].success && results[0].messageId) {
+                    updated = updated.map((msg) =>
+                      msg.id === assistantMessage.id
+                        ? { ...msg, id: `db-${results[0].messageId}` }
+                        : msg
+                    );
+                  }
+                  if (results[1].success && results[1].messageId) {
+                    updated = updated.map((msg) =>
+                      msg.id === confirmationCardMessage.id
+                        ? { ...msg, id: `db-${results[1].messageId}` }
+                        : msg
+                    );
+                  }
+                  return updated;
+                });
+              });
+            });
+                  }
+                  
+                  return [...withoutThinking, assistantMessage, confirmationCardMessage];
+                } else {
+                  // Resposta normal
+                  const assistantMessage: Message = {
+                    id: `temp-${Date.now() + 2}`,
+                    role: "assistant",
+                    content: data.message || `Recebi sua mensagem de áudio (${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}).`,
+                    type: "text",
+                    timestamp: new Date(),
+                  };
+                  
+                  // Salvar no banco
+                  if (activeWorkspaceId) {
+                    saveAssistantMessage({
+                      workspace_id: activeWorkspaceId,
+                      role: "assistant",
+                      content: assistantMessage.content,
+                      type: "text",
+                    }).then((result) => {
+                      if (result.success && result.messageId) {
+                        startTransition(() => {
+                          setMessages((prev) =>
+                            prev.map((msg) =>
+                              msg.id === assistantMessage.id
+                                ? { ...msg, id: `db-${result.messageId}` }
+                                : msg
+                            )
+                          );
+                        });
+                      }
+                    });
+                  }
+                  
+                  return [...withoutThinking, assistantMessage];
+                }
+              });
+              
+              setIsLoading(false);
+              setWasAutoStopped(false);
+            }
+          } catch (error) {
+            console.error("Erro ao processar áudio com IA:", error);
+            setMessages((prev) => {
+              const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
+              const assistantMessage: Message = {
+                id: `error-${Date.now()}`,
+                role: "assistant",
+                content: `Recebi sua mensagem de áudio (${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}), mas houve um erro ao processar. Tente novamente.`,
+                type: "text",
+                timestamp: new Date(),
+              };
+              return [...withoutThinking, assistantMessage];
             });
             setIsLoading(false);
-            setWasAutoStopped(false); // Resetar flag
-          }, 1000);
+            setWasAutoStopped(false);
+          }
         } catch (error) {
           console.error("Erro ao transcrever áudio:", error);
           setMessages((prev) => {
@@ -793,6 +1179,11 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       setRecordingTime(0);
       setWasAutoStopped(false); // Resetar flag ao iniciar nova gravação
 
+      // Limpar timer anterior se existir
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+
       // Timer para contar o tempo de gravação
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime((prev) => {
@@ -800,6 +1191,10 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           // Parar automaticamente ao atingir 2 minutos
           if (newTime >= MAX_AUDIO_DURATION) {
             setWasAutoStopped(true); // Marcar que foi parado automaticamente
+            if (recordingTimerRef.current) {
+              clearInterval(recordingTimerRef.current);
+              recordingTimerRef.current = null;
+            }
             stopRecording();
             return MAX_AUDIO_DURATION;
           }
@@ -822,6 +1217,10 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       }
       // Não resetar recordingTime aqui, pois será usado no onstop
       // setRecordingTime(0); // Removido para manter o tempo correto
+    } else if (recordingTimerRef.current) {
+      // Limpar timer mesmo se não houver mediaRecorder ativo
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
     }
   };
 
@@ -849,6 +1248,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     assigneeId?: string | null;
     priority?: "low" | "medium" | "high" | "urgent";
     status?: "todo" | "in_progress" | "done";
+    workspaceId?: string | null;
   }) => {
     try {
       setIsLoading(true);
@@ -859,28 +1259,40 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
         due_date: taskData.dueDate || null,
         assignee_id: taskData.assigneeId || null,
         priority: taskData.priority || "medium",
-        workspace_id: activeWorkspaceId || null,
+        workspace_id: taskData.workspaceId || activeWorkspaceId || null,
         status: taskData.status || "todo",
       });
 
       if (result.success) {
         toast.success("Tarefa criada com sucesso!");
         
+        // Invalidar cache de tarefas para atualização instantânea
+        const targetWorkspaceId = taskData.workspaceId || activeWorkspaceId;
+        if (targetWorkspaceId) {
+          invalidateTasksCache(targetWorkspaceId);
+          // Recarregar a página de tarefas se estiver aberta - usar startTransition para evitar erro de render
+          startTransition(() => {
+            router.refresh();
+          });
+        }
+        
         // Remover card de confirmação e adicionar mensagem de sucesso
-        setMessages((prev) => {
-          const withoutCard = prev.filter((msg) => 
-            !(msg.type === "component" && msg.componentData?.type === "task_confirmation")
-          );
-          
-          const successMessage: Message = {
-            id: Date.now().toString(),
-            role: "assistant",
-            content: `✅ Tarefa "${taskData.title}" criada com sucesso!`,
-            type: "text",
-            timestamp: new Date(),
-          };
-          
-          return [...withoutCard, successMessage];
+        startTransition(() => {
+          setMessages((prev) => {
+            const withoutCard = prev.filter((msg) => 
+              !(msg.type === "component" && msg.componentData?.type === "task_confirmation")
+            );
+            
+            const successMessage: Message = {
+              id: Date.now().toString(),
+              role: "assistant",
+              content: `✅ Tarefa "${taskData.title}" criada com sucesso!`,
+              type: "text",
+              timestamp: new Date(),
+            };
+            
+            return [...withoutCard, successMessage];
+          });
         });
       } else {
         throw new Error(result.error || "Erro ao criar tarefa");
@@ -934,7 +1346,20 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             <SheetTitle className="font-semibold text-slate-800 m-0 text-center flex-1">
               Assistente Symples
             </SheetTitle>
-            <div className="flex-1 flex justify-end">
+            <div className="flex-1 flex justify-end items-center gap-2">
+              {/* Botão de Ajuda (HelpDialog) */}
+              <HelpDialog>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  title="Central de Ajuda"
+                >
+                  <LifeBuoy className="w-4 h-4" />
+                </Button>
+              </HelpDialog>
+              
               {/* Botão Vassoura (Limpar Contexto) */}
               <Button
                 type="button"
@@ -1008,6 +1433,19 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                       );
                     })}
                   </div>
+                  
+                  {/* Link de Ajuda no Zero State */}
+                  <div className="mt-6 flex justify-center">
+                    <HelpDialog>
+                      <button
+                        type="button"
+                        className="text-xs text-slate-400 hover:text-green-600 transition-colors flex items-center gap-1.5"
+                      >
+                        <LifeBuoy className="w-3.5 h-3.5" />
+                        <span>Preciso de ajuda ou suporte</span>
+                      </button>
+                    </HelpDialog>
+                  </div>
                 </div>
                 )}
 
@@ -1041,8 +1479,10 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                             initialData={{
                               ...message.componentData.data,
                               status: message.componentData.data.status || "todo",
+                              workspaceId: activeWorkspaceId || undefined,
                             }}
                             members={workspaceMembers}
+                            workspaces={workspaces}
                             onConfirm={handleConfirmTask}
                             onCancel={handleCancelTask}
                             isLoading={isLoading}
@@ -1119,15 +1559,6 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                     </div>
                   );
                 })}
-
-                {/* LOADING STATE (Indicador de Digitação) */}
-                {isLoading && (
-                  <div className="flex justify-start w-full animate-in fade-in duration-300">
-                    <div className="bg-white border border-slate-100 rounded-2xl rounded-bl-sm shadow-sm">
-                      <ThinkingIndicator />
-                    </div>
-                  </div>
-                )}
                 
                 {/* Elemento invisível para scroll anchor */}
                 <div ref={scrollRef} />
@@ -1188,29 +1619,48 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                 <Mic className="w-5 h-5" />
               </Button>
 
-              {/* Botão Enviar */}
-              <Button
-                onClick={() => handleSendMessage(inputValue)}
-                disabled={!inputValue.trim() || isLoading}
-                size="icon"
-                className={cn(
-                  "h-9 w-9 rounded-full transition-all duration-200",
-                  inputValue.trim() 
-                    ? "bg-green-600 hover:bg-green-700 text-white shadow-md scale-100" 
-                    : "bg-slate-200 text-slate-400 scale-90 opacity-50"
-                )}
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+              {/* Botão Enviar/Parar Gravação */}
+              {isRecording ? (
+                <Button
+                  onClick={stopRecording}
+                  size="icon"
+                  className="h-9 w-9 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md animate-pulse"
+                  title="Parar gravação e enviar"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => handleSendMessage(inputValue)}
+                  disabled={!inputValue.trim() || isLoading}
+                  size="icon"
+                  className={cn(
+                    "h-9 w-9 rounded-full transition-all duration-200",
+                    inputValue.trim() 
+                      ? "bg-green-600 hover:bg-green-700 text-white shadow-md scale-100" 
+                      : "bg-slate-200 text-slate-400 scale-90 opacity-50"
+                  )}
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           </div>
           <div className="mt-2 text-center">
             {isRecording ? (
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                <p className="text-xs text-red-600 font-medium">
-                  Gravando... {formatRecordingTime(recordingTime)} / {formatRecordingTime(MAX_AUDIO_DURATION)}
-                </p>
+              <div className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg">
+                <div className="relative">
+                  <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse" />
+                  <div className="absolute inset-0 w-3 h-3 bg-red-600 rounded-full animate-ping opacity-75" />
+                </div>
+                <div className="flex flex-col items-center">
+                  <p className="text-sm font-semibold text-red-700">
+                    Gravando áudio
+                  </p>
+                  <p className="text-xs text-red-600 font-mono">
+                    {formatRecordingTime(recordingTime)} / {formatRecordingTime(MAX_AUDIO_DURATION)}
+                  </p>
+                </div>
               </div>
             ) : (
               <p className="text-[10px] text-slate-400">

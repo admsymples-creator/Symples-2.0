@@ -7,6 +7,7 @@ import {
   Check,
   X,
   ChevronDown,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,8 +42,10 @@ interface KanbanConfirmationCardProps {
     assigneeId?: string | null;
     priority?: "low" | "medium" | "high" | "urgent";
     status?: "todo" | "in_progress" | "done";
+    workspaceId?: string;
   };
   members?: Array<{ id: string; name: string; avatar?: string }>;
+  workspaces?: Array<{ id: string; name: string; slug?: string; logo_url?: string | null }>;
   onConfirm: (data: {
     title: string;
     description?: string;
@@ -50,6 +53,7 @@ interface KanbanConfirmationCardProps {
     assigneeId?: string | null;
     priority?: "low" | "medium" | "high" | "urgent";
     status?: "todo" | "in_progress" | "done";
+    workspaceId?: string | null;
   }) => void;
   onCancel: () => void;
   isLoading?: boolean;
@@ -58,6 +62,7 @@ interface KanbanConfirmationCardProps {
 export function KanbanConfirmationCard({
   initialData,
   members = [],
+  workspaces = [],
   onConfirm,
   onCancel,
   isLoading = false,
@@ -70,6 +75,9 @@ export function KanbanConfirmationCard({
   const [assigneeId, setAssigneeId] = React.useState<string | null>(
     initialData.assigneeId || null
   );
+  const [workspaceId, setWorkspaceId] = React.useState<string | null>(
+    initialData.workspaceId || null
+  );
   const [priority, setPriority] = React.useState<"low" | "medium" | "high" | "urgent">(
     initialData.priority || "medium"
   );
@@ -81,12 +89,14 @@ export function KanbanConfirmationCard({
 
   const [isDateOpen, setIsDateOpen] = React.useState(false);
   const [isAssigneeOpen, setIsAssigneeOpen] = React.useState(false);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = React.useState(false);
   const [isStatusOpen, setIsStatusOpen] = React.useState(false);
 
   const titleInputRef = React.useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const selectedAssignee = members.find((m) => m.id === assigneeId);
+  const selectedWorkspace = workspaces.find((w) => w.id === workspaceId);
   const dbStatus = mapLabelToStatus(TASK_CONFIG[status]?.label || "A fazer");
   const statusConfig = TASK_CONFIG[status] || TASK_CONFIG.todo;
 
@@ -112,6 +122,7 @@ export function KanbanConfirmationCard({
       description: description || undefined,
       dueDate: dueDate ? dueDate.toISOString() : null,
       assigneeId,
+      workspaceId,
       priority,
       status,
     });
@@ -296,7 +307,12 @@ export function KanbanConfirmationCard({
             <PopoverTrigger asChild>
               <div className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors">
                 {selectedAssignee ? (
-                  <Avatar name={selectedAssignee.name} avatar={selectedAssignee.avatar} size="xs" />
+                  <Avatar 
+                    name={selectedAssignee.name} 
+                    avatar={selectedAssignee.avatar} 
+                    size="sm" 
+                    className="w-3.5 h-3.5 text-[10px]" 
+                  />
                 ) : (
                   <User className="w-3.5 h-3.5 text-gray-400" />
                 )}
@@ -333,6 +349,69 @@ export function KanbanConfirmationCard({
               </Command>
             </PopoverContent>
           </Popover>
+
+          {/* Workspace Picker */}
+          {workspaces.length > 0 && (
+            <Popover open={isWorkspaceOpen} onOpenChange={setIsWorkspaceOpen}>
+              <PopoverTrigger asChild>
+                <div className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors">
+                  {selectedWorkspace ? (
+                    <div className="flex items-center gap-1.5">
+                      {selectedWorkspace.logo_url ? (
+                        <img 
+                          src={selectedWorkspace.logo_url} 
+                          alt={selectedWorkspace.name}
+                          className="w-4 h-4 rounded"
+                        />
+                      ) : (
+                        <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                      )}
+                      <span className="text-xs text-gray-600 max-w-[80px] truncate">
+                        {selectedWorkspace.name}
+                      </span>
+                    </div>
+                  ) : (
+                    <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                  )}
+                </div>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-[200px]" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar workspace..." />
+                  <CommandList>
+                    <CommandEmpty>Nenhum workspace encontrado.</CommandEmpty>
+                    <CommandGroup>
+                      {workspaces.map((workspace) => (
+                        <CommandItem
+                          key={workspace.id}
+                          onSelect={() => {
+                            setWorkspaceId(workspace.id);
+                            setIsWorkspaceOpen(false);
+                          }}
+                          className={cn(
+                            workspaceId === workspace.id && "bg-gray-100"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            {workspace.logo_url ? (
+                              <img 
+                                src={workspace.logo_url} 
+                                alt={workspace.name}
+                                className="w-4 h-4 rounded"
+                              />
+                            ) : (
+                              <Building2 className="w-4 h-4 text-gray-400" />
+                            )}
+                            <span className="text-sm">{workspace.name}</span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
 
         {/* Lado Direito: Botões de Ação */}
