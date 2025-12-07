@@ -245,7 +245,35 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - **Drag & Drop:**
   - Persistência via campo `position` (float/double) no banco de dados.
 
-### 9.4. Inteligência Artificial (Assistente)
+### 9.4. Inteligência Artificial (Assistente) - Global Assistant Sheet
+
+**✅ Implementado (v2.2):**
+- **GlobalAssistantSheet:** Componente de chat acessível via FAB flutuante em todas as telas autenticadas
+- **FAB (Floating Action Button):** Botão circular fixo no canto inferior direito com AIOrb compacto
+- **Transcrição de Áudio:** Integração com OpenAI Whisper via `/api/audio/transcribe`
+  - Limite de 2 minutos de gravação com envio automático
+  - Resposta especial com meme quando áudio atinge limite máximo
+- **Generative UI:** Sistema de componentes dinâmicos renderizados pelo assistente
+  - **KanbanConfirmationCard:** Card de confirmação estilo Kanban para criação de tarefas
+  - Detecção automática de intenção de criar tarefa (texto e áudio)
+  - Campos editáveis: título, descrição, data, responsável, prioridade, status
+- **ThinkingIndicator:** Componente visual de "pensando" com:
+  - Orb animado com anel verde girando (0.6s)
+  - Ícone Symples no centro
+  - Frases rotativas a cada 3 segundos:
+    - "Processando sua solicitação..."
+    - "Estruturando os dados..."
+    - "Consultando sua agenda..."
+    - "Quase lá, finalizando..."
+  - Efeito shimmer no texto
+- **Funcionalidades:**
+  - Envio de mensagens de texto
+  - Gravação e envio de áudio (máx. 2 minutos)
+  - Upload de imagens/prints
+  - Estado "pensando" antes das respostas
+  - Auto-scroll para novas mensagens
+  - Zero state com sugestões de ações rápidas
+  - Saudação dinâmica baseada no horário e nome do usuário
 - **Interação:** O chat não retorna apenas texto. Retorna JSON que o Frontend renderiza como **UI Components** (Cards de Tarefa, Gráficos).
 - **Empty State:** Exibir "Suggestion Chips" (atalhos rápidos) quando não houver histórico.
 
