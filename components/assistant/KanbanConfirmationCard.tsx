@@ -8,6 +8,7 @@ import {
   X,
   ChevronDown,
   Building2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/command";
 import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES } from "@/lib/config/tasks";
 import { Avatar } from "@/components/tasks/Avatar";
+import { toast } from "sonner";
 
 interface KanbanConfirmationCardProps {
   initialData: {
@@ -79,7 +81,7 @@ export function KanbanConfirmationCard({
   const [priority, setPriority] = React.useState<"low" | "medium" | "high" | "urgent">(
     initialData.priority || "medium"
   );
-  const [status, setStatus] = React.useState<"todo" | "in_progress" | "done">(
+  const [taskStatus, setTaskStatus] = React.useState<"todo" | "in_progress" | "done">(
     initialData.status || "todo"
   );
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -89,17 +91,19 @@ export function KanbanConfirmationCard({
   const [isAssigneeOpen, setIsAssigneeOpen] = React.useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = React.useState(false);
   const [isStatusOpen, setIsStatusOpen] = React.useState(false);
+  const [status, setStatus] = React.useState<"idle" | "loading" | "success" | "cancelled">("idle");
 
   const titleInputRef = React.useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const selectedAssignee = members.find((m) => m.id === assigneeId);
   const selectedWorkspace = workspaces.find((w) => w.id === workspaceId);
-  const dbStatus = mapLabelToStatus(TASK_CONFIG[status]?.label || "A fazer");
-  const statusConfig = TASK_CONFIG[status] || TASK_CONFIG.todo;
+  const dbStatus = mapLabelToStatus(TASK_CONFIG[taskStatus]?.label || "A fazer");
+  const statusConfig = TASK_CONFIG[taskStatus] || TASK_CONFIG.todo;
 
   const isOverdue = dueDate && new Date(dueDate) < new Date();
   const isToday = dueDate && new Date(dueDate).toDateString() === new Date().toDateString();
+  const isReadOnly = status === "loading" || status === "success" || status === "cancelled";
 
   React.useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -123,36 +127,69 @@ export function KanbanConfirmationCard({
   };
 
   const handleConfirm = () => {
-    onConfirm({
+    if (status === "loading" || status === "success" || status === "cancelled") return;
+    setStatus("loading");
+    const payload = {
       title,
       description: description || undefined,
       dueDate: dueDate ? formatDateLocal(dueDate) : null,
       assigneeId,
       workspaceId,
       priority,
-      status,
-    });
+      status: taskStatus,
+    };
+
+    const confirmResult = onConfirm(payload);
+    if (confirmResult && typeof (confirmResult as Promise<void>).then === "function") {
+      (confirmResult as Promise<void>)
+        .then(() => {
+          setStatus("success");
+          toast.success("Tarefa criada!");
+        })
+        .catch(() => {
+          setStatus("idle");
+        });
+    } else {
+      setStatus("success");
+      toast.success("Tarefa criada!");
+    }
+  };
+
+  const handleCancel = () => {
+    if (status === "cancelled") return;
+    setStatus("cancelled");
+    onCancel();
   };
 
   const handleStatusUpdate = (statusLabel: string) => {
+    if (isReadOnly) return;
     const statusKey = ORDERED_STATUSES.find(
       (key) => TASK_CONFIG[key].label === statusLabel
     );
     if (statusKey) {
-      setStatus(statusKey as "todo" | "in_progress" | "done");
+      setTaskStatus(statusKey as "todo" | "in_progress" | "done");
     }
     setIsStatusOpen(false);
   };
 
   return (
-    <div className="group bg-white rounded-xl p-3 border border-gray-200 shadow-sm w-full relative flex flex-col min-h-[112px]">
+    <div
+      className={cn(
+        "group rounded-xl p-3 border shadow-sm w-full relative flex flex-col min-h-[112px] transition-all duration-300",
+        status === "success"
+          ? "border-green-500 bg-green-50"
+          : status === "cancelled"
+          ? "border-gray-200 bg-gray-50 opacity-60 grayscale"
+          : "border-gray-200 bg-white"
+      )}
+    >
       {/* Botões de Ação (Absoluto) */}
       <div className="absolute top-2 right-2 flex items-center gap-1 z-30">
         <Button
           size="icon"
           variant="ghost"
-          onClick={onCancel}
-          disabled={isLoading}
+          onClick={handleCancel}
+          disabled={isLoading || status !== "idle"}
           className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
           title="Cancelar"
         >
@@ -162,12 +199,19 @@ export function KanbanConfirmationCard({
 
       {/* Header: Status com edição rápida */}
       <div className="flex items-center justify-between mb-2">
-        <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
+        <Popover
+          open={isStatusOpen}
+          onOpenChange={(open) => {
+            if (isReadOnly) return;
+            setIsStatusOpen(open);
+          }}
+        >
           <PopoverTrigger asChild>
             <Badge
               variant="outline"
               className={cn(
                 "text-[10px] px-2 py-0.5 h-5 font-medium cursor-pointer hover:bg-gray-50 transition-colors",
+                isReadOnly && "pointer-events-none opacity-70",
                 statusConfig.lightColor
               )}
             >
@@ -182,7 +226,7 @@ export function KanbanConfirmationCard({
                 <CommandGroup>
                   {ORDERED_STATUSES.map((statusKey) => {
                     const config = TASK_CONFIG[statusKey];
-                    const isSelected = status === statusKey;
+                    const isSelected = taskStatus === statusKey;
                     return (
                       <CommandItem
                         key={statusKey}
@@ -211,6 +255,7 @@ export function KanbanConfirmationCard({
             ref={titleInputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            disabled={isReadOnly}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -234,7 +279,10 @@ export function KanbanConfirmationCard({
               "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
               "cursor-text hover:bg-gray-50 rounded px-1 -mx-1"
             )}
-            onClick={() => setIsEditingTitle(true)}
+            onClick={() => {
+              if (isReadOnly) return;
+              setIsEditingTitle(true);
+            }}
           >
             {title}
           </h4>
@@ -246,6 +294,7 @@ export function KanbanConfirmationCard({
             ref={descriptionTextareaRef}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={isReadOnly}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 e.preventDefault();
@@ -263,7 +312,10 @@ export function KanbanConfirmationCard({
               "text-xs text-gray-600 mb-2 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5",
               !description && "text-gray-400 italic"
             )}
-            onClick={() => setIsEditingDescription(true)}
+            onClick={() => {
+              if (isReadOnly) return;
+              setIsEditingDescription(true);
+            }}
           >
             {description || "Clique para adicionar descrição..."}
           </p>
@@ -275,9 +327,20 @@ export function KanbanConfirmationCard({
         {/* Lado Esquerdo: Data & Assignee */}
         <div className="flex items-center gap-2">
           {/* Data Picker */}
-          <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
+          <Popover
+            open={isDateOpen}
+            onOpenChange={(open) => {
+              if (isReadOnly) return;
+              setIsDateOpen(open);
+            }}
+          >
             <PopoverTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 -ml-1 transition-colors">
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 -ml-1 transition-colors",
+                  isReadOnly && "pointer-events-none opacity-70"
+                )}
+              >
                 {dueDate ? (
                   <>
                     <CalendarIcon className={cn("w-3.5 h-3.5", isOverdue ? "text-red-600" : isToday ? "text-green-600" : "text-gray-400")} />
@@ -309,9 +372,20 @@ export function KanbanConfirmationCard({
           </Popover>
 
           {/* Assignee Picker */}
-          <Popover open={isAssigneeOpen} onOpenChange={setIsAssigneeOpen}>
+          <Popover
+            open={isAssigneeOpen}
+            onOpenChange={(open) => {
+              if (isReadOnly) return;
+              setIsAssigneeOpen(open);
+            }}
+          >
             <PopoverTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors">
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors",
+                  isReadOnly && "pointer-events-none opacity-70"
+                )}
+              >
                 {selectedAssignee ? (
                   <Avatar 
                     name={selectedAssignee.name} 
@@ -358,9 +432,20 @@ export function KanbanConfirmationCard({
 
           {/* Workspace Picker */}
           {workspaces.length > 0 && (
-            <Popover open={isWorkspaceOpen} onOpenChange={setIsWorkspaceOpen}>
+            <Popover
+              open={isWorkspaceOpen}
+              onOpenChange={(open) => {
+                if (isReadOnly) return;
+                setIsWorkspaceOpen(open);
+              }}
+            >
               <PopoverTrigger asChild>
-                <div className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors",
+                    isReadOnly && "pointer-events-none opacity-70"
+                  )}
+                >
                   {selectedWorkspace ? (
                     <div className="flex items-center gap-1.5">
                       {selectedWorkspace.logo_url ? (
@@ -421,27 +506,48 @@ export function KanbanConfirmationCard({
         </div>
 
         {/* Lado Direito: Botões de Ação */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onCancel}
-            disabled={isLoading}
-            className="h-7 text-xs"
-          >
-            <X className="w-3 h-3 mr-1" />
-            Cancelar
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleConfirm}
-            disabled={isLoading || !title.trim()}
-            className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
-          >
-            <Check className="w-3 h-3 mr-1" />
-            {isLoading ? "Criando..." : "Confirmar"}
-          </Button>
-        </div>
+        {status === "success" ? (
+          <div className="flex items-center justify-end w-full text-green-700 text-sm font-semibold gap-2">
+            <Check className="w-4 h-4" />
+            <span>✅ Tarefa criada com sucesso</span>
+          </div>
+        ) : status === "cancelled" ? (
+          <div className="flex items-center justify-end w-full text-gray-500 text-xs gap-2">
+            <X className="w-3 h-3" />
+            <span>🚫 Cancelado pelo usuário</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={isLoading || status === "loading"}
+              className="h-7 text-xs"
+            >
+              <X className="w-3 h-3 mr-1" />
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirm}
+              disabled={isLoading || !title.trim() || status === "loading"}
+              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+            >
+              {status === "loading" ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                <>
+                  <Check className="w-3 h-3 mr-1" />
+                  Confirmar
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

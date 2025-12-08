@@ -714,25 +714,43 @@ export function useAssistantChat(workspaceId: string | null) {
           router.refresh();
         });
 
-        // Remover card de confirmação e mensagem de texto anterior do assistente
-        startTransition(() => {
-          setMessages((prev) => {
-            const filtered: Message[] = [];
-            for (let i = 0; i < prev.length; i++) {
-              const msg = prev[i];
-              // Se é o card de confirmação, pula ele e a mensagem anterior do assistente
-              if (msg.type === "component" && msg.componentData?.type === "task_confirmation") {
-                // Remove a mensagem anterior se for do assistente e tipo texto
-                if (filtered.length > 0 && filtered[filtered.length - 1].role === "assistant" && filtered[filtered.length - 1].type === "text") {
-                  filtered.pop();
+        // Atualizar card para status de sucesso (persistindo no estado)
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.type === "component" && msg.componentData?.type === "task_confirmation"
+              ? {
+                  ...msg,
+                  componentData: {
+                    ...msg.componentData,
+                    data: {
+                      ...msg.componentData.data,
+                      status: "success",
+                    },
+                  },
                 }
-                continue; // Não adiciona o card
-              }
-              filtered.push(msg);
-            }
-            return filtered;
-          });
-        });
+              : msg
+          )
+        );
+
+        // Follow-up amigável pós confirmação
+        setTimeout(() => {
+          const followup: Message = {
+            id: `ai-follow-${Date.now()}`,
+            role: "assistant",
+            content: "Feito! Tarefa criada. ✅\nQuer mais alguma coisa?",
+            type: "text",
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, followup]);
+          if (workspaceId) {
+            saveAssistantMessage({
+              workspace_id: targetWorkspaceId,
+              role: "assistant",
+              content: followup.content,
+              type: "text",
+            }).catch((error) => console.error("Erro ao salvar follow-up de sucesso:", error));
+          }
+        }, 600);
 
         toast.success("Tarefa criada com sucesso!");
       } else {
@@ -747,24 +765,25 @@ export function useAssistantChat(workspaceId: string | null) {
   };
 
   const cancelTaskConfirmation = () => {
-    startTransition(() => {
-      setMessages((prev) => {
-        const filtered: Message[] = [];
-        for (let i = 0; i < prev.length; i++) {
-          const msg = prev[i];
-          // Se é o card de confirmação, pula ele e a mensagem anterior do assistente
-          if (msg.type === "component" && msg.componentData?.type === "task_confirmation") {
-            // Remove a mensagem anterior se for do assistente e tipo texto
-            if (filtered.length > 0 && filtered[filtered.length - 1].role === "assistant" && filtered[filtered.length - 1].type === "text") {
-              filtered.pop();
-            }
-            continue; // Não adiciona o card
-          }
-          filtered.push(msg);
-        }
-        return filtered;
-      });
-    });
+    // Manter o card na tela e apenas adicionar follow-up de cancelamento
+    setTimeout(() => {
+      const followup: Message = {
+        id: `ai-cancel-${Date.now()}`,
+        role: "assistant",
+        content: "Entendido, cancelei a criação. O que manda agora?",
+        type: "text",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, followup]);
+      if (workspaceId) {
+        saveAssistantMessage({
+          workspace_id: workspaceId,
+          role: "assistant",
+          content: followup.content,
+          type: "text",
+        }).catch((error) => console.error("Erro ao salvar follow-up de cancelamento:", error));
+      }
+    }, 600);
   };
 
   return {
