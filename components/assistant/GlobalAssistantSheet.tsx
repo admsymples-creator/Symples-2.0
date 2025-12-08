@@ -505,7 +505,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             id: task.id,
             title: task.title,
             status: task.status,
-            dueDate: task.dueDate,
+            dueDate: task.due_date,
             priority: task.priority,
             assignee: task.assignee?.name || null,
             group: task.group?.name || null,
