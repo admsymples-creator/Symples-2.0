@@ -286,7 +286,18 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Empty State (Boas-vindas):**
   - **Hero:** Componente `AIOrb` (Esfera escura com borda gradiente giratória + Ícone Sparkles).
   - **Chips:** Grid de 4 sugestões rápidas ("Criar tarefa", "Ver saldo") abaixo do Orb.
-- **Chat Interface:**
+- **Chat Interface (GlobalAssistantSheet):**
+  - Header centralizado com título "Assistente Symples"
+  - Área de chat com scroll automático
+  - Zero state com saudação dinâmica e sugestões de ações
+  - Input fixo no rodapé com botões para:
+    - Upload de imagem/print
+    - Gravação de áudio (máx. 2 minutos)
+    - Envio de mensagem
+  - Suporte a mensagens de texto, áudio e imagem
+  - Transcrição automática de áudio usando OpenAI Whisper
+  - Generative UI com componentes dinâmicos (KanbanConfirmationCard)
+  - Estado "pensando" com ThinkingIndicator (orb + frases rotativas)
   - **Respostas Ricas:** A IA não retorna apenas texto. Ela renderiza **Mini-Cards** (Tarefas/Transações) dentro do fluxo da conversa.
   - **Input:** Barra flutuante com sombra forte (`shadow-xl`) na parte inferior.
 
@@ -469,6 +480,21 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 9.4. Componentes de IA
 - **AIOrb (`components/assistant/AIOrb.tsx`):**
+  - Esfera escura (slate-950) com ícone Symples no centro
+  - Animações condicionais baseadas em `isLoading` e `compact`
+  - Suporte a diferentes tamanhos (normal e compacto para FAB)
+  
+- **ThinkingIndicator (`components/assistant/ThinkingIndicator.tsx`):**
+  - Orb animado com anel verde girando (0.6s)
+  - Ícone Symples no centro
+  - Frases rotativas a cada 3 segundos com efeito shimmer
+  - Usado durante processamento de mensagens
+
+- **KanbanConfirmationCard (`components/assistant/KanbanConfirmationCard.tsx`):**
+  - Card estilo Kanban para confirmação de criação de tarefas
+  - Campos editáveis: título, descrição, data, responsável, prioridade, status
+  - Botões de ação: Cancelar e Confirmar
+  - Parte do sistema Generative UI
   - Esfera escura (`bg-slate-950`)
   - Borda gradiente giratória (animação CSS)
   - Ícone Sparkles centralizado

@@ -102,7 +102,12 @@ symples-v2/
 │
 ├── 📁 components/
 │   ├── 📁 assistant/
-│   │   └── AIOrb.tsx
+│   │   ├── AIOrb.tsx (✅ Orb animado com ícone Symples)
+│   │   ├── AIOrbVariants.tsx (✅ 5 variações visuais do orb)
+│   │   ├── GlobalAssistantSheet.tsx (✅ Chat global acessível via FAB)
+│   │   ├── KanbanConfirmationCard.tsx (✅ Card de confirmação estilo Kanban)
+│   │   ├── TaskConfirmationCard.tsx (✅ Card de confirmação alternativo)
+│   │   └── ThinkingIndicator.tsx (✅ Indicador de "pensando" com orb e frases rotativas)
 │   │
 │   ├── 📁 debug/
 │   │   └── minify-workspace-sync.tsx
@@ -186,6 +191,7 @@ symples-v2/
 │   │   ├── popover.tsx
 │   │   ├── scroll-area.tsx
 │   │   ├── select.tsx
+│   │   ├── sheet.tsx (✅ Componente Sheet do shadcn/ui para Global Assistant)
 │   │   ├── separator.tsx
 │   │   ├── slider.tsx
 │   │   ├── StatePage.tsx
@@ -244,6 +250,8 @@ symples-v2/
 │   └── utils.ts
 │
 ├── 📁 public/
+│   ├── audiode2minutos.png (✅ Meme para resposta de áudio de 2 minutos)
+│   ├── white-icon-symples.svg (✅ Ícone branco do Symples usado no AIOrb)
 │   ├── file.svg
 │   ├── globe.svg
 │   ├── logo-black.svg

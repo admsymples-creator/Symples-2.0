@@ -55,3 +55,4 @@ SELECT '✅ RLS Policies corrigidas! Agora é possível criar workspaces.' as re
 
 
 
+

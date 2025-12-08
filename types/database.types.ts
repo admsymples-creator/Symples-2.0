@@ -500,6 +500,65 @@ export type Database = {
           },
         ]
       }
+      assistant_messages: {
+        Row: {
+          id: string
+          workspace_id: string | null
+          user_id: string
+          role: string
+          content: string
+          type: string | null
+          image_url: string | null
+          audio_url: string | null
+          audio_duration: number | null
+          audio_transcription: string | null
+          is_thinking: boolean | null
+          is_context_divider: boolean | null
+          component_data: Json | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          workspace_id?: string | null
+          user_id: string
+          role: string
+          content?: string
+          type?: string | null
+          image_url?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_transcription?: string | null
+          is_thinking?: boolean | null
+          is_context_divider?: boolean | null
+          component_data?: Json | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          workspace_id?: string | null
+          user_id?: string
+          role?: string
+          content?: string
+          type?: string | null
+          image_url?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_transcription?: string | null
+          is_thinking?: boolean | null
+          is_context_divider?: boolean | null
+          component_data?: Json | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_messages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

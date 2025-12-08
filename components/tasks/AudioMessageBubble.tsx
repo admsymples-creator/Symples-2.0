@@ -34,41 +34,83 @@ export function AudioMessageBubble({
 
     // Inicializar elemento de áudio se houver URL válida
     useEffect(() => {
-        console.log("AudioMessageBubble - audioUrl recebido:", audioUrl, "isPlayable:", isPlayableUrl(audioUrl));
-        
         if (isPlayableUrl(audioUrl)) {
-            console.log("Criando elemento de áudio com URL:", audioUrl);
-            const audio = new Audio(audioUrl);
+            let audio: HTMLAudioElement | null = null;
+            let checkAudio: NodeJS.Timeout | null = null;
             
-            audio.addEventListener("timeupdate", () => {
-                setCurrentTime(audio.currentTime);
-            });
-            
-            audio.addEventListener("ended", () => {
-                setIsPlaying(false);
-                setCurrentTime(0);
-            });
-            
-            audio.addEventListener("error", (e) => {
-                console.error("Erro ao carregar áudio:", e, "URL:", audioUrl);
-                setAudioElement(null); // Fallback
-            });
-            
-            audio.addEventListener("loadeddata", () => {
-                console.log("Áudio carregado com sucesso. Duração:", audio.duration);
-            });
-            
-            setAudioElement(audio);
+            try {
+                audio = new Audio(audioUrl);
+                
+                const handleTimeUpdate = () => {
+                    if (audio) {
+                        setCurrentTime(audio.currentTime);
+                    }
+                };
+                
+                const handleEnded = () => {
+                    setIsPlaying(false);
+                    setCurrentTime(0);
+                };
+                
+                const handleError = () => {
+                    // Silenciosamente usar simulação visual se o blob não estiver disponível
+                    // Isso é comum quando blob URLs são revogados ou não estão mais acessíveis
+                    setAudioElement(null);
+                    setIsPlaying(false);
+                };
+                
+                const handleLoadedData = () => {
+                    if (audio && audio.readyState >= 2) {
+                        setAudioElement(audio);
+                    }
+                };
+                
+                audio.addEventListener("timeupdate", handleTimeUpdate);
+                audio.addEventListener("ended", handleEnded);
+                audio.addEventListener("error", handleError);
+                audio.addEventListener("loadeddata", handleLoadedData);
+                audio.addEventListener("canplay", handleLoadedData);
+                
+                // Tentar carregar o áudio de forma assíncrona
+                try {
+                    audio.load();
+                } catch {
+                    // Se falhar ao carregar, usar simulação
+                    setAudioElement(null);
+                }
+                
+                // Verificar se o áudio está disponível após um pequeno delay
+                checkAudio = setTimeout(() => {
+                    if (audio) {
+                        if (audio.readyState >= 2) {
+                            setAudioElement(audio);
+                        } else if (audio.error) {
+                            // Áudio não está disponível, usar simulação
+                            setAudioElement(null);
+                        }
+                    }
+                }, 200);
+                
+            } catch (error) {
+                // Se houver erro ao criar o elemento de áudio, usar simulação
+                setAudioElement(null);
+            }
             
             return () => {
-                audio.pause();
-                audio.removeEventListener("timeupdate", () => {});
-                audio.removeEventListener("ended", () => {});
-                audio.removeEventListener("error", () => {});
-                audio.removeEventListener("loadeddata", () => {});
+                if (checkAudio) {
+                    clearTimeout(checkAudio);
+                }
+                if (audio) {
+                    audio.pause();
+                    audio.removeEventListener("timeupdate", () => {});
+                    audio.removeEventListener("ended", () => {});
+                    audio.removeEventListener("error", () => {});
+                    audio.removeEventListener("loadeddata", () => {});
+                    audio.removeEventListener("canplay", () => {});
+                    audio.src = '';
+                }
             };
         } else {
-            console.log("URL não é tocável, usando simulação visual");
             setAudioElement(null);
         }
     }, [audioUrl]);

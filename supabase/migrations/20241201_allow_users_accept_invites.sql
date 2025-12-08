@@ -24,3 +24,4 @@ CREATE POLICY "Users can accept invites and add themselves"
 -- 4. Atualiza o status do convite para 'accepted'
 
 
+
