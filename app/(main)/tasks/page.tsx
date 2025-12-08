@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { toast } from "sonner";
@@ -278,11 +278,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [tasksFromHook, initialTasks]);
 
-    // Sensores para drag & drop
+    // Sensores para drag & drop (otimizados para melhor performance)
+    // useSensors já memoiza internamente, então não precisamos de useMemo adicional
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: {
-                distance: 8,
+                distance: 5, // Reduzido de 8 para 5px - ativação mais rápida
+                delay: 0, // Sem delay para resposta instantânea
             },
         }),
         useSensor(KeyboardSensor, {
@@ -1151,8 +1153,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, [groupedData, viewOption, groupOrder]);
 
     // Converter grupos para formato de colunas (Kanban)
+    // Otimizado: usa referências estáveis e evita recriação quando dados não mudam
     const kanbanColumns = useMemo(() => {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
+        
+        // Early return se não há dados
+        if (!dataToUse || Object.keys(dataToUse).length === 0) {
+            return [];
+        }
+        
         const columns = Object.entries(dataToUse)
             .filter(([key, tasks]) => {
                 // ✅ Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
@@ -1253,7 +1262,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         return columns;
-    }, [groupedData, orderedGroupedData, viewOption, availableGroups]);
+    }, [groupedData, orderedGroupedData, viewOption, availableGroups, groupColors]);
 
     // Converter grupos para formato de lista (TaskGroup) com ordenaÃ§Ã£o
     const listGroups = useMemo(() => {

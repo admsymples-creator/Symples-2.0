@@ -132,7 +132,29 @@ NEXT_PUBLIC_SITE_URL=https://seu-site.com
 
 ## 🐛 Troubleshooting
 
-### Email não está sendo enviado:
+### Email não está sendo enviado em Produção/Preview:
+**Problema:** Convites não são enviados em produção/preview, mas funcionam no localhost.
+
+**Causas Comuns:**
+1. **`RESEND_API_KEY` não configurada no Vercel**
+   - ✅ **CORRIGIDO:** O sistema agora lança erro explícito se a chave não estiver configurada
+   - Verifique em: Vercel Dashboard → Settings → Environment Variables
+   - Certifique-se de adicionar para Production e Preview
+
+2. **`NEXT_PUBLIC_SITE_URL` não configurada**
+   - ✅ **CORRIGIDO:** O sistema agora valida e lança erro se não estiver configurada
+   - Configure com a URL completa do seu site (ex: `https://seu-dominio.com`)
+
+3. **Erros silenciados (antes da correção)**
+   - ✅ **CORRIGIDO:** Em produção/preview, erros de envio de email agora são lançados explicitamente
+   - Logs detalhados são gerados para facilitar debug
+
+**Como verificar:**
+- Ao criar um convite, se houver problema de configuração, você verá uma mensagem de erro clara
+- Verifique os logs no Vercel para detalhes específicos
+- Em desenvolvimento, o sistema continua funcionando sem email (para facilitar testes)
+
+### Email não está sendo enviado (geral):
 1. Verifique se `RESEND_API_KEY` está configurada
 2. Verifique logs do console (erro será logado)
 3. Em desenvolvimento, o link ainda aparece mesmo sem email
@@ -154,7 +176,15 @@ NEXT_PUBLIC_SITE_URL=https://seu-site.com
 
 ### Arquivos Modificados:
 - `lib/actions/members.ts` - Adicionadas novas ações e integração com email
+- `lib/email/send-invite.ts` - Validações melhoradas para produção/preview
 - `package.json` - Adicionados pacotes `resend` e `@react-email/components`
+
+### Correções Recentes (fix/invite-prod-dev):
+- ✅ Validação explícita de `RESEND_API_KEY` em produção/preview
+- ✅ Validação explícita de `NEXT_PUBLIC_SITE_URL` em produção/preview
+- ✅ Erros de envio de email agora são lançados explicitamente (não silenciados)
+- ✅ Logs detalhados para facilitar debug em produção
+- ✅ Comportamento diferenciado: desenvolvimento permite continuar sem email, produção falha explicitamente
 
 ### Arquivos para Melhorar (Futuro):
 - `app/(main)/settings/settings-client.tsx` - Adicionar menu dropdown e validações UI

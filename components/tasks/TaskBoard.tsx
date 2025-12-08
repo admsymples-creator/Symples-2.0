@@ -65,7 +65,7 @@ interface TaskBoardProps {
 }
 
 // Componente de Coluna Droppable
-function DroppableColumn({
+const DroppableColumn = memo(function DroppableColumn({
   column,
   onTaskClick,
   onAddTask,
@@ -100,13 +100,16 @@ function DroppableColumn({
   showGroupActions?: boolean;
   viewOption?: string;
 }) {
+  // Memoizar data do droppable para evitar recriação
+  const droppableData = useMemo(() => ({
+    type: 'column' as const,
+    columnId: column.id,
+  }), [column.id]);
+
   // Configura a coluna inteira como uma zona de drop
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
-    data: {
-      type: 'column',
-      columnId: column.id,
-    }
+    data: droppableData,
   });
   
   const [isAdding, setIsAdding] = useState(false);
@@ -136,6 +139,15 @@ function DroppableColumn({
       await result;
     }
   }, [onAddTask, column.id]);
+
+  // Memoizar handlers de task por ID para evitar recriação no map
+  const taskClickHandlers = useMemo(() => {
+    const handlers: Record<string, () => void> = {};
+    tasks.forEach((task) => {
+      handlers[task.id] = () => handleTaskClick(task.id);
+    });
+    return handlers;
+  }, [tasks, handleTaskClick]);
 
   return (
     <div
@@ -223,7 +235,7 @@ function DroppableColumn({
                   dueDate={task.dueDate}
                   tags={task.tags}
                   groupColor={task.group?.color}
-                  onClick={() => handleTaskClick(task.id)}
+                  onClick={taskClickHandlers[task.id]}
                   members={members}
                   onToggleComplete={onToggleComplete}
                   onTaskUpdated={onTaskUpdated}
@@ -251,7 +263,29 @@ function DroppableColumn({
       </div>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Comparação otimizada para evitar re-renders desnecessários
+  return (
+    prevProps.column.id === nextProps.column.id &&
+    prevProps.column.title === nextProps.column.title &&
+    prevProps.column.color === nextProps.column.color &&
+    prevProps.column.tasks === nextProps.column.tasks &&
+    prevProps.isDragDisabled === nextProps.isDragDisabled &&
+    prevProps.showGroupActions === nextProps.showGroupActions &&
+    prevProps.viewOption === nextProps.viewOption &&
+    prevProps.onTaskClick === nextProps.onTaskClick &&
+    prevProps.onAddTask === nextProps.onAddTask &&
+    prevProps.onToggleComplete === nextProps.onToggleComplete &&
+    prevProps.onTaskUpdated === nextProps.onTaskUpdated &&
+    prevProps.onTaskUpdatedOptimistic === nextProps.onTaskUpdatedOptimistic &&
+    prevProps.onDelete === nextProps.onDelete &&
+    prevProps.onRenameGroup === nextProps.onRenameGroup &&
+    prevProps.onColorChange === nextProps.onColorChange &&
+    prevProps.onDeleteGroup === nextProps.onDeleteGroup &&
+    prevProps.onClearGroup === nextProps.onClearGroup &&
+    JSON.stringify(prevProps.members) === JSON.stringify(nextProps.members)
+  );
+});
 
 // TaskBoard Component
 // Nota: O DndContext reside no componente pai (TasksView) para gerenciar o estado global do drag

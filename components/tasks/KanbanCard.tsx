@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState, useRef, useEffect } from "react";
+import React, { useCallback, useState, useRef, useEffect, useMemo, memo } from "react";
 import { 
   GitPullRequest, 
   MessageSquare, 
@@ -163,29 +163,42 @@ function KanbanCardComponent({
     }
   }, [isEditingTitle]);
   
-  // Lógica de Data
-  const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
-  const isToday = dueDate && isTodayFunc(dueDate);
-  const isFocusActive = isNextSunday(dueDate);
-  const isUrgentActive = isToday || priority === "high" || priority === "urgent";
-
-  // Configuração Visual
-  const dbStatus = mapLabelToStatus(status);
-  const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
-
-  const getGroupColorClass = (colorName?: string) => {
-    if (!colorName || colorName.startsWith("#")) return null;
-    const colorMap: Record<string, string> = {
-      "red": "bg-red-500", "blue": "bg-blue-500", "green": "bg-green-500",
-      "yellow": "bg-yellow-500", "purple": "bg-purple-500", "pink": "bg-pink-500",
-      "orange": "bg-orange-500", "slate": "bg-slate-500", "cyan": "bg-cyan-500",
-      "indigo": "bg-indigo-500",
-    };
-    return colorMap[colorName];
-  };
+  // Memoizar cálculos de data (evitar recalcular a cada render)
+  const dateCalculations = useMemo(() => {
+    const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
+    const isToday = dueDate && isTodayFunc(dueDate);
+    const isFocusActive = isNextSunday(dueDate);
+    const isUrgentActive = isToday || priority === "high" || priority === "urgent";
+    return { isOverdue, isToday, isFocusActive, isUrgentActive };
+  }, [dueDate, completed, priority]);
   
-  const groupColorClass = getGroupColorClass(groupColor);
-  const isHexColor = groupColor?.startsWith("#");
+  const { isOverdue, isToday, isFocusActive, isUrgentActive } = dateCalculations;
+
+  // Memoizar configuração visual
+  const statusConfig = useMemo(() => {
+    const dbStatus = mapLabelToStatus(status);
+    return TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
+  }, [status]);
+
+  // Memoizar cálculo de cor do grupo
+  const groupColorInfo = useMemo(() => {
+    const getGroupColorClass = (colorName?: string) => {
+      if (!colorName || colorName.startsWith("#")) return null;
+      const colorMap: Record<string, string> = {
+        "red": "bg-red-500", "blue": "bg-blue-500", "green": "bg-green-500",
+        "yellow": "bg-yellow-500", "purple": "bg-purple-500", "pink": "bg-pink-500",
+        "orange": "bg-orange-500", "slate": "bg-slate-500", "cyan": "bg-cyan-500",
+        "indigo": "bg-indigo-500",
+      };
+      return colorMap[colorName];
+    };
+    return {
+      groupColorClass: getGroupColorClass(groupColor),
+      isHexColor: groupColor?.startsWith("#")
+    };
+  }, [groupColor]);
+  
+  const { groupColorClass, isHexColor } = groupColorInfo;
 
   // Drag and Drop
   const {
@@ -201,15 +214,16 @@ function KanbanCardComponent({
     data: { type: 'task', taskId: id }
   });
 
-  const dragStyle = {
+  // Memoizar estilo de drag (evitar recriar objeto a cada render)
+  const dragStyle = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.3 : disabled ? 0.75 : 1, // Opacidade menor no original quando arrasta (padrão Trello)
-    willChange: 'transform',
-  };
+    willChange: 'transform' as const,
+  }), [transform, transition, isDragging, disabled]);
 
-  // Actions - Optimistic UI
-  const handleDateUpdate = async (date: Date | undefined) => {
+  // Actions - Optimistic UI (memoizar callbacks)
+  const handleDateUpdate = useCallback(async (date: Date | undefined) => {
     setIsDateOpen(false); // Fechar Popover imediatamente
     const previousDueDate = dueDate;
     onTaskUpdatedOptimistic?.(id, { dueDate: date ? date.toISOString() : undefined });
@@ -231,9 +245,9 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
       toast.error("Erro ao atualizar data");
     }
-  };
+  }, [id, dueDate, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleAssigneeUpdate = async (memberId: string | null) => {
+  const handleAssigneeUpdate = useCallback(async (memberId: string | null) => {
     setIsAssigneeOpen(false); // Fechar Popover imediatamente
     const previousAssignees = assignees;
     const updatedAssignees = memberId && members 
@@ -255,9 +269,9 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { assignees: previousAssignees });
       toast.error("Erro ao atualizar responsável");
     }
-  };
+  }, [id, assignees, members, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleTitleSave = async (newTitle: string) => {
+  const handleTitleSave = useCallback(async (newTitle: string) => {
     if (newTitle.trim() === title) {
       setIsEditingTitle(false);
       return;
@@ -293,9 +307,9 @@ function KanbanCardComponent({
       setTitleValue(previousTitle);
       toast.error("Erro ao atualizar título");
     }
-  };
+  }, [id, title, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleStatusUpdate = async (newStatus: string) => {
+  const handleStatusUpdate = useCallback(async (newStatus: string) => {
     setIsStatusOpen(false); // Fechar Popover imediatamente
     const previousStatus = status;
     onTaskUpdatedOptimistic?.(id, { status: newStatus });
@@ -315,9 +329,9 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { status: previousStatus });
       toast.error("Erro ao atualizar status");
     }
-  };
+  }, [id, status, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
+  const handleSmartTrigger = useCallback(async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
     // IMPORTANTE: Stop propagation para não iniciar o drag ao clicar
     e.stopPropagation();
     e.preventDefault();
@@ -353,7 +367,7 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
       toast.error("Erro ao atualizar tarefa");
     }
-  };
+  }, [id, dueDate, onTaskUpdatedOptimistic, onTaskUpdated]);
 
   // Handler de clique no card (abre detalhes)
   const handleClick = useCallback(() => {
@@ -361,7 +375,8 @@ function KanbanCardComponent({
     onClick?.();
   }, [onClick]);
 
-  const taskForMenu = {
+  // Memoizar objeto taskForMenu
+  const taskForMenu = useMemo(() => ({
     id,
     title,
     description: null,
@@ -371,12 +386,17 @@ function KanbanCardComponent({
     assignee_id: assignees[0]?.id || null,
     workspace_id: null,
     origin_context: {},
-  };
+  }), [id, title, status, priority, dueDate, assignees]);
 
-  // Função helper para parar propagação (usada em botões e inputs)
-  const stopProp = (e: React.BaseSyntheticEvent) => {
+  // Função helper para parar propagação (memoizada)
+  const stopProp = useCallback((e: React.BaseSyntheticEvent) => {
     e.stopPropagation();
-  };
+  }, []);
+
+  // Memoizar handlers de mouse
+  const handleMouseEnter = useCallback(() => {
+    preloadTask(id, null);
+  }, [id, preloadTask]);
 
   return (
     <div
@@ -391,7 +411,7 @@ function KanbanCardComponent({
         isDragging && "shadow-xl rotate-2 z-50 ring-2 ring-blue-500/20"
       )}
       onClick={handleClick}
-      onMouseEnter={() => preloadTask(id, null)}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={cancelPreload}
     >
       {/* Menu de Ações (Absoluto) */}
@@ -714,4 +734,27 @@ function KanbanCardComponent({
   );
 }
 
-export const KanbanCard = KanbanCardComponent;
+// Memoizar componente para evitar re-renders desnecessários
+export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
+  // Comparação personalizada para otimizar re-renders
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.title === nextProps.title &&
+    prevProps.completed === nextProps.completed &&
+    prevProps.status === nextProps.status &&
+    prevProps.priority === nextProps.priority &&
+    prevProps.dueDate === nextProps.dueDate &&
+    prevProps.disabled === nextProps.disabled &&
+    prevProps.groupColor === nextProps.groupColor &&
+    prevProps.subtasksCount === nextProps.subtasksCount &&
+    prevProps.commentsCount === nextProps.commentsCount &&
+    prevProps.onClick === nextProps.onClick &&
+    prevProps.onTaskUpdated === nextProps.onTaskUpdated &&
+    prevProps.onTaskUpdatedOptimistic === nextProps.onTaskUpdatedOptimistic &&
+    prevProps.onDelete === nextProps.onDelete &&
+    prevProps.onToggleComplete === nextProps.onToggleComplete &&
+    JSON.stringify(prevProps.assignees) === JSON.stringify(nextProps.assignees) &&
+    JSON.stringify(prevProps.tags) === JSON.stringify(nextProps.tags) &&
+    JSON.stringify(prevProps.members) === JSON.stringify(nextProps.members)
+  );
+});

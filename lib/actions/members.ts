@@ -446,9 +446,28 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
   // 7. Gerar link de convite
   // ✅ UNIFICADO: Todos os convites usam /invite/[token]
   // A página de convite detecta se o usuário está logado e mostra UI apropriada
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "http://localhost:3000";
+  let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL;
+  
+  // Em produção/preview, validar que a URL está configurada
+  if (process.env.NODE_ENV !== "development" && !baseUrl) {
+    console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
+    throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
+  }
+  
+  // Fallback para desenvolvimento
+  if (!baseUrl) {
+    baseUrl = "http://localhost:3000";
+  }
+  
   const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
   const inviteLink = `${finalUrl}/invite/${newInvite.id}`;
+  
+  console.log("🔗 Link de convite gerado:", {
+    baseUrl,
+    finalUrl,
+    inviteLink,
+    environment: process.env.NODE_ENV,
+  });
 
   // 8. Enviar email de convite via Resend
   // ✅ DIFERENCIAÇÃO: Email diferente para usuários novos vs existentes
@@ -492,6 +511,11 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
         inviteId: newInvite.id,
         error: emailError,
       });
+      
+      // Em produção/preview, se o email falhar, lançar erro para não silenciar
+      if (process.env.NODE_ENV !== "development") {
+        throw new Error(emailError || "Falha ao enviar email de convite");
+      }
     }
   } catch (err: any) {
     emailError = err.message || "Erro desconhecido ao enviar email";
@@ -501,9 +525,16 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       error: emailError,
       stack: err.stack,
       fullError: JSON.stringify(err, null, 2),
+      environment: process.env.NODE_ENV,
+      hasApiKey: !!process.env.RESEND_API_KEY,
+      siteUrl: process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "não configurado",
     });
-    // Não falhamos o fluxo se o email falhar, mas logamos o erro
-    // Em desenvolvimento, ainda retornamos o link manual
+    
+    // Em produção/preview, lançar erro para não silenciar o problema
+    // Em desenvolvimento, permitir continuar sem email (para facilitar testes)
+    if (process.env.NODE_ENV !== "development") {
+      throw new Error(`Falha ao enviar email de convite: ${emailError}. Verifique se RESEND_API_KEY está configurada no Vercel.`);
+    }
   }
 
   revalidatePath("/settings");
@@ -674,7 +705,19 @@ export async function resendInvite(inviteId: string) {
   }
 
   // Gerar link de convite
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "http://localhost:3000";
+  let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL;
+  
+  // Em produção/preview, validar que a URL está configurada
+  if (process.env.NODE_ENV !== "development" && !baseUrl) {
+    console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
+    throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
+  }
+  
+  // Fallback para desenvolvimento
+  if (!baseUrl) {
+    baseUrl = "http://localhost:3000";
+  }
+  
   const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
   const inviteLink = `${finalUrl}/invite/${inviteId}`;
 
@@ -688,7 +731,13 @@ export async function resendInvite(inviteId: string) {
       role: invite.role as "admin" | "member" | "viewer",
     });
   } catch (emailError: any) {
-    console.error("Erro ao reenviar email de convite:", emailError);
+    console.error("❌ Erro ao reenviar email de convite:", {
+      error: emailError.message,
+      inviteId,
+      to: invite.email,
+      environment: process.env.NODE_ENV,
+      hasApiKey: !!process.env.RESEND_API_KEY,
+    });
     throw new Error(`Erro ao reenviar email: ${emailError.message}`);
   }
 
