@@ -11,26 +11,23 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/home';
 
-  // ✅ CORREÇÃO 1: Lógica defensiva - tenta pegar token de múltiplas fontes
-  // 1. Prioridade: Parâmetro da URL (funciona para OAuth e Magic Link quando não é removido)
+  // ✅ TASK 3: Priority Check - URL param FIRST (most reliable)
+  // 1. PRIORIDADE: Parâmetro 'invite' na URL (mais confiável, funciona sempre)
   let inviteToken = searchParams.get('invite');
-  let inviteTokenFromCookie = false;
+  let inviteTokenSource = inviteToken ? 'url' : null;
   
-  // 2. Fallback: Cookie (para casos onde o Magic Link teve os parâmetros removidos)
-  // MAS só usar cookie se vier do parâmetro 'next' da URL que indica fluxo de convite
+  // 2. FALLBACK: Cookie 'pending_invite' (backup se URL não tiver)
   if (!inviteToken) {
     const cookieStore = await cookies();
     const cookieToken = cookieStore.get('pending_invite')?.value || null;
     
-    // ✅ CORREÇÃO: Só usar cookie se o 'next' indicar fluxo de convite
-    // Isso previne usar cookies residuais em logins tradicionais
-    if (cookieToken && next.includes('/invite/')) {
+    if (cookieToken) {
       inviteToken = cookieToken;
-      inviteTokenFromCookie = true;
-    } else if (cookieToken) {
-      // Se há cookie mas não é fluxo de convite, limpar cookie residual
-      cookieStore.delete('pending_invite');
+      inviteTokenSource = 'cookie';
+      console.log('✅ [Auth Callback] Usando invite token do cookie:', cookieToken.substring(0, 8) + '...');
     }
+  } else {
+    console.log('✅ [Auth Callback] Usando invite token da URL:', inviteToken.substring(0, 8) + '...');
   }
 
   if (code) {
@@ -44,22 +41,28 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser()
 
       if (user) {
-        // 2. Se houver token de convite (da URL ou cookie), validar e aceitar
+        // ✅ TASK 3: Se houver token de convite (da URL ou cookie), ACEITAR IMEDIATAMENTE
         if (inviteToken) {
           try {
-            // ✅ CORREÇÃO: Validar se o convite realmente existe e está pendente
-            // antes de tentar aceitar (evita usar tokens inválidos/expirados em logins tradicionais)
+            console.log('🔍 [Auth Callback] Validando convite:', inviteToken.substring(0, 8) + '...');
+            
+            // Validar se o convite realmente existe e está pendente
             const inviteDetails = await getInviteDetails(inviteToken);
             
-            // Se o convite não existe, já foi aceito, ou está expirado, não processar
+            // Se o convite não existe, já foi aceito, ou está expirado
             if (!inviteDetails || inviteDetails.status !== 'pending') {
-              // Limpar cookie se for de cookie residual
-              if (inviteTokenFromCookie) {
+              console.warn('⚠️ [Auth Callback] Convite inválido ou não pendente:', {
+                exists: !!inviteDetails,
+                status: inviteDetails?.status,
+              });
+              
+              // Limpar cookie se veio do cookie
+              if (inviteTokenSource === 'cookie') {
                 const cookieStore = await cookies();
                 cookieStore.delete('pending_invite');
               }
+              
               // Redirecionar para home normalmente (login tradicional)
-              // Usar mesma lógica de retry do login tradicional
               revalidatePath("/", "layout");
               revalidatePath("/home");
               await new Promise(resolve => setTimeout(resolve, 300));
@@ -82,77 +85,98 @@ export async function GET(request: Request) {
               }
             }
             
-            // Se chegou aqui, o convite é válido e está pendente - processar
+            // ✅ TASK 3: Convite válido e pendente - ACEITAR IMEDIATAMENTE
+            console.log('✅ [Auth Callback] Aceitando convite válido:', inviteToken.substring(0, 8) + '...');
             await acceptInvite(inviteToken);
             
-            // Limpar cookie após aceitar com sucesso e criar cookie de just_accepted
+            // Limpar cookie após aceitar com sucesso
             const cookieStore = await cookies();
             cookieStore.delete('pending_invite');
             
-            // ✅ CORREÇÃO 4: Criar cookie temporário para indicar que acabou de aceitar convite
-            // Isso permite que o layout evite redirecionar para onboarding
+            // Criar cookie temporário para indicar que acabou de aceitar convite
             cookieStore.set('just_accepted_invite', 'true', {
               httpOnly: true,
               secure: process.env.NODE_ENV === 'production',
               sameSite: 'lax',
-              maxAge: 60, // 1 minuto apenas (suficiente para evitar loop)
+              maxAge: 60, // 1 minuto
               path: '/',
             });
             
-            // Revalidar o cache para garantir que os workspaces sejam recarregados
+            // Revalidar cache
             revalidatePath("/", "layout");
             revalidatePath("/home");
             
-            // Aguardar um pouco para garantir que o workspace_members foi criado
-            // e então verificar se foi criado com sucesso
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // Aguardar para garantir que workspace_members foi criado
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             // Verificar se o workspace foi adicionado com sucesso
-            // Usar a mesma lógica que getUserWorkspaces para consistência
             const { data: memberWorkspaces } = await supabase
               .from('workspace_members')
               .select('workspace_id')
               .eq('user_id', user.id);
             
             if (memberWorkspaces && memberWorkspaces.length > 0) {
-              // Se encontrou pelo menos um workspace, redirecionar para home
-              // O layout vai carregar os workspaces corretamente agora
-              // Adicionar parâmetro para indicar que acabou de aceitar convite
-              return NextResponse.redirect(`${origin}/home?invite_accepted=true`);
+              // ✅ Buscar slug do workspace para redirecionar diretamente
+              const acceptedWorkspaceId = inviteDetails.workspace_id;
+              const { data: workspaceData } = await supabase
+                .from('workspaces')
+                .select('id, slug')
+                .eq('id', acceptedWorkspaceId)
+                .single();
+              
+              // Redirecionar para o workspace específico ou /home
+              let redirectUrl = `${origin}/home?invite_accepted=true`;
+              if (workspaceData) {
+                const workspacePath = workspaceData.slug || workspaceData.id;
+                redirectUrl = `${origin}/${workspacePath}/tasks?invite_accepted=true`;
+                console.log('✅ [Auth Callback] Redirecionando para workspace:', workspacePath);
+              } else {
+                console.log('⚠️ [Auth Callback] Workspace não encontrado, redirecionando para /home');
+              }
+              
+              return NextResponse.redirect(redirectUrl);
             } else {
-              // Se não encontrou, tentar mais uma vez após um delay maior
-              await new Promise(resolve => setTimeout(resolve, 700));
+              // Retry após delay maior
+              await new Promise(resolve => setTimeout(resolve, 1000));
               const { data: memberWorkspacesRetry } = await supabase
                 .from('workspace_members')
                 .select('workspace_id')
                 .eq('user_id', user.id);
               
               if (memberWorkspacesRetry && memberWorkspacesRetry.length > 0) {
-                return NextResponse.redirect(`${origin}/home?invite_accepted=true`);
+                const acceptedWorkspaceId = inviteDetails.workspace_id;
+                const { data: workspaceData } = await supabase
+                  .from('workspaces')
+                  .select('id, slug')
+                  .eq('id', acceptedWorkspaceId)
+                  .single();
+                
+                let redirectUrl = `${origin}/home?invite_accepted=true`;
+                if (workspaceData) {
+                  const workspacePath = workspaceData.slug || workspaceData.id;
+                  redirectUrl = `${origin}/${workspacePath}/tasks?invite_accepted=true`;
+                }
+                
+                return NextResponse.redirect(redirectUrl);
               } else {
-                // Se mesmo assim não encontrou, pode ter dado erro
-                // Mas vamos redirecionar para home mesmo assim, pois o acceptInvite pode ter funcionado
-                // e o problema pode ser apenas de cache/RLS
-                // Adicionar parâmetro para evitar redirecionamento para onboarding
-                console.warn('Workspace não encontrado imediatamente após aceitar convite, mas redirecionando mesmo assim');
+                // Mesmo sem encontrar, redirecionar para home com flag
+                console.warn('⚠️ [Auth Callback] Workspace não encontrado após retry, redirecionando para /home');
                 return NextResponse.redirect(`${origin}/home?invite_accepted=true`);
               }
             }
           } catch (inviteError: any) {
-            console.error('Erro ao aceitar convite no callback:', inviteError);
+            console.error('❌ [Auth Callback] Erro ao aceitar convite:', inviteError);
             // Limpar cookie em caso de erro
             const cookieStore = await cookies();
             cookieStore.delete('pending_invite');
-            // Se falhar, redirecionar para a página de invite para mostrar o erro
+            // Redirecionar para página de invite para mostrar erro
             return NextResponse.redirect(`${origin}/invite/${inviteToken}?error=accept_failed`);
           }
         }
 
-        // 3. Se não há token de convite, limpar cookie residual (se existir)
-        // e verificar se já tem workspace
+        // 3. Se não há token de convite, limpar cookie residual e verificar workspaces
         const cookieStore = await cookies();
         if (cookieStore.get('pending_invite')) {
-          // Limpar cookie residual de convites anteriores não utilizados
           cookieStore.delete('pending_invite');
         }
         

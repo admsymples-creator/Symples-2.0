@@ -33,24 +33,29 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // ✅ CORREÇÃO: Interceptar rotas /invite/* para criar cookie pending_invite
-  // Isso permite que o token sobreviva a redirects OAuth e Magic Link
+  // ✅ TASK 1: Hardened Cookie Logic - Configurações explícitas para produção
   if (pathname.startsWith('/invite/')) {
-    // Extrair o token da URL (ex: /invite/abc123 -> abc123)
     const tokenMatch = pathname.match(/^\/invite\/([^/]+)/);
     const inviteToken = tokenMatch?.[1];
     
     if (inviteToken) {
-      // Criar cookie com configurações especificadas
+      // ✅ HARDENED: Configurações explícitas e robustas
+      const isProduction = process.env.NODE_ENV === 'production';
+      
       response.cookies.set('pending_invite', inviteToken, {
-        httpOnly: false, // Precisamos ler no client também
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        httpOnly: false, // Permite leitura no client se necessário
+        secure: isProduction, // ✅ HTTPS only em produção (REQUERIDO)
+        sameSite: 'lax', // ✅ CRÍTICO: Permite cookie ser lido após OAuth redirect
         maxAge: 3600, // 1 hora
-        path: '/',
+        path: '/', // Disponível em todas as rotas
       });
       
-      console.log('🍪 Cookie pending_invite criado para token:', inviteToken);
+      console.log('🍪 [Middleware] Cookie pending_invite criado:', {
+        token: inviteToken.substring(0, 8) + '...',
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+      });
     }
   }
 

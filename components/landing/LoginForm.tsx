@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,10 @@ import { loginWithEmail, signInWithGoogle } from "@/lib/actions/auth";
 import { Loader2, Mail, AlertCircle } from "lucide-react";
 
 export function LoginForm() {
+    const searchParams = useSearchParams();
+    // ✅ TASK 2: Ler invite token da URL
+    const inviteToken = searchParams.get('invite');
+    
     const [email, setEmail] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
@@ -43,7 +48,8 @@ export function LoginForm() {
     const handleGoogleLogin = async () => {
         setIsGoogleLoading(true);
         try {
-            await signInWithGoogle();
+            // ✅ TASK 2: URL Redundancy - Passar invite token na URL do OAuth
+            await signInWithGoogle(inviteToken || undefined);
         } catch (error) {
             console.error("Erro no login com Google:", error);
             setIsGoogleLoading(false);
