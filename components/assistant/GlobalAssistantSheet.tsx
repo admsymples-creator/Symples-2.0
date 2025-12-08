@@ -507,7 +507,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             status: task.status,
             dueDate: task.due_date,
             priority: task.priority,
-            assignee: task.assignee?.name || null,
+            assignee: task.assignee?.full_name || null,
             group: task.group?.name || null,
           }));
         } catch (error) {
