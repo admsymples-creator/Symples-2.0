@@ -5,6 +5,77 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 ## [Unreleased]
 
 ### Added
+- **Seletor de Workspaces no Card de Confirmação:**
+  - Dropdown para selecionar workspace ao criar tarefa pelo assistente
+  - Lista todos os workspaces do usuário com logo e nome
+  - Permite criar tarefa em workspace diferente do ativo
+  - Integrado ao KanbanConfirmationCard
+- **Extração Inteligente de Informações pela IA:**
+  - IA extrai título descritivo, descrição completa e resumida das mensagens/áudios
+  - Detecção automática de responsáveis mencionados na mensagem ou áudio
+  - Cálculo correto de datas relativas em português (timezone local)
+  - Detecção de múltiplas tarefas e pergunta ao usuário (separadas ou subtarefas)
+  - Melhoria na detecção de prazos (ex: "sexta-feira que vem" calcula corretamente)
+- **Persistência de Mensagens no Banco de Dados:**
+  - Sistema de armazenamento de mensagens do assistente no Supabase
+  - Tabela `assistant_messages` com suporte a texto, áudio, imagem e componentes generativos
+  - Sincronização entre localStorage e banco de dados
+  - Suporte a mensagens de contexto e divisores
+- **Pipeline unificado de áudio (/api/audio/process):**
+  - Transcrição (Whisper) e chat (gpt-4o-mini) na mesma requisição
+  - Persistência automática das mensagens de usuário e assistente
+  - Retorno único com `transcription`, `message` e `componentData`
+
+### Changed
+- **KanbanConfirmationCard:**
+  - Adicionado seletor de workspaces no footer do card
+  - Avatar do responsável reduzido para `w-3.5 h-3.5` (padrão com outros ícones)
+  - Suporte a descrição completa e resumida
+- **GlobalAssistantSheet:**
+  - Envio de lista de membros do workspace para IA detectar responsáveis
+  - Envio de dados de tarefas quando necessário (resumos, pautas, etc.)
+  - Melhor feedback visual durante gravação de áudio
+
+### Fixed
+- **Correção de Timezone em Datas:**
+  - Função `formatDateLocal` criada para evitar problemas de UTC
+  - Datas calculadas no timezone local do usuário
+  - Correção de bug onde datas apareciam um dia antes
+  - Aplicado em todas as extrações de data (relativas e absolutas)
+- **Contador de Tempo do Áudio:**
+  - Timer corrigido para atualizar corretamente durante gravação
+  - Limpeza adequada de timers ao parar gravação
+  - Feedback visual melhorado com tempo decorrido
+- **Atualização Instantânea de Tarefas:**
+  - Invalidação automática de cache após criar tarefa
+  - `router.refresh()` para atualizar página sem reload manual
+  - Tarefas aparecem imediatamente após criação pelo assistente
+- **Erro de Renderização do Router:**
+  - `router.refresh()` e `setMessages` envolvidos com `startTransition()`
+  - Evita erro "Cannot update a component (Router) while rendering"
+- **Duplicação de Função formatDateLocal:**
+  - Função movida para nível do módulo (fora da função POST)
+  - Resolve erro de build "the name formatDateLocal is defined multiple times"
+
+### Technical
+- **API de Chat (`/api/ai/chat`):**
+  - Adicionado parâmetro `workspaceMembers` para detecção de responsáveis
+  - Adicionado parâmetro `tasksData` para contexto de tarefas
+  - Função `formatDateLocal` no nível do módulo para evitar duplicação
+  - Função `calculateRelativeDate` melhorada para calcular datas relativas corretamente
+  - Validação e correspondência de `assigneeId` retornado pela IA
+- **Server Actions:**
+  - `saveAssistantMessage`: Salva mensagens do assistente no banco
+  - `loadAssistantMessages`: Carrega histórico de mensagens do banco
+  - `saveAssistantMessages`: Salva múltiplas mensagens em lote
+- **Componentes:**
+  - `GlobalAssistantSheet`: Integração com `invalidateTasksCache` e `router.refresh()`
+  - `KanbanConfirmationCard`: Adicionado seletor de workspaces e ajuste de avatar
+  - Uso de `startTransition` para atualizações não urgentes de estado
+
+## [Unreleased]
+
+### Added
 - **Limite de Caracteres e Truncamento Visual na Descrição (TaskDetailModal)**:
   - Limite hard de 3000 caracteres para descrição de tarefas
   - Contador de caracteres no modo de edição (`${current}/${max}`)

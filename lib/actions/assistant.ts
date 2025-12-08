@@ -56,24 +56,36 @@ export async function saveAssistantMessage(
       return { success: false, error: "Usuário não autenticado" };
     }
 
-    // Garantir que user_id seja o usuário autenticado
+    // Blindagem: remover campos de sistema e forçar user_id autenticado
+    const {
+      id: _id,
+      created_at: _createdAt,
+      updated_at: _updatedAt,
+      user_id: _userId,
+      ...cleanData
+    } = message as any;
     const messageToInsert = {
-      ...message,
+      ...cleanData,
       user_id: user.id,
     };
 
-    const { data, error } = await supabase
-      .from("assistant_messages")
-      .insert(messageToInsert)
-      .select("id")
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("assistant_messages")
+        .insert(messageToInsert)
+        .select("id")
+        .single();
 
-    if (error) {
+      if (error) {
+        console.error("Erro ao salvar mensagem:", error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, messageId: data.id };
+    } catch (error) {
       console.error("Erro ao salvar mensagem:", error);
-      return { success: false, error: error.message };
+      return { success: false };
     }
-
-    return { success: true, messageId: data.id };
   } catch (error) {
     console.error("Erro ao salvar mensagem:", error);
     return { 
@@ -98,10 +110,14 @@ export async function saveAssistantMessages(
     }
 
     // Garantir que user_id seja o usuário autenticado para todas as mensagens
-    const messagesToInsert = messages.map(msg => ({
-      ...msg,
-      user_id: user.id,
-    }));
+    // e evitar enviar id/created_at (id deve ser gerado pelo banco).
+    const messagesToInsert = messages.map(msg => {
+      const { id: _id, created_at: _createdAt, ...rest } = msg as any;
+      return {
+        ...rest,
+        user_id: user.id,
+      };
+    });
 
     const { data, error } = await supabase
       .from("assistant_messages")
@@ -247,3 +263,4 @@ export async function clearAssistantMessages(
     };
   }
 }
+

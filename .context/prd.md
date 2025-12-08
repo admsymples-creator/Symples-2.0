@@ -117,6 +117,11 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 
 ## 6. ATUALIZAÇÕES DE ESCOPO V2.1 (Pós-Validação UX)
 
+### 6.x. Pipeline Unificado de Áudio
+- Rota `/api/audio/process` consolida transcrição (Whisper), chat (gpt-4o-mini) e persistência em uma única chamada.
+- Front envia `FormData` com áudio, `workspaceId` e contexto (histórico + membros).
+- Resposta retorna `transcription`, `message` e `componentData` e grava ambas as mensagens em `assistant_messages`.
+
 ### 6.1. Refinamento do Onboarding (Fluxo de Ativação)
 *Referência: Seção 4.1 anterior.*
 1.  **Conexão Ativa:** O usuário deve enviar ativamente a mensagem com o código `#START...` para iniciar a janela de 24h da API do WhatsApp.
