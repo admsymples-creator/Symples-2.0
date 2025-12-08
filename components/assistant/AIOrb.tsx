@@ -18,7 +18,7 @@ export function AIOrb({ isLoading = false, compact = false }: AIOrbProps) {
       <div className={isLoading ? "absolute inset-0 bg-green-500/30 blur-[40px] rounded-full scale-150 animate-pulse" : "absolute inset-0 bg-green-500/20 blur-[40px] rounded-full scale-150"} />
 
       {/* 2. O Anel de Energia (Giratório) */}
-      <div className={cn("relative rounded-full p-[3px] overflow-hidden", size)}>
+      <div className={cn("relative rounded-full p-[6px] overflow-hidden", size)}>
         {/* O Gradiente que gira */}
         <div className={isLoading ? "absolute inset-[-100%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#F9FAFB_0%,#22C55E_50%,#F9FAFB_100%)] opacity-100" : "absolute inset-[-100%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#F9FAFB_0%,#22C55E_50%,#F9FAFB_100%)] opacity-100"} />
         
@@ -39,8 +39,8 @@ export function AIOrb({ isLoading = false, compact = false }: AIOrbProps) {
               width={compact ? 20 : 40}
               height={compact ? 20 : 40}
               className={cn(
-                "drop-shadow-[0_0_10px_rgba(34,197,94,0.8)]",
-                isLoading && "drop-shadow-[0_0_10px_rgba(34,197,94,1)]"
+                "drop-shadow-[0_0_15px_rgba(34,197,94,1)] drop-shadow-[0_0_25px_rgba(34,197,94,0.6)]",
+                isLoading && "drop-shadow-[0_0_20px_rgba(34,197,94,1)] drop-shadow-[0_0_30px_rgba(34,197,94,0.8)]"
               )}
             />
           </div>

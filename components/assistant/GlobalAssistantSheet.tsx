@@ -13,7 +13,9 @@ import {
   X,
   Image as ImageIcon,
   RotateCcw,
-  LifeBuoy
+  LifeBuoy,
+  Check,
+  Trash2
 } from "lucide-react";
 import { 
   Sheet, 
@@ -145,6 +147,145 @@ function isNewDay(lastDateStr: string | null): boolean {
   return now >= today && lastReset < today;
 }
 
+// ------------------------------------------------------------------
+// Recording Visualizer Component
+// ------------------------------------------------------------------
+
+const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const animationRef = React.useRef<number | undefined>(undefined);
+  const analyserRef = React.useRef<AnalyserNode | undefined>(undefined);
+  const sourceRef = React.useRef<MediaStreamAudioSourceNode | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (!stream || !canvasRef.current) return;
+
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(stream);
+
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    analyserRef.current = analyser;
+    sourceRef.current = source;
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    const draw = () => {
+      if (!ctx) return;
+      animationRef.current = requestAnimationFrame(draw);
+
+      analyser.getByteFrequencyData(dataArray);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const bars = 32;
+      const barGap = 2;
+      const totalGap = (bars - 1) * barGap;
+      const barWidth = (canvas.width - totalGap) / bars;
+      
+      let x = 0;
+      const step = Math.floor(bufferLength / bars);
+
+      for (let i = 0; i < bars; i++) {
+        let sum = 0;
+        for (let j = 0; j < step; j++) {
+          sum += dataArray[i * step + j];
+        }
+        const value = sum / step;
+        const percent = value / 255;
+        const height = Math.max(2, percent * (canvas.height * 0.8)); 
+        ctx.fillStyle = percent > 0.4 ? "#ef4444" : "#fca5a5";
+        const y = (canvas.height - height) / 2; 
+        ctx.beginPath();
+        (ctx as any).roundRect(x, y, barWidth, height, 2);
+        ctx.fill();
+        x += barWidth + barGap;
+      }
+    };
+
+    draw();
+
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (sourceRef.current) sourceRef.current.disconnect();
+      if (analyserRef.current) analyserRef.current.disconnect();
+      if (audioContext.state !== "closed") audioContext.close();
+    };
+  }, [stream]);
+
+  return <canvas ref={canvasRef} width={240} height={32} className="w-full h-full max-w-[240px]" />;
+};
+
+// ------------------------------------------------------------------
+// Audio Recorder Display Component
+// ------------------------------------------------------------------
+
+interface AudioRecorderDisplayProps {
+  stream: MediaStream | null;
+  onCancel: () => void;
+  onStop: (duration: number) => void;
+  maxDuration?: number;
+}
+
+const AudioRecorderDisplay = ({ stream, onCancel, onStop, maxDuration = 120 }: AudioRecorderDisplayProps) => {
+  const [recordingTime, setRecordingTime] = React.useState(0);
+
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    interval = setInterval(() => {
+      setRecordingTime(t => t + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleStop = () => {
+    onStop(recordingTime);
+  };
+
+  return (
+    <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
+        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
+        <div className="flex-1 flex items-center justify-center gap-4">
+          <div className="flex-1 h-8 flex items-center justify-center">
+            {stream && <RecordingVisualizer stream={stream} />}
+          </div>
+          <span className="text-sm font-mono text-red-700 min-w-[80px] text-right">
+            {formatTime(recordingTime)} / {formatTime(maxDuration)}
+          </span>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="text-red-500"
+        onClick={onCancel}
+        title="Cancelar gravação"
+      >
+        <Trash2 className="w-4 h-4" />
+      </Button>
+      <Button
+        size="icon"
+        className="bg-green-600 hover:bg-green-700"
+        onClick={handleStop}
+        title="Finalizar gravação"
+      >
+        <Check className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+};
+
 export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -156,11 +297,12 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   
   // Estados para gravação de áudio
   const [isRecording, setIsRecording] = React.useState(false);
-  const [recordingTime, setRecordingTime] = React.useState(0);
   const [mediaRecorder, setMediaRecorder] = React.useState<MediaRecorder | null>(null);
+  const [mediaStream, setMediaStream] = React.useState<MediaStream | null>(null);
   const [audioChunks, setAudioChunks] = React.useState<Blob[]>([]);
-  const recordingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const finalDurationRef = React.useRef(0); // Ref para armazenar a duração final da gravação
   const [wasAutoStopped, setWasAutoStopped] = React.useState(false); // Rastrear se foi parado automaticamente
+  const isCancelledRef = React.useRef(false); // Flag para rastrear se foi cancelado
   const MAX_AUDIO_DURATION = 120; // 2 minutos em segundos
   
   // Workspace e membros
@@ -370,12 +512,9 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     }
   }, [messages, isLoading]);
 
-  // Limpar timer quando componente desmontar
+  // Limpar recursos quando componente desmontar
   React.useEffect(() => {
     return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
       if (mediaRecorder && isRecording) {
         mediaRecorder.stop();
       }
@@ -841,9 +980,16 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       };
 
       recorder.onstop = async () => {
+        // Se foi cancelado, não processar o áudio
+        if (isCancelledRef.current) {
+          isCancelledRef.current = false; // Resetar flag
+          return;
+        }
+
         const audioBlob = new Blob(chunks, { type: "audio/webm" });
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = recordingTime;
+        // Usar ref para garantir que temos o tempo mais atualizado
+        const duration = finalDurationRef.current || 1;
         const isMaxDuration = wasAutoStopped && duration >= MAX_AUDIO_DURATION;
 
         // Adicionar mensagem de áudio
@@ -858,6 +1004,34 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
         };
 
         setMessages((prev) => [...prev, audioMessage]);
+        
+        // Salvar mensagem de áudio do usuário no banco com duração
+        if (activeWorkspaceId) {
+          saveAssistantMessage({
+            workspace_id: activeWorkspaceId,
+            role: "user",
+            content: "Mensagem de áudio",
+            type: "audio",
+            audio_url: null, // Blob URL não pode ser salvo, será processado pela API
+            audio_duration: duration,
+            audio_transcription: null, // Será preenchido após transcrição
+          }).then((result) => {
+            if (result.success && result.messageId) {
+              startTransition(() => {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === audioMessage.id
+                      ? { ...msg, id: `db-${result.messageId}` }
+                      : msg
+                  )
+                );
+              });
+            }
+          }).catch((error) => {
+            console.error("Erro ao salvar mensagem de áudio:", error);
+          });
+        }
+        
         setIsLoading(true);
 
         // Adicionar estado de "pensando"
@@ -892,14 +1066,30 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           const transcribeData = await transcribeResponse.json();
           const transcribedText = transcribeData.transcription || "";
 
-          // Atualizar mensagem de áudio com transcrição
+          // Atualizar mensagem de áudio com transcrição (preservando duração)
           setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === audioMessage.id
-                ? { ...msg, audioTranscription: transcribedText }
-                : msg
-            )
+            prev.map((msg) => {
+              if (msg.id === audioMessage.id) {
+                // Preservar duração original ou usar a duração atual se não houver
+                const preservedDuration = msg.audioDuration && msg.audioDuration > 0 
+                  ? msg.audioDuration 
+                  : duration;
+                return { 
+                  ...msg, 
+                  audioTranscription: transcribedText, 
+                  audioDuration: preservedDuration 
+                };
+              }
+              return msg;
+            })
           );
+          
+          // Atualizar mensagem no banco com transcrição (preservando duração)
+          if (activeWorkspaceId && audioMessage.id.startsWith('db-')) {
+            const messageId = audioMessage.id.replace('db-', '');
+            // Nota: Não há função de update, então a duração já foi salva na criação
+            // A transcrição será atualizada quando processada pela API
+          }
 
           // Processar transcrição com IA real
           try {
@@ -1102,7 +1292,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                   const assistantMessage: Message = {
                     id: `temp-${Date.now() + 2}`,
                     role: "assistant",
-                    content: data.message || `Recebi sua mensagem de áudio (${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}).`,
+                    content: data.message || `Recebi sua mensagem de áudio (${Math.round(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, "0")}).`,
                     type: "text",
                     timestamp: new Date(),
                   };
@@ -1143,7 +1333,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               const assistantMessage: Message = {
                 id: `error-${Date.now()}`,
                 role: "assistant",
-                content: `Recebi sua mensagem de áudio (${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}), mas houve um erro ao processar. Tente novamente.`,
+                content: `Recebi sua mensagem de áudio (${Math.round(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, "0")}), mas houve um erro ao processar. Tente novamente.`,
                 type: "text",
                 timestamp: new Date(),
               };
@@ -1159,7 +1349,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             const assistantMessage: Message = {
               id: (Date.now() + 2).toString(),
               role: "assistant",
-              content: `Recebi sua mensagem de áudio (${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}), mas houve um erro ao transcrever. Tente novamente.`,
+              content: `Recebi sua mensagem de áudio (${Math.round(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, "0")}), mas houve um erro ao transcrever. Tente novamente.`,
               type: "text",
               timestamp: new Date(),
             };
@@ -1174,53 +1364,53 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
       setMediaRecorder(recorder);
       setAudioChunks(chunks);
+      setMediaStream(stream); // Salvar stream para o visualizador
+      
+      // Resetar flags ANTES de iniciar
+      isCancelledRef.current = false; // Resetar flag de cancelamento
+      setWasAutoStopped(false);
+      finalDurationRef.current = 0;
+      
       recorder.start();
       setIsRecording(true);
-      setRecordingTime(0);
-      setWasAutoStopped(false); // Resetar flag ao iniciar nova gravação
-
-      // Limpar timer anterior se existir
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
-
-      // Timer para contar o tempo de gravação
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime((prev) => {
-          const newTime = prev + 1;
-          // Parar automaticamente ao atingir 2 minutos
-          if (newTime >= MAX_AUDIO_DURATION) {
-            setWasAutoStopped(true); // Marcar que foi parado automaticamente
-            if (recordingTimerRef.current) {
-              clearInterval(recordingTimerRef.current);
-              recordingTimerRef.current = null;
-            }
-            stopRecording();
-            return MAX_AUDIO_DURATION;
-          }
-          return newTime;
-        });
-      }, 1000);
     } catch (error) {
       console.error("Erro ao iniciar gravação:", error);
       alert("Não foi possível acessar o microfone. Verifique as permissões.");
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = (duration?: number) => {
     if (mediaRecorder && isRecording) {
+      if (duration !== undefined) {
+        finalDurationRef.current = duration;
+      }
       mediaRecorder.stop();
       setIsRecording(false);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
+      // Parar todas as tracks do stream
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        setMediaStream(null);
       }
-      // Não resetar recordingTime aqui, pois será usado no onstop
-      // setRecordingTime(0); // Removido para manter o tempo correto
-    } else if (recordingTimerRef.current) {
-      // Limpar timer mesmo se não houver mediaRecorder ativo
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
+    }
+  };
+
+  const handleCancelRecording = () => {
+    if (mediaRecorder && isRecording) {
+      // Marcar como cancelado ANTES de parar o recorder
+      isCancelledRef.current = true;
+      
+      // Parar o recorder (mas o onstop não processará devido à flag)
+      mediaRecorder.stop();
+      setIsRecording(false);
+      finalDurationRef.current = 0;
+      
+      // Parar todas as tracks do stream
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        setMediaStream(null);
+      }
+      
+      setAudioChunks([]);
     }
   };
 
@@ -1235,8 +1425,8 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
   // Formatar tempo de gravação (MM:SS)
   const formatRecordingTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const mins = Math.round(seconds / 60);
+    const secs = Math.round(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
@@ -1613,7 +1803,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                     ? "text-red-600 hover:text-red-700 hover:bg-red-50 animate-pulse"
                     : "text-slate-400 hover:text-green-600 hover:bg-slate-100"
                 )}
-                title={isRecording ? `Gravando... ${formatRecordingTime(recordingTime)} / ${formatRecordingTime(MAX_AUDIO_DURATION)}` : "Gravar áudio (máx. 2 min)"}
+                title={isRecording ? `Gravando... (máx. ${formatRecordingTime(MAX_AUDIO_DURATION)})` : "Gravar áudio (máx. 2 min)"}
                 disabled={isLoading}
               >
                 <Mic className="w-5 h-5" />
@@ -1622,7 +1812,10 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               {/* Botão Enviar/Parar Gravação */}
               {isRecording ? (
                 <Button
-                  onClick={stopRecording}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    stopRecording();
+                  }}
                   size="icon"
                   className="h-9 w-9 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md animate-pulse"
                   title="Parar gravação e enviar"
@@ -1646,24 +1839,16 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               )}
             </div>
           </div>
-          <div className="mt-2 text-center">
+          <div className="mt-2">
             {isRecording ? (
-              <div className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg">
-                <div className="relative">
-                  <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse" />
-                  <div className="absolute inset-0 w-3 h-3 bg-red-600 rounded-full animate-ping opacity-75" />
-                </div>
-                <div className="flex flex-col items-center">
-                  <p className="text-sm font-semibold text-red-700">
-                    Gravando áudio
-                  </p>
-                  <p className="text-xs text-red-600 font-mono">
-                    {formatRecordingTime(recordingTime)} / {formatRecordingTime(MAX_AUDIO_DURATION)}
-                  </p>
-                </div>
-              </div>
+              <AudioRecorderDisplay
+                stream={mediaStream}
+                onCancel={handleCancelRecording}
+                onStop={stopRecording}
+                maxDuration={MAX_AUDIO_DURATION}
+              />
             ) : (
-              <p className="text-[10px] text-slate-400">
+              <p className="text-center text-[10px] text-slate-400">
                 Pressione <kbd className="font-sans px-1 rounded bg-slate-100 border border-slate-200 text-slate-500">Enter</kbd> para enviar
               </p>
             )}
