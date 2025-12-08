@@ -186,12 +186,14 @@ export async function POST(request: NextRequest) {
           created_at: _createdAt,
           updated_at: _updatedAt,
           user_id: _userId,
+          role,
           ...clean
         } = payload;
 
         await supabase.from("assistant_messages").insert({
           ...clean,
           user_id: user.id,
+          role: role || "user", // Garantir que role está presente
         });
       } catch (err) {
         console.error("[process audio] Falha ao salvar mensagem", err);
