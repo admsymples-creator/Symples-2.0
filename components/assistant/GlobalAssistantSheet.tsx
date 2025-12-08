@@ -644,9 +644,9 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             id: task.id,
             title: task.title,
             status: task.status,
-            dueDate: task.dueDate,
+            dueDate: task.due_date,
             priority: task.priority,
-            assignee: task.assignee?.name || null,
+            assignee: task.assignee?.full_name || null,
             group: task.group?.name || null,
           }));
         } catch (error) {
@@ -1672,7 +1672,12 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                               workspaceId: activeWorkspaceId || undefined,
                             }}
                             members={workspaceMembers}
-                            workspaces={workspaces}
+                            workspaces={workspaces.map(w => ({ 
+                              id: w.id, 
+                              name: w.name, 
+                              slug: w.slug ?? undefined,
+                              logo_url: w.logo_url ?? undefined
+                            }))}
                             onConfirm={handleConfirmTask}
                             onCancel={handleCancelTask}
                             isLoading={isLoading}
