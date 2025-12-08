@@ -46,12 +46,15 @@ Formato de saída (sempre JSON):
     "description": "descrição completa",
     "descriptionFull": "sinônimo aceitável de descrição completa",
     "descriptionShort": "resumo curto",
-    "dueDate": "YYYY-MM-DD ou null",
+    "dueDate": "YYYY-MM-DDTHH:mm:ss em ISO 8601 ou null",
     "assigneeId": "uuid do membro ou null",
     "priority": "low|medium|high|urgent",
     "status": "todo|in_progress|done"
   } | null
 }
+
+Regra crítica para datas:
+- Ao extrair datas para o campo dueDate, use o formato ISO 8601. IMPORTANTE: Se o usuário não especificar um horário, defina a hora sempre como T12:00:00 (Meio-dia) para evitar conflitos de fuso horário. Exemplo: "2023-10-25T12:00:00".
 
 Contexto atual:
 - Data de hoje: ${dateStr}

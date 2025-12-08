@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { cn } from "@/lib/utils";
+import { cn, formatDateDisplay } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -30,8 +30,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES } from "@/lib/config/tasks";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { Avatar } from "@/components/tasks/Avatar";
 
 interface KanbanConfirmationCardProps {
@@ -116,11 +114,19 @@ export function KanbanConfirmationCard({
     }
   }, [isEditingDescription]);
 
+  // Função para formatar data localmente (evita problemas de timezone)
+  const formatDateLocal = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const handleConfirm = () => {
     onConfirm({
       title,
       description: description || undefined,
-      dueDate: dueDate ? dueDate.toISOString() : null,
+      dueDate: dueDate ? formatDateLocal(dueDate) : null,
       assigneeId,
       workspaceId,
       priority,
@@ -279,7 +285,7 @@ export function KanbanConfirmationCard({
                       isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
                       isToday ? "text-green-600" : "text-gray-500"
                     )}>
-                      {format(new Date(dueDate), "dd MMM", { locale: ptBR })}
+                      {formatDateDisplay(dueDate)}
                     </span>
                   </>
                 ) : (

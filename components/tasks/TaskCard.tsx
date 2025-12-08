@@ -3,7 +3,7 @@
 import React from "react";
 import { Avatar } from "./Avatar";
 import { Calendar, MoreHorizontal, Paperclip, MessageSquare } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDateDisplay } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
@@ -234,10 +234,7 @@ function TaskCardComponent({
                                         : "text-gray-500"
                                 )}
                             >
-                                {new Date(dueDate).toLocaleDateString("pt-BR", {
-                                    day: "2-digit",
-                                    month: "short",
-                                })}
+                                {formatDateDisplay(dueDate)}
                             </span>
                         </div>
                     )}

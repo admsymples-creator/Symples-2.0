@@ -125,6 +125,10 @@ INSTRUÇÕES:
     // Palavras-chave de objeto
     const objectKeywords = ['tarefa', 'task', 'atividade', 'item', 'coisa para fazer', 'lembrete', 'nota'];
     
+    // Palavras-chave que indicam que NÃO é criação de tarefa (perguntas, suporte, etc.)
+    const nonTaskKeywords = ['suporte', 'ajuda', 'help', 'como', 'dúvida', 'pergunta', 'explicar', 'entender', 'resumo', 'listar', 'mostrar', 'ver', 'consultar'];
+    const isNonTaskRequest = nonTaskKeywords.some(keyword => lowerMessage.includes(keyword));
+    
     // Verificar se contém palavras de ação
     const hasAction = actionKeywords.some(keyword => lowerMessage.includes(keyword));
     // Verificar se contém palavras de objeto
@@ -139,13 +143,16 @@ INSTRUÇÕES:
     // 2. Ação com mensagem curta e direta (assumindo criação de tarefa)
     // 3. IA menciona criação de tarefa na resposta
     // 4. Mensagem contém "preciso" ou "quero" + algo (muito comum em áudio)
+    // MAS não é criação de tarefa se contém palavras de não-tarefa
     const isShortDirectRequest = lowerMessage.length < 150 && 
                                   (lowerMessage.includes('preciso') || lowerMessage.includes('quero') || lowerMessage.includes('fazer'));
     
-    const isTaskCreation = (hasAction && hasObject) || 
-                          (hasAction && lowerMessage.length < 100 && !lowerMessage.includes('?')) ||
-                          (hasAction && aiMentionsTaskCreation) ||
-                          (isShortDirectRequest && !lowerMessage.includes('?'));
+    const isTaskCreation = !isNonTaskRequest && (
+      (hasAction && hasObject) || 
+      (hasAction && lowerMessage.length < 100 && !lowerMessage.includes('?')) ||
+      (hasAction && aiMentionsTaskCreation) ||
+      (isShortDirectRequest && !lowerMessage.includes('?') && hasObject)
+    );
 
     // Extrair informações estruturadas usando IA se for criação de tarefa
     let taskInfo = null;
@@ -180,7 +187,7 @@ Analise a mensagem do usuário e extraia:
 1. Título da tarefa (curto, máximo 100 caracteres) - CRIE um título descritivo se não houver
 2. Descrição completa (texto completo da mensagem/transcrição, preservando TODOS os detalhes)
 3. Descrição resumida (resumo de 1-2 linhas, máximo 200 caracteres)
-4. Data de vencimento (se mencionada, calcule e retorne em formato ISO: YYYY-MM-DD)
+4. Data de vencimento (se mencionada, calcule e retorne em formato ISO 8601)
    REGRAS DE CÁLCULO DE DATAS (CRÍTICO - SEGUIR EXATAMENTE):
    - "sexta-feira que vem" ou "próxima sexta" = PRÓXIMA sexta-feira (se hoje é sexta, será daqui 7 dias)
    - "sexta que vem" = PRÓXIMA sexta-feira (sempre a próxima, nunca hoje)
@@ -204,13 +211,14 @@ IMPORTANTE:
 - Se houver múltiplas tarefas, extraia a lista em multipleTasksList
 - Se houver ambiguidade ou múltiplas tarefas, marque needsUserConfirmation como true
 - Se identificar um responsável na mensagem, retorne o assigneeId correspondente
+- Ao extrair datas para o campo dueDate, use o formato ISO 8601. IMPORTANTE: Se o usuário não especificar um horário, defina a hora sempre como T12:00:00 (Meio-dia) para evitar conflitos de fuso horário. Exemplo: "2023-10-25T12:00:00".
 
 Responda APENAS com JSON válido no formato:
 {
   "title": "título descritivo da tarefa",
   "descriptionFull": "descrição completa com todos os detalhes da mensagem",
   "descriptionShort": "resumo curto de 1-2 linhas",
-  "dueDate": "2024-01-15" ou null (formato ISO YYYY-MM-DD),
+  "dueDate": "2024-01-15T12:00:00" ou null (formato ISO 8601),
   "assigneeId": "uuid-do-membro" ou null,
   "hasMultipleTasks": true/false,
   "needsUserConfirmation": true/false,
@@ -443,3 +451,4 @@ Responda APENAS com JSON válido no formato:
     );
   }
 }
+
