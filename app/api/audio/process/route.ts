@@ -186,11 +186,13 @@ export async function POST(request: NextRequest) {
           created_at: _createdAt,
           updated_at: _updatedAt,
           user_id: _userId,
+          role,
           ...clean
         } = payload;
 
         await supabase.from("assistant_messages").insert({
           ...clean,
+          role: role || "user",
           user_id: user.id,
         });
       } catch (err) {
