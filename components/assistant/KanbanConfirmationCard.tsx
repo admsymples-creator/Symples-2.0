@@ -54,7 +54,7 @@ interface KanbanConfirmationCardProps {
     priority?: "low" | "medium" | "high" | "urgent";
     status?: "todo" | "in_progress" | "done";
     workspaceId?: string | null;
-  }) => void;
+  }) => void | Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -140,7 +140,7 @@ export function KanbanConfirmationCard({
     };
 
     const confirmResult = onConfirm(payload);
-    if (confirmResult && typeof (confirmResult as Promise<void>).then === "function") {
+    if (confirmResult && typeof confirmResult === "object" && "then" in confirmResult) {
       (confirmResult as Promise<void>)
         .then(() => {
           setStatus("success");
@@ -420,7 +420,7 @@ export function KanbanConfirmationCard({
                           setIsAssigneeOpen(false);
                         }}
                       >
-                        <Avatar name={member.name} avatar={member.avatar} size="xs" className="mr-2" />
+                        <Avatar name={member.name} avatar={member.avatar} size="sm" className="mr-2" />
                         {member.name}
                       </CommandItem>
                     ))}

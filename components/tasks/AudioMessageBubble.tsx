@@ -72,10 +72,12 @@ export function AudioMessageBubble({
                 audio.addEventListener("canplay", handleLoadedData);
                 
                 // Tentar carregar o áudio de forma assíncrona
-                audio.load().catch(() => {
+                try {
+                    audio.load();
+                } catch {
                     // Se falhar ao carregar, usar simulação
                     setAudioElement(null);
-                });
+                }
                 
                 // Verificar se o áudio está disponível após um pequeno delay
                 checkAudio = setTimeout(() => {
