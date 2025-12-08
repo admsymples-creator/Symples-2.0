@@ -73,10 +73,32 @@ export function OnboardingModal({ open, onOpenChange, onAction }: OnboardingModa
 }
 
 // Hook para verificar se o modal deve ser exibido
-export function useShouldShowOnboarding(hasTasks: boolean): boolean {
+export function useShouldShowOnboarding(hasTasks: boolean, inviteAccepted?: boolean): boolean {
   const [shouldShow, setShouldShow] = useState(false);
 
   useEffect(() => {
+    // ✅ CORREÇÃO CRÍTICA: Se um convite foi aceito, NUNCA mostrar onboarding
+    // Usuários convidados não devem ver o onboarding modal
+    if (inviteAccepted) {
+      setShouldShow(false);
+      return;
+    }
+    
+    // Verificar também o cookie de invite recém-aceito
+    const getCookie = (name: string) => {
+      if (typeof document === 'undefined') return null;
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop()?.split(';').shift();
+      return null;
+    };
+    
+    const newlyAcceptedWorkspaceId = getCookie('newly_accepted_workspace_id');
+    if (newlyAcceptedWorkspaceId) {
+      setShouldShow(false);
+      return;
+    }
+    
     if (hasTasks) {
       setShouldShow(false);
       return;
@@ -86,7 +108,7 @@ export function useShouldShowOnboarding(hasTasks: boolean): boolean {
     // Se não tem tarefas e não foi visto, mostrar o modal
     const seen = localStorage.getItem(WELCOME_SEEN_KEY);
     setShouldShow(seen !== 'true');
-  }, [hasTasks]);
+  }, [hasTasks, inviteAccepted]);
 
   return shouldShow;
 }

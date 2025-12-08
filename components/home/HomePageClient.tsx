@@ -24,11 +24,9 @@ export function HomePageClient({ tasks, workspaces }: HomePageClientProps) {
   
   const hasTasks = tasks && tasks.length > 0;
   const inviteAccepted = searchParams.get('invite_accepted') === 'true';
-  const workspacesLength = workspaces.length; // Valor primitivo estável para dependências
   
-  // ✅ CORREÇÃO: Detectar aceitação de invite (via URL ou cookie)
-  // Resetar welcome_seen APENAS se for um novo usuário (sem workspaces)
-  // Se o usuário já tem workspaces, não mostrar onboarding novamente
+  // ✅ CORREÇÃO CRÍTICA: Detectar aceitação de invite e setar WELCOME_SEEN_KEY
+  // Quando um usuário aceita um convite, NÃO deve ver o onboarding modal
   useEffect(() => {
     if (hasInitialized) return;
     
@@ -44,12 +42,11 @@ export function HomePageClient({ tasks, workspaces }: HomePageClientProps) {
     const hasNewInvite = inviteAccepted || newlyAcceptedWorkspaceId;
     
     if (hasNewInvite) {
-      // ✅ CORREÇÃO: Só resetar localStorage se for um novo usuário (sem workspaces)
-      // Se o usuário já tem workspaces, significa que já viu o onboarding antes
-      // e não deve vê-lo novamente apenas por aceitar um novo convite
-      if (workspacesLength === 0) {
-        localStorage.removeItem(WELCOME_SEEN_KEY);
-      }
+      // ✅ CORREÇÃO CRÍTICA: Quando um usuário aceita um convite, SEMPRE setar WELCOME_SEEN_KEY
+      // Isso previne o onboarding modal de aparecer para usuários convidados
+      // Usuários convidados não precisam do onboarding de primeiro uso, pois foram convidados
+      // para um workspace existente, não estão criando um novo workspace
+      localStorage.setItem(WELCOME_SEEN_KEY, 'true');
       
       // Limpar cookie após uso (evita resetar em navegações futuras)
       if (newlyAcceptedWorkspaceId) {
@@ -58,9 +55,10 @@ export function HomePageClient({ tasks, workspaces }: HomePageClientProps) {
     }
     
     setHasInitialized(true);
-  }, [inviteAccepted, hasInitialized, workspacesLength]);
+  }, [inviteAccepted, hasInitialized]);
 
-  const shouldShowOnboarding = useShouldShowOnboarding(hasTasks);
+  // ✅ CORREÇÃO: Passar inviteAccepted para o hook para prevenir onboarding
+  const shouldShowOnboarding = useShouldShowOnboarding(hasTasks, inviteAccepted);
 
   // Abrir modal de onboarding automaticamente quando necessário
   useEffect(() => {

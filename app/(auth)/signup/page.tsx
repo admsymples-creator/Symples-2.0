@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: { invite?: string };
+  searchParams: Promise<{ invite?: string }>;
 }) {
-  const inviteToken = searchParams.invite;
+  // ✅ CORREÇÃO: Next.js 15+ requer await para searchParams (são Promises)
+  const resolvedSearchParams = await searchParams;
+  const inviteToken = resolvedSearchParams.invite;
   
   // Se houver token de convite, verificar se o usuário já está logado
   // Se estiver, redirecionar para a página de aceite do convite
