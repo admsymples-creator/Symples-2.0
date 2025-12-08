@@ -1482,7 +1482,12 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                               workspaceId: activeWorkspaceId || undefined,
                             }}
                             members={workspaceMembers}
-                            workspaces={workspaces}
+                            workspaces={workspaces.map(w => ({
+                              id: w.id,
+                              name: w.name,
+                              slug: w.slug ?? undefined,
+                              logo_url: w.logo_url,
+                            }))}
                             onConfirm={handleConfirmTask}
                             onCancel={handleCancelTask}
                             isLoading={isLoading}
