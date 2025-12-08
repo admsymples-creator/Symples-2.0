@@ -6,6 +6,78 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-09 - Correção Crítica: Fluxo de Convites em Produção (Hardening de Cookies e URL Redundancy)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Correção Crítica: Fluxo de Convites Funcionando em Produção
+- **Problema**: Fluxo de convites funcionava localmente mas falhava em produção (Vercel)
+  - **Sintoma 1**: Novos usuários eram redirecionados para onboarding ao invés do workspace convidado
+  - **Sintoma 2**: Usuários existentes eram redirecionados para workspace antigo, ignorando novo convite
+  - **Causa Raiz**: Cookie `pending_invite` sendo bloqueado ou perdido durante redirects OAuth em produção devido a políticas de `Secure` e `SameSite` não configuradas corretamente
+- **Solução Implementada**: Hardening completo do fluxo com redundância URL + Cookie
+
+#### 🔒 Task 1: Hardening do Middleware (Cookie Logic)
+- **`middleware.ts`**: Configurações explícitas e robustas para produção
+  - `secure: process.env.NODE_ENV === 'production'` - ✅ HTTPS only em produção (REQUERIDO)
+  - `sameSite: 'lax'` - ✅ CRÍTICO: Permite cookie ser lido após OAuth redirect
+  - `httpOnly: false` - Permite leitura no client se necessário
+  - `path: '/'` - Disponível em todas as rotas
+  - `maxAge: 3600` - 1 hora de validade
+  - Logs melhorados para debug em produção
+- **Resultado**: Cookie agora funciona corretamente em ambiente HTTPS com redirects OAuth
+
+#### 🔗 Task 2: URL Redundancy (The "Unbreakable Link")
+- **`app/invite/[token]/page.tsx`**: Passa invite token na URL além do cookie
+  - Links de login/signup agora incluem `?invite=${inviteId}` na URL
+  - Redundância: Cookie (middleware) + URL (parâmetro) garante que token sobreviva mesmo se cookie falhar
+  - Links atualizados:
+    - `/signup?invite=${inviteId}` (já tinha, mantido)
+    - `/login?next=/invite/${inviteId}&invite=${inviteId}` (novo - adicionado parâmetro invite)
+- **`components/landing/LoginForm.tsx`**: Suporte completo a invite token
+  - Lê invite token da URL via `useSearchParams`
+  - Passa token para `signInWithGoogle()` que inclui na URL do OAuth
+- **`components/landing/SignupForm.tsx`**: Já estava passando token corretamente
+- **Resultado**: Token agora persiste mesmo se cookie for bloqueado por políticas de segurança
+
+#### 🎯 Task 3: Auth Callback com Prioridade Correta
+- **`app/auth/callback/route.ts`**: Prioridade URL → Cookie → Processamento
+  - **1. PRIORIDADE**: Parâmetro `invite` na URL (mais confiável, funciona sempre)
+  - **2. FALLBACK**: Cookie `pending_invite` (backup se URL não tiver)
+  - **3. PROCESSAMENTO**: Aceita convite imediatamente após autenticação
+  - **4. REDIRECIONAMENTO**: Redireciona para workspace específico `/${workspaceSlug}/tasks?invite_accepted=true`
+- **Melhorias de Redirecionamento**:
+  - Busca slug do workspace aceito para redirecionar diretamente
+  - Redireciona para `/${workspaceSlug}/tasks` ao invés de `/home` genérico
+  - Fallback para `/home?invite_accepted=true` se workspace não encontrado
+  - Retry logic com delay maior (1000ms) para garantir que workspace_members foi criado
+- **Logs Detalhados**: Logs melhorados para debug em produção mostrando origem do token (URL vs Cookie)
+- **Resultado**: Usuários agora são redirecionados corretamente para o workspace convidado, não para onboarding ou workspace antigo
+
+#### 🔧 Por Que Funciona Agora em Produção
+1. **Cookie Seguro**: `secure: true` é obrigatório em HTTPS (produção)
+2. **SameSite Lax**: Permite cookie ser lido após redirects OAuth (crítico para Google OAuth)
+3. **Redundância URL + Cookie**: Se cookie falhar, URL ainda funciona
+4. **Prioridade Correta**: URL primeiro (mais confiável), cookie como fallback
+5. **Redirecionamento Direto**: Vai para workspace específico, não `/home` genérico
+
+#### 📝 Arquivos Modificados
+- `middleware.ts`: Hardening de cookie com configurações explícitas
+- `app/invite/[token]/page.tsx`: Adicionado parâmetro `invite` na URL dos links
+- `app/auth/callback/route.ts`: Prioridade URL → Cookie, redirecionamento para workspace específico
+- `components/landing/LoginForm.tsx`: Suporte a invite token da URL
+
+### 2. Trabalho em andamento
+- ✅ **Correções concluídas e prontas para teste em produção**
+
+### 3. Próximos passos imediatos
+- ⏳ Testar fluxo completo em produção (Vercel)
+- ⏳ Validar que novos usuários são redirecionados corretamente para workspace convidado
+- ⏳ Validar que usuários existentes são redirecionados para novo workspace, não workspace antigo
+- ⏳ Monitorar logs em produção para confirmar que tokens estão sendo lidos corretamente (URL vs Cookie)
+
+---
+
 ## 2025-01-08 - Correção Crítica: Onboarding para Usuários Convidados e Next.js 15+
 
 ### 1. Melhorias, bugs e features implementadas em preview

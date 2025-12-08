@@ -85,12 +85,15 @@ export default async function InvitePage({ params }: InvitePageProps) {
               </p>
             </CardContent>
             <CardFooter className="flex-col gap-3">
+              {/* ✅ TASK 2: URL Redundancy - Passar invite token na URL */}
+              {/* O cookie já foi criado pelo middleware, mas adicionar na URL garante redundância */}
               <Link href={`/signup?invite=${inviteId}`} className="w-full">
                 <Button className="w-full text-lg py-6 bg-green-600 hover:bg-green-700">
                   Criar Conta e Aceitar
                 </Button>
               </Link>
-              <Link href={`/login?next=/invite/${inviteId}`} className="w-full">
+              {/* ✅ TASK 2: URL Redundancy - Passar invite token na URL e no next */}
+              <Link href={`/login?next=/invite/${inviteId}&invite=${inviteId}`} className="w-full">
                 <Button variant="outline" className="w-full">
                   Já tenho conta - Entrar
                 </Button>
@@ -120,7 +123,8 @@ export default async function InvitePage({ params }: InvitePageProps) {
              </p>
           </CardContent>
           <CardFooter>
-            <Link href={`/login?next=/invite/${inviteId}`} className="w-full">
+            {/* ✅ TASK 2: URL Redundancy - Passar invite token na URL */}
+            <Link href={`/login?next=/invite/${inviteId}&invite=${inviteId}`} className="w-full">
               <Button className="w-full group">
                 Entrar para Aceitar
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
