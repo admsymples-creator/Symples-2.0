@@ -14,16 +14,17 @@ interface AppShellProps {
     children: React.ReactNode;
     user: any;
     workspaces: any[];
+    isAdmin?: boolean;
 }
 
-function LayoutContent({ children, user, workspaces }: AppShellProps) {
+function LayoutContent({ children, user, workspaces, isAdmin = false }: AppShellProps) {
     const { isCollapsed } = useSidebar();
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <WorkspaceUrlSync workspaces={workspaces} />
-            <WorkspaceSyncAfterInvite />
-            <Sidebar workspaces={workspaces} />
+            {!isAdmin && <WorkspaceUrlSync workspaces={workspaces} />}
+            {!isAdmin && <WorkspaceSyncAfterInvite />}
+            <Sidebar workspaces={workspaces} isAdmin={isAdmin} />
             <div 
                 className={cn(
                     "flex flex-col min-h-screen transition-all duration-300 ease-in-out",

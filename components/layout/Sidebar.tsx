@@ -4,7 +4,7 @@ import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen, LayoutDashboard, Users, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,8 +36,17 @@ const workspaceItems: NavItem[] = [
     { label: "Financeiro", href: "/finance", icon: DollarSign },
 ];
 
+const adminItems: NavItem[] = [
+    { label: "Cockpit", href: "/admin", icon: LayoutDashboard },
+    { label: "Usuários", href: "/admin/users", icon: Users },
+    { label: "Workspaces", href: "/admin/workspaces", icon: Building2 },
+    { label: "Logs", href: "/admin/logs", icon: FileText },
+    { label: "Financeiro", href: "/admin/finance", icon: DollarSign },
+];
+
 interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
+    isAdmin?: boolean;
 }
 
 function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
@@ -84,7 +93,7 @@ function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive:
     return content;
 }
 
-function SidebarContent({ workspaces = [] }: SidebarProps) {
+function SidebarContent({ workspaces = [], isAdmin = false }: SidebarProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -178,21 +187,34 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
 
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto p-4 overflow-x-hidden">
-                {/* Top: Minha Semana (Global) */}
-                <div className="mb-6">
-                    <ul className="space-y-1">
-                        {personalItems.map((item) => (
-                            <li key={item.href}>
-                                <NavItemView item={item} isActive={isActive(item.href)} isCollapsed={isCollapsed} />
-                            </li>
-                        ))}
-                    </ul>
-                    <div className={cn("mt-4 border-b border-gray-100 mx-3", isCollapsed && "mx-1")} />
-                </div>
+                {isAdmin ? (
+                    /* Admin Menu */
+                    <div>
+                        <ul className="space-y-1">
+                            {adminItems.map((item) => (
+                                <li key={item.href}>
+                                    <NavItemView item={item} isActive={isActive(item.href)} isCollapsed={isCollapsed} />
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : (
+                    <>
+                        {/* Top: Minha Semana (Global) */}
+                        <div className="mb-6">
+                            <ul className="space-y-1">
+                                {personalItems.map((item) => (
+                                    <li key={item.href}>
+                                        <NavItemView item={item} isActive={isActive(item.href)} isCollapsed={isCollapsed} />
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className={cn("mt-4 border-b border-gray-100 mx-3", isCollapsed && "mx-1")} />
+                        </div>
 
-                {/* Workspace Selector */}
-                <div className="mb-6">
-                     {hasWorkspaces ? (
+                        {/* Workspace Selector */}
+                        <div className="mb-6">
+                             {hasWorkspaces ? (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button 
@@ -306,35 +328,39 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                     />
                                 </li>
                             );
-                        })}
+                        }                        )}
                     </ul>
                 </div>
+                    </>
+                )}
             </nav>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
-                {/* Trial Upgrade Callout - Hide when collapsed */}
-                {!isCollapsed && (
-                    <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-                        <h4 className="font-semibold text-green-800 text-xs mb-1">Trial - 14 dias restantes</h4>
-                        <p className="text-[10px] text-green-700 mb-2 leading-snug">
-                            Aproveite todos os recursos Pro do Symples.
-                        </p>
-                        <Button size="sm" className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none">
-                            Assinar Agora
-                        </Button>
-                    </div>
-                )}
+            {!isAdmin && (
+                <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
+                    {/* Trial Upgrade Callout - Hide when collapsed */}
+                    {!isCollapsed && (
+                        <div className="bg-green-50 rounded-lg p-3 border border-green-100">
+                            <h4 className="font-semibold text-green-800 text-xs mb-1">Trial - 14 dias restantes</h4>
+                            <p className="text-[10px] text-green-700 mb-2 leading-snug">
+                                Aproveite todos os recursos Pro do Symples.
+                            </p>
+                            <Button size="sm" className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none">
+                                Assinar Agora
+                            </Button>
+                        </div>
+                    )}
 
-                <div className={cn("flex items-center", isCollapsed ? "justify-center flex-col gap-4" : "justify-between")}>
-                    {/* Settings Link */}
-                    <NavItemView 
-                        item={{ label: "Configurações", href: "/settings", icon: Settings }} 
-                        isActive={isActive("/settings")} 
-                        isCollapsed={isCollapsed} 
-                    />
+                    <div className={cn("flex items-center", isCollapsed ? "justify-center flex-col gap-4" : "justify-between")}>
+                        {/* Settings Link */}
+                        <NavItemView 
+                            item={{ label: "Configurações", href: "/settings", icon: Settings }} 
+                            isActive={isActive("/settings")} 
+                            isCollapsed={isCollapsed} 
+                        />
+                    </div>
                 </div>
-            </div>
+            )}
         </aside>
     );
 }
