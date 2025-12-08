@@ -105,6 +105,30 @@ Execute:
 node test-email.js
 ```
 
+## ⚠️ Problema Específico: Convites não funcionam em Produção/Preview
+
+**Sintoma:** Convites funcionam no localhost mas não em produção/preview.
+
+**Causas e Soluções:**
+
+1. **`RESEND_API_KEY` não configurada no Vercel**
+   - ✅ **CORRIGIDO:** Sistema agora lança erro explícito
+   - Configure em: Vercel Dashboard → Settings → Environment Variables
+   - Certifique-se de adicionar para **Production** e **Preview**
+
+2. **`NEXT_PUBLIC_SITE_URL` não configurada**
+   - ✅ **CORRIGIDO:** Sistema agora valida e lança erro se não estiver configurada
+   - Configure com URL completa: `https://seu-dominio.com`
+
+3. **Erros silenciados (antes da correção)**
+   - ✅ **CORRIGIDO:** Em produção/preview, erros são lançados explicitamente
+   - Verifique os logs no Vercel para detalhes
+
+**Como verificar:**
+- Ao criar convite, se houver problema, você verá mensagem de erro clara
+- Logs detalhados são gerados automaticamente
+- Em desenvolvimento, sistema continua funcionando sem email (para testes)
+
 ## Problemas Comuns
 
 ### Problema 1: API Key não configurada
@@ -112,11 +136,14 @@ node test-email.js
 **Sintoma:**
 - Logs mostram: `⚠️ RESEND_API_KEY não configurada`
 - Em desenvolvimento, o link aparece mas email não é enviado
+- **Em produção/preview:** Erro explícito: "RESEND_API_KEY não está configurada..."
 
 **Solução:**
 1. Obtenha a API key em https://resend.com/api-keys
-2. Adicione no `.env.local`: `RESEND_API_KEY=re_xxxxx`
-3. Reinicie o servidor de desenvolvimento
+2. **Localmente:** Adicione no `.env.local`: `RESEND_API_KEY=re_xxxxx`
+3. **Vercel:** Adicione em Settings → Environment Variables para Production/Preview
+4. Reinicie o servidor de desenvolvimento (se local)
+5. ✅ **CORRIGIDO:** O sistema agora lança erro explícito em produção se não estiver configurada
 
 ### Problema 2: Email vai para spam
 

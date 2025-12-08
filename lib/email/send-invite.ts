@@ -28,20 +28,25 @@ export async function sendInviteEmail(params: SendInviteParams) {
     const warning = "⚠️ RESEND_API_KEY não configurada. Email não será enviado.";
     console.warn(warning);
     
-    // Em desenvolvimento, apenas loga o link
+    // Em desenvolvimento, apenas loga o link (permite continuar sem email)
     if (process.env.NODE_ENV === "development") {
       console.log("📧 [DEV] Email de convite simulado:");
       console.log(`   Para: ${to}`);
       console.log(`   Workspace: ${workspaceName}`);
       console.log(`   Link: ${inviteLink}`);
       console.log(`   Role: ${role}`);
+      
+      return { 
+        success: false, 
+        id: "dev-simulation",
+        error: "RESEND_API_KEY não configurada"
+      };
     }
     
-    return { 
-      success: false, 
-      id: "dev-simulation",
-      error: "RESEND_API_KEY não configurada"
-    };
+    // Em produção/preview, lançar erro para não silenciar o problema
+    const errorMsg = "RESEND_API_KEY não está configurada. Configure a variável de ambiente RESEND_API_KEY no Vercel para enviar convites por email.";
+    console.error("❌", errorMsg);
+    throw new Error(errorMsg);
   }
 
   // Validar formato do email
