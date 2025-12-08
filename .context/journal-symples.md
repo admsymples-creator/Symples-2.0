@@ -6,6 +6,46 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-08 - Correções de UX e Bugs Críticos
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Correção: Zero State da Visão Semanal não Aparecia na Primeira Entrada
+- **Problema**: Ao entrar pela primeira vez no app, o zero state não aparecia imediatamente, somente após refresh
+- **Causa**: O `showPlaceholder` era inicializado como `false` e só era atualizado no `useEffect` após a montagem do componente
+- **Solução**: Inicialização do estado `showPlaceholder` com função que verifica o `localStorage` imediatamente na primeira renderização
+- **Arquivo**: `components/home/WeeklyViewWrapper.tsx`
+- **Resultado**: Zero state aparece imediatamente na primeira renderização quando o modal de onboarding já foi visto
+
+#### ✅ Correção: Link de Convite não Aparecia em Produção
+- **Problema**: Ao enviar um convite, a opção de copiar o link não aparecia em produção
+- **Causa**: O `inviteLink` só era retornado quando `NODE_ENV === "development"`
+- **Solução**: Sempre retornar o `inviteLink` na função `inviteMember`, independente do ambiente
+- **Arquivos**: 
+  - `lib/actions/members.ts` - Sempre retorna `inviteLink`
+  - `app/(main)/settings/settings-client.tsx` - Mensagem atualizada para "Copie o link abaixo para compartilhar:"
+- **Resultado**: Link de convite e botão de copiar aparecem sempre, em desenvolvimento e produção
+
+#### ✅ Correção: Onboarding Aparecendo Após Login com Google para Membros Existentes
+- **Problema**: Quando um membro existente (com workspaces) aceitava um novo convite e fazia login com Google, o onboarding aparecia novamente
+- **Causa**: O código removia o `WELCOME_SEEN_KEY` do localStorage sempre que um convite era aceito, mesmo para usuários que já tinham workspaces
+- **Solução**: Adicionar verificação para só remover `WELCOME_SEEN_KEY` se o usuário não tiver workspaces (novo usuário)
+- **Arquivo**: `components/home/HomePageClient.tsx`
+- **Resultado**: Onboarding só aparece novamente para novos usuários (sem workspaces), não para membros existentes que aceitam novos convites
+
+#### ✅ Melhoria: Zero State da Visão Semanal com Skeletons e Botão Atualizado
+- **Botão Atualizado**: Texto alterado de "Adicionar tarefa rápida" para "Começar agora"
+- **Skeletons Adicionados**: Cada uma das 5 colunas do grid agora tem skeletons no fundo simulando cards de tarefas
+- **Visual**: Skeletons com animação `animate-pulse` e cores suaves (`bg-slate-200/60`)
+- **Arquivo**: `components/home/EmptyWeekState.tsx`
+- **Resultado**: Zero state mais informativo e visualmente mais rico, dando prévia de como ficaria a visão semanal com tarefas
+
+#### 🔧 Correções Técnicas
+- **Array de Dependências do useEffect**: Corrigido erro de tamanho variável no array de dependências usando valor primitivo estável (`workspacesLength`)
+- **Estabilidade de Dependências**: Extraído `workspaces.length` para variável primitiva antes do `useEffect` para garantir tamanho constante do array
+
+---
+
 ## 2025-12-06 - Sistema de Notificações Unificado (Universal Inbox) - Finalizado
 
 ### 1. Melhorias, bugs e features implementadas em preview
