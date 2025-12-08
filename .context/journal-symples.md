@@ -6,6 +6,36 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-08 - Correção Crítica: Onboarding para Usuários Convidados e Next.js 15+
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Correção Crítica: Onboarding Aparecendo para Usuários Convidados
+- **Problema**: Usuários convidados (que aceitaram convite) ainda estavam vendo o onboarding modal em preview e produção
+- **Causa Raiz**: 
+  - O `WELCOME_SEEN_KEY` não era setado quando um convite era aceito
+  - O hook `useShouldShowOnboarding` não verificava se um convite havia sido aceito
+- **Solução Implementada**:
+  - **`components/home/HomePageClient.tsx`**: Quando detecta `invite_accepted=true` na URL ou cookie `newly_accepted_workspace_id`, seta `WELCOME_SEEN_KEY` como `'true'` imediatamente
+  - **`components/home/OnboardingModal.tsx`**: Hook `useShouldShowOnboarding` agora aceita parâmetro `inviteAccepted` e verifica cookie `newly_accepted_workspace_id` - se qualquer um existir, retorna `false` imediatamente
+- **Lógica Final**:
+  - Se `invite_accepted=true` na URL → não mostrar onboarding
+  - Se cookie `newly_accepted_workspace_id` existe → não mostrar onboarding
+  - Se usuário tem workspaces → não mostrar onboarding
+  - Só mostra onboarding para novos usuários que criaram seu próprio workspace e não têm tarefas
+- **Resultado**: Usuários convidados nunca veem o onboarding modal, mesmo que seja a primeira vez que acessam o app
+
+#### ✅ Correção: Next.js 15+ searchParams como Promise
+- **Problema**: Erro de source map e acesso direto a `searchParams` sem `await` em `app/(auth)/signup/page.tsx`
+- **Causa**: No Next.js 15+, `searchParams` é uma Promise e requer `await`
+- **Solução**: 
+  - Alterado tipo de `searchParams: { invite?: string }` para `searchParams: Promise<{ invite?: string }>`
+  - Adicionado `await` antes de acessar: `const resolvedSearchParams = await searchParams;`
+- **Arquivo**: `app/(auth)/signup/page.tsx`
+- **Resultado**: Página de signup funciona corretamente com Next.js 15+
+
+---
+
 ## 2025-01-08 - Correções de UX e Bugs Críticos
 
 ### 1. Melhorias, bugs e features implementadas em preview
