@@ -20,7 +20,14 @@ const WELCOME_SEEN_KEY = 'symples-welcome-seen';
 export function WeeklyViewWrapper({ tasks, workspaces }: WeeklyViewWrapperProps) {
   const router = useRouter();
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-  const [showPlaceholder, setShowPlaceholder] = useState(false);
+  // ✅ CORREÇÃO: Verificar localStorage no estado inicial para aparecer na primeira renderização
+  const [showPlaceholder, setShowPlaceholder] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const hasTasks = tasks && tasks.length > 0;
+    if (hasTasks) return false;
+    const seen = localStorage.getItem(WELCOME_SEEN_KEY);
+    return seen === 'true';
+  });
   const [isMounted, setIsMounted] = useState(false);
   const [isTutorialActive, setIsTutorialActive] = useState(false);
 

@@ -542,7 +542,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
   return { 
     success: true, 
-    inviteLink: process.env.NODE_ENV === "development" ? inviteLink : undefined,
+    inviteLink: inviteLink, // ✅ Sempre retornar o link para permitir copiar
     message: emailError 
       ? `Convite criado, mas houve erro ao enviar email: ${emailError}`
       : process.env.NODE_ENV === "development" 

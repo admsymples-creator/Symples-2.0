@@ -588,7 +588,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             <CheckCircle2 className="h-8 w-8 text-green-600" />
                             <h3 className="font-medium text-green-900">Convite Criado!</h3>
                             <p className="text-sm text-green-700">
-                                Em ambiente de desenvolvimento, use o link abaixo:
+                                Copie o link abaixo para compartilhar:
                             </p>
                         </div>
                         <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-md border min-w-0">
