@@ -6,6 +6,34 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Correção: Comentário Otimista Desaparecendo Tardio em TaskDetailModal
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Correção: Comentário Otimista Desaparecendo 1 Segundo Após o Real
+- **Problema**: O comentário otimista permanecia visível por ~1 segundo após o comentário real ser carregado do servidor, causando duplicação visual temporária
+- **Causa Raiz**: O `useOptimistic` mantinha o comentário otimista mesmo após atualizar o estado base, porque a remoção não era feita de forma síncrona antes do recarregamento
+- **Solução Implementada**: Remoção síncrona do comentário otimista do estado base antes de recarregar atividades do servidor
+
+#### 🔧 TaskDetailModal.tsx - Correções Implementadas
+- **`reloadActivities`**: Filtra comentário otimista pendente antes de atualizar estado base
+  - Verifica `optimisticIdRef.current` antes de atualizar
+  - Filtra atividades carregadas do servidor para excluir o ID otimista
+  - Limpa `optimisticIdRef.current` após atualização
+- **`handleSendComment`**: Remove comentário otimista do estado base antes de recarregar
+  - Remove do estado base de forma síncrona usando `setActivities(prev => prev.filter(...))`
+  - Limpa `optimisticIdRef.current` imediatamente
+  - Depois recarrega atividades do servidor (que já filtra o otimista como redundância)
+- **Resultado**: Comentário otimista desaparece instantaneamente quando o comentário real é carregado, sem delay de 1 segundo
+
+#### 📝 Detalhes Técnicos
+- **Hook `useOptimistic`**: Mantém estado otimista separado do estado base
+- **Sincronização**: Remoção síncrona do estado base garante que `useOptimistic` atualize imediatamente
+- **Redundância**: `reloadActivities` também filtra o otimista para garantir que não haja duplicação mesmo se a remoção anterior falhar
+- **Commit**: `db6e542` - "fix: corrigir desaparecimento tardio do comentário otimista em TaskDetailModal"
+
+---
+
 ## 2025-01-09 - Correção Crítica: Fluxo de Convites em Produção (Hardening de Cookies e URL Redundancy)
 
 ### 1. Melhorias, bugs e features implementadas em preview
