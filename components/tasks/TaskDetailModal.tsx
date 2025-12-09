@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, memo, useMemo, useOptimistic, startTransition } from "react";
 import { useDropzone } from "react-dropzone";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useTaskCache } from "@/hooks/use-task-cache";
@@ -345,7 +345,16 @@ export function TaskDetailModal({
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [comment, setComment] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+    const optimisticIdRef = useRef<string | null>(null); // Ref para rastrear ID do comentário otimista
+    const activitiesScrollRef = useRef<HTMLDivElement>(null); // Ref para o container de scroll do histórico
+    
+    // useOptimistic para feedback visual imediato ao adicionar comentário
+    const [optimisticActivities, addOptimisticActivity] = useOptimistic(
+        activities,
+        (state, newActivity: Activity) => [...state, newActivity]
+    );
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
@@ -544,14 +553,14 @@ export function TaskDetailModal({
         } finally {
             setTranscribingActivityId(null);
         }
-    }, [activities, currentTaskId, isCreateMode]);
+    }, [optimisticActivities, currentTaskId, isCreateMode]);
     
     // Atualizar ref quando handleViewTranscription mudar
     handleViewTranscriptionRef.current = handleViewTranscription;
     
     // Memoizar lista de atividades renderizadas para melhor performance
     const renderedActivities = useMemo(() => {
-        return activities.map((act: Activity) => (
+        return optimisticActivities.map((act: Activity) => (
             <div key={act.id} className="flex gap-3 text-sm relative group">
                 <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
                     <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
@@ -678,7 +687,7 @@ export function TaskDetailModal({
                 </div>
             </div>
         ));
-    }, [activities, transcribingActivityId]);
+    }, [optimisticActivities, transcribingActivityId]);
     
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
@@ -689,6 +698,21 @@ export function TaskDetailModal({
     // Determinar quais seções ainda estão carregando
     const showAttachmentsSkeleton = isLoadingAttachments;
     const showCommentsSkeleton = isLoadingComments;
+
+    // Scroll automático para o final do histórico quando atividades mudarem ou modal abrir
+    const activitiesLength = optimisticActivities.length;
+    useEffect(() => {
+        if (!open) return;
+        if (!activitiesScrollRef.current) return;
+        if (activitiesLength === 0) return;
+        
+        // Usar requestAnimationFrame para garantir que o DOM foi atualizado após render
+        requestAnimationFrame(() => {
+            if (activitiesScrollRef.current) {
+                activitiesScrollRef.current.scrollTop = activitiesScrollRef.current.scrollHeight;
+            }
+        });
+    }, [activitiesLength, open]);
 
     // Limpar estados quando task.id mudar ou modal fechar
     // Este useEffect deve rodar ANTES de qualquer renderização do formulário
@@ -1097,7 +1121,17 @@ export function TaskDetailModal({
                         transcription: comment.metadata.transcription,
                     } : undefined,
                 }));
-                setActivities(mappedActivities);
+                // Substituir completamente o estado base
+                // Filtrar qualquer comentário otimista pendente antes de atualizar
+                const optimisticIdToFilter = optimisticIdRef.current;
+                const filteredActivities = optimisticIdToFilter 
+                    ? mappedActivities.filter(act => act.id !== optimisticIdToFilter)
+                    : mappedActivities;
+                
+                // Atualizar estado base - o useOptimistic automaticamente atualizará
+                setActivities(filteredActivities);
+                // Limpar ref do otimista após atualizar o estado
+                optimisticIdRef.current = null;
             }
         } catch (error) {
             console.error("Erro ao recarregar atividades:", error);
@@ -1250,6 +1284,7 @@ export function TaskDetailModal({
     const handleSendComment = async () => {
         if (!comment.trim() && pendingAttachments.length === 0) return;
         if (!currentTaskId && !isCreateMode) return;
+        if (isSubmitting) return; // Prevenir múltiplos envios
 
         const commentText = comment.trim() || (pendingAttachments.length > 0 ? "Anexo compartilhado" : "");
         const attachedFiles = pendingAttachments.map(f => ({
@@ -1259,6 +1294,26 @@ export function TaskDetailModal({
         }));
 
         if (currentTaskId && !isCreateMode) {
+            setIsSubmitting(true);
+            
+            // Adicionar comentário otimista para feedback visual imediato (dentro de transição)
+            const optimisticId = `optimistic-${Date.now()}`;
+            optimisticIdRef.current = optimisticId;
+            const optimisticActivity: Activity = {
+                id: optimisticId,
+                type: pendingAttachments.length > 0 ? "file_shared" : "commented",
+                user: "Você",
+                message: commentText,
+                timestamp: "Agora mesmo",
+                attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
+            };
+            startTransition(() => {
+                addOptimisticActivity(optimisticActivity);
+            });
+
+            // Toast otimista - aparece imediatamente sincronizado com optimistic UI
+            toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
+
             try {
                 // Primeiro, fazer upload dos arquivos se houver
                 const uploadedFileUrls: string[] = [];
@@ -1305,11 +1360,29 @@ export function TaskDetailModal({
                 );
                 
                 if (!result.success) {
+                    // Em caso de erro, mostrar toast de erro (substitui o toast otimista)
                     toast.error(result.error || "Erro ao criar comentário");
+                    // Remover comentário otimista do estado base antes de recarregar
+                    const optimisticIdToRemove = optimisticIdRef.current;
+                    if (optimisticIdToRemove) {
+                        setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                        optimisticIdRef.current = null;
+                    }
+                    await reloadActivities(currentTaskId);
                     return;
                 }
 
-                // Recarregar atividades do banco para garantir que está salvo
+                // Remover comentário otimista do estado base ANTES de recarregar
+                // Isso garante que o useOptimistic atualize corretamente quando o estado base mudar
+                const optimisticIdToRemove = optimisticIdRef.current;
+                if (optimisticIdToRemove) {
+                    // Remover do estado base de forma síncrona
+                    setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                    optimisticIdRef.current = null;
+                }
+                
+                // Recarregar atividades do banco - o reloadActivities já filtra o comentário otimista
+                // Isso substituirá completamente o estado base e o useOptimistic atualizará automaticamente
                 await reloadActivities(currentTaskId);
                 
                 // Atualizar anexos também
@@ -1325,14 +1398,23 @@ export function TaskDetailModal({
                     setAttachments(mappedAttachments);
                 }
 
+                // Só limpar input se sucesso (toast já foi mostrado otimista)
                 setComment("");
                 setPendingAttachments([]);
                 setPendingFiles([]); // Limpar File objects também
                 invalidateCacheAndNotify(currentTaskId);
-                toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
             } catch (error) {
                 console.error("Erro ao criar comentário:", error);
                 toast.error("Erro ao criar comentário");
+                // Remover comentário otimista em caso de erro
+                const optimisticIdToRemove = optimisticIdRef.current;
+                if (optimisticIdToRemove) {
+                    setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                    optimisticIdRef.current = null;
+                }
+                await reloadActivities(currentTaskId);
+            } finally {
+                setIsSubmitting(false);
             }
         } else {
             // Modo create - apenas adicionar localmente
@@ -2189,7 +2271,10 @@ export function TaskDetailModal({
                             <div className="flex-1 flex flex-col min-h-0">
                                 <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Histórico</h4>
                                 
-                                <div className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar">
+                                <div 
+                                    ref={activitiesScrollRef}
+                                    className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar"
+                                >
                                     <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
 
                                     <div className="space-y-4 relative pl-1">
@@ -2257,13 +2342,14 @@ export function TaskDetailModal({
                                                 value={comment}
                                                 onChange={(e) => setComment(e.target.value)}
                                                 onKeyDown={(e) => {
-                                                    if (e.key === "Enter" && !e.shiftKey) {
+                                                    if (e.key === "Enter" && !e.shiftKey && !isSubmitting) {
                                                         e.preventDefault();
                                                         handleSendComment();
                                                     }
                                                 }}
                                                 placeholder="Adicionar comentário..."
                                                 className="pr-32 bg-white shadow-sm"
+                                                disabled={isSubmitting}
                                             />
                                             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
                                                 <Button
@@ -2288,7 +2374,7 @@ export function TaskDetailModal({
                                                     size="icon"
                                                     className="h-8 w-8 bg-green-600 hover:bg-green-700"
                                                     onClick={handleSendComment}
-                                                    disabled={!comment.trim() && pendingAttachments.length === 0}
+                                                    disabled={isSubmitting || (!comment.trim() && pendingAttachments.length === 0)}
                                                     title="Enviar comentário"
                                                 >
                                                     <Send className="h-3 w-3" />
