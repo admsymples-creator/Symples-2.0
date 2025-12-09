@@ -1681,8 +1681,13 @@ export function TaskDetailModal({
         setIsEditingDescription(false);
         if (currentTaskId && !isCreateMode) {
             const oldDescription = description; // Guardar para rollback
+            const normalizedDescription =
+                stripHtmlTags(description).trim().length === 0 ? "" : description;
+            if (normalizedDescription !== description) {
+                setDescription(normalizedDescription);
+            }
             try {
-                const result = await updateTaskField(currentTaskId, "description", description);
+                const result = await updateTaskField(currentTaskId, "description", normalizedDescription);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId);
                     await reloadActivities(currentTaskId);
@@ -1698,7 +1703,7 @@ export function TaskDetailModal({
                 toast.error("Erro ao salvar descrição");
             }
         }
-    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
+    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities, stripHtmlTags]);
 
     const handleAssigneeChange = async (userId: string | null) => {
         if (!currentTaskId || isCreateMode) return;

@@ -129,6 +129,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - **Vermelho**: Data vencida (passada) e tarefa não completada
   - **Verde**: Data é hoje
   - **Cinza**: Data futura ou tarefa completada (mesmo que a data seja passada)
+- **Editor Rich Text (TaskDetailModal)**:
+  - Reconfigurado para usar apenas `StarterKit` com listas, blockquote e code block habilitados
+  - Botões de bullet, lista numerada, citação e bloco de código voltam a funcionar
+  - Estilos aplicados via Tailwind para listas, blockquote e code block
+  - Placeholder reposicionado e ocultado no foco; descrição vazia normaliza para string vazia ao salvar para reexibir placeholder
 
 ### Technical
 - Implementado layout CSS Grid em TaskRowMinify para alinhamento vertical consistente
