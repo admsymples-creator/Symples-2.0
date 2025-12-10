@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, memo, useMemo, useOptimistic, startTransition } from "react";
+import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useTaskCache } from "@/hooks/use-task-cache";
@@ -320,6 +320,7 @@ AudioRecorderDisplay.displayName = "AudioRecorderDisplay";
 
 // Feature flag
 const ENABLE_AUDIO_TO_TASK = false;
+const COMMENTS_PAGE_SIZE = 50;
 
 export function TaskDetailModal({ 
     open, 
@@ -350,11 +351,6 @@ export function TaskDetailModal({
     const optimisticIdRef = useRef<string | null>(null); // Ref para rastrear ID do comentário otimista
     const activitiesScrollRef = useRef<HTMLDivElement>(null); // Ref para o container de scroll do histórico
     
-    // useOptimistic para feedback visual imediato ao adicionar comentário
-    const [optimisticActivities, addOptimisticActivity] = useOptimistic(
-        activities,
-        (state, newActivity: Activity) => [...state, newActivity]
-    );
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
@@ -553,14 +549,14 @@ export function TaskDetailModal({
         } finally {
             setTranscribingActivityId(null);
         }
-    }, [optimisticActivities, currentTaskId, isCreateMode]);
+    }, [activities, currentTaskId, isCreateMode]);
     
     // Atualizar ref quando handleViewTranscription mudar
     handleViewTranscriptionRef.current = handleViewTranscription;
     
     // Memoizar lista de atividades renderizadas para melhor performance
     const renderedActivities = useMemo(() => {
-        return optimisticActivities.map((act: Activity) => (
+        return activities.map((act: Activity) => (
             <div key={act.id} className="flex gap-3 text-sm relative group">
                 <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
                     <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
@@ -687,7 +683,7 @@ export function TaskDetailModal({
                 </div>
             </div>
         ));
-    }, [optimisticActivities, transcribingActivityId]);
+    }, [activities, transcribingActivityId]);
     
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
@@ -700,7 +696,7 @@ export function TaskDetailModal({
     const showCommentsSkeleton = isLoadingComments;
 
     // Scroll automático para o final do histórico quando atividades mudarem ou modal abrir
-    const activitiesLength = optimisticActivities.length;
+    const activitiesLength = activities.length;
     useEffect(() => {
         if (!open) return;
         if (!activitiesScrollRef.current) return;
@@ -927,7 +923,7 @@ export function TaskDetailModal({
                         setIsLoadingComments(false);
                         
                         // Verificar se há mais comentários para carregar
-                        setHasMoreComments(cachedExtended.comments.length >= 20);
+                        setHasMoreComments(cachedExtended.comments.length >= COMMENTS_PAGE_SIZE);
                         setCommentsOffset(0); // Resetar offset quando usar cache
                         
                         // Atualizar subtarefas
@@ -942,7 +938,7 @@ export function TaskDetailModal({
                     setIsLoadingAttachments(true);
                     setIsLoadingComments(true);
                     
-                    const extendedDetails = await getTaskExtendedDetails(task.id, 20, 0);
+                    const extendedDetails = await getTaskExtendedDetails(task.id, COMMENTS_PAGE_SIZE, 0);
                     
                     if (!active) return;
 
@@ -990,7 +986,7 @@ export function TaskDetailModal({
                         setIsLoadingComments(false);
                         
                         // Verificar se há mais comentários para carregar
-                        setHasMoreComments((extendedDetails.comments || []).length >= 20);
+                        setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
                         setCommentsOffset(0); // Resetar offset quando carregar dados iniciais
                         
                         // Atualizar subtarefas
@@ -1065,8 +1061,8 @@ export function TaskDetailModal({
         
         setIsLoadingComments(true);
         try {
-            const newOffset = commentsOffset + 20;
-            const extendedDetails = await getTaskExtendedDetails(currentTaskId, 20, newOffset);
+            const newOffset = commentsOffset + COMMENTS_PAGE_SIZE;
+            const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, newOffset);
             
             if (extendedDetails && extendedDetails.comments.length > 0) {
                 const mappedActivities: Activity[] = extendedDetails.comments.map((comment) => ({
@@ -1088,7 +1084,7 @@ export function TaskDetailModal({
                 
                 setActivities(prev => [...prev, ...mappedActivities]);
                 setCommentsOffset(newOffset);
-                setHasMoreComments(extendedDetails.comments.length >= 20);
+                setHasMoreComments(extendedDetails.comments.length >= COMMENTS_PAGE_SIZE);
             } else {
                 setHasMoreComments(false);
             }
@@ -1103,7 +1099,7 @@ export function TaskDetailModal({
     // Função helper para recarregar atividades do banco
     const reloadActivities = useCallback(async (taskId: string) => {
         try {
-            const extendedDetails = await getTaskExtendedDetails(taskId, 20, 0);
+            const extendedDetails = await getTaskExtendedDetails(taskId, COMMENTS_PAGE_SIZE, 0);
             if (extendedDetails) {
                 const mappedActivities: Activity[] = (extendedDetails.comments || []).map((comment) => ({
                     id: comment.id,
@@ -1132,6 +1128,8 @@ export function TaskDetailModal({
                 setActivities(filteredActivities);
                 // Limpar ref do otimista após atualizar o estado
                 optimisticIdRef.current = null;
+                setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                setCommentsOffset(0);
             }
         } catch (error) {
             console.error("Erro ao recarregar atividades:", error);
@@ -1296,7 +1294,7 @@ export function TaskDetailModal({
         if (currentTaskId && !isCreateMode) {
             setIsSubmitting(true);
             
-            // Adicionar comentário otimista para feedback visual imediato (dentro de transição)
+            // Adicionar comentário otimista no estado base (order ASC: adicionamos ao final)
             const optimisticId = `optimistic-${Date.now()}`;
             optimisticIdRef.current = optimisticId;
             const optimisticActivity: Activity = {
@@ -1307,9 +1305,7 @@ export function TaskDetailModal({
                 timestamp: "Agora mesmo",
                 attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
             };
-            startTransition(() => {
-                addOptimisticActivity(optimisticActivity);
-            });
+            setActivities(prev => [...prev, optimisticActivity]);
 
             // Toast otimista - aparece imediatamente sincronizado com optimistic UI
             toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
@@ -1362,7 +1358,7 @@ export function TaskDetailModal({
                 if (!result.success) {
                     // Em caso de erro, mostrar toast de erro (substitui o toast otimista)
                     toast.error(result.error || "Erro ao criar comentário");
-                    // Remover comentário otimista do estado base antes de recarregar
+                    // Remover comentário otimista antes de recarregar
                     const optimisticIdToRemove = optimisticIdRef.current;
                     if (optimisticIdToRemove) {
                         setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
@@ -1373,16 +1369,13 @@ export function TaskDetailModal({
                 }
 
                 // Remover comentário otimista do estado base ANTES de recarregar
-                // Isso garante que o useOptimistic atualize corretamente quando o estado base mudar
                 const optimisticIdToRemove = optimisticIdRef.current;
                 if (optimisticIdToRemove) {
-                    // Remover do estado base de forma síncrona
                     setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
                     optimisticIdRef.current = null;
                 }
                 
-                // Recarregar atividades do banco - o reloadActivities já filtra o comentário otimista
-                // Isso substituirá completamente o estado base e o useOptimistic atualizará automaticamente
+                // Recarregar atividades do banco
                 await reloadActivities(currentTaskId);
                 
                 // Atualizar anexos também
@@ -2299,6 +2292,26 @@ export function TaskDetailModal({
                                             renderedActivities
                                         )}
                                     </div>
+                                    
+                                    {hasMoreComments && (
+                                        <div className="flex justify-center pb-4">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={loadMoreComments}
+                                                disabled={isLoadingComments}
+                                            >
+                                                {isLoadingComments ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                        Carregando...
+                                                    </>
+                                                ) : (
+                                                    "Carregar mais"
+                                                )}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
                                 
                                 {/* Input Area */}

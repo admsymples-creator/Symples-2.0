@@ -219,7 +219,7 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
  */
 export async function getTaskExtendedDetails(
   taskId: string,
-  commentsLimit: number = 20,
+  commentsLimit: number = 50,
   commentsOffset: number = 0
 ): Promise<TaskExtendedDetails | null> {
   const supabase = await createServerActionClient();

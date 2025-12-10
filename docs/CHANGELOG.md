@@ -118,6 +118,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ### Fixed
 - **Correção de filtro na lista de membros**: Garantido que o usuário logado sempre aparece na lista de membros ao selecionar responsável de tarefa
+- **Comentários em TaskDetailModal**: Removida duplicação momentânea entre comentário otimista e dado real; paginação de histórico aumentada para 50 itens com botão "Carregar mais".
   - Corrigido `getWorkspaceMembers` para incluir o usuário atual mesmo que não esteja em `workspace_members`
   - Removido filtro que excluía o usuário logado da lista
   - Corrigido loop infinito de renderização em `TaskActionsMenu` e `TaskAssigneePicker`
