@@ -90,6 +90,7 @@ import { TaskImageLightbox } from "@/components/tasks/TaskImageLightbox";
 import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudioModal";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { toast } from "sonner";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 // ------------------------------------------------------------------
 // Types
@@ -322,6 +323,41 @@ AudioRecorderDisplay.displayName = "AudioRecorderDisplay";
 const ENABLE_AUDIO_TO_TASK = false;
 const COMMENTS_PAGE_SIZE = 50;
 
+const formatActivityTimestamp = (iso: string) =>
+    new Date(iso).toLocaleString("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "medium",
+    });
+
+const mapCommentToActivityBase = (
+    comment: any,
+    currentUserId: string | null,
+    currentUserName: string
+): Activity => {
+    const isCurrentUser = currentUserId && comment?.user?.id === currentUserId;
+    const displayUser =
+        isCurrentUser
+            ? "Você"
+            : comment?.user?.full_name || comment?.user?.email || currentUserName || "Sem nome";
+
+    return {
+        id: comment.id,
+        type: comment.type === "comment" ? "commented" :
+              comment.type === "file" ? "file_shared" :
+              comment.type === "log" ? "updated" :
+              comment.type === "audio" ? "audio" : "commented",
+        user: displayUser,
+        message: comment.type === "audio" ? undefined : comment.content,
+        timestamp: formatActivityTimestamp(comment.created_at),
+        attachedFiles: comment.metadata?.attachedFiles,
+        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
+            url: comment.metadata.audio_url || comment.metadata.url,
+            duration: comment.metadata.duration,
+            transcription: comment.metadata.transcription,
+        } : undefined,
+    };
+};
+
 export function TaskDetailModal({ 
     open, 
     onOpenChange, 
@@ -358,6 +394,8 @@ export function TaskDetailModal({
     const descriptionRef = useRef<HTMLDivElement>(null);
     const [showExpandButton, setShowExpandButton] = useState(false);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserName, setCurrentUserName] = useState<string>("Você");
     const [isMaximized, setIsMaximized] = useState(false);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
@@ -369,6 +407,26 @@ export function TaskDetailModal({
     const [selectedAudioForTask, setSelectedAudioForTask] = useState<{ url: string; duration: number } | null>(null);
     const [transcribingActivityId, setTranscribingActivityId] = useState<string | null>(null);
     const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    // Usuário atual para padronizar exibição de comentários
+    useEffect(() => {
+        const supabase = createBrowserClient();
+        supabase.auth.getUser().then(({ data }) => {
+            const user = data.user;
+            if (user) {
+                setCurrentUserId(user.id);
+                const name =
+                    (user.user_metadata as any)?.full_name ||
+                    user.email ||
+                    "Você";
+                setCurrentUserName(name);
+            }
+        });
+    }, []);
+
+    const mapCommentToActivity = useCallback(
+        (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
+        [currentUserId, currentUserName]
+    );
     // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
     // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
     // Não importa se task tem outros dados - sempre precisamos buscar do backend
@@ -903,22 +961,7 @@ export function TaskDetailModal({
                         setIsLoadingAttachments(false);
                         
                         // Atualizar comentários
-                        const mappedActivities: Activity[] = cachedExtended.comments.map((comment) => ({
-                            id: comment.id,
-                            type: comment.type === "comment" ? "commented" : 
-                                  comment.type === "file" ? "file_shared" :
-                                  comment.type === "log" ? "updated" : 
-                                  comment.type === "audio" ? "audio" : "commented",
-                            user: comment.user.full_name || comment.user.email || "Sem nome",
-                            message: comment.type === "audio" ? undefined : comment.content,
-                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                            attachedFiles: comment.metadata?.attachedFiles,
-                            audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                url: comment.metadata.audio_url || comment.metadata.url,
-                                duration: comment.metadata.duration,
-                                transcription: comment.metadata.transcription,
-                            } : undefined,
-                        }));
+                        const mappedActivities: Activity[] = cachedExtended.comments.map(mapCommentToActivity);
                         setActivities(mappedActivities);
                         setIsLoadingComments(false);
                         
@@ -966,22 +1009,7 @@ export function TaskDetailModal({
                         setIsLoadingAttachments(false);
                         
                         // Atualizar comentários
-                        const mappedActivities: Activity[] = (extendedDetails.comments || []).map((comment) => ({
-                            id: comment.id,
-                            type: comment.type === "comment" ? "commented" : 
-                                  comment.type === "file" ? "file_shared" :
-                                  comment.type === "log" ? "updated" : 
-                                  comment.type === "audio" ? "audio" : "commented",
-                            user: comment.user.full_name || comment.user.email || "Sem nome",
-                            message: comment.type === "audio" ? undefined : comment.content,
-                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                            attachedFiles: comment.metadata?.attachedFiles,
-                            audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                url: comment.metadata.audio_url || comment.metadata.url,
-                                duration: comment.metadata.duration,
-                                transcription: comment.metadata.transcription,
-                            } : undefined,
-                        }));
+                        const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
                         setActivities(mappedActivities);
                         setIsLoadingComments(false);
                         
@@ -1065,22 +1093,7 @@ export function TaskDetailModal({
             const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, newOffset);
             
             if (extendedDetails && extendedDetails.comments.length > 0) {
-                const mappedActivities: Activity[] = extendedDetails.comments.map((comment) => ({
-                    id: comment.id,
-                    type: comment.type === "comment" ? "commented" : 
-                          comment.type === "file" ? "file_shared" :
-                          comment.type === "log" ? "updated" : 
-                          comment.type === "audio" ? "audio" : "commented",
-                    user: comment.user.full_name || comment.user.email || "Sem nome",
-                    message: comment.type === "audio" ? undefined : comment.content,
-                    timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                    attachedFiles: comment.metadata?.attachedFiles,
-                    audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                        url: comment.metadata.audio_url || comment.metadata.url,
-                        duration: comment.metadata.duration,
-                        transcription: comment.metadata.transcription,
-                    } : undefined,
-                }));
+                const mappedActivities: Activity[] = extendedDetails.comments.map(mapCommentToActivity);
                 
                 setActivities(prev => [...prev, ...mappedActivities]);
                 setCommentsOffset(newOffset);
@@ -1101,22 +1114,7 @@ export function TaskDetailModal({
         try {
             const extendedDetails = await getTaskExtendedDetails(taskId, COMMENTS_PAGE_SIZE, 0);
             if (extendedDetails) {
-                const mappedActivities: Activity[] = (extendedDetails.comments || []).map((comment) => ({
-                    id: comment.id,
-                    type: comment.type === "comment" ? "commented" : 
-                          comment.type === "file" ? "file_shared" :
-                          comment.type === "log" ? "updated" : 
-                          comment.type === "audio" ? "audio" : "commented",
-                    user: comment.user.full_name || comment.user.email || "Sem nome",
-                    message: comment.type === "audio" ? undefined : comment.content,
-                    timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                    attachedFiles: comment.metadata?.attachedFiles,
-                    audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                        url: comment.metadata.audio_url || comment.metadata.url,
-                        duration: comment.metadata.duration,
-                        transcription: comment.metadata.transcription,
-                    } : undefined,
-                }));
+                const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
                 // Substituir completamente o estado base
                 // Filtrar qualquer comentário otimista pendente antes de atualizar
                 const optimisticIdToFilter = optimisticIdRef.current;
@@ -1297,12 +1295,13 @@ export function TaskDetailModal({
             // Adicionar comentário otimista no estado base (order ASC: adicionamos ao final)
             const optimisticId = `optimistic-${Date.now()}`;
             optimisticIdRef.current = optimisticId;
+            const optimisticDisplayUser = currentUserId ? "Você" : currentUserName;
             const optimisticActivity: Activity = {
                 id: optimisticId,
                 type: pendingAttachments.length > 0 ? "file_shared" : "commented",
-                user: "Você",
+                user: optimisticDisplayUser,
                 message: commentText,
-                timestamp: "Agora mesmo",
+                timestamp: formatActivityTimestamp(new Date().toISOString()),
                 attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
             };
             setActivities(prev => [...prev, optimisticActivity]);
@@ -1368,15 +1367,22 @@ export function TaskDetailModal({
                     return;
                 }
 
-                // Remover comentário otimista do estado base ANTES de recarregar
-                const optimisticIdToRemove = optimisticIdRef.current;
-                if (optimisticIdToRemove) {
-                    setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                // Buscar comentários reais e substituir estado em uma única atualização (sem gap)
+                const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, 0);
+                if (extendedDetails) {
+                    const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
+                    setActivities(mappedActivities);
+                    setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                    setCommentsOffset(0);
                     optimisticIdRef.current = null;
+                } else {
+                    // fallback: remover otimista se não conseguir recarregar
+                    const optimisticIdToRemove = optimisticIdRef.current;
+                    if (optimisticIdToRemove) {
+                        setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                        optimisticIdRef.current = null;
+                    }
                 }
-                
-                // Recarregar atividades do banco
-                await reloadActivities(currentTaskId);
                 
                 // Atualizar anexos também
                 const taskDetails = await getTaskDetails(currentTaskId);
