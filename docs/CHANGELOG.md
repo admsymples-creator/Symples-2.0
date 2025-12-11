@@ -129,6 +129,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Corrigido `getWorkspaceMembers` para incluir o usuário atual mesmo que não esteja em `workspace_members`
   - Removido filtro que excluía o usuário logado da lista
   - Corrigido loop infinito de renderização em `TaskActionsMenu` e `TaskAssigneePicker`
+- **Correção de TaskMembersPicker no TaskDetailModal**:
+  - Corrigido problema onde `workspaceId` não estava sendo passado ao modal, fazendo com que apenas 1 membro aparecesse na lista
+  - Adicionado `workspaceId` ao objeto `taskDetails` em `handleTaskClick` em `page.tsx`
+  - Corrigido mapeamento de `getWorkspaceMembers` para tratar `member.user` como array ou objeto (consistente com `members.ts`)
+  - Agora todos os membros do workspace são exibidos corretamente no picker
 - **Correção de timezone na data do TaskDetailModal**: 
   - Corrigido problema onde a data aparecia com um dia antes devido à conversão de timezone
   - Implementada função `parseLocalDate` para criar datas no timezone local ao invés de UTC

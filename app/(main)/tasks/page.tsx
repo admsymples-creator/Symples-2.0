@@ -2182,6 +2182,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 subTasks: [], // Subtarefas nÃ£o estÃ£o implementadas no schema ainda
                 activities,
                 attachments: mappedAttachments,
+                workspaceId: taskDetails.workspace_id || null, // ✅ Adicionar workspaceId
             });
         } catch (error) {
             console.error("Erro ao carregar detalhes da tarefa:", error);

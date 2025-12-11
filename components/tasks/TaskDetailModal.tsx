@@ -1098,6 +1098,7 @@ export function TaskDetailModal({
         };
     }, [open, isCreateMode, task?.id ?? null, initialDueDate]);
 
+
     // Audio recording timer removed - now handled by AudioRecorderDisplay component
 
     // Função para carregar mais comentários
@@ -2014,6 +2015,7 @@ export function TaskDetailModal({
                                         memberIds={localMembers.map(m => m.id)}
                                         onChange={handleMembersChange}
                                         members={availableUsers}
+                                        workspaceId={task?.workspaceId || undefined}
                                     />
                                 </div>
 

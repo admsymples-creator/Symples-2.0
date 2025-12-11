@@ -59,7 +59,6 @@ export function TaskMembersPicker({
             setIsLoading(true);
             try {
                 const workspaceMembers = await getWorkspaceMembers(workspaceId);
-                
                 const mappedMembers: Member[] = workspaceMembers.map((m: any) => ({
                     id: m.id,
                     name: m.full_name || m.email || "Usuário",
@@ -86,7 +85,6 @@ export function TaskMembersPicker({
         const newMemberIds = isSelected
             ? memberIds.filter((id) => id !== memberId)
             : [...memberIds, memberId];
-        
         onChange(newMemberIds);
     };
 
@@ -133,9 +131,12 @@ export function TaskMembersPicker({
                                 <CommandEmpty>Nenhum membro encontrado.</CommandEmpty>
                                 <CommandGroup>
                                     <CommandItem
-                                        onSelect={() => onChange([])}
+                                        onSelect={() => {
+                                            onChange([]);
+                                            setIsOpen(false); // Fechar apenas quando selecionar "Sem membros"
+                                        }}
                                         className={cn(
-                                            "flex items-center gap-2",
+                                            "flex items-center gap-2 cursor-pointer",
                                             memberIds.length === 0 && "bg-green-50"
                                         )}
                                     >
@@ -152,9 +153,12 @@ export function TaskMembersPicker({
                                         return (
                                             <CommandItem
                                                 key={member.id}
-                                                onSelect={() => handleToggleMember(member.id)}
+                                                value={member.name} // Necessário para busca funcionar
+                                                onSelect={(value) => {
+                                                    handleToggleMember(member.id);
+                                                }}
                                                 className={cn(
-                                                    "flex items-center gap-2",
+                                                    "flex items-center gap-2 cursor-pointer",
                                                     isSelected && "bg-green-50"
                                                 )}
                                             >

@@ -1156,8 +1156,15 @@ export async function getWorkspaceMembers(workspaceId: string | null) {
         return [];
     }
 
+    // Mapear membros - tratar user como array ou objeto (dependendo de como o Supabase retorna)
     const members = (data || [])
-        .map((member: any) => member.user)
+        .map((member: any) => {
+            // Tratar user como array ou objeto (similar ao tratamento em members.ts)
+            const userData = Array.isArray(member.user) 
+                ? member.user[0] 
+                : member.user;
+            return userData;
+        })
         .filter(Boolean);
 
     // Garante que o usuário logado esteja presente na lista de membros
