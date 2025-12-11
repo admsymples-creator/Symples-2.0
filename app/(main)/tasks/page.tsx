@@ -24,7 +24,6 @@ import { GhostGroup } from "@/components/tasks/GhostGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
     DropdownMenu,
@@ -70,7 +69,6 @@ import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
 import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
 
-type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
 type GroupBy = "status" | "priority" | "assignee";
 type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
@@ -126,7 +124,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // ✅ Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
     
-    const [activeTab, setActiveTab] = useState<ContextTab>("todas");
+    const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
     const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
@@ -664,7 +662,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }] : undefined,
             dueDate: dueDate ? dueDate.toISOString() : undefined,
             groupId: finalGroupId,
-            workspaceId: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+            workspaceId: effectiveWorkspaceId || null,
         });
 
         try {
@@ -675,7 +673,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 priority: priority,
                 assignee_id: assigneeId || undefined,
                 due_date: dueDate ? dueDate.toISOString() : undefined,
-                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+                workspace_id: effectiveWorkspaceId || null,
                 group_id: finalGroupId,
             });
 
@@ -2202,85 +2200,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
                         <p className="text-sm text-gray-500">Gerencie o trabalho do dia a dia.</p>
-                        </div>
-
-                    <div className="flex items-center gap-3">
-                        {/* Nova Tarefa - Dropdown Menu */}
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button className="bg-green-600 hover:bg-green-700 text-white">
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Novo
-                                    <ChevronDown className="w-3 h-3 ml-2" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem
-                                    onClick={() => {
-                                        setSelectedTaskId(null);
-                                        setTaskDetails(null);
-                                        setIsModalOpen(true);
-                                    }}
-                                >
-                                    <CheckSquare className="w-4 h-4 mr-2" />
-                                    Nova Tarefa
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    onClick={() => {
-                                        if (activeTab === "minhas") {
-                                            toast.error("Crie grupos dentro de um Workspace (aba 'Time' ou 'Todas').");
-                                            return;
-                                        }
-                                        setIsCreateGroupModalOpen(true);
-                                    }}
-                                >
-                                    <FolderPlus className="w-4 h-4 mr-2" />
-                                    Novo Grupo
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
                     </div>
                 </div>
             </div>
 
             <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
                 {/* NAVIGATION & FILTERS - LINE 2 */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    {/* Lado Esquerdo: Tabs de Contexto */}
-                    <Tabs
-                        value={activeTab}
-                        onValueChange={(value) => setActiveTab(value as ContextTab)}
-                        className="w-auto"
-                    >
-                        <TabsList className="bg-white border">
-                            <TabsTrigger value="minhas">Minhas</TabsTrigger>
-                            <TabsTrigger value="time">Time</TabsTrigger>
-                            <TabsTrigger value="todas">Todas</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-
-                    {/* Lado Direito: Ferramentas */}
-                    <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                        {/* Busca */}
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <Input
-                                placeholder="Buscar tarefas..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
-                            />
-                        </div>
-
-                        {/* Ordenar Por */}
-                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
-
-                        {/* Agrupar por */}
-                        <GroupingMenu />
-
-                        <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
-
-                        {/* View Switcher */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    {/* Lado Esquerdo: Modo de visualização */}
+                    <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
                             <button
                                 onClick={() => setViewMode("list")}
@@ -2307,6 +2235,57 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 <LayoutGrid className="w-4 h-4" />
                             </button>
                         </div>
+                    </div>
+
+                    {/* Lado Direito: Ferramentas */}
+                    <div className="flex flex-1 md:flex-none items-center gap-2 w-full md:w-auto flex-wrap justify-start md:justify-end">
+                        {/* Busca */}
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <Input
+                                placeholder="Buscar tarefas..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
+                            />
+                        </div>
+
+                        {/* Ordenar Por */}
+                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
+
+                        {/* Agrupar por */}
+                        <GroupingMenu />
+
+                        {/* Novo (menu) */}
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button className="bg-green-600 hover:bg-green-700 text-white">
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Novo
+                                    <ChevronDown className="w-3 h-3 ml-2" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        setSelectedTaskId(null);
+                                        setTaskDetails(null);
+                                        setIsModalOpen(true);
+                                    }}
+                                >
+                                    <CheckSquare className="w-4 h-4 mr-2" />
+                                    Nova Tarefa
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        setIsCreateGroupModalOpen(true);
+                                    }}
+                                >
+                                    <FolderPlus className="w-4 h-4 mr-2" />
+                                    Novo Grupo
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </div>
 
