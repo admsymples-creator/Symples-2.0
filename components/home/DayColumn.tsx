@@ -154,7 +154,7 @@ export function DayColumn({
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         description: null,
-        user_id: "", // Não crítico para UI
+        // user_id removido pois não existe na tabela tasks
         position: 0,
         parent_id: null,
         assignee_id: null,
