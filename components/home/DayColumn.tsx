@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useOptimistic, startTransition } from "react";
 import { FolderOpen, Plus, Calendar as CalendarIcon } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,11 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner"; 
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
+
+type OptimisticAction = 
+  | { type: 'add'; task: Task }
+  | { type: 'update'; task: Partial<Task> & { id: string } }
+  | { type: 'delete'; id: string };
 
 interface DayColumnProps {
   dayName: string;
@@ -38,6 +43,22 @@ export function DayColumn({
   const [selectedDateTime, setSelectedDateTime] = useState<Date | null>(null);
   const [showTutorialHint, setShowTutorialHint] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const [optimisticTasks, addOptimisticTask] = useOptimistic(
+    tasks,
+    (state: Task[], action: OptimisticAction) => {
+      switch (action.type) {
+        case 'add':
+          return [...state, action.task];
+        case 'update':
+          return state.map(t => t.id === action.task.id ? { ...t, ...action.task } : t);
+        case 'delete':
+          return state.filter(t => t.id !== action.id);
+        default:
+          return state;
+      }
+    }
+  );
 
   useEffect(() => {
     if (highlightInput && isToday && inputRef.current) {
@@ -81,7 +102,7 @@ export function DayColumn({
       return d.getHours() !== 0 || d.getMinutes() !== 0;
     };
 
-    return [...tasks].sort((a, b) => {
+    return [...optimisticTasks].sort((a, b) => {
       const aIsPersonal = a.is_personal || !a.workspace_id;
       const bIsPersonal = b.is_personal || !b.workspace_id;
       const aHasTime = hasSpecificTime(a);
@@ -94,11 +115,11 @@ export function DayColumn({
       if (!aIsPersonal && !bIsPersonal) return 0;
       return 0;
     });
-  }, [tasks]);
+  }, [optimisticTasks]);
 
   const pendingCount = useMemo(() => 
-    tasks.filter(t => t.status !== 'done').length, 
-  [tasks]);
+    optimisticTasks.filter(t => t.status !== 'done').length, 
+  [optimisticTasks]);
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,16 +133,59 @@ export function DayColumn({
     if (inputRef.current) inputRef.current.style.height = 'auto';
     setIsCreating(true);
 
-    try {
-      let dueDateISO: string | undefined = undefined;
-      if (selectedDateTime) {
-        dueDateISO = selectedDateTime.toISOString();
-      } else if (dateObj) {
-        const d = new Date(dateObj);
-        d.setHours(0, 0, 0, 0);
-        dueDateISO = d.toISOString();
-      }
+    let dueDateISO: string | undefined = undefined;
+    if (selectedDateTime) {
+      dueDateISO = selectedDateTime.toISOString();
+    } else if (dateObj) {
+      const d = new Date(dateObj);
+      d.setHours(0, 0, 0, 0);
+      dueDateISO = d.toISOString();
+    }
 
+    // Optimistic Update
+    tasksToCreate.forEach(title => {
+      const tempTask: Task = {
+        id: `temp-${Date.now()}-${Math.random()}`,
+        title,
+        status: "todo",
+        due_date: dueDateISO || null,
+        workspace_id: null,
+        is_personal: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        description: null,
+        user_id: "", // Não crítico para UI
+        position: 0,
+        parent_id: null,
+        assignee_id: null,
+        priority: null,
+        recurrence_rule: null,
+        recurrence_parent_id: null,
+        is_recurring: false,
+        created_by: null,
+        metadata: null,
+        recurrence_end_date: null,
+        recurrence_interval: null,
+        archived_at: null,
+        deleted_at: null,
+        start_date: null,
+        completed_at: null,
+        tags: [],
+        custom_fields: {},
+        attachments_count: 0,
+        comments_count: 0,
+        subtasks_count: 0,
+        cover_image: null,
+        estimated_time: null,
+        actual_time: null
+      };
+      
+      startTransition(() => {
+        addOptimisticTask({ type: 'add', task: tempTask });
+      });
+    });
+
+    try {
       const createPromises = tasksToCreate.map((title) =>
         createTask({
           title,
@@ -135,7 +199,11 @@ export function DayColumn({
       setSelectedDateTime(null);
       const results = await Promise.all(createPromises);
       
-      if (results.some((r) => r.success)) router.refresh();
+      if (results.some((r) => r.success)) {
+        startTransition(() => {
+          router.refresh();
+        });
+      }
       else throw new Error("Falha ao criar");
 
     } catch (error) {
@@ -147,19 +215,71 @@ export function DayColumn({
   };
 
   const handleToggle = async (id: string, checked: boolean) => {
-    await updateTask({ id, status: checked ? "done" : "todo" });
-    router.refresh();
+    try {
+      startTransition(() => {
+        addOptimisticTask({ 
+          type: 'update', 
+          task: { id, status: checked ? "done" : "todo" } 
+        });
+      });
+      
+      await updateTask({ id, status: checked ? "done" : "todo" });
+      router.refresh();
+    } catch (error) {
+      console.error("Erro ao atualizar status:", error);
+      toast.error("Erro ao atualizar tarefa");
+      router.refresh(); // Reverte estado
+    }
   };
+
   const handleDelete = async (id: string) => {
-    if(confirm("Excluir?")) { await deleteTask(id); router.refresh(); }
+    if(confirm("Excluir?")) { 
+      try {
+        startTransition(() => {
+          addOptimisticTask({ type: 'delete', id });
+        });
+        await deleteTask(id); 
+        router.refresh(); 
+      } catch (error) {
+        console.error("Erro ao excluir:", error);
+        toast.error("Erro ao excluir tarefa");
+        router.refresh();
+      }
+    }
   };
+
   const handleEdit = async (id: string, title: string) => {
-    await updateTask({ id, title });
-    router.refresh();
+    try {
+      startTransition(() => {
+        addOptimisticTask({ 
+          type: 'update', 
+          task: { id, title } 
+        });
+      });
+      await updateTask({ id, title });
+      router.refresh();
+    } catch (error) {
+      console.error("Erro ao editar:", error);
+      toast.error("Erro ao editar tarefa");
+      router.refresh();
+    }
   };
+
   const handleMove = async (id: string, wid: string) => {
-    await updateTask({ id, workspace_id: wid, is_personal: false });
-    router.refresh();
+    try {
+      startTransition(() => {
+        addOptimisticTask({ 
+          type: 'update', 
+          task: { id, workspace_id: wid, is_personal: false } 
+        });
+      });
+      await updateTask({ id, workspace_id: wid, is_personal: false });
+      router.refresh();
+    } catch (error) {
+      console.error("Erro ao mover:", error);
+      toast.error("Erro ao mover tarefa");
+      router.refresh();
+    }
   };
 
   return (
