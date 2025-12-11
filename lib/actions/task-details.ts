@@ -88,6 +88,7 @@ export interface TaskBasicDetails {
     email: string | null;
     avatar_url: string | null;
   } | null;
+  assignees?: Array<{ id: string; name: string; avatar?: string }>;
   creator: {
     id: string;
     full_name: string | null;
