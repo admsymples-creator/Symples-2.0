@@ -53,6 +53,7 @@ export function QuickTaskAdd({
     variant = "default",
     autoFocus = false,
 }: QuickTaskAddProps) {
+    const [isHydrated, setIsHydrated] = useState(false);
     const [value, setValue] = useState("");
     const [selectedDate, setSelectedDate] = useState<Date | null>(defaultDueDate || null);
     const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(defaultAssigneeId || null);
@@ -65,6 +66,15 @@ export function QuickTaskAdd({
     const [pendingDate, setPendingDate] = useState<Date | null>(null);
     const [pendingAssigneeId, setPendingAssigneeId] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // Evitar hydration mismatch de IDs internos do Radix (Popover)
+    useEffect(() => {
+        setIsHydrated(true);
+    }, []);
+
+    if (!isHydrated) {
+        return null;
+    }
 
     // Constantes para validação
     const BATCH_WARNING_LIMIT = 20; // linhas
