@@ -33,6 +33,32 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
+  // ✅ TASK 1: Hardened Cookie Logic - Configurações explícitas para produção
+  if (pathname.startsWith('/invite/')) {
+    const tokenMatch = pathname.match(/^\/invite\/([^/]+)/);
+    const inviteToken = tokenMatch?.[1];
+    
+    if (inviteToken) {
+      // ✅ HARDENED: Configurações explícitas e robustas
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      response.cookies.set('pending_invite', inviteToken, {
+        httpOnly: false, // Permite leitura no client se necessário
+        secure: isProduction, // ✅ HTTPS only em produção (REQUERIDO)
+        sameSite: 'lax', // ✅ CRÍTICO: Permite cookie ser lido após OAuth redirect
+        maxAge: 3600, // 1 hora
+        path: '/', // Disponível em todas as rotas
+      });
+      
+      console.log('🍪 [Middleware] Cookie pending_invite criado:', {
+        token: inviteToken.substring(0, 8) + '...',
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+      });
+    }
+  }
+
   // Rotas públicas (acessíveis sem autenticação)
   const publicRoutes = ['/login', '/onboarding']
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))

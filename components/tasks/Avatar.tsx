@@ -4,7 +4,7 @@ import { User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AvatarProps {
-    name: string;
+    name?: string;
     avatar?: string;
     size?: "sm" | "md" | "lg";
     className?: string;
@@ -17,12 +17,14 @@ export function Avatar({ name, avatar, size = "sm", className }: AvatarProps) {
         lg: "w-10 h-10 text-base",
     };
 
-    const initials = name
+    const safeName = (name || "").trim() || "Usuário";
+    const initials = safeName
         .split(" ")
+        .filter(Boolean)
         .map((n) => n[0])
         .join("")
         .toUpperCase()
-        .slice(0, 2);
+        .slice(0, 2) || "?";
 
     return (
         <div

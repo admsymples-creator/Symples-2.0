@@ -117,13 +117,22 @@ function mapTaskFromDB(task: TaskWithDetails): Task {
         tags.push(...(task as any).tags);
     }
 
-    // Mapear assignees
-    const assigneeData = (task as any).assignee;
-    const assignees = assigneeData ? [{
-        name: assigneeData.full_name || assigneeData.email || "Sem nome",
-        avatar: assigneeData.avatar_url || undefined,
-        id: task.assignee_id || undefined
-    }] : [];
+    // Mapear assignees - usar array assignees se disponível (inclui task_members), senão usar assignee
+    let assignees: Array<{ name: string; avatar?: string; id?: string }> = [];
+    if ((task as any).assignees && Array.isArray((task as any).assignees)) {
+        // Usar array assignees que já vem transformado das queries
+        assignees = (task as any).assignees;
+    } else {
+        // Fallback para assignee antigo (compatibilidade)
+        const assigneeData = (task as any).assignee;
+        if (assigneeData) {
+            assignees = [{
+                name: assigneeData.full_name || assigneeData.email || "Sem nome",
+                avatar: assigneeData.avatar_url || undefined,
+                id: task.assignee_id || undefined
+            }];
+        }
+    }
 
         return {
             id: task.id,

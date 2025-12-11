@@ -27,7 +27,8 @@ interface NavItem {
 
 const personalItems: NavItem[] = [
     { label: "Minha Semana", href: "/home", icon: Home },
-    { label: "Assistente IA", href: "/assistant", icon: Sparkles },
+    // Assistente IA agora acessível via FAB (GlobalAssistantSheet)
+    // { label: "Assistente IA", href: "/assistant", icon: Sparkles },
 ];
 
 const workspaceItems: NavItem[] = [

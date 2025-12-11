@@ -38,11 +38,41 @@ export function Editor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        bulletList: {
+          HTMLAttributes: {
+            class: "list-disc pl-5 my-2 space-y-1",
+          },
+        },
+        orderedList: {
+          HTMLAttributes: {
+            class: "list-decimal pl-5 my-2 space-y-1",
+          },
+        },
+        blockquote: {
+          HTMLAttributes: {
+            class:
+              "border-l-4 border-gray-200 pl-3 italic text-gray-700 my-2 py-1",
+          },
+        },
+        codeBlock: {
+          HTMLAttributes: {
+            class:
+              "rounded-md border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs",
+          },
+        },
+        code: {
+          HTMLAttributes: {
+            class:
+              "rounded bg-gray-100 px-1 py-0.5 font-mono text-xs text-gray-800",
+          },
+        },
+      }),
       Underline,
       Placeholder.configure({
         placeholder,
-        emptyEditorClass: "is-editor-empty before:content-[attr(data-placeholder)] before:text-gray-400 before:float-left before:pointer-events-none",
+        emptyEditorClass:
+          "is-editor-empty before:absolute before:top-2.5 before:left-3 before:content-[attr(data-placeholder)] before:text-gray-400 before:text-sm before:pointer-events-none before:select-none before:transition-opacity focus-within:before:hidden",
       }),
     ],
     content: value,
@@ -56,7 +86,7 @@ export function Editor({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-[150px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 prose prose-sm max-w-none outline-none",
+          "relative min-h-[150px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 prose prose-sm max-w-none outline-none",
           className
         ),
       },
@@ -68,7 +98,7 @@ export function Editor({
   }
 
   return (
-    <div className="flex flex-col border border-gray-200 rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-ring bg-white">
+    <div className="flex flex-col border border-gray-200 rounded-md overflow-hidden focus-within:ring-0 focus-within:outline-none bg-white">
       {editable && (
         <div className="flex items-center gap-1 p-1 bg-gray-50 border-b border-gray-200 flex-wrap">
           <ToolbarButton
@@ -99,8 +129,8 @@ export function Editor({
           />
           <div className="w-px h-4 bg-gray-300 mx-1" />
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            active={editor.isActive("code")}
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            active={editor.isActive("codeBlock")}
             icon={<Code className="h-4 w-4" />}
           />
           <ToolbarButton

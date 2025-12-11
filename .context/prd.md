@@ -48,6 +48,8 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 \- \*\*Foco:\*\* O que é crítico para \*hoje\*.  
 \- \*\*KPIs Rápidos:\*\* "Tarefas pendentes hoje" e "Saldo Atual Previsto".  
 \- \*\*Grid Semanal:\*\* Visualização dos próximos 5 dias (colunas).  
+\- \*\*Welcome Modal (FTUX):\*\* Modal de boas-vindas com ilustração personalizada que aparece automaticamente quando usuário não tem tarefas. Botão "Fechar" para dismissar. Persistência em localStorage.  
+\- \*\*Empty State (Gold Standard):\*\* Quando modal foi fechado e não há tarefas, exibe "Ghost Grid" com design sofisticado que mantém contexto visual do calendário (4 divisores verticais sugerindo 5 colunas). Inclui ilustração SVG personalizada de café, mensagem "Por enquanto, nada por aqui..." e CTA "Adicionar tarefa rápida".  
 \- \*\*Smart Highlight:\*\* Tarefas atrasadas ganham destaque visual (borda vermelha).
 
 **\#\#\# 3.3. Módulo: Tarefas (Core)**  
@@ -114,6 +116,11 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 ---
 
 ## 6. ATUALIZAÇÕES DE ESCOPO V2.1 (Pós-Validação UX)
+
+### 6.x. Pipeline Unificado de Áudio
+- Rota `/api/audio/process` consolida transcrição (Whisper), chat (gpt-4o-mini) e persistência em uma única chamada.
+- Front envia `FormData` com áudio, `workspaceId` e contexto (histórico + membros).
+- Resposta retorna `transcription`, `message` e `componentData` e grava ambas as mensagens em `assistant_messages`.
 
 ### 6.1. Refinamento do Onboarding (Fluxo de Ativação)
 *Referência: Seção 4.1 anterior.*
@@ -243,9 +250,83 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - **Drag & Drop:**
   - Persistência via campo `position` (float/double) no banco de dados.
 
-### 9.4. Inteligência Artificial (Assistente)
+### 9.4. Inteligência Artificial (Assistente) - Global Assistant Sheet
+
+**✅ Implementado (v2.2):**
+- **GlobalAssistantSheet:** Componente de chat acessível via FAB flutuante em todas as telas autenticadas
+- **FAB (Floating Action Button):** Botão circular fixo no canto inferior direito com AIOrb compacto
+- **Transcrição de Áudio:** Integração com OpenAI Whisper via `/api/audio/transcribe`
+  - Limite de 2 minutos de gravação com envio automático
+  - Resposta especial com meme quando áudio atinge limite máximo
+- **Generative UI:** Sistema de componentes dinâmicos renderizados pelo assistente
+  - **KanbanConfirmationCard:** Card de confirmação estilo Kanban para criação de tarefas
+  - Detecção automática de intenção de criar tarefa (texto e áudio)
+  - Campos editáveis: título, descrição, data, responsável, prioridade, status
+- **ThinkingIndicator:** Componente visual de "pensando" com:
+  - Orb animado com anel verde girando (0.6s)
+  - Ícone Symples no centro
+  - Frases rotativas a cada 3 segundos:
+    - "Processando sua solicitação..."
+    - "Estruturando os dados..."
+    - "Consultando sua agenda..."
+    - "Quase lá, finalizando..."
+  - Efeito shimmer no texto
+- **Funcionalidades:**
+  - Envio de mensagens de texto
+  - Gravação e envio de áudio (máx. 2 minutos)
+  - Upload de imagens/prints
+  - Estado "pensando" antes das respostas
+  - Auto-scroll para novas mensagens
+  - Zero state com sugestões de ações rápidas
+  - Saudação dinâmica baseada no horário e nome do usuário
 - **Interação:** O chat não retorna apenas texto. Retorna JSON que o Frontend renderiza como **UI Components** (Cards de Tarefa, Gráficos).
 - **Empty State:** Exibir "Suggestion Chips" (atalhos rápidos) quando não houver histórico.
+
+**✅ Implementado (v2.3):**
+- **Persistência de Mensagens:** Sistema de armazenamento local por workspace
+  - Mensagens salvas no `localStorage` com chave específica por workspace (`assistant-{workspaceId}-messages`)
+  - Restauração automática de histórico ao abrir o assistente
+  - Isolamento completo de conversas entre diferentes workspaces
+- **Smart Daily Reset:** Reset inteligente de contexto diário
+  - Re-exibe zero state automaticamente após 04:00 AM
+  - Permite começar o dia com interface limpa mesmo com histórico salvo
+  - Reset baseado em data, não em tempo de sessão
+- **Limpeza de Contexto:** Botão de limpar contexto no header do assistente
+  - Insere divisor de contexto (`contextDivider`) que marca onde a IA deve ignorar mensagens anteriores
+  - Permite resetar contexto sem perder histórico visual
+  - Feedback visual com toast de confirmação
+- **HelpDialog:** Componente de diálogo de ajuda integrado
+  - Acesso rápido ao playbook/documentação
+  - Link direto para suporte via WhatsApp
+  - Interface moderna com ícones e descrições claras
+
+**✅ Implementado (v2.4):**
+- **Seletor de Workspaces no Card de Confirmação:**
+  - Dropdown para selecionar workspace ao criar tarefa pelo assistente
+  - Lista todos os workspaces do usuário com logo e nome
+  - Permite criar tarefa em workspace diferente do ativo
+  - Integrado ao KanbanConfirmationCard
+- **Extração Inteligente de Informações pela IA:**
+  - IA extrai título descritivo, descrição completa e resumida
+  - Detecção automática de responsáveis mencionados na mensagem/áudio
+  - Cálculo correto de datas relativas em português (timezone local)
+  - Detecção de múltiplas tarefas e pergunta ao usuário (separadas ou subtarefas)
+  - Melhoria na detecção de prazos (ex: "sexta-feira que vem")
+- **Correções de Timezone:**
+  - Função `formatDateLocal` para evitar problemas de UTC
+  - Datas calculadas no timezone local do usuário
+  - Correção de bug onde datas apareciam um dia antes
+- **Atualização Instantânea de Tarefas:**
+  - Invalidação automática de cache após criar tarefa
+  - `router.refresh()` para atualizar página sem reload manual
+  - Tarefas aparecem imediatamente após criação pelo assistente
+- **Melhorias no Contador de Áudio:**
+  - Timer corrigido para atualizar corretamente durante gravação
+  - Limpeza adequada de timers ao parar gravação
+  - Feedback visual melhorado com tempo decorrido
+- **Ajustes de UI:**
+  - Avatar do responsável no card reduzido para `w-3.5 h-3.5` (padrão com outros ícones)
+  - Correção de erro de renderização do Router com `startTransition`
 
 ## 10. FUNCIONALIDADES IMPLEMENTADAS (v2.1)
 
@@ -261,8 +342,26 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
   - ✅ Integração com Supabase Storage via hook `useFileUpload`
   - ✅ Componentes `AttachmentCard` e `AudioMessageBubble` para exibição
 - ✅ **Módulo Financeiro:** Dashboard com KPIs, extrato e modal de criação de transações
-- ✅ **Gestão de Time:** Sistema de membros, convites (`workspace_invites`) e permissões
-- ✅ **Assistente IA:** Página `/assistant` com componente AIOrb e interface de chat
+- ✅ **Gestão de Time e Convites:** Sistema completo de membros, convites e permissões (RBAC)
+  - ✅ Tabela `workspace_invites` com status (pending, accepted, expired, cancelled)
+  - ✅ Tabela `workspace_members` com roles (owner, admin, member, viewer)
+  - ✅ Sistema de convites por email com integração Resend
+  - ✅ Templates de email usando @react-email/components
+  - ✅ Página de aceite de convite `/invite/[token]`
+  - ✅ Fluxo de signup com token de convite
+  - ✅ Políticas RLS para leitura pública de convites e aceite
+  - ✅ UI completa em `/settings` com lista de membros e convites pendentes
+  - ✅ Ações: convidar, cancelar, reenviar, remover membro, alterar role
+- ✅ **Assistente IA (Global Sheet):** Chat acessível via FAB em todas as telas autenticadas
+  - ✅ Transcrição de áudio com OpenAI Whisper
+  - ✅ Limite de 2 minutos para gravação com envio automático
+  - ✅ Generative UI com KanbanConfirmationCard para criação de tarefas
+  - ✅ ThinkingIndicator com orb animado e frases rotativas
+  - ✅ Detecção automática de intenção de criar tarefa
+  - ✅ Persistência de mensagens por workspace no localStorage
+  - ✅ Smart Daily Reset (re-exibe zero state após 04:00 AM)
+  - ✅ Limpeza de contexto com divisor visual
+  - ✅ HelpDialog para acesso rápido a documentação e suporte
 - ✅ **Configurações:** Página completa com abas para Geral, Membros e Faturamento
 - ✅ **Logs de Auditoria:** Tabela `audit_logs` para rastreamento de ações
 
@@ -283,6 +382,8 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
 - ✅ **TaskGroup:** Agrupamento de tarefas por status, prioridade ou assignee
 - ✅ **AttachmentCard:** Card para exibição de anexos com preview
 - ✅ **AudioMessageBubble:** Componente para playback de mensagens de áudio
+- ✅ **HelpDialog:** Diálogo de ajuda com acesso rápido a documentação e suporte via WhatsApp
+- ✅ **ThinkingIndicator:** Indicador visual de processamento com orb animado e frases rotativas
 
 ### 10.3. APIs e Integrações de IA Implementadas
 - ✅ **API de Transcrição de Áudio:** `/api/audio/transcribe` - Converte áudio em texto usando OpenAI Whisper
@@ -409,18 +510,27 @@ ALTER TABLE public.audit\_logs ENABLE ROW LEVEL SECURITY;
      - Upload e playback de áudios (áudio do usuário e áudios vindos do WhatsApp/n8n).  
      - Sincronização completa com `task_attachments` e Supabase Storage, incluindo estados de upload e tratamento de erro.
 
-2. **Gestão de Usuários (User Management Completo)**  
-   - Evoluir o módulo de membros/time para:
-     - Gerenciar roles detalhadas (owner, admin, member, viewer) com permissões claras por módulo (Tasks, Finance, Settings, Billing).  
-     - Interface de administração de usuários (ativar/desativar acesso, reset de permissões).  
-     - Logs de auditoria dedicados para ações sensíveis (remoção de membros, mudança de role, etc.).
+2. ✅ **Gestão de Usuários (User Management Completo) - IMPLEMENTADO**  
+   - ✅ Sistema completo de gestão de membros com roles (owner, admin, member, viewer)
+   - ✅ Interface de administração em `/settings` com lista de membros e convites
+   - ✅ Ações: convidar, remover, alterar role, cancelar/reenviar convites
+   - ✅ Sistema de convites por email com integração Resend
+   - ✅ Fluxo completo: convite → email → signup → aceite automático
+   - ✅ Políticas RLS para segurança e controle de acesso
+   - 🔄 **Próximas melhorias:**
+     - Notificações de convites no dashboard
+     - Histórico completo de convites (aceitos, cancelados, expirados)
+     - Convites em massa (múltiplos emails)
+     - Permissões granulares por módulo (Tasks, Finance, Settings, Billing)
 
-3. **E-mails Transacionais com Resend**  
-   - Integrar Resend para envio de:
-     - Convites de workspace (`workspace_invites`).  
-     - Notificações de tarefa (atribuição, mudança de status, comentários).  
-     - E-mails de onboarding e reset de senha (quando aplicável).  
-   - Criar camada de abstração (`lib/email/`) para centralizar templates e chamadas ao Resend.
+3. ✅ **E-mails Transacionais com Resend (IMPLEMENTADO)**  
+   - ✅ Integração Resend completa para envio de:
+     - ✅ Convites de workspace (`workspace_invites`) com templates React
+     - 🔄 Notificações de tarefa (atribuição, mudança de status, comentários) - Próximo passo
+     - 🔄 E-mails de onboarding e reset de senha - Próximo passo
+   - ✅ Camada de abstração (`lib/email/`) criada para centralizar templates e chamadas ao Resend
+   - ✅ Templates usando `@react-email/components` e `@react-email/render`
+   - ✅ Scripts de teste (`scripts/test-email.js`) e API de teste (`/api/test-email`)
 
 4. **Playbook Operacional (Onboarding & Sucesso do Cliente)**  
    - Definir e documentar um playbook de uso do Symples:

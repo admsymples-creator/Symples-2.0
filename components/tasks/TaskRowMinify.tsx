@@ -3,7 +3,7 @@
 import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -35,6 +35,9 @@ import {
 } from "@/components/ui/tooltip";
 import { TaskActionsMenu } from "./TaskActionsMenu";
 import { InlineTextEdit } from "@/components/ui/inline-text-edit";
+import { TaskMembersPicker } from "./pickers/TaskMembersPicker";
+import { AvatarGroup } from "./Avatar";
+import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 
 interface TaskRowMinifyProps {
   task: {
@@ -48,6 +51,7 @@ interface TaskRowMinifyProps {
     workspace_id?: string | null;
     commentCount?: number;
     commentsCount?: number;
+    isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
   };
   containerId?: string;
   isOverlay?: boolean;
@@ -102,9 +106,6 @@ const getNextSunday = (): Date => {
 };
 
 function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
-  // Log para debug
-  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
-  console.log("🔵 [TaskRowMinify] Renderizado - onTaskDuplicatedOptimistic existe?", !!onTaskDuplicatedOptimistic);
   const {
     attributes,
     listeners,
@@ -117,7 +118,12 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   // Estados para controlar abertura dos Popovers
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
-  const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Evitar erro de hidratação renderizando Popovers apenas após montagem
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   // Estado para armazenar o usuário atual
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; avatar?: string } | null>(null);
@@ -271,30 +277,53 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
     }
   };
 
-  // Handler para atualizar responsável
-  const handleAssigneeUpdate = async (memberId: string | null) => {
-    setIsAssigneeOpen(false); // Fechar Popover imediatamente
+  // Handler para atualizar membros (toggle múltiplos)
+  const handleMembersChange = async (memberIds: string[]) => {
     const previousAssignees = task.assignees || [];
-    const updatedAssignees = memberId && members 
-      ? members.filter(m => m.id === memberId).map(m => ({ name: m.name, avatar: m.avatar, id: m.id }))
+    const previousMemberIds = previousAssignees.map((a: any) => a.id).filter(Boolean);
+    
+    // Determinar membros adicionados e removidos
+    const added = memberIds.filter(id => !previousMemberIds.includes(id));
+    const removed = previousMemberIds.filter(id => !memberIds.includes(id));
+
+    // Construir array de assignees atualizado para optimistic UI
+    const updatedAssignees = memberIds && members 
+      ? memberIds.map(id => {
+          const member = members.find(m => m.id === id);
+          return member ? { name: member.name, avatar: member.avatar, id: member.id } : null;
+        }).filter(Boolean) as Array<{ name: string; avatar?: string; id: string }>
       : [];
+
+    // Atualizar UI otimisticamente
     onTaskUpdatedOptimistic?.(task.id, { assignees: updatedAssignees });
 
     try {
-      const result = await updateTask({ id: String(task.id), assignee_id: memberId });
-      
-      if (!result.success) {
+      // Adicionar novos membros
+      const addPromises = added.map(userId => addTaskMember(String(task.id), userId));
+      // Remover membros
+      const removePromises = removed.map(userId => removeTaskMember(String(task.id), userId));
+
+      const results = await Promise.all([...addPromises, ...removePromises]);
+      const hasError = results.some(r => !r.success);
+
+      if (hasError) {
         onTaskUpdatedOptimistic?.(task.id, { assignees: previousAssignees });
-        toast.error("Erro ao atualizar responsável");
+        toast.error("Erro ao atualizar membros");
       } else {
-        toast.success(memberId ? "Responsável atualizado" : "Responsável removido");
+        const changeCount = added.length + removed.length;
+        if (changeCount > 0) {
+          toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
+        }
         onTaskUpdated?.();
       }
     } catch (error) {
       onTaskUpdatedOptimistic?.(task.id, { assignees: previousAssignees });
-      toast.error("Erro ao atualizar responsável");
+      toast.error("Erro ao atualizar membros");
     }
   };
+
+  // IDs dos membros atuais para o picker
+  const currentMemberIds = task.assignees?.map((a: any) => a.id).filter(Boolean) || [];
 
   // Handler para Smart Triggers (Focus e Urgente)
   const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
@@ -364,7 +393,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       // ❌ Rollback: Restaurar status anterior em caso de erro
       onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
       toast.error("Erro ao atualizar tarefa");
-      console.error(error);
     }
   };
 
@@ -405,7 +433,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       // ❌ Rollback: Restaurar título anterior em caso de erro
       onTaskUpdatedOptimistic?.(task.id, { title: previousTitle });
       toast.error("Erro ao atualizar título");
-      console.error(error);
     }
   };
 
@@ -415,10 +442,11 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       style={style}
       className={cn(
         "group grid items-center h-11 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1 relative",
-        "grid-cols-[40px_24px_1fr_90px_32px_130px_40px] gap-1",
-        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Data | Responsável | Status | Menu
+        "grid-cols-[40px_24px_1fr_auto_90px_130px_40px] gap-1",
+        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Responsável (auto) | Data | Status | Menu
         (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
-        disabled && "opacity-75"
+        disabled && "opacity-75",
+        task.isPending && "opacity-60" // ✅ Reduzir opacidade para tarefas pending
       )}
       onClick={(e) => {
         // Só abrir modal se não for clique no título ou em elementos interativos
@@ -475,22 +503,29 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       </div>
 
       {/* Título com indicadores no hover */}
-      <div className="flex items-center min-w-0 pr-2 gap-2">
-        <div className="flex-1 min-w-0">
-          <InlineTextEdit
-            value={task.title}
-            onSave={handleTitleUpdate}
-            className={cn(
-              "text-sm font-medium text-gray-700",
-              isCompleted && "line-through text-gray-500"
-            )}
-            inputClassName="text-sm font-medium text-gray-700"
-          />
+      <div className="flex items-center min-w-0 gap-2 pr-2 overflow-hidden">
+        <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
+          {task.isPending && (
+            <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <InlineTextEdit
+              value={task.title}
+              onSave={handleTitleUpdate}
+              className={cn(
+                "text-sm font-medium text-gray-700",
+                isCompleted && "line-through text-gray-500",
+                task.isPending && "opacity-75" // ✅ Reduzir opacidade do texto quando pending
+              )}
+              inputClassName="text-sm font-medium text-gray-700"
+              disabled={task.isPending} // ✅ Desabilitar edição enquanto está pending
+              maxLength={100} // ✅ Limite de caracteres (padrão UX)
+            />
+          </div>
         </div>
         
-        {/* Indicadores que aparecem no hover */}
+        {/* Comentários - aparece apenas no hover */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          {/* Comentários */}
           {(task.commentCount && task.commentCount > 0) || (task.commentsCount && task.commentsCount > 0) ? (
             <div 
               className="flex items-center gap-1 text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
@@ -504,7 +539,64 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               <span className="text-[10px] font-semibold">{task.commentCount || task.commentsCount || 0}</span>
             </div>
           ) : null}
+        </div>
+      </div>
 
+      {/* Coluna: Responsável */}
+      <div 
+        className="flex items-center justify-center"
+        onClick={stopProp}
+        onPointerDown={stopProp}
+      >
+        {isMounted ? (
+          <TaskMembersPicker
+            memberIds={currentMemberIds}
+            onChange={handleMembersChange}
+            workspaceId={task.workspace_id || undefined}
+            members={membersWithCurrentUser}
+            align="end"
+            trigger={
+              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100" onClick={stopProp} onPointerDown={stopProp}>
+                {task.assignees && task.assignees.length > 0 ? (
+                  <AvatarGroup
+                    users={task.assignees}
+                    max={3}
+                    size="sm"
+                  />
+                ) : (
+                  <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
+                    <User size={12} />
+                  </div>
+                )}
+              </button>
+            }
+          />
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <button className="outline-none rounded-full" disabled>
+            {task.assignees && task.assignees.length > 0 ? (
+              <AvatarGroup
+                users={task.assignees}
+                max={3}
+                size="sm"
+              />
+            ) : (
+              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
+                <User size={12} />
+              </div>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Coluna: Data com indicadores Focus e Urgente */}
+      <div 
+        className="flex items-center justify-center gap-1 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors"
+        onClick={stopProp}
+        onPointerDown={stopProp}
+      >
+        {/* Indicadores Focus e Urgente - sempre visíveis quando ativos, hover quando inativos */}
+        <div className="flex items-center gap-0.5">
           {/* Focus (Enviar para minha semana) */}
           <TooltipProvider>
             <Tooltip>
@@ -517,7 +609,9 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
                   onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
                     "rounded p-0.5 transition-all",
-                    isFocusActive ? "text-yellow-600 bg-yellow-50 opacity-100" : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
+                    isFocusActive 
+                      ? "text-yellow-600 bg-yellow-50 opacity-100" 
+                      : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-yellow-500 hover:bg-yellow-50"
                   )}
                 >
                   <Zap className="w-3.5 h-3.5 fill-current" />
@@ -539,7 +633,9 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
                   onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
                     "rounded p-0.5 transition-all",
-                    isUrgentActive ? "text-red-600 bg-red-50 opacity-100" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                    isUrgentActive 
+                      ? "text-red-600 bg-red-50 opacity-100" 
+                      : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50"
                   )}
                 >
                   <AlertTriangle className="w-3.5 h-3.5 fill-current" />
@@ -549,162 +645,129 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
             </Tooltip>
           </TooltipProvider>
         </div>
-      </div>
 
-      {/* Coluna: Data */}
-      <div 
-        className="flex items-center justify-center cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors"
-        onClick={stopProp}
-        onPointerDown={stopProp}
-      >
-        <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
-          <PopoverTrigger asChild>
-            <div className="flex items-center gap-1.5">
-              {task.dueDate ? (
-                <span className={cn("text-xs font-medium whitespace-nowrap",
-                  isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                  isToday ? "text-green-600" : 
-                  "text-gray-500"
-                )}>
-                  {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400 flex items-center gap-1 hover:text-gray-600">
-                  <CalendarIcon className="w-3.5 h-3.5" />
-                </span>
-              )}
-            </div>
-          </PopoverTrigger>
-          <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp} onPointerDown={stopProp}>
-            <Calendar
-              mode="single"
-              selected={task.dueDate ? new Date(task.dueDate) : undefined}
-              onSelect={handleDateUpdate}
-              initialFocus
-            />
-            <div className="p-2 border-t">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                onClick={() => handleDateUpdate(undefined)}
-              >
-                <X className="w-3 h-3 mr-2" />
-                Remover data
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {/* Coluna: Responsável */}
-      <div 
-        className="flex items-center justify-center"
-        onClick={stopProp}
-        onPointerDown={stopProp}
-      >
-          <Popover open={isAssigneeOpen} onOpenChange={setIsAssigneeOpen}>
+        {isMounted ? (
+          <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
             <PopoverTrigger asChild>
-              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
-                {task.assignees && task.assignees.length > 0 ? (
-                  <Avatar
-                    name={task.assignees[0].name}
-                    avatar={task.assignees[0].avatar}
-                    size="sm"
-                    className="border border-white shadow-sm"
-                  />
+              <div className="flex items-center gap-1.5">
+                {task.dueDate ? (
+                  <span className={cn("text-xs font-medium whitespace-nowrap",
+                    isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
+                    isToday ? "text-green-600" : 
+                    "text-gray-500"
+                  )}>
+                    {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                  </span>
                 ) : (
-                  <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
-                    <User size={12} />
-                  </div>
+                  <span className="text-xs text-gray-400 flex items-center gap-1 hover:text-gray-600">
+                    <CalendarIcon className="w-3.5 h-3.5" />
+                  </span>
                 )}
-              </button>
+              </div>
             </PopoverTrigger>
-            <PopoverContent className="p-0 w-56" align="end" onClick={stopProp} onPointerDown={stopProp}>
+            <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp} onPointerDown={stopProp}>
+              <Calendar
+                mode="single"
+                selected={task.dueDate ? new Date(task.dueDate) : undefined}
+                onSelect={handleDateUpdate}
+                initialFocus
+              />
+              <div className="p-2 border-t">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="w-full text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => handleDateUpdate(undefined)}
+                >
+                  <X className="w-3 h-3 mr-2" />
+                  Remover data
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <div className="flex items-center gap-1.5">
+            {task.dueDate ? (
+              <span className={cn("text-xs font-medium whitespace-nowrap",
+                isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
+                isToday ? "text-green-600" : 
+                "text-gray-500"
+              )}>
+                {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400 flex items-center gap-1">
+                <CalendarIcon className="w-3.5 h-3.5" />
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Coluna: Status */}
+      <div className="flex items-center justify-center">
+        {isMounted ? (
+          <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
+            <PopoverTrigger asChild>
+              <div
+                onClick={stopProp}
+                onPointerDown={stopProp}
+              >
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] px-2 py-0.5 h-5 font-medium cursor-pointer hover:bg-gray-50 transition-colors",
+                    statusConfig.lightColor
+                  )}
+                >
+                  <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
+                  {statusConfig.label}
+                  <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+                </Badge>
+              </div>
+            </PopoverTrigger>
+            <PopoverContent className="p-0 w-48" align="start" onClick={stopProp} onPointerDown={stopProp}>
               <Command>
-                <CommandInput placeholder="Buscar membro..." />
                 <CommandList>
-                  <CommandEmpty>Nenhum membro encontrado.</CommandEmpty>
                   <CommandGroup>
-                    <CommandItem
-                      onSelect={() => handleAssigneeUpdate(null)}
-                      className="text-xs text-gray-500 cursor-pointer"
-                    >
-                      <div className="size-5 rounded-full border border-dashed border-gray-300 flex items-center justify-center mr-2">
-                        <User size={10} />
-                      </div>
-                      Sem responsável
-                    </CommandItem>
-                    {membersWithCurrentUser?.map((member) => (
-                      <CommandItem
-                        key={member.id}
-                        onSelect={() => handleAssigneeUpdate(member.id)}
-                        className="text-xs cursor-pointer"
-                      >
-                        <Avatar
-                          name={member.name}
-                          avatar={member.avatar}
-                          size="sm"
-                          className="size-5 mr-2"
-                        />
-                        {member.name}
-                      </CommandItem>
-                    ))}
+                    {ORDERED_STATUSES.map((statusKey) => {
+                      const config = TASK_CONFIG[statusKey];
+                      const isSelected = dbStatus === statusKey;
+                      return (
+                        <CommandItem
+                          key={statusKey}
+                          onSelect={() => handleStatusUpdate(config.label)}
+                          className={cn(
+                            "text-xs cursor-pointer",
+                            isSelected && "bg-gray-100"
+                          )}
+                        >
+                          <div className={cn("w-1.5 h-1.5 rounded-full mr-2", config.color.replace("fill-", "bg-"))} />
+                          {config.label}
+                          {isSelected && <CheckCircle2 className="w-3 h-3 ml-auto text-green-600" />}
+                        </CommandItem>
+                      );
+                    })}
                   </CommandGroup>
                 </CommandList>
               </Command>
             </PopoverContent>
           </Popover>
-      </div>
-
-      {/* Coluna: Status */}
-      <div className="flex items-center justify-center">
-        <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
-          <PopoverTrigger asChild>
-            <div
-              onClick={stopProp}
-              onPointerDown={stopProp}
-            >
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-2 py-0.5 h-5 font-medium cursor-pointer hover:bg-gray-50 transition-colors",
-                  statusConfig.lightColor
-                )}
-              >
-                <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
-                {statusConfig.label}
-                <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
-              </Badge>
-            </div>
-          </PopoverTrigger>
-          <PopoverContent className="p-0 w-48" align="start" onClick={stopProp} onPointerDown={stopProp}>
-            <Command>
-              <CommandList>
-                <CommandGroup>
-                  {ORDERED_STATUSES.map((statusKey) => {
-                    const config = TASK_CONFIG[statusKey];
-                    const isSelected = dbStatus === statusKey;
-                    return (
-                      <CommandItem
-                        key={statusKey}
-                        onSelect={() => handleStatusUpdate(config.label)}
-                        className={cn(
-                          "text-xs cursor-pointer",
-                          isSelected && "bg-gray-100"
-                        )}
-                      >
-                        <div className={cn("w-1.5 h-1.5 rounded-full mr-2", config.color.replace("fill-", "bg-"))} />
-                        {config.label}
-                        {isSelected && <CheckCircle2 className="w-3 h-3 ml-auto text-green-600" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[10px] px-2 py-0.5 h-5 font-medium",
+              statusConfig.lightColor
+            )}
+          >
+            <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", statusConfig.color.replace("fill-", "bg-"))} />
+            {statusConfig.label}
+            <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+          </Badge>
+        )}
       </div>
 
       {/* Coluna: Menu Ações */}

@@ -25,11 +25,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi, Loader2 } from "lucide-react";
+import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi, Loader2, MoreVertical, Edit, RotateCcw, Shield } from "lucide-react";
 import { useUI } from "@/components/providers/UIScaleProvider";
 import { updateProfile, Profile, Workspace, getWorkspaceById } from "@/lib/actions/user";
 import { updateWorkspaceSettings } from "@/lib/actions/workspace-settings";
-import { inviteMember, revokeInvite, Member, Invite, getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
+import { 
+  inviteMember, 
+  revokeInvite, 
+  resendInvite,
+  removeMember,
+  updateMemberRole,
+  Member, 
+  Invite, 
+  getWorkspaceMembers, 
+  getPendingInvites,
+  getCurrentUserRole
+} from "@/lib/actions/members";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
@@ -116,6 +127,11 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     loadActiveWorkspace();
   }, [activeWorkspaceId, isLoaded]);
 
+  // Prevent hydration mismatch - mount Tabs only on client
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Update state if props change (para perfil do usuário)
   useEffect(() => {
     if (user) {
@@ -141,6 +157,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     }
   };
 
+  // Prevent hydration mismatch - mount Tabs only on client
+  const [isMounted, setIsMounted] = useState(false);
+
   // Members & Invites State
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
@@ -152,7 +171,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   // Modal States
   const [inviteToRevoke, setInviteToRevoke] = useState<string | null>(null);
   const [isRevoking, setIsRevoking] = useState(false);
-  const [memberToRemove, setMemberToRemove] = useState<string | null>(null); // Não implementado na API ainda, mas preparado
+  const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
 
   const handleSaveSettings = async () => {
     if (!workspace) return;
@@ -212,9 +232,21 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   };
 
   const confirmRemoveMember = async () => {
-      // TODO: Implement server action for removing member
-      toast.info("Em breve", { description: "Funcionalidade de remover membro ainda não implementada na API." });
-      setMemberToRemove(null);
+      if (!memberToRemove || !workspace) return;
+      setIsRemovingMember(true);
+      try {
+          await removeMember(workspace.id, memberToRemove);
+          setMembers(members.filter(m => m.user_id !== memberToRemove));
+          toast.success("Membro removido", { 
+              description: "O usuário perdeu acesso ao workspace." 
+          });
+          router.refresh();
+      } catch (error: any) {
+          toast.error("Erro ao remover membro", { description: error.message });
+      } finally {
+          setIsRemovingMember(false);
+          setMemberToRemove(null);
+      }
   }
 
   const handleInviteMember = async () => {
@@ -226,16 +258,37 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     try {
         const result = await inviteMember(workspace.id, newMember.email, newMember.role as "admin" | "member" | "viewer");
         
+        // ✅ CORREÇÃO: Todos os convites agora são pendentes (fluxo unificado)
+        // A função sempre retorna inviteLink quando bem-sucedida
         if (result.inviteLink) {
+            // Se foi criado convite pendente
             setInviteLink(result.inviteLink);
             toast.success("Convite criado!", {
                 description: "Copie o link para enviar ao usuário."
             });
+            // Recarregar lista de convites pendentes
+            if (workspace.id) {
+                const updatedInvites = await getPendingInvites(workspace.id);
+                setInvites(updatedInvites);
+            }
+        } else {
+            // Convite foi criado mas sem link (em produção)
+            toast.success("Convite enviado!", {
+                description: "O email de convite foi enviado para o usuário."
+            });
+            // Recarregar lista de convites pendentes
+            if (workspace.id) {
+                const updatedInvites = await getPendingInvites(workspace.id);
+                setInvites(updatedInvites);
+            }
         }
         
         setNewMember({ email: "", role: "member" });
     } catch (error: any) {
-        toast.error("Erro ao enviar convite", { description: error.message });
+        console.error("❌ Erro ao enviar convite no cliente:", error);
+        toast.error("Erro ao enviar convite", { 
+            description: error?.message || "Ocorreu um erro ao processar o convite. Verifique os logs para mais detalhes." 
+        });
     } finally {
         setIsInviting(false);
     }
@@ -265,6 +318,33 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       ? name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase()
       : "US";
   };
+
+  const getRoleLabel = (role: string): string => {
+    const roleMap: Record<string, string> = {
+      owner: "Proprietário",
+      admin: "Administrador", 
+      member: "Membro",
+      viewer: "Visualizador"
+    };
+    return roleMap[role] || role;
+  };
+
+  // Renderizar apenas após montagem no cliente para evitar erro de hidratação
+  if (!isMounted) {
+    return (
+      <div className="container max-w-5xl py-10 mx-auto">
+        <div className="flex flex-col gap-2 mb-8">
+          <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
+          <p className="text-muted-foreground">
+            Gerencie as preferências gerais, membros da equipe e faturamento.
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-muted-foreground">Carregando...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container max-w-5xl py-10 mx-auto">
@@ -449,7 +529,14 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         {/* B. ABA MEMBROS (GESTÃO DE TIME) */}
         <TabsContent value="members" className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">Membros do Time</h2>
+            <h2 className="text-lg font-medium flex items-center gap-2">
+              Membros do Time
+              {invites.length > 0 && (
+                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                  {invites.length} pendente{invites.length > 1 ? 's' : ''}
+                </Badge>
+              )}
+            </h2>
             
             <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
               <DialogTrigger asChild>
@@ -458,7 +545,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   Convidar Pessoas
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                   <DialogTitle>Convidar novo membro</DialogTitle>
                   <DialogDescription>
@@ -488,9 +575,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             <SelectValue placeholder="Selecione uma função" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
-                            <SelectItem value="viewer">Viewer</SelectItem>
+                            <SelectItem value="admin">Administrador</SelectItem>
+                            <SelectItem value="member">Membro</SelectItem>
+                            <SelectItem value="viewer">Visualizador</SelectItem>
                         </SelectContent>
                         </Select>
                     </div>
@@ -501,12 +588,12 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             <CheckCircle2 className="h-8 w-8 text-green-600" />
                             <h3 className="font-medium text-green-900">Convite Criado!</h3>
                             <p className="text-sm text-green-700">
-                                Em ambiente de desenvolvimento, use o link abaixo:
+                                Copie o link abaixo para compartilhar:
                             </p>
                         </div>
-                        <div className="flex items-center gap-2 p-2 bg-slate-100 rounded-md border">
-                            <code className="text-xs flex-1 truncate">{inviteLink}</code>
-                            <Button size="sm" variant="ghost" onClick={() => {
+                        <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-md border min-w-0">
+                            <code className="text-xs flex-1 break-all min-w-0 pr-2">{inviteLink}</code>
+                            <Button size="sm" variant="ghost" className="flex-shrink-0" onClick={() => {
                                 navigator.clipboard.writeText(inviteLink);
                                 toast.success("Link copiado!");
                             }}>
@@ -518,9 +605,14 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
                 <DialogFooter>
                   {inviteLink ? (
-                      <Button onClick={() => {
+                      <Button onClick={async () => {
                           setInviteLink(null);
                           setIsInviteOpen(false);
+                          // Recarregar lista de convites após fechar modal
+                          if (workspace?.id) {
+                              const updatedInvites = await getPendingInvites(workspace.id);
+                              setInvites(updatedInvites);
+                          }
                           router.refresh();
                       }}>Concluir</Button>
                   ) : (
@@ -574,7 +666,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                         </td>
                         <td className="px-6 py-4">
                             <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
-                            {member.role}
+                            {getRoleLabel(member.role)}
                             </Badge>
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -622,7 +714,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             </td>
                             <td className="px-6 py-4">
                                 <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                                    {invite.role} (Pendente)
+                                    {getRoleLabel(invite.role)} (Pendente)
                                 </Badge>
                             </td>
                             <td className="px-6 py-4 text-right">
@@ -822,7 +914,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         description="O usuário perderá acesso a todas as tarefas e dados deste workspace. Esta ação não pode ser desfeita."
         confirmText="Sim, remover membro"
         onConfirm={confirmRemoveMember}
-        isLoading={false}
+        isLoading={isRemovingMember}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { toast } from "sonner";
@@ -20,10 +20,10 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { TaskGroup } from "@/components/tasks/TaskGroup";
+import { GhostGroup } from "@/components/tasks/GhostGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
     DropdownMenu,
@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import {
     DndContext,
     closestCenter,
+    pointerWithin,
     KeyboardSensor,
     PointerSensor,
     useSensor,
@@ -62,17 +63,25 @@ import {
 import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups } from "@/lib/actions/task-groups";
 import { getTaskDetails } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { getUserWorkspaces } from "@/lib/actions/user";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
 import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
 
-type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
-type GroupBy = "status" | "priority" | "assignee";
+type GroupBy = "status" | "priority" | "assignee" | "date";
 type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
+
+const DATE_COLOR_MAP: Record<string, string> = {
+    "Atrasadas": "#ef4444",
+    "Hoje": "#16a34a",
+    "Amanhã": "#eab308",
+    "Semana": "#2563eb",
+    "Futuro": "#475569",
+    "Sem data": "#cbd5e1",
+};
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
 import { SortMenu } from "@/components/tasks/SortMenu";
@@ -93,6 +102,7 @@ interface Task {
     hasComments?: boolean;
     commentCount?: number;
     position?: number; // Posição para ordenação (drag & drop)
+    isPending?: boolean; // ✅ Marca tarefas otimistas que ainda estão sendo criadas
 }
 
 interface TasksPageProps {
@@ -116,6 +126,7 @@ function getInitialViewOption(groupParam: string | null): ViewOption {
 export default function TasksPage({ initialTasks, initialGroups, workspaceId: propWorkspaceId }: TasksPageProps = {}) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const pathname = usePathname();
     
     // Ler sortBy da URL, com fallback para "position"
     const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
@@ -123,7 +134,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // ✅ Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
     
-    const [activeTab, setActiveTab] = useState<ContextTab>("todas");
+    const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
     const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
@@ -137,10 +148,56 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    
+    // Ref para throttling do handleDragOver
+    const dragOverThrottleRef = useRef<number | null>(null);
+    const lastDragOverStateRef = useRef<string>("");
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
-    const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
-    const [groupOrder, setGroupOrder] = useState<string[]>([]); // Ordem dos grupos quando viewOption === "group"
+    
+    // ✅ CORREÇÃO: Inicializar availableGroups com initialGroups se disponível (evita flicker)
+    const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>(() => {
+        if (initialGroups && initialGroups.length > 0) {
+            return initialGroups.map(g => ({
+                id: g.id,
+                name: g.name,
+                color: g.color
+            }));
+        }
+        return [];
+    });
+    
+    // ✅ CORREÇÃO: Inicializar groupOrder com base em initialGroups ou localStorage (evita flicker)
+    const [groupOrder, setGroupOrder] = useState<string[]>(() => {
+        if (initialViewOption === "group") {
+            if (initialGroups && initialGroups.length > 0) {
+                // Tentar carregar ordem salva do localStorage
+                if (typeof window !== "undefined") {
+                    const savedOrder = localStorage.getItem("taskGroupOrder");
+                    if (savedOrder) {
+                        try {
+                            const parsed = JSON.parse(savedOrder);
+                            // Validar que todos os IDs existem em initialGroups
+                            const groupIds = new Set(initialGroups.map(g => g.id));
+                            const validOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
+                            // Adicionar grupos novos que não estão na ordem salva
+                            const newGroups = initialGroups
+                                .map(g => g.id)
+                                .filter(id => !validOrder.includes(id));
+                            if (validOrder.length > 0 || newGroups.length > 0) {
+                                return ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
+                            }
+                        } catch (e) {
+                            // Fallback para ordem padrão
+                        }
+                    }
+                }
+                // Ordem padrão: inbox primeiro, depois grupos do banco
+                return ["inbox", ...initialGroups.map(g => g.id)];
+            }
+        }
+        return [];
+    });
     const { activeWorkspaceId, isLoaded } = useWorkspace();
     const localTasksRef = useRef<Task[]>([]);
     
@@ -168,13 +225,22 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
              tags.push(...(task as any).tags);
         }
 
-        // Mapear assignees
-        const assigneeData = (task as any).assignee;
-        const assignees = assigneeData ? [{
-             name: assigneeData.full_name || assigneeData.email || "Sem nome",
-             avatar: assigneeData.avatar_url || undefined,
-             id: task.assignee_id || undefined
-        }] : [];
+        // Mapear assignees - usar array assignees se disponível (inclui task_members), senão usar assignee
+        let assignees: Array<{ name: string; avatar?: string; id?: string }> = [];
+        if ((task as any).assignees && Array.isArray((task as any).assignees)) {
+            // Usar array assignees que já vem transformado das queries
+            assignees = (task as any).assignees;
+        } else {
+            // Fallback para assignee antigo (compatibilidade)
+            const assigneeData = (task as any).assignee;
+            if (assigneeData) {
+                assignees = [{
+                    name: assigneeData.full_name || assigneeData.email || "Sem nome",
+                    avatar: assigneeData.avatar_url || undefined,
+                    id: task.assignee_id || undefined
+                }];
+            }
+        }
 
         return {
             id: task.id,
@@ -233,11 +299,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [tasksFromHook, initialTasks]);
 
-    // Sensores para drag & drop
+    // Sensores para drag & drop (otimizados para resposta mais rápida)
+    // useSensors já memoiza internamente, então não precisamos de useMemo adicional
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: {
-                distance: 8,
+                distance: 8, // 8px de movimento antes de ativar drag (permite cliques)
+                delay: 100, // 100ms de delay para permitir que clique seja processado primeiro (balanceado para drag mais rápido)
+                tolerance: 5, // 5px de tolerância para movimento acidental
             },
         }),
         useSensor(KeyboardSensor, {
@@ -276,9 +345,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 return;
             }
 
-            console.log("Criando grupo:", { name: newGroupName.trim(), workspaceId: targetWorkspaceId, color: newGroupColor });
             const result = await createTaskGroup(newGroupName.trim(), targetWorkspaceId, newGroupColor);
-            console.log("Resultado criar grupo:", result);
             
             if (result.success) {
                 toast.success("Grupo criado com sucesso!");
@@ -304,16 +371,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const reloadTasks = useCallback(async () => {
         if (initialTasks) {
             // âœ… NOVO: Se initialTasks foi fornecido, nÃ£o usar hook
-            // A pÃ¡gina Server Component deve ser recarregada via router.refresh() ou similar
-            // Por enquanto, apenas invalidar cache
+            // A pÃ¡gina Server Component deve ser recarregada via router.refresh()
             invalidateTasksCache(effectiveWorkspaceId, activeTab);
-            // TODO: Implementar recarregamento via router.refresh() ou window.location.reload()
+            router.refresh();
             return;
         }
         // Invalidar cache e refetch
         invalidateTasksCache(effectiveWorkspaceId, activeTab);
         await refetchTasks();
-    }, [effectiveWorkspaceId, activeTab, refetchTasks, initialTasks]);
+    }, [effectiveWorkspaceId, activeTab, refetchTasks, initialTasks, router]);
 
     // Callbacks memoizados para evitar re-renders infinitos
     const handleTaskUpdated = useCallback(() => {
@@ -472,6 +538,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         dueDate?: string;
         groupId?: string | null;
         workspaceId?: string | null;
+        isPending?: boolean; // ✅ Marca se está sendo criada (para mostrar skeleton)
     }) => {
         const newTask: Task = {
             id: taskData.id,
@@ -493,12 +560,39 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             hasComments: false,
             commentCount: 0,
             position: undefined,
+            isPending: taskData.isPending ?? true, // ✅ Por padrão, tarefas otimistas estão pending
         };
 
         setLocalTasks((prev) => {
-            return [newTask, ...prev];
+            // ✅ Seguir ordem existente: adicionar no final
+            // Isso mantém consistência com ordenação (position, priority, etc.)
+            // e permite criação rápida sem quebrar o fluxo visual
+            // O QuickTaskAdd está no final, então faz sentido a tarefa aparecer logo acima dele
+            if (sortBy === "position") {
+                // Quando ordenado por position: calcular última posição e adicionar no final
+                // Filtrar tarefas do mesmo grupo se viewOption === "group"
+                const tasksInSameGroup = viewOption === "group" && taskData.groupId
+                    ? prev.filter(t => (t.group?.id || null) === taskData.groupId)
+                    : prev;
+                
+                const maxPosition = tasksInSameGroup.length > 0 
+                    ? Math.max(...tasksInSameGroup.map(t => t.position ?? 0))
+                    : 0;
+                
+                const taskWithPosition = {
+                    ...newTask,
+                    position: maxPosition + 1000 // Adicionar no final da lista/grupo
+                };
+                
+                // Adicionar no final do array completo (a ordenação será reaplicada)
+                return [...prev, taskWithPosition];
+            } else {
+                // Outras ordenações: adicionar no final também para manter consistência
+                // A ordenação será reaplicada automaticamente pelo useMemo
+                return [...prev, newTask];
+            }
         });
-    }, [availableGroups]);
+    }, [availableGroups, sortBy, viewOption]); // ✅ Adicionar sortBy e viewOption nas dependências
 
     // ✅ Optimistic Delete: Remove tarefa instantaneamente do estado local
     const handleOptimisticDelete = useCallback((taskId: string | number) => {
@@ -583,7 +677,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }] : undefined,
             dueDate: dueDate ? dueDate.toISOString() : undefined,
             groupId: finalGroupId,
-            workspaceId: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+            workspaceId: effectiveWorkspaceId || null,
         });
 
         try {
@@ -594,12 +688,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 priority: priority,
                 assignee_id: assigneeId || undefined,
                 due_date: dueDate ? dueDate.toISOString() : undefined,
-                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+                workspace_id: effectiveWorkspaceId || null,
                 group_id: finalGroupId,
             });
 
             if (result.success && 'data' in result && result.data) {
-                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend
+                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend e remover pending
                 const createdTask = result.data;
                 setLocalTasks((prev) => {
                     return prev.map((task) => {
@@ -610,6 +704,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 status: createdTask.status ? mapStatusToLabel(createdTask.status as string) || task.status : task.status,
                                 priority: (createdTask.priority as "low" | "medium" | "high" | "urgent") || task.priority,
                                 dueDate: createdTask.due_date || task.dueDate,
+                                isPending: false, // ✅ Marcar como não pending após sucesso
                             } as Task;
                         }
                         return task;
@@ -876,7 +971,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
         if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
         if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
-        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        if (updates.assignees) {
+            localUpdates.assignees = updates.assignees;
+            // ✅ Também atualizar assigneeId para manter consistência
+            localUpdates.assigneeId = updates.assignees[0]?.id || null;
+        }
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
 
@@ -1021,9 +1120,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         } else if (taskDate.getTime() === today.getTime()) {
                             groupKey = "Hoje";
                         } else if (taskDate.getTime() === tomorrow.getTime()) {
-                            groupKey = "AmanhÃ£";
+                            groupKey = "Amanhã";
                         } else if (taskDate > tomorrow && taskDate <= nextWeek) {
-                            groupKey = "PrÃ³ximos 7 dias";
+                            groupKey = "Semana";
                         } else {
                             groupKey = "Futuro";
                         }
@@ -1050,14 +1149,41 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Atualizar ref para groupedData (apÃ³s groupedData ser definido)
     groupedDataRef.current = groupedData;
 
-    // Reordenar grupos quando viewOption === "group" baseado em groupOrder
+    // ✅ CORREÇÃO: Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
+        if (viewOption === "group" && groupOrder.length > 0) {
+            // Criar um novo objeto ordenado baseado em groupOrder
+            const ordered: Record<string, Task[]> = {};
+            
+            // Primeiro, adicionar grupos na ordem especificada
+            groupOrder.forEach(groupId => {
+                if (groupedData[groupId]) {
+                    ordered[groupId] = groupedData[groupId];
+                }
+            });
+            
+            // Depois, adicionar grupos que não estão em groupOrder (caso existam)
+            Object.keys(groupedData).forEach(key => {
+                if (!ordered[key]) {
+                    ordered[key] = groupedData[key];
+                }
+            });
+            
+            return ordered;
+        }
         return groupedData;
-    }, [groupedData]);
+    }, [groupedData, viewOption, groupOrder]);
 
     // Converter grupos para formato de colunas (Kanban)
+    // Otimizado: usa referências estáveis e evita recriação quando dados não mudam
     const kanbanColumns = useMemo(() => {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
+        
+        // Early return se não há dados
+        if (!dataToUse || Object.keys(dataToUse).length === 0) {
+            return [];
+        }
+        
         const columns = Object.entries(dataToUse)
             .filter(([key, tasks]) => {
                 // ✅ Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
@@ -1102,6 +1228,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                          color = groupColors[key];
                     }
                 }
+            } else if (viewOption === "date") {
+                color = DATE_COLOR_MAP[title] || color;
             }
 
             return {
@@ -1137,7 +1265,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return columns.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -1158,7 +1286,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         return columns;
-    }, [groupedData, orderedGroupedData, viewOption, availableGroups]);
+    }, [groupedData, orderedGroupedData, viewOption, availableGroups, groupColors]);
 
     // Converter grupos para formato de lista (TaskGroup) com ordenaÃ§Ã£o
     const listGroups = useMemo(() => {
@@ -1225,6 +1353,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         }
                     }
                 }
+            } else if (viewOption === "date") {
+                groupColor = DATE_COLOR_MAP[title] || groupColor;
             }
 
             return {
@@ -1262,7 +1392,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return groups.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -1282,8 +1412,20 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
+        // ✅ CORREÇÃO: Ordenar grupos baseado em groupOrder quando viewOption === "group"
+        if (viewOption === "group" && groupOrder.length > 0) {
+            return groups.sort((a, b) => {
+                const aIndex = groupOrder.indexOf(a.id);
+                const bIndex = groupOrder.indexOf(b.id);
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
+        }
+
         return groups;
-    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length]); // Usar .length para evitar re-renders quando o conteÃºdo muda mas o tamanho Ã© o mesmo
+    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ✅ Adicionar groupOrder para recalcular quando a ordem mudar
 
 
     // Mapear status customizÃ¡veis para status do banco (usando config centralizado)
@@ -1536,7 +1678,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const { active } = event;
         // ✅ CORREÇÃO: Normalizar ID para string
         const activeIdStr = String(active.id);
-        const task = localTasks.find((t) => String(t.id) === activeIdStr);
+        // Usar ref para busca mais rápida (evita re-render)
+        const task = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
         
         if (!task) {
             console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
@@ -1545,6 +1688,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         
         setActiveTask(task);
     };
+
+    // REMOVIDO: handleDragOver estava causando delay de 0.5-1.5s devido a setState bloqueante
+    // O dnd-kit já fornece feedback visual nativo sem necessidade de atualizar estado durante o drag
+    // A atualização de estado acontece apenas no handleDragEnd quando o usuário solta o card
 
     // Handler para quando o drag termina
     const handleDragEnd = async (event: DragEndEvent) => {
@@ -1581,15 +1728,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const activeIdStr = String(active.id);
         const overIdStr = String(over.id);
         
-        // ✅ CORREÇÃO: Log de debug para diagnóstico
-        console.log("🎯 [handleDragEnd] Iniciando processamento:", {
-            activeId: activeIdStr,
-            overId: overIdStr,
-            viewOption,
-            viewMode,
-            groupedDataKeys: Object.keys(groupedData),
-            kanbanColumnsIds: viewMode === "kanban" ? kanbanColumns.map(c => c.id) : []
-        });
 
         const findGroupKeyForId = (id: string): string | null => {
             // ✅ CORREÇÃO: Verificar se o ID é uma chave de grupo diretamente
@@ -1620,25 +1758,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 const kanbanColumn = kanbanColumns.find(col => col.id === overIdStr);
                 if (kanbanColumn) {
                     destinationGroupKey = kanbanColumn.id;
-                    console.log("ℹ️ [handleDragEnd] Detectado ID de coluna kanban como destino:", destinationGroupKey);
                 } else if (Object.keys(groupedData).includes(overIdStr)) {
                     destinationGroupKey = overIdStr;
-                    console.log("ℹ️ [handleDragEnd] Usando ID de coluna como destino:", destinationGroupKey);
                 }
             } else if (Object.keys(groupedData).includes(overIdStr)) {
                 destinationGroupKey = overIdStr;
-                console.log("ℹ️ [handleDragEnd] Usando ID de coluna como destino:", destinationGroupKey);
             }
         }
         
         if (!destinationGroupKey) {
-            console.error("❌ [handleDragEnd] Grupo de destino não encontrado para ID:", overIdStr);
-            console.error("❌ [handleDragEnd] Debug info:", {
-                overIdStr,
-                groupedDataKeys: Object.keys(groupedData),
-                kanbanColumnsIds: viewMode === "kanban" ? kanbanColumns.map(c => c.id) : [],
-                viewMode
-            });
             toast.error("Erro: Destino inválido. Tente arrastar para uma coluna válida.");
             return;
         }
@@ -1653,7 +1781,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (isOverColumn) {
             // Arrastou para a coluna vazia, adicionar no final
             overIndex = -1;
-            console.log("ℹ️ [handleDragEnd] Arrastou para coluna vazia, adicionando no final");
         } else {
             // Arrastou sobre uma tarefa, encontrar o índice
             overIndex = destinationTasks.findIndex((t) => String(t.id) === overIdStr);
@@ -1842,25 +1969,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const gap = nextTaskFinal && prevTaskFinal ? (nextTaskFinal.position || 0) - (prevTaskFinal.position || 0) : 1000;
         const needsRebalance = gap < MIN_DELTA;
 
-        console.log("🎯 [handleDragEnd] Dados do movimento:", {
-            activeId: activeIdStr,
-            targetIndex,
-            destinationTasksLength: destinationTasks.length,
-            calculatedPosition,
-            prevTaskPosition: prevTaskFinal?.position,
-            nextTaskPosition: nextTaskFinal?.position,
-            gap,
-            needsRebalance,
-            isSameGroup,
-            sourceGroupKey,
-            destinationGroupKey
-        });
-
         try {
             if (needsRebalance) {
                 // ✅ CASO RARO: O espaço acabou. Precisamos re-indexar tudo (Bulk Update).
-                console.log("⚠️ Espaço esgotado. Re-indexando lista do grupo de destino...");
-                
                 const rebalancedUpdates = destListFinal.map((t, i) => ({
                     id: String(t.id),
                     position: (i + 1) * 1000
@@ -1893,11 +2004,19 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
                     await reloadTasks();
                 } else {
-                    console.log(`✅ Rebalanceamento concluído! ${rebalancedUpdates.length} tarefas atualizadas.`);
+                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
+                    if (sortBy !== "position") {
+                        setSortBy("position");
+                        const params = new URLSearchParams(searchParams.toString());
+                        params.delete("sort");
+                        const newUrl = params.toString()
+                            ? `${pathname}?${params.toString()}`
+                            : pathname;
+                        router.push(newUrl);
+                    }
                 }
             } else {
                 // ✅ CASO PADRÃO (99% das vezes): Salva APENAS o item movido.
-                console.log(`🎯 Posição Calculada: ${calculatedPosition} (Entre ${prevTask?.position || 'início'} e ${nextTask?.position || 'fim'})`);
                 
                 // ✅ CORREÇÃO CRÍTICA: Sempre enviar group_id quando viewOption === "group" para garantir RLS
                 // Mesmo dentro do mesmo grupo, precisamos do group_id para validação de permissões
@@ -1949,8 +2068,19 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         taskId: activeIdStr,
                         calculatedPosition
                     });
+                    
+                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
+                    if (sortBy !== "position") {
+                        setSortBy("position");
+                        const params = new URLSearchParams(searchParams.toString());
+                        params.delete("sort");
+                        const newUrl = params.toString()
+                            ? `${pathname}?${params.toString()}`
+                            : pathname;
+                        router.push(newUrl);
+                    }
+                    }
                 }
-            }
         } catch (error) {
             console.error("Erro ao atualizar posição:", error);
             await reloadTasks();
@@ -2074,6 +2204,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 subTasks: [], // Subtarefas nÃ£o estÃ£o implementadas no schema ainda
                 activities,
                 attachments: mappedAttachments,
+                workspaceId: taskDetails.workspace_id || null, // ✅ Adicionar workspaceId
             });
         } catch (error) {
             console.error("Erro ao carregar detalhes da tarefa:", error);
@@ -2093,10 +2224,65 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
                         <p className="text-sm text-gray-500">Gerencie o trabalho do dia a dia.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
+                {/* NAVIGATION & FILTERS - LINE 2 */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    {/* Lado Esquerdo: Modo de visualização */}
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
+                            <button
+                                onClick={() => setViewMode("list")}
+                                className={cn(
+                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
+                                    viewMode === "list"
+                                        ? "bg-white text-gray-900 shadow-sm"
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                                title="Lista"
+                            >
+                                <List className="w-4 h-4" />
+                                <span className="text-sm font-medium">Lista</span>
+                            </button>
+                            <button
+                                onClick={() => setViewMode("kanban")}
+                                className={cn(
+                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
+                                    viewMode === "kanban"
+                                        ? "bg-white text-gray-900 shadow-sm"
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                                title="Kanban"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                                <span className="text-sm font-medium">Quadro</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Lado Direito: Ferramentas */}
+                    <div className="flex flex-1 md:flex-none items-center gap-2 w-full md:w-auto flex-wrap justify-start md:justify-end">
+                        {/* Busca */}
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <Input
+                                placeholder="Buscar tarefas..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
+                            />
                         </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Nova Tarefa - Dropdown Menu */}
+                        {/* Ordenar Por */}
+                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
+
+                        {/* Agrupar por */}
+                        <GroupingMenu />
+
+                        {/* Novo (menu) */}
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button className="bg-green-600 hover:bg-green-700 text-white">
@@ -2118,10 +2304,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={() => {
-                                        if (activeTab === "minhas") {
-                                            toast.error("Crie grupos dentro de um Workspace (aba 'Time' ou 'Todas').");
-                                            return;
-                                        }
                                         setIsCreateGroupModalOpen(true);
                                     }}
                                 >
@@ -2130,74 +2312,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
-                    </div>
-                </div>
-            </div>
-
-            <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
-                {/* NAVIGATION & FILTERS - LINE 2 */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    {/* Lado Esquerdo: Tabs de Contexto */}
-                    <Tabs
-                        value={activeTab}
-                        onValueChange={(value) => setActiveTab(value as ContextTab)}
-                        className="w-auto"
-                    >
-                        <TabsList className="bg-white border">
-                            <TabsTrigger value="minhas">Minhas</TabsTrigger>
-                            <TabsTrigger value="time">Time</TabsTrigger>
-                            <TabsTrigger value="todas">Todas</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-
-                    {/* Lado Direito: Ferramentas */}
-                    <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                        {/* Busca */}
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <Input
-                                placeholder="Buscar tarefas..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
-                            />
-                        </div>
-
-                        {/* Ordenar Por */}
-                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
-
-                        {/* Agrupar por */}
-                        <GroupingMenu />
-
-                        <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
-
-                        {/* View Switcher */}
-                        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
-                            <button
-                                onClick={() => setViewMode("list")}
-                                className={cn(
-                                    "p-1.5 rounded-md transition-all",
-                                    viewMode === "list"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-500 hover:text-gray-900"
-                                )}
-                                title="Lista"
-                            >
-                                <List className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={() => setViewMode("kanban")}
-                                className={cn(
-                                    "p-1.5 rounded-md transition-all",
-                                    viewMode === "kanban"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-500 hover:text-gray-900"
-                                )}
-                                title="Kanban"
-                            >
-                                <LayoutGrid className="w-4 h-4" />
-                            </button>
-                        </div>
                     </div>
                 </div>
 
@@ -2220,7 +2334,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             <div className="h-full">
                                 <DndContext
                                     sensors={sensors}
-                                    collisionDetection={closestCenter}
+                                    collisionDetection={pointerWithin}
                                     onDragStart={handleDragStart}
                                     onDragEnd={handleDragEnd}
                                     onDragCancel={handleDragCancel}
@@ -2264,6 +2378,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                                 />
                                             ))}
+                                            {/* Ghost Group para criação rápida - apenas na visão de grupos */}
+                                            {viewOption === "group" && (
+                                                <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
+                                            )}
                                         </div>
                                     </SortableContext>
                                 ) : (
@@ -2301,11 +2419,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                             />
                                         ))}
+                                        {/* Ghost Group para criação rápida - apenas na visão de grupos */}
+                                        {viewOption === "group" && (
+                                            <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
+                                        )}
                                     </div>
                                 )}
                     <DragOverlay>
                         {activeTask ? (
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
+                            <div className="bg-white rounded-lg border border-gray-200 p-3 rotate-2 opacity-90">
                                 <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
                             </div>
                         ) : null}
@@ -2317,7 +2439,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
                                 <DndContext
                                     sensors={sensors}
-                                    collisionDetection={closestCenter}
+                                    collisionDetection={pointerWithin}
                                     onDragStart={handleDragStart}
                                     onDragEnd={handleDragEnd}
                                     onDragCancel={handleDragCancel}
@@ -2367,6 +2489,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 mode={selectedTaskId ? "edit" : "create"}
                 onTaskCreated={reloadTasks}
                 onTaskUpdated={handleTaskUpdated}
+                onTaskUpdatedOptimistic={handleOptimisticUpdate}
             />
 
             {/* Modal de CriaÃ§Ã£o de Grupo */}

@@ -144,15 +144,42 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 7.6. Visão Semanal (DayColumn)
 - **Componente:** `components/home/DayColumn.tsx`
-- **Layout:** Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
-- **Quick Add:** Input no rodapé com seletor de data/hora (`TaskDateTimePicker`)
-  - Ícone de calendário ao lado do campo de texto
-  - Permite selecionar data e hora específica para tarefas pessoais
-  - Atualização imediata ao selecionar (não precisa clicar em "Confirmar")
-- **Ordenação de Tarefas:**
+- **Layout:** 
+  - Coluna vertical com altura dinâmica (`min-h-[500px] max-h-[80vh]`)
+  - Scroll interno com custom scrollbar
+  - Design refinado com gradientes sutis e bordas suaves
+  - Destaque visual para dia atual: `bg-gradient-to-b from-green-50/60 to-white border-[1.5px] border-green-200/80`
+  - Hover effects em dias inativos: `hover:border-gray-200 hover:bg-gray-50/50`
+- **Header:**
+  - Nome do dia em uppercase com tracking-wider
+  - Data em destaque abaixo
+  - Badge de contador de tarefas pendentes (aparece quando `pendingCount > 0`)
+  - Cores dinâmicas: verde para hoje, cinza para outros dias
+- **Quick Add (Input Area):**
+  - Input no rodapé com design refinado
+  - Textarea com auto-resize (máximo 120px de altura)
+  - Ícone Plus que muda para ponto verde pulsante quando focado
+  - Toolbar inferior que aparece quando focado ou com texto:
+    - Botão customizado do `TaskDateTimePicker` com estado visual (verde quando data definida)
+    - Dica "ENTER para salvar"
+  - Blur effect no topo do footer para conteúdo scrollando
+  - Estados visuais: ring verde e shadow quando focado
+  - Tutorial highlight com animação pulse quando `highlightInput` está ativo
+- **Ordenação de Tarefas (Memoizada com `useMemo`):**
   1. Tarefas pessoais com horário específico (não 00:00)
   2. Tarefas pessoais sem horário (00:00 ou sem data)
   3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Empty State:**
+  - Aparece apenas no hover do container (`opacity-0 group-hover/column:opacity-100`)
+  - Design minimalista com ícone FolderOpen em círculo cinza
+  - Texto "Tudo limpo" com subtítulo
+- **Performance:**
+  - Ordenação memoizada com `useMemo` para evitar recálculos
+  - Contador de pendências memoizado
+- **UX:**
+  - Toast notifications para erros (via `sonner`)
+  - Rollback automático do input em caso de erro
+  - Espaço extra no final do scroll para não bater no input
 - **Filtro de Workspace:**
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
@@ -259,7 +286,18 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Empty State (Boas-vindas):**
   - **Hero:** Componente `AIOrb` (Esfera escura com borda gradiente giratória + Ícone Sparkles).
   - **Chips:** Grid de 4 sugestões rápidas ("Criar tarefa", "Ver saldo") abaixo do Orb.
-- **Chat Interface:**
+- **Chat Interface (GlobalAssistantSheet):**
+  - Header centralizado com título "Assistente Symples"
+  - Área de chat com scroll automático
+  - Zero state com saudação dinâmica e sugestões de ações
+  - Input fixo no rodapé com botões para:
+    - Upload de imagem/print
+    - Gravação de áudio (máx. 2 minutos)
+    - Envio de mensagem
+  - Suporte a mensagens de texto, áudio e imagem
+  - Transcrição automática de áudio usando OpenAI Whisper
+  - Generative UI com componentes dinâmicos (KanbanConfirmationCard)
+  - Estado "pensando" com ThinkingIndicator (orb + frases rotativas)
   - **Respostas Ricas:** A IA não retorna apenas texto. Ela renderiza **Mini-Cards** (Tarefas/Transações) dentro do fluxo da conversa.
   - **Input:** Barra flutuante com sombra forte (`shadow-xl`) na parte inferior.
 
@@ -297,6 +335,17 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Sistema de notificações em tempo real
   - Badge de contador
   - Lista de notificações com ações
+
+- **WelcomeEmptyState (`components/home/WelcomeEmptyState.tsx`):**
+  - Estado vazio para First Time User Experience (FTUX)
+  - Card centralizado com ícone Sparkles
+  - Botão CTA verde para criar primeira tarefa
+  - Integração com TaskDetailModal
+
+- **WeeklyViewWrapper (`components/home/WeeklyViewWrapper.tsx`):**
+  - Wrapper que gerencia estado vazio vs. grid semanal
+  - Integra modal de criação de tarefas
+  - Atualização automática após criação
 
 ### 9.2. Componentes de Tarefas
 - **TaskDetailModal (`components/tasks/TaskDetailModal.tsx`):**
@@ -431,6 +480,21 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 9.4. Componentes de IA
 - **AIOrb (`components/assistant/AIOrb.tsx`):**
+  - Esfera escura (slate-950) com ícone Symples no centro
+  - Animações condicionais baseadas em `isLoading` e `compact`
+  - Suporte a diferentes tamanhos (normal e compacto para FAB)
+  
+- **ThinkingIndicator (`components/assistant/ThinkingIndicator.tsx`):**
+  - Orb animado com anel verde girando (0.6s)
+  - Ícone Symples no centro
+  - Frases rotativas a cada 3 segundos com efeito shimmer
+  - Usado durante processamento de mensagens
+
+- **KanbanConfirmationCard (`components/assistant/KanbanConfirmationCard.tsx`):**
+  - Card estilo Kanban para confirmação de criação de tarefas
+  - Campos editáveis: título, descrição, data, responsável, prioridade, status
+  - Botões de ação: Cancelar e Confirmar
+  - Parte do sistema Generative UI
   - Esfera escura (`bg-slate-950`)
   - Borda gradiente giratória (animação CSS)
   - Ícone Sparkles centralizado
@@ -627,15 +691,41 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 ## 14. VISÃO SEMANAL - COMPONENTES E FUNCIONALIDADES (v2.3)
 
 ### 14.1. DayColumn (`components/home/DayColumn.tsx`)
-- **Layout**: Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
-- **Quick Add**: Input no rodapé com seletor de data/hora
-  - Ícone de calendário clicável ao lado do campo de texto
-  - Permite definir data e hora específica para tarefas pessoais
-  - Data/hora selecionada é aplicada automaticamente ao criar tarefas
-- **Ordenação de Tarefas**:
+- **Layout**: 
+  - Coluna vertical com altura dinâmica (`min-h-[500px] max-h-[80vh]`)
+  - Scroll interno com custom scrollbar
+  - Design refinado com gradientes sutis e bordas suaves
+  - Destaque visual para dia atual com gradiente verde
+  - Hover effects em dias inativos
+- **Header**:
+  - Nome do dia em uppercase com tracking-wider
+  - Data em destaque abaixo
+  - Badge de contador de tarefas pendentes (quando `pendingCount > 0`)
+  - Cores dinâmicas baseadas em `isToday`
+- **Quick Add**: 
+  - Input no rodapé com design card-like refinado
+  - Textarea com auto-resize (máximo 120px)
+  - Ícone Plus que muda para ponto verde pulsante quando focado
+  - Toolbar inferior condicional com:
+    - Botão customizado do `TaskDateTimePicker` com estado visual
+    - Dica "ENTER para salvar"
+  - Blur effect no topo do footer
+  - Estados visuais aprimorados (ring verde, shadow, transform)
+  - Tutorial highlight com animação pulse
+- **Ordenação de Tarefas** (Memoizada com `useMemo`):
   1. Tarefas pessoais com horário específico (não 00:00)
   2. Tarefas pessoais sem horário (00:00 ou sem data)
   3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Empty State**:
+  - Aparece apenas no hover do container
+  - Design minimalista com ícone e texto explicativo
+- **Performance**:
+  - Ordenação e contadores memoizados
+  - Handlers otimizados
+- **UX**:
+  - Toast notifications para erros
+  - Rollback automático em caso de erro
+  - Espaço extra no final do scroll
 - **Filtro de Workspace**:
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
@@ -693,6 +783,31 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Atualização imediata no componente pai
   - Renderização apenas no cliente (evita problemas de hidratação)
 - **Formato**: Exibe data e hora no formato `d MMM, HH:mm` (pt-BR)
+
+### 14.4. WelcomeEmptyState (`components/home/WelcomeEmptyState.tsx`)
+- **Componente**: Estado vazio para First Time User Experience (FTUX) no Dashboard
+- **Props**: `workspaceName` (string, opcional), `onAction` (função callback)
+- **Layout**: Card centralizado (`bg-white`, `border-gray-200`, `shadow-sm`) com padding generoso (`p-12`)
+- **Elementos**:
+  - **Ícone**: `Sparkles` (Lucide) em círculo verde claro (`bg-green-50`, `text-green-600`)
+  - **Título**: "Bem-vindo ao [workspaceName]!" em `text-2xl font-bold text-gray-900`
+  - **Subtítulo**: "Tudo pronto para começar? Crie sua primeira tarefa ou explore o menu." em `text-gray-600`
+  - **CTA Button**: "Criar minha primeira tarefa" (`bg-green-600 hover:bg-green-700`)
+- **Uso**: Aparece quando o usuário não tem tarefas na semana, substituindo o grid vazio
+
+### 14.5. WeeklyViewWrapper (`components/home/WeeklyViewWrapper.tsx`)
+- **Componente**: Wrapper client que gerencia estado do modal e lógica condicional
+- **Props**: `tasks` (Task[]), `workspaces` (Array de workspaces)
+- **Funcionalidades**:
+  - Verifica se `tasks.length === 0`
+  - Se vazio: renderiza `<WelcomeEmptyState />`
+  - Se há tarefas: renderiza `<WeeklyView />` normalmente
+  - Integra `TaskDetailModal` para criação de tarefas
+  - Gerencia estado do modal (`isModalOpen`)
+- **Callbacks**:
+  - `handleCreateTask()`: Abre o modal em modo create
+  - `handleTaskCreated()`: Fecha modal e atualiza página via `router.refresh()`
+  - `handleTaskUpdated()`: Atualiza página após edição
 
 ## 15. Journal Visual de Preview
 

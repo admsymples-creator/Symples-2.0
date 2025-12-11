@@ -232,6 +232,39 @@ export type Database = {
           },
         ]
       }
+      task_members: {
+        Row: {
+          task_id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          task_id: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          task_id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_members_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transactions: {
         Row: {
           amount: number
@@ -363,6 +396,66 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          id: string
+          recipient_id: string
+          triggering_user_id: string | null
+          category: string
+          resource_type: string
+          resource_id: string | null
+          title: string
+          content: string | null
+          action_url: string | null
+          metadata: Json | null
+          read_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          recipient_id: string
+          triggering_user_id?: string | null
+          category?: string
+          resource_type: string
+          resource_id?: string | null
+          title: string
+          content?: string | null
+          action_url?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          recipient_id?: string
+          triggering_user_id?: string | null
+          category?: string
+          resource_type?: string
+          resource_id?: string | null
+          title?: string
+          content?: string | null
+          action_url?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_triggering_user_id_fkey"
+            columns: ["triggering_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -436,6 +529,65 @@ export type Database = {
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_messages: {
+        Row: {
+          id: string
+          workspace_id: string | null
+          user_id: string
+          role: string
+          content: string
+          type: string | null
+          image_url: string | null
+          audio_url: string | null
+          audio_duration: number | null
+          audio_transcription: string | null
+          is_thinking: boolean | null
+          is_context_divider: boolean | null
+          component_data: Json | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          workspace_id?: string | null
+          user_id: string
+          role: string
+          content?: string
+          type?: string | null
+          image_url?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_transcription?: string | null
+          is_thinking?: boolean | null
+          is_context_divider?: boolean | null
+          component_data?: Json | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          workspace_id?: string | null
+          user_id?: string
+          role?: string
+          content?: string
+          type?: string | null
+          image_url?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_transcription?: string | null
+          is_thinking?: boolean | null
+          is_context_divider?: boolean | null
+          component_data?: Json | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_messages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
@@ -581,3 +733,28 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+// ============================================
+// TIPOS DE NOTIFICAÇÕES
+// ============================================
+
+export type NotificationCategory = 'operational' | 'admin' | 'system';
+
+export type NotificationMetadata = {
+  // Visual Overrides
+  icon?: string; // Nome do ícone Lucide (ex: 'Mic', 'ShieldAlert')
+  color?: string; // Classe Tailwind de texto (ex: 'text-green-600')
+  bg?: string; // Classe Tailwind de fundo (ex: 'bg-green-50')
+  
+  // Contexto Específico
+  actor_name?: string; // Nome de quem fez a ação
+  actor_avatar?: string; // Avatar de quem fez a ação
+  file_type?: 'image' | 'pdf' | 'audio' | 'document' | 'other'; // Para anexos
+  file_count?: number; // Para agrupamento (ex: "5 arquivos")
+  file_name?: string; // Nome do arquivo anexado
+  role_changed_to?: string; // Para alertas de admin
+  role?: string; // Role do usuário (para convites)
+  task_title?: string; // Título da tarefa relacionada
+  workspace_name?: string; // Nome do workspace relacionado
+  days_overdue?: number; // Dias de atraso (para tarefas atrasadas)
+};

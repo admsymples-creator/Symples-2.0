@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { MoreHorizontal, MessageSquare, CheckSquare, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
@@ -32,6 +33,12 @@ interface WorkspaceCardProps {
 export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [] }: WorkspaceCardProps) {
     const router = useRouter();
     const { setActiveWorkspaceId } = useWorkspace();
+    const [isMounted, setIsMounted] = useState(false);
+
+    // Evitar erro de hidratação renderizando DropdownMenu apenas após montagem
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
     
     // Calculate progress
     const progress = totalCount > 0 ? ((totalCount - pendingCount) / totalCount) * 100 : 0;
@@ -90,35 +97,45 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
                     />
                 </div>
                 
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <button 
-                            onClick={(e) => {
-                                e.stopPropagation(); // Prevenir navegação ao clicar no menu
-                            }}
-                            className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
-                        >
-                            <MoreHorizontal size={16} />
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuItem 
-                            onClick={handleOpenWorkspace}
-                            className="cursor-pointer"
-                        >
-                            <FolderOpen className="mr-2 h-4 w-4" />
-                            <span>Abrir workspace</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                            onClick={handleOpenSettings}
-                            className="cursor-pointer"
-                        >
-                            <Settings className="mr-2 h-4 w-4" />
-                            <span>Configurações</span>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                {isMounted ? (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation(); // Prevenir navegação ao clicar no menu
+                                }}
+                                className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
+                            >
+                                <MoreHorizontal size={16} />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem 
+                                onClick={handleOpenWorkspace}
+                                className="cursor-pointer"
+                            >
+                                <FolderOpen className="mr-2 h-4 w-4" />
+                                <span>Abrir workspace</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                                onClick={handleOpenSettings}
+                                className="cursor-pointer"
+                            >
+                                <Settings className="mr-2 h-4 w-4" />
+                                <span>Configurações</span>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                ) : (
+                    // Renderizar botão simples durante SSR/hidratação
+                    <button 
+                        className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
+                        disabled
+                    >
+                        <MoreHorizontal size={16} />
+                    </button>
+                )}
             </div>
 
             {/* 3. Corpo (Info Principal) */}

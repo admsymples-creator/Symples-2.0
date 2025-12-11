@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { NotificationsPopover } from "@/components/layout/NotificationsPopover";
+import { NotificationsPopover } from "@/components/notifications/notifications-popover";
 import { UserNav } from "@/components/layout/UserNav";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 
@@ -14,6 +14,7 @@ interface HeaderProps {
         name?: string | null;
         email?: string | null;
         avatarUrl?: string | null;
+        role?: 'owner' | 'admin' | 'member' | 'viewer';
     } | null;
 }
 
@@ -28,7 +29,7 @@ export function Header({ user }: HeaderProps) {
             {/* Ações & Perfil */}
             <div className="flex items-center gap-2 ml-4">
                 {/* Notificações */}
-                <NotificationsPopover />
+                <NotificationsPopover userRole={user?.role} useMockData={false} />
 
                 {/* Configurações */}
                 <Link href="/settings">

@@ -19,7 +19,7 @@ import {
     generateTaskShareLink
 } from "@/lib/actions/task-details";
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
-import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TaskStatus } from "@/lib/config/tasks";
+import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
     DialogHeader,
@@ -84,12 +84,14 @@ import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { AttachmentCard } from "@/components/tasks/AttachmentCard";
 import { Editor } from "@/components/ui/editor";
-import { TaskAssigneePicker } from "@/components/tasks/pickers/TaskAssigneePicker";
+import { TaskMembersPicker } from "@/components/tasks/pickers/TaskMembersPicker";
+import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
 import { TaskImageLightbox } from "@/components/tasks/TaskImageLightbox";
 import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudioModal";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { toast } from "sonner";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 // ------------------------------------------------------------------
 // Types
@@ -99,10 +101,12 @@ interface SubTask {
     id: string;
     title: string;
     completed: boolean;
+    assignee_id?: string | null;
     assignee?: {
+        id?: string;
         name: string;
         avatar?: string;
-    };
+    } | null;
 }
 
 interface Activity {
@@ -146,6 +150,13 @@ interface TaskDetailModalProps {
     mode?: "create" | "edit" | "view";
     onTaskCreated?: () => void;
     onTaskUpdated?: () => void;
+    onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{
+        title?: string;
+        status?: string;
+        dueDate?: string;
+        priority?: string;
+        assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    }>) => void;
     task?: {
         id: string;
         title: string;
@@ -244,8 +255,111 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
     return <canvas ref={canvasRef} width={240} height={32} className="w-full h-full max-w-[240px]" />;
 };
 
+// ------------------------------------------------------------------
+// Audio Recorder Display Component (Isolated Timer for Performance)
+// ------------------------------------------------------------------
+
+interface AudioRecorderDisplayProps {
+    stream: MediaStream | null;
+    onCancel: () => void;
+    onStop: (duration: number) => void;
+}
+
+const AudioRecorderDisplay = memo(({ stream, onCancel, onStop }: AudioRecorderDisplayProps) => {
+    const [recordingTime, setRecordingTime] = useState(0);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        interval = setInterval(() => {
+            setRecordingTime(t => t + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const handleStop = () => {
+        onStop(recordingTime);
+    };
+
+    return (
+        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
+                <div className="flex-1 flex items-center justify-center gap-4">
+                    <div className="flex-1 h-8 flex items-center justify-center">
+                        {stream && <RecordingVisualizer stream={stream} />}
+                    </div>
+                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
+                        {formatTime(recordingTime)}
+                    </span>
+                </div>
+            </div>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="text-red-500"
+                onClick={onCancel}
+                title="Cancelar gravação"
+            >
+                <Trash2 className="w-4 h-4" />
+            </Button>
+            <Button
+                size="icon"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={handleStop}
+                title="Finalizar gravação"
+            >
+                <Check className="w-4 h-4" />
+            </Button>
+        </div>
+    );
+});
+
+AudioRecorderDisplay.displayName = "AudioRecorderDisplay";
+
 // Feature flag
 const ENABLE_AUDIO_TO_TASK = false;
+const COMMENTS_PAGE_SIZE = 50;
+
+const formatActivityTimestamp = (iso: string) =>
+    new Date(iso).toLocaleString("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "medium",
+    });
+
+const mapCommentToActivityBase = (
+    comment: any,
+    currentUserId: string | null,
+    currentUserName: string
+): Activity => {
+    const isCurrentUser = currentUserId && comment?.user?.id === currentUserId;
+    const displayUser =
+        isCurrentUser
+            ? "Você"
+            : comment?.user?.full_name || comment?.user?.email || currentUserName || "Sem nome";
+
+    return {
+        id: comment.id,
+        type: comment.type === "comment" ? "commented" :
+              comment.type === "file" ? "file_shared" :
+              comment.type === "log" ? "updated" :
+              comment.type === "audio" ? "audio" : "commented",
+        user: displayUser,
+        message: comment.type === "audio" ? undefined : comment.content,
+        timestamp: formatActivityTimestamp(comment.created_at),
+        attachedFiles: comment.metadata?.attachedFiles,
+        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
+            url: comment.metadata.audio_url || comment.metadata.url,
+            duration: comment.metadata.duration,
+            transcription: comment.metadata.transcription,
+        } : undefined,
+    };
+};
 
 export function TaskDetailModal({ 
     open, 
@@ -255,6 +369,7 @@ export function TaskDetailModal({
     initialDueDate,
     onTaskCreated,
     onTaskUpdated,
+    onTaskUpdatedOptimistic,
 }: TaskDetailModalProps) {
     const isCreateMode = mode === "create";
     const isViewMode = mode === "view";
@@ -266,26 +381,58 @@ export function TaskDetailModal({
     const [dueDate, setDueDate] = useState(initialDueDate || "");
     const [assignee, setAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
     const [subTasks, setSubTasks] = useState<SubTask[]>([]);
+    const [editingSubTaskId, setEditingSubTaskId] = useState<string | null>(null);
+    const [editingSubTaskTitle, setEditingSubTaskTitle] = useState("");
+    const [savingSubTaskId, setSavingSubTaskId] = useState<string | null>(null);
     const [newSubTask, setNewSubTask] = useState("");
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [comment, setComment] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+    const optimisticIdRef = useRef<string | null>(null); // Ref para rastrear ID do comentário otimista
+    const activitiesScrollRef = useRef<HTMLDivElement>(null); // Ref para o container de scroll do histórico
+    
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const descriptionRef = useRef<HTMLDivElement>(null);
+    const [showExpandButton, setShowExpandButton] = useState(false);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserName, setCurrentUserName] = useState<string>("Você");
     const [isMaximized, setIsMaximized] = useState(false);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingTimeRef = useRef<number>(0);
+    const finalDurationRef = useRef<number>(0); // Armazena duração final passada pelo AudioRecorderDisplay
     const mimeTypeRef = useRef<string>("audio/webm");
     const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
     const [selectedAudioForTask, setSelectedAudioForTask] = useState<{ url: string; duration: number } | null>(null);
     const [transcribingActivityId, setTranscribingActivityId] = useState<string | null>(null);
     const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    // Usuário atual para padronizar exibição de comentários
+    useEffect(() => {
+        const supabase = createBrowserClient();
+        supabase.auth.getUser().then(({ data }) => {
+            const user = data.user;
+            if (user) {
+                setCurrentUserId(user.id);
+                const name =
+                    (user.user_metadata as any)?.full_name ||
+                    user.email ||
+                    "Você";
+                setCurrentUserName(name);
+            }
+        });
+    }, []);
+
+    const mapCommentToActivity = useCallback(
+        (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
+        [currentUserId, currentUserName]
+    );
     // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
     // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
     // Não importa se task tem outros dados - sempre precisamos buscar do backend
@@ -309,7 +456,7 @@ export function TaskDetailModal({
     const [hasMoreComments, setHasMoreComments] = useState(false);
     const [commentsOffset, setCommentsOffset] = useState(0);
     // NÃO inicializar com dados do task prop - sempre começar vazio para forçar loading
-    const [localAssignee, setLocalAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
+    const [localMembers, setLocalMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [tags, setTags] = useState<string[]>([]);
     const { uploadToStorage } = useFileUpload();
     const taskCache = useTaskCache(); // Hook de cache - deve ser chamado antes de usar taskCache
@@ -328,12 +475,27 @@ export function TaskDetailModal({
     );
     
     // Helper para invalidar cache e notificar atualização (definido antes dos handlers que o usam)
-    const invalidateCacheAndNotify = useCallback((taskId: string | null) => {
+    const invalidateCacheAndNotify = useCallback((
+        taskId: string | null,
+        optimisticUpdates?: Partial<{
+            title?: string;
+            status?: string;
+            dueDate?: string;
+            priority?: string;
+            assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        }>
+    ) => {
+        // ✅ OPTIMISTIC UI: Atualizar estado local primeiro
+        if (taskId && optimisticUpdates && onTaskUpdatedOptimistic) {
+            onTaskUpdatedOptimistic(taskId, optimisticUpdates);
+        }
+        // Invalidar cache
         if (taskId) {
             taskCache.invalidate(taskId);
         }
+        // Notificar atualização (pode fazer refetch se necessário)
         onTaskUpdated?.();
-    }, [taskCache, onTaskUpdated]);
+    }, [taskCache, onTaskUpdated, onTaskUpdatedOptimistic]);
     
     // Memoizar handlers para evitar re-renders desnecessários
     const handleAttachmentDeleteClick = useCallback((id: string) => {
@@ -590,11 +752,27 @@ export function TaskDetailModal({
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
     // Dados básicos prontos = isDataReady === true
-    const shouldShowSkeleton = open && !isCreateMode && task?.id && !isDataReady;
+    // Removida dependência de task?.id para evitar flash branco quando task ainda não está disponível
+    const shouldShowSkeleton = open && !isCreateMode && !isDataReady;
     
     // Determinar quais seções ainda estão carregando
     const showAttachmentsSkeleton = isLoadingAttachments;
     const showCommentsSkeleton = isLoadingComments;
+
+    // Scroll automático para o final do histórico quando atividades mudarem ou modal abrir
+    const activitiesLength = activities.length;
+    useEffect(() => {
+        if (!open) return;
+        if (!activitiesScrollRef.current) return;
+        if (activitiesLength === 0) return;
+        
+        // Usar requestAnimationFrame para garantir que o DOM foi atualizado após render
+        requestAnimationFrame(() => {
+            if (activitiesScrollRef.current) {
+                activitiesScrollRef.current.scrollTop = activitiesScrollRef.current.scrollHeight;
+            }
+        });
+    }, [activitiesLength, open]);
 
     // Limpar estados quando task.id mudar ou modal fechar
     // Este useEffect deve rodar ANTES de qualquer renderização do formulário
@@ -607,7 +785,7 @@ export function TaskDetailModal({
             setDueDate("");
             setTags([]);
             setSubTasks([]);
-            setLocalAssignee(null);
+            setLocalMembers([]);
             setAttachments([]);
             setActivities([]);
             setCurrentTaskId(null);
@@ -629,7 +807,7 @@ export function TaskDetailModal({
                 setDueDate("");
                 setTags([]);
                 setSubTasks([]);
-                setLocalAssignee(null);
+                setLocalMembers([]);
                 setAttachments([]);
                 setActivities([]);
                 // NÃO definir currentTaskId aqui - será definido quando os dados forem carregados
@@ -670,14 +848,22 @@ export function TaskDetailModal({
                         setStatus(cachedBasic.status || "todo");
                         setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
                         
-                        if (cachedBasic.assignee) {
-                            setLocalAssignee({
+                        // Usar assignees do cache (já inclui task_members)
+                        if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
+                            setLocalMembers((cachedBasic as any).assignees.map((a: any) => ({
+                                id: a.id,
+                                name: a.name,
+                                avatar: a.avatar,
+                            })));
+                        } else if (cachedBasic.assignee) {
+                            // Fallback para assignee antigo (compatibilidade)
+                            setLocalMembers([{
                                 id: cachedBasic.assignee.id,
                                 name: cachedBasic.assignee.full_name || cachedBasic.assignee.email || "Sem nome",
                                 avatar: cachedBasic.assignee.avatar_url || undefined,
-                            });
+                            }]);
                         } else {
-                            setLocalAssignee(null);
+                            setLocalMembers([]);
                         }
                         
                         if (cachedBasic.origin_context?.tags) {
@@ -727,14 +913,22 @@ export function TaskDetailModal({
                         setStatus(basicDetails.status || "todo");
                         setDueDate(basicDetails.due_date ? new Date(basicDetails.due_date).toISOString().split("T")[0] : "");
                         
-                        if (basicDetails.assignee) {
-                            setLocalAssignee({
+                        // Usar assignees dos detalhes (já inclui task_members)
+                        if ((basicDetails as any).assignees && Array.isArray((basicDetails as any).assignees)) {
+                            setLocalMembers((basicDetails as any).assignees.map((a: any) => ({
+                                id: a.id,
+                                name: a.name,
+                                avatar: a.avatar,
+                            })));
+                        } else if (basicDetails.assignee) {
+                            // Fallback para assignee antigo (compatibilidade)
+                            setLocalMembers([{
                                 id: basicDetails.assignee.id,
                                 name: basicDetails.assignee.full_name || basicDetails.assignee.email || "Sem nome",
                                 avatar: basicDetails.assignee.avatar_url || undefined,
-                            });
+                            }]);
                         } else {
-                            setLocalAssignee(null);
+                            setLocalMembers([]);
                         }
                         
                         if (basicDetails.origin_context?.tags) {
@@ -789,27 +983,12 @@ export function TaskDetailModal({
                         setIsLoadingAttachments(false);
                         
                         // Atualizar comentários
-                        const mappedActivities: Activity[] = cachedExtended.comments.map((comment) => ({
-                            id: comment.id,
-                            type: comment.type === "comment" ? "commented" : 
-                                  comment.type === "file" ? "file_shared" :
-                                  comment.type === "log" ? "updated" : 
-                                  comment.type === "audio" ? "audio" : "commented",
-                            user: comment.user.full_name || comment.user.email || "Sem nome",
-                            message: comment.type === "audio" ? undefined : comment.content,
-                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                            attachedFiles: comment.metadata?.attachedFiles,
-                            audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                url: comment.metadata.audio_url || comment.metadata.url,
-                                duration: comment.metadata.duration,
-                                transcription: comment.metadata.transcription,
-                            } : undefined,
-                        }));
+                        const mappedActivities: Activity[] = cachedExtended.comments.map(mapCommentToActivity);
                         setActivities(mappedActivities);
                         setIsLoadingComments(false);
                         
                         // Verificar se há mais comentários para carregar
-                        setHasMoreComments(cachedExtended.comments.length >= 20);
+                        setHasMoreComments(cachedExtended.comments.length >= COMMENTS_PAGE_SIZE);
                         setCommentsOffset(0); // Resetar offset quando usar cache
                         
                         // Atualizar subtarefas
@@ -824,7 +1003,7 @@ export function TaskDetailModal({
                     setIsLoadingAttachments(true);
                     setIsLoadingComments(true);
                     
-                    const extendedDetails = await getTaskExtendedDetails(task.id, 20, 0);
+                    const extendedDetails = await getTaskExtendedDetails(task.id, COMMENTS_PAGE_SIZE, 0);
                     
                     if (!active) return;
 
@@ -852,27 +1031,12 @@ export function TaskDetailModal({
                         setIsLoadingAttachments(false);
                         
                         // Atualizar comentários
-                        const mappedActivities: Activity[] = (extendedDetails.comments || []).map((comment) => ({
-                            id: comment.id,
-                            type: comment.type === "comment" ? "commented" : 
-                                  comment.type === "file" ? "file_shared" :
-                                  comment.type === "log" ? "updated" : 
-                                  comment.type === "audio" ? "audio" : "commented",
-                            user: comment.user.full_name || comment.user.email || "Sem nome",
-                            message: comment.type === "audio" ? undefined : comment.content,
-                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                            attachedFiles: comment.metadata?.attachedFiles,
-                            audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                url: comment.metadata.audio_url || comment.metadata.url,
-                                duration: comment.metadata.duration,
-                                transcription: comment.metadata.transcription,
-                            } : undefined,
-                        }));
+                        const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
                         setActivities(mappedActivities);
                         setIsLoadingComments(false);
                         
                         // Verificar se há mais comentários para carregar
-                        setHasMoreComments((extendedDetails.comments || []).length >= 20);
+                        setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
                         setCommentsOffset(0); // Resetar offset quando carregar dados iniciais
                         
                         // Atualizar subtarefas
@@ -897,16 +1061,12 @@ export function TaskDetailModal({
                 }
             };
             
-            // Carregar dados básicos primeiro
-            loadBasicData();
-            
-            // Carregar dados estendidos em paralelo (mas depois dos básicos)
-            // Pequeno delay para garantir que dados básicos sejam processados primeiro
-            setTimeout(() => {
+            // Carregar dados básicos primeiro, depois estendidos
+            loadBasicData().then(() => {
                 if (active) {
                     loadExtendedData();
                 }
-            }, 50);
+            });
         } else if (open && isCreateMode) {
             setTitle("");
             setDescription("");
@@ -917,7 +1077,7 @@ export function TaskDetailModal({
             setActivities([]);
             setTags([]);
             setCurrentTaskId(null);
-            setLocalAssignee(null);
+            setLocalMembers([]);
             
             const loadCurrentUser = async () => {
                 try {
@@ -943,20 +1103,8 @@ export function TaskDetailModal({
         };
     }, [open, isCreateMode, task?.id ?? null, initialDueDate]);
 
-    // Audio recording timer
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (isRecording) {
-            interval = setInterval(() => {
-                setRecordingTime(t => {
-                    const newTime = t + 1;
-                    recordingTimeRef.current = newTime;
-                    return newTime;
-                });
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isRecording]);
+
+    // Audio recording timer removed - now handled by AudioRecorderDisplay component
 
     // Função para carregar mais comentários
     const loadMoreComments = useCallback(async () => {
@@ -964,30 +1112,15 @@ export function TaskDetailModal({
         
         setIsLoadingComments(true);
         try {
-            const newOffset = commentsOffset + 20;
-            const extendedDetails = await getTaskExtendedDetails(currentTaskId, 20, newOffset);
+            const newOffset = commentsOffset + COMMENTS_PAGE_SIZE;
+            const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, newOffset);
             
             if (extendedDetails && extendedDetails.comments.length > 0) {
-                const mappedActivities: Activity[] = extendedDetails.comments.map((comment) => ({
-                    id: comment.id,
-                    type: comment.type === "comment" ? "commented" : 
-                          comment.type === "file" ? "file_shared" :
-                          comment.type === "log" ? "updated" : 
-                          comment.type === "audio" ? "audio" : "commented",
-                    user: comment.user.full_name || comment.user.email || "Sem nome",
-                    message: comment.type === "audio" ? undefined : comment.content,
-                    timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                    attachedFiles: comment.metadata?.attachedFiles,
-                    audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                        url: comment.metadata.audio_url || comment.metadata.url,
-                        duration: comment.metadata.duration,
-                        transcription: comment.metadata.transcription,
-                    } : undefined,
-                }));
+                const mappedActivities: Activity[] = extendedDetails.comments.map(mapCommentToActivity);
                 
                 setActivities(prev => [...prev, ...mappedActivities]);
                 setCommentsOffset(newOffset);
-                setHasMoreComments(extendedDetails.comments.length >= 20);
+                setHasMoreComments(extendedDetails.comments.length >= COMMENTS_PAGE_SIZE);
             } else {
                 setHasMoreComments(false);
             }
@@ -999,30 +1132,68 @@ export function TaskDetailModal({
         }
     }, [currentTaskId, hasMoreComments, isLoadingComments, commentsOffset]);
 
+    // Função helper para recarregar atividades do banco
+    const reloadActivities = useCallback(async (taskId: string) => {
+        try {
+            const extendedDetails = await getTaskExtendedDetails(taskId, COMMENTS_PAGE_SIZE, 0);
+            if (extendedDetails) {
+                const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
+                // Substituir completamente o estado base
+                // Filtrar qualquer comentário otimista pendente antes de atualizar
+                const optimisticIdToFilter = optimisticIdRef.current;
+                const filteredActivities = optimisticIdToFilter 
+                    ? mappedActivities.filter(act => act.id !== optimisticIdToFilter)
+                    : mappedActivities;
+                
+                // Atualizar estado base - o useOptimistic automaticamente atualizará
+                setActivities(filteredActivities);
+                // Limpar ref do otimista após atualizar o estado
+                optimisticIdRef.current = null;
+                setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                setCommentsOffset(0);
+            }
+        } catch (error) {
+            console.error("Erro ao recarregar atividades:", error);
+        }
+    }, []);
+
     // Handlers
     const handleStatusChange = async (newStatus: string) => {
         if (status === newStatus) return;
+        const oldStatus = status; // Guardar valor antigo para rollback
         const oldLabel = STATUS_TO_LABEL[status];
         const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
         
+        // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
         setStatus(newStatus as TaskStatus);
         
         if (currentTaskId && !isCreateMode) {
-            const result = await updateTaskField(currentTaskId, "status", newStatus);
-            if (result.success) {
-                invalidateCacheAndNotify(currentTaskId);
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+            onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
+            
+            try {
+                const result = await updateTaskField(currentTaskId, "status", newStatus);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, { status: newLabel });
+                    // Recarregar atividades do banco para garantir que o log foi persistido
+                    await reloadActivities(currentTaskId);
+                    toast.success(`Status alterado para ${newLabel}`);
+                } else {
+                    // ✅ REVERTER se falhar
+                    setStatus(oldStatus);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                    toast.error(result.error || "Erro ao alterar status");
+                }
+            } catch (error) {
+                // ✅ REVERTER em caso de exceção
+                console.error("Erro ao alterar status:", error);
+                setStatus(oldStatus);
+                onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                toast.error("Erro ao alterar status");
             }
+        } else {
+            toast.success(`Status alterado para ${newLabel}`);
         }
-        
-        setActivities(prev => [{
-            id: `act-${Date.now()}`,
-            type: "updated",
-            user: "Você",
-            message: `alterou o status de ${oldLabel} para ${newLabel}`,
-            timestamp: "Agora mesmo"
-        }, ...prev]);
-        
-        toast.success(`Status alterado para ${newLabel}`);
     };
 
     const handleAddSubTask = async () => {
@@ -1030,7 +1201,9 @@ export function TaskDetailModal({
         const newItem: SubTask = {
             id: `st-${Date.now()}`,
             title: newSubTask,
-            completed: false
+            completed: false,
+            assignee_id: null,
+            assignee: null
         };
         
         const updatedSubTasks = [...subTasks, newItem];
@@ -1039,20 +1212,28 @@ export function TaskDetailModal({
         
         if (currentTaskId && !isCreateMode) {
             try {
+                // Salvar valor antigo para o log
+                const oldSubtasks = subTasks;
                 const result = await updateTaskSubtasks(currentTaskId, updatedSubTasks);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId);
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: `adicionou a sub-tarefa: "${newItem.title}"`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    // Criar log manual para subtarefas (updateTaskSubtasks não cria log diretamente)
+                    await addComment(
+                        currentTaskId,
+                        `adicionou a sub-tarefa: "${newItem.title}"`,
+                        {
+                            field: "subtasks",
+                            action: "subtask_added",
+                            subtask_title: newItem.title
+                        },
+                        "log"
+                    );
+                    // Recarregar atividades do banco
+                    await reloadActivities(currentTaskId);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
-                    setSubTasks(subTasks);
+                    setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
@@ -1072,11 +1253,147 @@ export function TaskDetailModal({
         }
     };
 
+    const handleUpdateSubTaskTitle = async (id: string, newTitle: string) => {
+        const trimmedTitle = newTitle.trim();
+        if (!trimmedTitle) {
+            setEditingSubTaskId(null);
+            setEditingSubTaskTitle("");
+            return;
+        }
+
+        const target = subTasks.find(t => t.id === id);
+        if (!target || target.title === trimmedTitle) {
+            setEditingSubTaskId(null);
+            setEditingSubTaskTitle("");
+            return;
+        }
+
+        const oldSubtasks = subTasks;
+        const updated = subTasks.map(t => t.id === id ? { ...t, title: trimmedTitle } : t);
+        setSubTasks(updated);
+        setEditingSubTaskId(null);
+        setEditingSubTaskTitle("");
+
+        if (currentTaskId && !isCreateMode) {
+            setSavingSubTaskId(id);
+            try {
+                const result = await updateTaskSubtasks(currentTaskId, updated);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    await addComment(
+                        currentTaskId,
+                        `editou a sub-tarefa: "${target.title}" → "${trimmedTitle}"`,
+                        {
+                            field: "subtasks",
+                            action: "subtask_title_updated",
+                            subtask_title: trimmedTitle,
+                            previous_title: target.title
+                        },
+                        "log"
+                    );
+                    await reloadActivities(currentTaskId);
+                } else {
+                    toast.error(result.error || "Erro ao salvar título da sub-tarefa");
+                    setSubTasks(oldSubtasks);
+                }
+            } catch (error) {
+                console.error("Erro ao salvar título da sub-tarefa:", error);
+                toast.error("Erro ao salvar título da sub-tarefa");
+                setSubTasks(oldSubtasks);
+            } finally {
+                setSavingSubTaskId(null);
+            }
+        }
+    };
+
+    const handleUpdateSubTaskAssignee = async (id: string, assigneeId: string | null) => {
+        const target = subTasks.find(t => t.id === id);
+        if (!target) return;
+
+        const selectedMember = assigneeId ? availableUsers.find(u => u.id === assigneeId) : null;
+        const memberExists = assigneeId ? localMembers.some(m => m.id === assigneeId) : false;
+        const newMemberEntry = selectedMember ? { id: selectedMember.id, name: selectedMember.name, avatar: selectedMember.avatar } : null;
+        const oldMembers = [...localMembers];
+        const updated = subTasks.map(t => t.id === id ? {
+            ...t,
+            assignee_id: assigneeId,
+            assignee: selectedMember ? { id: selectedMember.id, name: selectedMember.name, avatar: selectedMember.avatar } : null
+        } : t);
+
+        const oldSubtasks = subTasks;
+        setSubTasks(updated);
+        if (assigneeId && newMemberEntry && !memberExists && currentTaskId && !isCreateMode) {
+            const optimisticMembers = [...localMembers, newMemberEntry];
+            setLocalMembers(optimisticMembers);
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: optimisticMembers });
+        }
+
+        if (currentTaskId && !isCreateMode) {
+            setSavingSubTaskId(id);
+            let addedToTask = false;
+            try {
+                if (assigneeId && newMemberEntry && !memberExists) {
+                    const addResult = await addTaskMember(currentTaskId, assigneeId);
+                    if (!addResult.success) {
+                        toast.error("Erro ao adicionar membro à tarefa");
+                        setSubTasks(oldSubtasks);
+                        setLocalMembers(oldMembers);
+                        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                        setSavingSubTaskId(null);
+                        return;
+                    }
+                    addedToTask = true;
+                }
+
+                const result = await updateTaskSubtasks(currentTaskId, updated);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    const action = selectedMember ? "subtask_assigned" : "subtask_unassigned";
+                    const message = selectedMember
+                        ? `atribuiu ${selectedMember.name} à sub-tarefa: "${target.title}"`
+                        : `removeu o responsável da sub-tarefa: "${target.title}"`;
+                    await addComment(
+                        currentTaskId,
+                        message,
+                        {
+                            field: "subtasks",
+                            action,
+                            subtask_title: target.title,
+                            assignee_id: assigneeId
+                        },
+                        "log"
+                    );
+                    await reloadActivities(currentTaskId);
+                } else {
+                    toast.error(result.error || "Erro ao atualizar responsável da sub-tarefa");
+                    setSubTasks(oldSubtasks);
+                    setLocalMembers(oldMembers);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                    if (addedToTask && assigneeId) {
+                        await removeTaskMember(currentTaskId, assigneeId);
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao atualizar responsável da sub-tarefa:", error);
+                toast.error("Erro ao atualizar responsável da sub-tarefa");
+                setSubTasks(oldSubtasks);
+                setLocalMembers(oldMembers);
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                if (addedToTask && assigneeId) {
+                    await removeTaskMember(currentTaskId, assigneeId);
+                }
+            } finally {
+                setSavingSubTaskId(null);
+            }
+        }
+    };
+
     const handleToggleSubTask = async (id: string) => {
         const task = subTasks.find(t => t.id === id);
         if (!task) return;
         
         const newCompleted = !task.completed;
+        const oldSubtasks = subTasks;
         const updated = subTasks.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
         setSubTasks(updated);
         
@@ -1085,23 +1402,29 @@ export function TaskDetailModal({
                 const result = await updateTaskSubtasks(currentTaskId, updated);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId);
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: `${newCompleted ? "concluiu" : "reabriu"} a sub-tarefa: "${task.title}"`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    // Criar log manual para subtarefas
+                    await addComment(
+                        currentTaskId,
+                        `${newCompleted ? "concluiu" : "reabriu"} a sub-tarefa: "${task.title}"`,
+                        {
+                            field: "subtasks",
+                            action: newCompleted ? "subtask_completed" : "subtask_reopened",
+                            subtask_title: task.title
+                        },
+                        "log"
+                    );
+                    // Recarregar atividades do banco
+                    await reloadActivities(currentTaskId);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
-                    setSubTasks(subTasks);
+                    setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
                 toast.error("Erro ao salvar sub-tarefa");
                 // Reverter se falhar
-                setSubTasks(subTasks);
+                setSubTasks(oldSubtasks);
             }
         } else {
             setActivities(prev => [{
@@ -1117,6 +1440,7 @@ export function TaskDetailModal({
     const handleSendComment = async () => {
         if (!comment.trim() && pendingAttachments.length === 0) return;
         if (!currentTaskId && !isCreateMode) return;
+        if (isSubmitting) return; // Prevenir múltiplos envios
 
         const commentText = comment.trim() || (pendingAttachments.length > 0 ? "Anexo compartilhado" : "");
         const attachedFiles = pendingAttachments.map(f => ({
@@ -1126,6 +1450,25 @@ export function TaskDetailModal({
         }));
 
         if (currentTaskId && !isCreateMode) {
+            setIsSubmitting(true);
+            
+            // Adicionar comentário otimista no estado base (order ASC: adicionamos ao final)
+            const optimisticId = `optimistic-${Date.now()}`;
+            optimisticIdRef.current = optimisticId;
+            const optimisticDisplayUser = currentUserId ? "Você" : currentUserName;
+            const optimisticActivity: Activity = {
+                id: optimisticId,
+                type: pendingAttachments.length > 0 ? "file_shared" : "commented",
+                user: optimisticDisplayUser,
+                message: commentText,
+                timestamp: formatActivityTimestamp(new Date().toISOString()),
+                attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
+            };
+            setActivities(prev => [...prev, optimisticActivity]);
+
+            // Toast otimista - aparece imediatamente sincronizado com optimistic UI
+            toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
+
             try {
                 // Primeiro, fazer upload dos arquivos se houver
                 const uploadedFileUrls: string[] = [];
@@ -1172,33 +1515,38 @@ export function TaskDetailModal({
                 );
                 
                 if (!result.success) {
+                    // Em caso de erro, mostrar toast de erro (substitui o toast otimista)
                     toast.error(result.error || "Erro ao criar comentário");
+                    // Remover comentário otimista antes de recarregar
+                    const optimisticIdToRemove = optimisticIdRef.current;
+                    if (optimisticIdToRemove) {
+                        setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                        optimisticIdRef.current = null;
+                    }
+                    await reloadActivities(currentTaskId);
                     return;
                 }
 
-                // Recarregar dados do backend para garantir que está salvo
+                // Buscar comentários reais e substituir estado em uma única atualização (sem gap)
+                const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, 0);
+                if (extendedDetails) {
+                    const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
+                    setActivities(mappedActivities);
+                    setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                    setCommentsOffset(0);
+                    optimisticIdRef.current = null;
+                } else {
+                    // fallback: remover otimista se não conseguir recarregar
+                    const optimisticIdToRemove = optimisticIdRef.current;
+                    if (optimisticIdToRemove) {
+                        setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                        optimisticIdRef.current = null;
+                    }
+                }
+                
+                // Atualizar anexos também
                 const taskDetails = await getTaskDetails(currentTaskId);
                 if (taskDetails) {
-                    // Atualizar atividades com dados do backend
-                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
-                        id: comment.id,
-                        type: comment.type === "comment" ? "commented" : 
-                              comment.type === "file" ? "file_shared" :
-                              comment.type === "log" ? "updated" : 
-                              comment.type === "audio" ? "audio" : "commented",
-                        user: comment.user.full_name || comment.user.email || "Sem nome",
-                        message: comment.type === "audio" ? undefined : comment.content,
-                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                        attachedFiles: comment.metadata?.attachedFiles,
-                        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                            url: comment.metadata.audio_url || comment.metadata.url,
-                            duration: comment.metadata.duration,
-                            transcription: comment.metadata.transcription,
-                        } : undefined,
-                    }));
-                    setActivities(mappedActivities);
-
-                    // Atualizar anexos também
                     const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
                         id: att.id,
                         name: att.file_name,
@@ -1207,26 +1555,25 @@ export function TaskDetailModal({
                         url: att.file_url,
                     }));
                     setAttachments(mappedAttachments);
-                } else {
-                    // Fallback: adicionar localmente se não conseguir recarregar
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: pendingAttachments.length > 0 ? "file_shared" : "commented",
-                        user: "Você",
-                        message: commentText,
-                        attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
                 }
 
+                // Só limpar input se sucesso (toast já foi mostrado otimista)
                 setComment("");
                 setPendingAttachments([]);
                 setPendingFiles([]); // Limpar File objects também
                 invalidateCacheAndNotify(currentTaskId);
-                toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
             } catch (error) {
                 console.error("Erro ao criar comentário:", error);
                 toast.error("Erro ao criar comentário");
+                // Remover comentário otimista em caso de erro
+                const optimisticIdToRemove = optimisticIdRef.current;
+                if (optimisticIdToRemove) {
+                    setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                    optimisticIdRef.current = null;
+                }
+                await reloadActivities(currentTaskId);
+            } finally {
+                setIsSubmitting(false);
             }
         } else {
             // Modo create - apenas adicionar localmente
@@ -1297,23 +1644,28 @@ export function TaskDetailModal({
                         };
                         
                         setAttachments(prev => [...prev, newFile]);
-                        
-                        setActivities(prev => [{
-                            id: `act-${Date.now()}`,
-                            type: "file_shared",
-                            user: "Você",
-                            file: {
-                                name: newFile.name,
-                                type: newFile.type,
-                                size: newFile.size
-                            },
-                            timestamp: "Agora mesmo"
-                        }, ...prev]);
                     }
                 }
             } catch (error) {
                 console.error("Erro ao fazer upload:", error);
                 toast.error("Erro ao fazer upload do arquivo");
+            }
+        }
+        
+        // Recarregar atividades do banco para garantir que logs de upload foram criados
+        if (currentTaskId) {
+            await reloadActivities(currentTaskId);
+            // Recarregar anexos também
+            const taskDetails = await getTaskDetails(currentTaskId);
+            if (taskDetails) {
+                const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
+                    id: att.id,
+                    name: att.file_name,
+                    type: (att.file_type || "other") as "image" | "pdf" | "other",
+                    size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                    url: att.file_url,
+                }));
+                setAttachments(mappedAttachments);
             }
         }
         
@@ -1359,7 +1711,7 @@ export function TaskDetailModal({
                 if (audioChunksRef.current.length > 0) {
                     const blob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
                     const url = URL.createObjectURL(blob);
-                    const finalDuration = recordingTimeRef.current || 1;
+                    const finalDuration = finalDurationRef.current || recordingTimeRef.current || 1;
                     
                     if (currentTaskId && !isCreateMode) {
                         try {
@@ -1369,42 +1721,8 @@ export function TaskDetailModal({
                             
                             const result = await uploadAudioComment(currentTaskId, formData);
                             if (result.success && result.data) {
-                                const audioData = result.data as any;
-                                
-                                // Recarregar dados do backend para garantir que está salvo
-                                const taskDetails = await getTaskDetails(currentTaskId);
-                                if (taskDetails) {
-                                    // Atualizar atividades com dados do backend
-                                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
-                                        id: comment.id,
-                                        type: comment.type === "comment" ? "commented" : 
-                                              comment.type === "file" ? "file_shared" :
-                                              comment.type === "log" ? "updated" : 
-                                              comment.type === "audio" ? "audio" : "commented",
-                                        user: comment.user.full_name || comment.user.email || "Sem nome",
-                                        message: comment.type === "audio" ? undefined : comment.content,
-                                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                                        attachedFiles: comment.metadata?.attachedFiles,
-                                        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                            url: comment.metadata.audio_url || comment.metadata.url,
-                                            duration: comment.metadata.duration,
-                                            transcription: comment.metadata.transcription,
-                                        } : undefined,
-                                    }));
-                                    setActivities(mappedActivities);
-                                } else {
-                                    // Fallback: adicionar localmente se não conseguir recarregar
-                                    setActivities(prev => [{
-                                        id: audioData.id || `act-${Date.now()}`,
-                                        type: "audio",
-                                        user: "Você",
-                                        timestamp: new Date().toLocaleString("pt-BR"),
-                                        audio: {
-                                            url: audioData.metadata?.url || url,
-                                            duration: audioData.metadata?.duration || finalDuration
-                                        }
-                                    }, ...prev]);
-                                }
+                                // Recarregar atividades do banco para garantir que está salvo
+                                await reloadActivities(currentTaskId);
                                 
                                 toast.success(`Áudio enviado (${finalDuration}s)`);
                                 invalidateCacheAndNotify(currentTaskId);
@@ -1431,8 +1749,8 @@ export function TaskDetailModal({
                 stream.getTracks().forEach(track => track.stop());
                 setMediaStream(null);
                 setMediaRecorder(null);
-                setRecordingTime(0);
                 recordingTimeRef.current = 0;
+                finalDurationRef.current = 0;
                 audioChunksRef.current = [];
             };
             
@@ -1446,16 +1764,17 @@ export function TaskDetailModal({
             setMediaRecorder(recorder);
             setMediaStream(stream);
             setIsRecording(true);
-            setRecordingTime(0);
+            finalDurationRef.current = 0;
         } catch (error) {
             console.error("Erro ao acessar microfone:", error);
             toast.error("Permissão de microfone necessária para gravar.");
         }
     };
 
-    const handleStopRecording = () => {
+    const handleStopRecording = (duration: number) => {
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
-            recordingTimeRef.current = recordingTime;
+            finalDurationRef.current = duration;
+            recordingTimeRef.current = duration;
             mediaRecorder.stop();
         }
         setIsRecording(false);
@@ -1474,87 +1793,134 @@ export function TaskDetailModal({
         
         setMediaRecorder(null);
         setIsRecording(false);
-        setRecordingTime(0);
+        finalDurationRef.current = 0;
+        recordingTimeRef.current = 0;
         audioChunksRef.current = [];
     };
 
-    const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    // formatTime removido - agora está no AudioRecorderDisplay
+
+    // Constante para limite de caracteres na descrição
+    const MAX_DESCRIPTION_LENGTH = 3000;
+
+    // Função auxiliar para extrair texto puro do HTML (strip tags)
+    const stripHtmlTags = (html: string): string => {
+        if (!html) return "";
+        const tmp = document.createElement("DIV");
+        tmp.innerHTML = html;
+        return tmp.textContent || tmp.innerText || "";
     };
 
-    const handleAssigneeChange = async (userId: string | null) => {
+    // Contar caracteres do texto puro (sem HTML)
+    const getDescriptionCharCount = useMemo(() => {
+        return stripHtmlTags(description).length;
+    }, [description]);
+
+    const isDescriptionOverLimit = getDescriptionCharCount > MAX_DESCRIPTION_LENGTH;
+
+    // Detectar se o conteúdo excede 160px de altura (para mostrar botão "Ver mais")
+    useEffect(() => {
+        if (!isEditingDescription && descriptionRef.current) {
+            const element = descriptionRef.current;
+            // Resetar altura para medir o tamanho real
+            element.style.maxHeight = "none";
+            const height = element.scrollHeight;
+            element.style.maxHeight = "";
+            
+            // Se altura real > 160px (40 * 4px = 160px), mostrar botão
+            setShowExpandButton(height > 160);
+        } else {
+            setShowExpandButton(false);
+        }
+    }, [description, isEditingDescription]);
+
+    // Handler memoizado para salvar descrição
+    const handleSaveDescription = useCallback(async () => {
+        setIsDescriptionExpanded(false);
+        setIsEditingDescription(false);
+        if (currentTaskId && !isCreateMode) {
+            const oldDescription = description; // Guardar para rollback
+            const normalizedDescription =
+                stripHtmlTags(description).trim().length === 0 ? "" : description;
+            if (normalizedDescription !== description) {
+                setDescription(normalizedDescription);
+            }
+            try {
+                const result = await updateTaskField(currentTaskId, "description", normalizedDescription);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    await reloadActivities(currentTaskId);
+                } else {
+                    // ✅ REVERTER se falhar
+                    setDescription(oldDescription);
+                    toast.error(result.error || "Erro ao salvar descrição");
+                }
+            } catch (error) {
+                // ✅ REVERTER em caso de exceção
+                console.error("Erro ao salvar descrição:", error);
+                setDescription(oldDescription);
+                toast.error("Erro ao salvar descrição");
+            }
+        }
+    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities, stripHtmlTags]);
+
+    const handleMembersChange = async (memberIds: string[]) => {
         if (!currentTaskId || isCreateMode) return;
         
-        const oldAssignee = localAssignee;
+        const oldMembers = [...localMembers];
+        const oldMemberIds = oldMembers.map(m => m.id);
+        
+        // Determinar membros adicionados e removidos
+        const added = memberIds.filter(id => !oldMemberIds.includes(id));
+        const removed = oldMemberIds.filter(id => !memberIds.includes(id));
+
+        // Construir array de membros atualizado para optimistic UI
+        const newMembers = memberIds.map(id => {
+            const member = availableUsers.find(u => u.id === id);
+            return member ? { id: member.id, name: member.name, avatar: member.avatar } : null;
+        }).filter(Boolean) as Array<{ id: string; name: string; avatar?: string }>;
+        
+        // Atualizar UI imediatamente
+        setLocalMembers(newMembers);
+        
+        // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
         
         try {
-            const result = await updateTaskField(
-                currentTaskId,
-                "assignee_id",
-                userId
-            );
+            // Adicionar novos membros
+            const addPromises = added.map(userId => addTaskMember(currentTaskId, userId));
+            // Remover membros
+            const removePromises = removed.map(userId => removeTaskMember(currentTaskId, userId));
+
+            const results = await Promise.all([...addPromises, ...removePromises]);
+            const hasError = results.some(r => !r.success);
             
-            if (result.success) {
-                let newAssigneeName = "";
-                
-                if (userId) {
-                    const selectedUser = availableUsers.find(u => u.id === userId);
-                    if (selectedUser) {
-                        setLocalAssignee({
-                            id: selectedUser.id,
-                            name: selectedUser.name,
-                            avatar: selectedUser.avatar,
-                        });
-                        newAssigneeName = selectedUser.name;
-                    }
-                } else {
-                    setLocalAssignee(null);
-                }
-                
-                // Recarregar dados do backend para garantir sincronização
-                const taskDetails = await getTaskDetails(currentTaskId);
-                if (taskDetails) {
-                    if (taskDetails.assignee) {
-                        const assigneeName = taskDetails.assignee.full_name || taskDetails.assignee.email || "Sem nome";
-                        setLocalAssignee({
-                            id: taskDetails.assignee.id,
-                            name: assigneeName,
-                            avatar: taskDetails.assignee.avatar_url || undefined,
-                        });
-                        newAssigneeName = assigneeName;
-                    } else {
-                        setLocalAssignee(null);
-                    }
-                }
-                
-                // Adicionar atividade no histórico
-                const activityMessage = userId 
-                    ? (oldAssignee 
-                        ? `atribuiu a tarefa de ${oldAssignee.name} para ${newAssigneeName || "novo responsável"}`
-                        : `atribuiu a tarefa para ${newAssigneeName || "novo responsável"}`)
-                    : (oldAssignee 
-                        ? `removeu ${oldAssignee.name} como responsável`
-                        : `removeu o responsável`);
-                
-                setActivities(prev => [{
-                    id: `act-${Date.now()}`,
-                    type: "updated",
-                    user: "Você",
-                    message: activityMessage,
-                    timestamp: "Agora mesmo"
-                }, ...prev]);
-                
-                invalidateCacheAndNotify(currentTaskId);
-                toast.success("Responsável atualizado");
+            if (hasError) {
+                // ✅ REVERTER se falhar
+                setLocalMembers(oldMembers);
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                toast.error("Erro ao atualizar membros");
             } else {
-                toast.error(result.error || "Erro ao atualizar responsável");
+                invalidateCacheAndNotify(currentTaskId, { assignees: newMembers });
+                // Recarregar apenas atividades (não precisa recarregar dados básicos)
+                await reloadActivities(currentTaskId);
+                const changeCount = added.length + removed.length;
+                toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
             }
         } catch (error) {
-            console.error("Erro ao atualizar responsável:", error);
-            toast.error("Erro ao atualizar responsável");
+            // ✅ REVERTER em caso de exceção
+            console.error("Erro ao atualizar membros:", error);
+            setLocalMembers(oldMembers);
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+            toast.error("Erro ao atualizar membros");
         }
+    };
+
+    // Helper para converter string YYYY-MM-DD para Date no timezone local
+    // Isso evita o problema de timezone onde new Date("YYYY-MM-DD") interpreta como UTC
+    const parseLocalDate = (dateString: string): Date => {
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
     };
 
     const handleDueDateChange = async (date: Date | null) => {
@@ -1563,6 +1929,10 @@ export function TaskDetailModal({
         setDueDate(dateString);
         
         if (currentTaskId && !isCreateMode) {
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+            const optimisticDueDate = date ? date.toISOString() : undefined;
+            onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
+            
             try {
                 const result = await updateTaskField(
                     currentTaskId,
@@ -1570,33 +1940,24 @@ export function TaskDetailModal({
                     date ? date.toISOString() : null
                 );
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate });
+                    // Recarregar atividades do banco para garantir que o log foi persistido
+                    await reloadActivities(currentTaskId);
                     
-                    // Adicionar atividade no histórico
                     const dateFormatted = date ? date.toLocaleDateString("pt-BR") : "removida";
-                    const oldDateFormatted = oldDate ? new Date(oldDate).toLocaleDateString("pt-BR") : "sem data";
-                    
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: date 
-                            ? (oldDate ? `alterou a data de entrega de ${oldDateFormatted} para ${dateFormatted}` : `definiu a data de entrega para ${dateFormatted}`)
-                            : `removeu a data de entrega`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
-                    
                     toast.success(date ? `Data de entrega atualizada para ${dateFormatted}` : "Data de entrega removida");
                 } else {
                     toast.error(result.error || "Erro ao atualizar data de entrega");
-                    // Reverter se falhar
+                    // ✅ REVERTER se falhar
                     setDueDate(oldDate);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: oldDate || undefined });
                 }
             } catch (error) {
                 console.error("Erro ao atualizar data de entrega:", error);
                 toast.error("Erro ao atualizar data de entrega");
-                // Reverter se falhar
+                // ✅ REVERTER se falhar
                 setDueDate(oldDate);
+                onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: oldDate || undefined });
             }
         } else {
             // Modo create - apenas atualizar localmente
@@ -1739,9 +2100,17 @@ export function TaskDetailModal({
                                     <Input
                                         value={title}
                                         onChange={(e) => {
-                                            setTitle(e.target.value);
+                                            const newTitle = e.target.value;
+                                            setTitle(newTitle);
                                             if (currentTaskId && !isCreateMode) {
-                                                updateTaskField(currentTaskId, "title", e.target.value);
+                                                // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+                                                onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
+                                                // Salvar no backend em background
+                                                updateTaskField(currentTaskId, "title", newTitle).catch((error) => {
+                                                    console.error("Erro ao salvar título:", error);
+                                                    // Reverter em caso de erro
+                                                    onTaskUpdatedOptimistic?.(currentTaskId, { title: task?.title || "" });
+                                                });
                                             }
                                         }}
                                         className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
@@ -1789,9 +2158,11 @@ export function TaskDetailModal({
                                 {/* Assignee */}
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
-                                    <TaskAssigneePicker
-                                        assigneeId={localAssignee?.id || null}
-                                        onSelect={handleAssigneeChange}
+                                    <TaskMembersPicker
+                                        memberIds={localMembers.map(m => m.id)}
+                                        onChange={handleMembersChange}
+                                        members={availableUsers}
+                                        workspaceId={task?.workspaceId || undefined}
                                     />
                                 </div>
 
@@ -1799,9 +2170,10 @@ export function TaskDetailModal({
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
                                     <TaskDatePicker
-                                        date={dueDate ? new Date(dueDate) : null}
+                                        date={dueDate ? parseLocalDate(dueDate) : null}
                                         onSelect={handleDueDateChange}
                                         align="start"
+                                        isCompleted={status === TASK_STATUS.DONE}
                                     />
                                 </div>
                             </div>
@@ -1811,7 +2183,10 @@ export function TaskDetailModal({
                                 <div className="flex items-center justify-between mb-2">
                                     <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
                                     {!isEditingDescription && (
-                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => setIsEditingDescription(true)}>
+                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => {
+                                            setIsDescriptionExpanded(false);
+                                            setIsEditingDescription(true);
+                                        }}>
                                             <Pencil className="w-3 h-3 mr-1" /> Editar
                                         </Button>
                                     )}
@@ -1823,22 +2198,77 @@ export function TaskDetailModal({
                                             onChange={setDescription}
                                             placeholder="Adicione uma descrição..."
                                         />
-                                        <div className="flex justify-end mt-2 p-2">
-                                            <Button size="sm" onClick={async () => {
-                                                setIsEditingDescription(false);
-                                                if (currentTaskId && !isCreateMode) {
-                                                    await updateTaskField(currentTaskId, "description", description);
-                                                    invalidateCacheAndNotify(currentTaskId);
-                                                }
-                                            }}>Concluir</Button>
+                                        <div className="flex items-center justify-between mt-2 p-2">
+                                            <div className="flex flex-col">
+                                                <span className={cn(
+                                                    "text-xs",
+                                                    isDescriptionOverLimit ? "text-red-500" : "text-gray-400"
+                                                )}>
+                                                    {getDescriptionCharCount}/{MAX_DESCRIPTION_LENGTH}
+                                                </span>
+                                                {isDescriptionOverLimit && (
+                                                    <span className="text-xs text-red-500 mt-0.5">
+                                                        Limite de caracteres excedido.
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <Button 
+                                                size="sm" 
+                                                onClick={handleSaveDescription}
+                                                disabled={isDescriptionOverLimit}
+                                            >
+                                                Concluir
+                                            </Button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div 
-                                        className="min-h-[80px] p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200"
-                                        onClick={() => setIsEditingDescription(true)}
-                                        dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
-                                    />
+                                    <div className="relative">
+                                        <div 
+                                            ref={descriptionRef}
+                                            className={cn(
+                                                "p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200 outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
+                                            )}
+                                            onClick={() => {
+                                                setIsDescriptionExpanded(false);
+                                                setIsEditingDescription(true);
+                                            }}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            tabIndex={-1}
+                                            dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
+                                        />
+                                        {!isDescriptionExpanded && showExpandButton && (
+                                            <>
+                                                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                                                <div className="flex justify-center mt-2">
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setIsDescriptionExpanded(true);
+                                                        }}
+                                                    >
+                                                        Ver mais
+                                                    </Button>
+                                                </div>
+                                            </>
+                                        )}
+                                        {isDescriptionExpanded && showExpandButton && (
+                                            <div className="flex justify-center mt-2">
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setIsDescriptionExpanded(false);
+                                                    }}
+                                                >
+                                                    Ver menos
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
@@ -1891,25 +2321,101 @@ export function TaskDetailModal({
                                     {subTasks.map(st => (
                                         <div key={st.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group">
                                             <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
-                                            <span className={cn("flex-1 text-sm", st.completed && "line-through text-gray-400")}>{st.title}</span>
+                                            <div className="flex-1 min-w-0">
+                                                {editingSubTaskId === st.id ? (
+                                                    <Input
+                                                        value={editingSubTaskTitle}
+                                                        autoFocus
+                                                        onChange={(e) => setEditingSubTaskTitle(e.target.value)}
+                                                        onBlur={() => handleUpdateSubTaskTitle(st.id, editingSubTaskTitle)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                handleUpdateSubTaskTitle(st.id, editingSubTaskTitle);
+                                                            } else if (e.key === "Escape") {
+                                                                setEditingSubTaskId(null);
+                                                                setEditingSubTaskTitle("");
+                                                            }
+                                                        }}
+                                                        className="h-8 text-sm"
+                                                        disabled={savingSubTaskId === st.id}
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className={cn(
+                                                            "w-full text-left text-sm truncate",
+                                                            st.completed && "line-through text-gray-400",
+                                                            savingSubTaskId === st.id && "opacity-60"
+                                                        )}
+                                                        onClick={() => {
+                                                            setEditingSubTaskId(st.id);
+                                                            setEditingSubTaskTitle(st.title);
+                                                        }}
+                                                    >
+                                                        {st.title}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <TaskMembersPicker
+                                                memberIds={st.assignee_id ? [st.assignee_id] : []}
+                                                onChange={(ids) => handleUpdateSubTaskAssignee(st.id, ids[0] || null)}
+                                                members={availableUsers}
+                                                workspaceId={task?.workspaceId || undefined}
+                                                maxAvatars={1}
+                                                trigger={
+                                                    <div className="size-7 rounded-full border border-dashed border-gray-200 flex items-center justify-center hover:border-gray-300 transition-colors overflow-hidden">
+                                                        {st.assignee ? (
+                                                            st.assignee.avatar ? (
+                                                                <img
+                                                                    src={st.assignee.avatar}
+                                                                    alt={st.assignee.name}
+                                                                    className="size-7 object-cover"
+                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                                                />
+                                                            ) : (
+                                                                <span className="text-xs text-gray-600 font-medium">
+                                                                    {st.assignee.name.charAt(0)}
+                                                                </span>
+                                                            )
+                                                        ) : (
+                                                            <User className="size-3 text-gray-400" />
+                                                        )}
+                                                    </div>
+                                                }
+                                            />
                                             <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
+                                                const oldSubtasks = subTasks; // ✅ Guardar valor antigo para rollback
                                                 const updated = subTasks.filter(t => t.id !== st.id);
+                                                // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
                                                 setSubTasks(updated);
                                                 if (currentTaskId && !isCreateMode) {
                                                     try {
                                                         const result = await updateTaskSubtasks(currentTaskId, updated);
                                                         if (result.success) {
-                                                            onTaskUpdated?.();
+                                                            invalidateCacheAndNotify(currentTaskId);
+                                                            // Criar log manual para subtarefas
+                                                            await addComment(
+                                                                currentTaskId,
+                                                                `removeu a sub-tarefa: "${st.title}"`,
+                                                                {
+                                                                    field: "subtasks",
+                                                                    action: "subtask_removed",
+                                                                    subtask_title: st.title
+                                                                },
+                                                                "log"
+                                                            );
+                                                            // Recarregar atividades do banco
+                                                            await reloadActivities(currentTaskId);
                                                         } else {
+                                                            // ✅ REVERTER se falhar
+                                                            setSubTasks(oldSubtasks);
                                                             toast.error(result.error || "Erro ao remover sub-tarefa");
-                                                            // Reverter se falhar
-                                                            setSubTasks(subTasks);
                                                         }
                                                     } catch (error) {
+                                                        // ✅ REVERTER em caso de exceção
                                                         console.error("Erro ao remover sub-tarefa:", error);
+                                                        setSubTasks(oldSubtasks);
                                                         toast.error("Erro ao remover sub-tarefa");
-                                                        // Reverter se falhar
-                                                        setSubTasks(subTasks);
                                                     }
                                                 }
                                             }}>
@@ -1989,7 +2495,10 @@ export function TaskDetailModal({
                             <div className="flex-1 flex flex-col min-h-0">
                                 <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Histórico</h4>
                                 
-                                <div className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar">
+                                <div 
+                                    ref={activitiesScrollRef}
+                                    className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar"
+                                >
                                     <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
 
                                     <div className="space-y-4 relative pl-1">
@@ -2014,6 +2523,26 @@ export function TaskDetailModal({
                                             renderedActivities
                                         )}
                                     </div>
+                                    
+                                    {hasMoreComments && (
+                                        <div className="flex justify-center pb-4">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={loadMoreComments}
+                                                disabled={isLoadingComments}
+                                            >
+                                                {isLoadingComments ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                        Carregando...
+                                                    </>
+                                                ) : (
+                                                    "Carregar mais"
+                                                )}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
                                 
                                 {/* Input Area */}
@@ -2045,36 +2574,11 @@ export function TaskDetailModal({
                                     )}
                                     
                                     {isRecording ? (
-                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
-                                                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
-                                                <div className="flex-1 flex items-center justify-center gap-4">
-                                                    <div className="flex-1 h-8 flex items-center justify-center">
-                                                        {mediaStream && <RecordingVisualizer stream={mediaStream} />}
-                                                    </div>
-                                                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
-                                                        {formatTime(recordingTime)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-red-500"
-                                                onClick={handleCancelRecording}
-                                                title="Cancelar gravação"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                size="icon"
-                                                className="bg-green-600 hover:bg-green-700"
-                                                onClick={handleStopRecording}
-                                                title="Finalizar gravação"
-                                            >
-                                                <Check className="w-4 h-4" />
-                                            </Button>
-                                        </div>
+                                        <AudioRecorderDisplay
+                                            stream={mediaStream}
+                                            onCancel={handleCancelRecording}
+                                            onStop={handleStopRecording}
+                                        />
                                     ) : (
                                         <div className="relative">
                                             <input {...getCommentInputProps()} />
@@ -2082,13 +2586,14 @@ export function TaskDetailModal({
                                                 value={comment}
                                                 onChange={(e) => setComment(e.target.value)}
                                                 onKeyDown={(e) => {
-                                                    if (e.key === "Enter" && !e.shiftKey) {
+                                                    if (e.key === "Enter" && !e.shiftKey && !isSubmitting) {
                                                         e.preventDefault();
                                                         handleSendComment();
                                                     }
                                                 }}
                                                 placeholder="Adicionar comentário..."
                                                 className="pr-32 bg-white shadow-sm"
+                                                disabled={isSubmitting}
                                             />
                                             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
                                                 <Button
@@ -2113,7 +2618,7 @@ export function TaskDetailModal({
                                                     size="icon"
                                                     className="h-8 w-8 bg-green-600 hover:bg-green-700"
                                                     onClick={handleSendComment}
-                                                    disabled={!comment.trim() && pendingAttachments.length === 0}
+                                                    disabled={isSubmitting || (!comment.trim() && pendingAttachments.length === 0)}
                                                     title="Enviar comentário"
                                                 >
                                                     <Send className="h-3 w-3" />

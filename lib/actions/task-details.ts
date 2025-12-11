@@ -32,6 +32,7 @@ export interface TaskDetails {
     email: string | null;
     avatar_url: string | null;
   } | null;
+  assignees?: Array<{ id: string; name: string; avatar?: string }>;
   creator: {
     id: string;
     full_name: string | null;
@@ -88,6 +89,7 @@ export interface TaskBasicDetails {
     email: string | null;
     avatar_url: string | null;
   } | null;
+  assignees?: Array<{ id: string; name: string; avatar?: string }>;
   creator: {
     id: string;
     full_name: string | null;
@@ -174,6 +176,14 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
       workspace:workspaces!tasks_workspace_id_fkey (
         id,
         name
+      ),
+      task_members (
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
       )
     `)
     .eq("id", taskId)
@@ -193,6 +203,34 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     }
   }
 
+  // Transformar task_members em array assignees
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if (task.task_members && Array.isArray(task.task_members)) {
+    task.task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
   return {
     id: task.id,
     title: task.title,
@@ -210,6 +248,7 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     assignee: task.assignee,
     creator: task.creator,
     workspace: task.workspace,
+    assignees, // Adicionar array de assignees
   };
 }
 
@@ -219,7 +258,7 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
  */
 export async function getTaskExtendedDetails(
   taskId: string,
-  commentsLimit: number = 20,
+  commentsLimit: number = 50,
   commentsOffset: number = 0
 ): Promise<TaskExtendedDetails | null> {
   const supabase = await createServerActionClient();
@@ -321,6 +360,14 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
         workspace:workspaces!tasks_workspace_id_fkey (
           id,
           name
+        ),
+        task_members (
+          user:user_id (
+            id,
+            full_name,
+            email,
+            avatar_url
+          )
         )
       `)
       .eq("id", taskId)
@@ -366,6 +413,34 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
     console.error("Erro ao buscar comentários:", commentsError);
   }
 
+  // Transformar task_members em array assignees
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if ((task as any).task_members && Array.isArray((task as any).task_members)) {
+    (task as any).task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
   return {
     ...task,
     status: (task.status as "todo" | "in_progress" | "done" | "archived") || "todo",
@@ -383,6 +458,7 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
     })),
     tags: (task as any).tags || [],
     subtasks: (task as any).subtasks || [],
+    assignees, // Adicionar array de assignees
   };
 }
 
@@ -426,15 +502,26 @@ export async function addComment(
 }
 
 /**
- * Atualiza um campo específico da tarefa
+ * Atualiza um campo específico da tarefa e cria log de atividade
  */
 export async function updateTaskField(
   taskId: string,
   field: string,
-  value: any
+  value: any,
+  options?: {
+    skipLog?: boolean;
+    logContent?: string;
+    oldValue?: any;
+  }
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerActionClient();
   
+  // Verificar autenticação para criar log
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
   console.log(`Atualizando tarefa ${taskId}, campo ${field}, valor:`, JSON.stringify(value));
 
   // Validar campo permitido
@@ -451,6 +538,20 @@ export async function updateTaskField(
 
   if (!allowedFields.includes(field)) {
     return { success: false, error: `Campo '${field}' não é permitido` };
+  }
+
+  // Buscar valor antigo para criar log
+  let oldValue: any = options?.oldValue;
+  if (!oldValue && !options?.skipLog) {
+    const { data: currentTask } = await supabase
+      .from("tasks")
+      .select(field)
+      .eq("id", taskId)
+      .single();
+    
+    if (currentTask) {
+      oldValue = (currentTask as any)[field];
+    }
   }
 
   // Converter valores especiais se necessário
@@ -485,6 +586,107 @@ export async function updateTaskField(
   if (error) {
     console.error(`Erro ao atualizar ${field}:`, error);
     return { success: false, error: error.message };
+  }
+
+  // Criar log de atividade se não foi pulado
+  if (!options?.skipLog) {
+    let logContent = options?.logContent;
+    
+    // Se não fornecido, gerar conteúdo do log baseado no campo
+    if (!logContent) {
+      const fieldLabels: Record<string, string> = {
+        title: "título",
+        description: "descrição",
+        status: "status",
+        priority: "prioridade",
+        due_date: "data de vencimento",
+        assignee_id: "responsável",
+        tags: "tags",
+        subtasks: "subtarefas"
+      };
+      
+      const fieldLabel = fieldLabels[field] || field;
+      
+      if (field === "status") {
+        const statusLabels: Record<string, string> = {
+          "todo": "Não iniciada",
+          "in_progress": "Em progresso",
+          "review": "Em revisão",
+          "correction": "Correção",
+          "done": "Concluída",
+          "archived": "Arquivada"
+        };
+        const oldStatusLabel = oldValue ? statusLabels[oldValue] || oldValue : "N/A";
+        const newStatusLabel = updateValue ? statusLabels[updateValue] || updateValue : "N/A";
+        logContent = `alterou o status de ${oldStatusLabel} para ${newStatusLabel}`;
+      } else if (field === "priority") {
+        const priorityLabels: Record<string, string> = {
+          "low": "Baixa",
+          "medium": "Média",
+          "high": "Alta",
+          "urgent": "Urgente"
+        };
+        const oldPriorityLabel = oldValue ? priorityLabels[oldValue] || oldValue : "N/A";
+        const newPriorityLabel = updateValue ? priorityLabels[updateValue] || updateValue : "N/A";
+        logContent = `alterou a prioridade de ${oldPriorityLabel} para ${newPriorityLabel}`;
+      } else if (field === "assignee_id") {
+        if (!oldValue && updateValue) {
+          logContent = `atribuiu a tarefa`;
+        } else if (oldValue && !updateValue) {
+          logContent = `removeu a atribuição`;
+        } else if (oldValue && updateValue && oldValue !== updateValue) {
+          logContent = `alterou o responsável`;
+        }
+      } else if (field === "due_date") {
+        const oldDate = oldValue ? new Date(oldValue).toLocaleDateString("pt-BR") : "sem data";
+        const newDate = updateValue ? new Date(updateValue).toLocaleDateString("pt-BR") : "sem data";
+        logContent = `alterou a data de vencimento de ${oldDate} para ${newDate}`;
+      } else if (field === "subtasks") {
+        const oldCount = Array.isArray(oldValue) ? oldValue.length : 0;
+        const newCount = Array.isArray(updateValue) ? updateValue.length : 0;
+        if (newCount > oldCount) {
+          logContent = `adicionou ${newCount - oldCount} subtarefa(s)`;
+        } else if (newCount < oldCount) {
+          logContent = `removeu ${oldCount - newCount} subtarefa(s)`;
+        } else {
+          logContent = `atualizou as subtarefas`;
+        }
+      } else {
+        logContent = `alterou o ${fieldLabel}`;
+      }
+    }
+
+    if (logContent) {
+      // Buscar informações do usuário para o log
+      const { data: userProfile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", user.id)
+        .single();
+
+      const userName = userProfile?.full_name || userProfile?.email || "Usuário";
+
+      // Criar log em task_comments
+      const { error: logError } = await supabase
+        .from("task_comments")
+        .insert({
+          task_id: taskId,
+          user_id: user.id,
+          content: logContent,
+          type: "log",
+          metadata: {
+            field,
+            old_value: oldValue,
+            new_value: updateValue,
+            action: "field_updated"
+          }
+        });
+
+      if (logError) {
+        console.error("Erro ao criar log de atividade:", logError);
+        // Não falhar a atualização se o log falhar, apenas logar o erro
+      }
+    }
   }
 
   console.log(`Sucesso ao atualizar ${field}`);
@@ -559,6 +761,7 @@ export async function updateTaskTags(
 
 /**
  * Atualiza as subtarefas
+ * Nota: Logs são criados manualmente pelos handlers para ter mais detalhes
  */
 export async function updateTaskSubtasks(
   taskId: string,
@@ -572,7 +775,8 @@ export async function updateTaskSubtasks(
     console.log("Atualizando subtasks (raw):", subtasks);
     console.log("Atualizando subtasks (json):", subtasksJson);
     
-    return await updateTaskField(taskId, "subtasks", subtasksJson);
+    // Pular log automático, pois os handlers criam logs mais detalhados
+    return await updateTaskField(taskId, "subtasks", subtasksJson, { skipLog: true });
   } catch (error) {
     console.error("Erro ao preparar subtasks para update:", error);
     return { success: false, error: "Erro interno ao processar subtarefas" };
