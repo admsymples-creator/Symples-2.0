@@ -304,9 +304,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: {
-                distance: 0, // Zero para ativação imediata ao clicar e arrastar
-                delay: 0, // Sem delay para resposta instantânea
-                tolerance: 0, // Sem tolerância para resposta mais rápida
+                distance: 8, // 8px de movimento antes de ativar drag (permite cliques)
+                delay: 100, // 100ms de delay para permitir que clique seja processado primeiro (balanceado para drag mais rápido)
+                tolerance: 5, // 5px de tolerância para movimento acidental
             },
         }),
         useSensor(KeyboardSensor, {
