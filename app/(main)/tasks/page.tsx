@@ -2213,7 +2213,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             <button
                                 onClick={() => setViewMode("list")}
                                 className={cn(
-                                    "p-1.5 rounded-md transition-all",
+                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
                                     viewMode === "list"
                                         ? "bg-white text-gray-900 shadow-sm"
                                         : "text-gray-500 hover:text-gray-900"
@@ -2221,11 +2221,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 title="Lista"
                             >
                                 <List className="w-4 h-4" />
+                                <span className="text-sm font-medium">Lista</span>
                             </button>
                             <button
                                 onClick={() => setViewMode("kanban")}
                                 className={cn(
-                                    "p-1.5 rounded-md transition-all",
+                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
                                     viewMode === "kanban"
                                         ? "bg-white text-gray-900 shadow-sm"
                                         : "text-gray-500 hover:text-gray-900"
@@ -2233,6 +2234,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 title="Kanban"
                             >
                                 <LayoutGrid className="w-4 h-4" />
+                                <span className="text-sm font-medium">Quadro</span>
                             </button>
                         </div>
                     </div>
