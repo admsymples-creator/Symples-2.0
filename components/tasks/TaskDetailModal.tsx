@@ -101,10 +101,12 @@ interface SubTask {
     id: string;
     title: string;
     completed: boolean;
+    assignee_id?: string | null;
     assignee?: {
+        id?: string;
         name: string;
         avatar?: string;
-    };
+    } | null;
 }
 
 interface Activity {
@@ -379,6 +381,9 @@ export function TaskDetailModal({
     const [dueDate, setDueDate] = useState(initialDueDate || "");
     const [assignee, setAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
     const [subTasks, setSubTasks] = useState<SubTask[]>([]);
+    const [editingSubTaskId, setEditingSubTaskId] = useState<string | null>(null);
+    const [editingSubTaskTitle, setEditingSubTaskTitle] = useState("");
+    const [savingSubTaskId, setSavingSubTaskId] = useState<string | null>(null);
     const [newSubTask, setNewSubTask] = useState("");
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
@@ -1196,7 +1201,9 @@ export function TaskDetailModal({
         const newItem: SubTask = {
             id: `st-${Date.now()}`,
             title: newSubTask,
-            completed: false
+            completed: false,
+            assignee_id: null,
+            assignee: null
         };
         
         const updatedSubTasks = [...subTasks, newItem];
@@ -1243,6 +1250,141 @@ export function TaskDetailModal({
                 message: `adicionou a sub-tarefa: "${newItem.title}"`,
                 timestamp: "Agora mesmo"
             }, ...prev]);
+        }
+    };
+
+    const handleUpdateSubTaskTitle = async (id: string, newTitle: string) => {
+        const trimmedTitle = newTitle.trim();
+        if (!trimmedTitle) {
+            setEditingSubTaskId(null);
+            setEditingSubTaskTitle("");
+            return;
+        }
+
+        const target = subTasks.find(t => t.id === id);
+        if (!target || target.title === trimmedTitle) {
+            setEditingSubTaskId(null);
+            setEditingSubTaskTitle("");
+            return;
+        }
+
+        const oldSubtasks = subTasks;
+        const updated = subTasks.map(t => t.id === id ? { ...t, title: trimmedTitle } : t);
+        setSubTasks(updated);
+        setEditingSubTaskId(null);
+        setEditingSubTaskTitle("");
+
+        if (currentTaskId && !isCreateMode) {
+            setSavingSubTaskId(id);
+            try {
+                const result = await updateTaskSubtasks(currentTaskId, updated);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    await addComment(
+                        currentTaskId,
+                        `editou a sub-tarefa: "${target.title}" → "${trimmedTitle}"`,
+                        {
+                            field: "subtasks",
+                            action: "subtask_title_updated",
+                            subtask_title: trimmedTitle,
+                            previous_title: target.title
+                        },
+                        "log"
+                    );
+                    await reloadActivities(currentTaskId);
+                } else {
+                    toast.error(result.error || "Erro ao salvar título da sub-tarefa");
+                    setSubTasks(oldSubtasks);
+                }
+            } catch (error) {
+                console.error("Erro ao salvar título da sub-tarefa:", error);
+                toast.error("Erro ao salvar título da sub-tarefa");
+                setSubTasks(oldSubtasks);
+            } finally {
+                setSavingSubTaskId(null);
+            }
+        }
+    };
+
+    const handleUpdateSubTaskAssignee = async (id: string, assigneeId: string | null) => {
+        const target = subTasks.find(t => t.id === id);
+        if (!target) return;
+
+        const selectedMember = assigneeId ? availableUsers.find(u => u.id === assigneeId) : null;
+        const memberExists = assigneeId ? localMembers.some(m => m.id === assigneeId) : false;
+        const newMemberEntry = selectedMember ? { id: selectedMember.id, name: selectedMember.name, avatar: selectedMember.avatar } : null;
+        const oldMembers = [...localMembers];
+        const updated = subTasks.map(t => t.id === id ? {
+            ...t,
+            assignee_id: assigneeId,
+            assignee: selectedMember ? { id: selectedMember.id, name: selectedMember.name, avatar: selectedMember.avatar } : null
+        } : t);
+
+        const oldSubtasks = subTasks;
+        setSubTasks(updated);
+        if (assigneeId && newMemberEntry && !memberExists && currentTaskId && !isCreateMode) {
+            const optimisticMembers = [...localMembers, newMemberEntry];
+            setLocalMembers(optimisticMembers);
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: optimisticMembers });
+        }
+
+        if (currentTaskId && !isCreateMode) {
+            setSavingSubTaskId(id);
+            let addedToTask = false;
+            try {
+                if (assigneeId && newMemberEntry && !memberExists) {
+                    const addResult = await addTaskMember(currentTaskId, assigneeId);
+                    if (!addResult.success) {
+                        toast.error("Erro ao adicionar membro à tarefa");
+                        setSubTasks(oldSubtasks);
+                        setLocalMembers(oldMembers);
+                        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                        setSavingSubTaskId(null);
+                        return;
+                    }
+                    addedToTask = true;
+                }
+
+                const result = await updateTaskSubtasks(currentTaskId, updated);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId);
+                    const action = selectedMember ? "subtask_assigned" : "subtask_unassigned";
+                    const message = selectedMember
+                        ? `atribuiu ${selectedMember.name} à sub-tarefa: "${target.title}"`
+                        : `removeu o responsável da sub-tarefa: "${target.title}"`;
+                    await addComment(
+                        currentTaskId,
+                        message,
+                        {
+                            field: "subtasks",
+                            action,
+                            subtask_title: target.title,
+                            assignee_id: assigneeId
+                        },
+                        "log"
+                    );
+                    await reloadActivities(currentTaskId);
+                } else {
+                    toast.error(result.error || "Erro ao atualizar responsável da sub-tarefa");
+                    setSubTasks(oldSubtasks);
+                    setLocalMembers(oldMembers);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                    if (addedToTask && assigneeId) {
+                        await removeTaskMember(currentTaskId, assigneeId);
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao atualizar responsável da sub-tarefa:", error);
+                toast.error("Erro ao atualizar responsável da sub-tarefa");
+                setSubTasks(oldSubtasks);
+                setLocalMembers(oldMembers);
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                if (addedToTask && assigneeId) {
+                    await removeTaskMember(currentTaskId, assigneeId);
+                }
+            } finally {
+                setSavingSubTaskId(null);
+            }
         }
     };
 
@@ -2179,7 +2321,68 @@ export function TaskDetailModal({
                                     {subTasks.map(st => (
                                         <div key={st.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group">
                                             <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
-                                            <span className={cn("flex-1 text-sm", st.completed && "line-through text-gray-400")}>{st.title}</span>
+                                            <div className="flex-1 min-w-0">
+                                                {editingSubTaskId === st.id ? (
+                                                    <Input
+                                                        value={editingSubTaskTitle}
+                                                        autoFocus
+                                                        onChange={(e) => setEditingSubTaskTitle(e.target.value)}
+                                                        onBlur={() => handleUpdateSubTaskTitle(st.id, editingSubTaskTitle)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                handleUpdateSubTaskTitle(st.id, editingSubTaskTitle);
+                                                            } else if (e.key === "Escape") {
+                                                                setEditingSubTaskId(null);
+                                                                setEditingSubTaskTitle("");
+                                                            }
+                                                        }}
+                                                        className="h-8 text-sm"
+                                                        disabled={savingSubTaskId === st.id}
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className={cn(
+                                                            "w-full text-left text-sm truncate",
+                                                            st.completed && "line-through text-gray-400",
+                                                            savingSubTaskId === st.id && "opacity-60"
+                                                        )}
+                                                        onClick={() => {
+                                                            setEditingSubTaskId(st.id);
+                                                            setEditingSubTaskTitle(st.title);
+                                                        }}
+                                                    >
+                                                        {st.title}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <TaskMembersPicker
+                                                memberIds={st.assignee_id ? [st.assignee_id] : []}
+                                                onChange={(ids) => handleUpdateSubTaskAssignee(st.id, ids[0] || null)}
+                                                members={availableUsers}
+                                                workspaceId={task?.workspaceId || undefined}
+                                                maxAvatars={1}
+                                                trigger={
+                                                    <div className="size-7 rounded-full border border-dashed border-gray-200 flex items-center justify-center hover:border-gray-300 transition-colors overflow-hidden">
+                                                        {st.assignee ? (
+                                                            st.assignee.avatar ? (
+                                                                <img
+                                                                    src={st.assignee.avatar}
+                                                                    alt={st.assignee.name}
+                                                                    className="size-7 object-cover"
+                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                                                />
+                                                            ) : (
+                                                                <span className="text-xs text-gray-600 font-medium">
+                                                                    {st.assignee.name.charAt(0)}
+                                                                </span>
+                                                            )
+                                                        ) : (
+                                                            <User className="size-3 text-gray-400" />
+                                                        )}
+                                                    </div>
+                                                }
+                                            />
                                             <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
                                                 const oldSubtasks = subTasks; // ✅ Guardar valor antigo para rollback
                                                 const updated = subTasks.filter(t => t.id !== st.id);

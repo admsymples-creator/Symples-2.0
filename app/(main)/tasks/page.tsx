@@ -24,7 +24,6 @@ import { GhostGroup } from "@/components/tasks/GhostGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
     DropdownMenu,
@@ -70,10 +69,18 @@ import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
 import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
 
-type ContextTab = "minhas" | "time" | "todas";
 type ViewMode = "list" | "kanban";
-type GroupBy = "status" | "priority" | "assignee";
+type GroupBy = "status" | "priority" | "assignee" | "date";
 type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
+
+const DATE_COLOR_MAP: Record<string, string> = {
+    "Atrasadas": "#ef4444",
+    "Hoje": "#16a34a",
+    "Amanhã": "#eab308",
+    "Semana": "#2563eb",
+    "Futuro": "#475569",
+    "Sem data": "#cbd5e1",
+};
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
 import { SortMenu } from "@/components/tasks/SortMenu";
@@ -126,7 +133,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // ✅ Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
     
-    const [activeTab, setActiveTab] = useState<ContextTab>("todas");
+    const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
     const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
@@ -664,7 +671,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }] : undefined,
             dueDate: dueDate ? dueDate.toISOString() : undefined,
             groupId: finalGroupId,
-            workspaceId: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+            workspaceId: effectiveWorkspaceId || null,
         });
 
         try {
@@ -675,7 +682,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 priority: priority,
                 assignee_id: assigneeId || undefined,
                 due_date: dueDate ? dueDate.toISOString() : undefined,
-                workspace_id: activeTab === "minhas" ? null : (effectiveWorkspaceId || null),
+                workspace_id: effectiveWorkspaceId || null,
                 group_id: finalGroupId,
             });
 
@@ -1107,9 +1114,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         } else if (taskDate.getTime() === today.getTime()) {
                             groupKey = "Hoje";
                         } else if (taskDate.getTime() === tomorrow.getTime()) {
-                            groupKey = "AmanhÃ£";
+                            groupKey = "Amanhã";
                         } else if (taskDate > tomorrow && taskDate <= nextWeek) {
-                            groupKey = "PrÃ³ximos 7 dias";
+                            groupKey = "Semana";
                         } else {
                             groupKey = "Futuro";
                         }
@@ -1215,6 +1222,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                          color = groupColors[key];
                     }
                 }
+            } else if (viewOption === "date") {
+                color = DATE_COLOR_MAP[title] || color;
             }
 
             return {
@@ -1250,7 +1259,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return columns.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -1338,6 +1347,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         }
                     }
                 }
+            } else if (viewOption === "date") {
+                groupColor = DATE_COLOR_MAP[title] || groupColor;
             }
 
             return {
@@ -1375,7 +1386,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return groups.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -2202,10 +2213,65 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
                         <p className="text-sm text-gray-500">Gerencie o trabalho do dia a dia.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
+                {/* NAVIGATION & FILTERS - LINE 2 */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    {/* Lado Esquerdo: Modo de visualização */}
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
+                            <button
+                                onClick={() => setViewMode("list")}
+                                className={cn(
+                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
+                                    viewMode === "list"
+                                        ? "bg-white text-gray-900 shadow-sm"
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                                title="Lista"
+                            >
+                                <List className="w-4 h-4" />
+                                <span className="text-sm font-medium">Lista</span>
+                            </button>
+                            <button
+                                onClick={() => setViewMode("kanban")}
+                                className={cn(
+                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
+                                    viewMode === "kanban"
+                                        ? "bg-white text-gray-900 shadow-sm"
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                                title="Kanban"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                                <span className="text-sm font-medium">Quadro</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Lado Direito: Ferramentas */}
+                    <div className="flex flex-1 md:flex-none items-center gap-2 w-full md:w-auto flex-wrap justify-start md:justify-end">
+                        {/* Busca */}
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <Input
+                                placeholder="Buscar tarefas..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
+                            />
                         </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Nova Tarefa - Dropdown Menu */}
+                        {/* Ordenar Por */}
+                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
+
+                        {/* Agrupar por */}
+                        <GroupingMenu />
+
+                        {/* Novo (menu) */}
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button className="bg-green-600 hover:bg-green-700 text-white">
@@ -2227,10 +2293,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={() => {
-                                        if (activeTab === "minhas") {
-                                            toast.error("Crie grupos dentro de um Workspace (aba 'Time' ou 'Todas').");
-                                            return;
-                                        }
                                         setIsCreateGroupModalOpen(true);
                                     }}
                                 >
@@ -2239,74 +2301,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
-                    </div>
-                </div>
-            </div>
-
-            <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
-                {/* NAVIGATION & FILTERS - LINE 2 */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    {/* Lado Esquerdo: Tabs de Contexto */}
-                    <Tabs
-                        value={activeTab}
-                        onValueChange={(value) => setActiveTab(value as ContextTab)}
-                        className="w-auto"
-                    >
-                        <TabsList className="bg-white border">
-                            <TabsTrigger value="minhas">Minhas</TabsTrigger>
-                            <TabsTrigger value="time">Time</TabsTrigger>
-                            <TabsTrigger value="todas">Todas</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-
-                    {/* Lado Direito: Ferramentas */}
-                    <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                        {/* Busca */}
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <Input
-                                placeholder="Buscar tarefas..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
-                            />
-                        </div>
-
-                        {/* Ordenar Por */}
-                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
-
-                        {/* Agrupar por */}
-                        <GroupingMenu />
-
-                        <div className="hidden md:block w-px h-6 bg-gray-200 mx-1" />
-
-                        {/* View Switcher */}
-                        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
-                            <button
-                                onClick={() => setViewMode("list")}
-                                className={cn(
-                                    "p-1.5 rounded-md transition-all",
-                                    viewMode === "list"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-500 hover:text-gray-900"
-                                )}
-                                title="Lista"
-                            >
-                                <List className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={() => setViewMode("kanban")}
-                                className={cn(
-                                    "p-1.5 rounded-md transition-all",
-                                    viewMode === "kanban"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-500 hover:text-gray-900"
-                                )}
-                                title="Kanban"
-                            >
-                                <LayoutGrid className="w-4 h-4" />
-                            </button>
-                        </div>
                     </div>
                 </div>
 
