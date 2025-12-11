@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import {
     DndContext,
     closestCenter,
+    pointerWithin,
     KeyboardSensor,
     PointerSensor,
     useSensor,
@@ -147,6 +148,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    
+    // Ref para throttling do handleDragOver
+    const dragOverThrottleRef = useRef<number | null>(null);
+    const lastDragOverStateRef = useRef<string>("");
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     
@@ -294,13 +299,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [tasksFromHook, initialTasks]);
 
-    // Sensores para drag & drop (otimizados para melhor performance)
+    // Sensores para drag & drop (otimizados para resposta mais rápida)
     // useSensors já memoiza internamente, então não precisamos de useMemo adicional
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: {
-                distance: 5, // Reduzido de 8 para 5px - ativação mais rápida
+                distance: 0, // Zero para ativação imediata ao clicar e arrastar
                 delay: 0, // Sem delay para resposta instantânea
+                tolerance: 0, // Sem tolerância para resposta mais rápida
             },
         }),
         useSensor(KeyboardSensor, {
@@ -1672,7 +1678,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const { active } = event;
         // ✅ CORREÇÃO: Normalizar ID para string
         const activeIdStr = String(active.id);
-        const task = localTasks.find((t) => String(t.id) === activeIdStr);
+        // Usar ref para busca mais rápida (evita re-render)
+        const task = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
         
         if (!task) {
             console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
@@ -1681,6 +1688,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         
         setActiveTask(task);
     };
+
+    // REMOVIDO: handleDragOver estava causando delay de 0.5-1.5s devido a setState bloqueante
+    // O dnd-kit já fornece feedback visual nativo sem necessidade de atualizar estado durante o drag
+    // A atualização de estado acontece apenas no handleDragEnd quando o usuário solta o card
 
     // Handler para quando o drag termina
     const handleDragEnd = async (event: DragEndEvent) => {
@@ -2068,8 +2079,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             : pathname;
                         router.push(newUrl);
                     }
+                    }
                 }
-            }
         } catch (error) {
             console.error("Erro ao atualizar posição:", error);
             await reloadTasks();
@@ -2323,7 +2334,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             <div className="h-full">
                                 <DndContext
                                     sensors={sensors}
-                                    collisionDetection={closestCenter}
+                                    collisionDetection={pointerWithin}
                                     onDragStart={handleDragStart}
                                     onDragEnd={handleDragEnd}
                                     onDragCancel={handleDragCancel}
@@ -2416,7 +2427,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 )}
                     <DragOverlay>
                         {activeTask ? (
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
+                            <div className="bg-white rounded-lg border border-gray-200 p-3 rotate-2 opacity-90">
                                 <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
                             </div>
                         ) : null}
@@ -2428,7 +2439,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
                                 <DndContext
                                     sensors={sensors}
-                                    collisionDetection={closestCenter}
+                                    collisionDetection={pointerWithin}
                                     onDragStart={handleDragStart}
                                     onDragEnd={handleDragEnd}
                                     onDragCancel={handleDragCancel}

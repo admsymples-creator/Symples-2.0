@@ -217,7 +217,7 @@ function KanbanCardComponent({
   // Memoizar estilo de drag (evitar recriar objeto a cada render)
   const dragStyle = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? 'none' : transition, // Sem transição durante drag para resposta instantânea
     opacity: isDragging ? 0.3 : disabled ? 0.75 : 1, // Opacidade menor no original quando arrasta (padrão Trello)
     willChange: 'transform' as const,
   }), [transform, transition, isDragging, disabled]);
@@ -371,9 +371,11 @@ function KanbanCardComponent({
 
   // Handler de clique no card (abre detalhes)
   const handleClick = useCallback(() => {
-    // Não precisa verificar isDragging aqui se o sensor do pai tiver 'distance: 8'
-    onClick?.();
-  }, [onClick]);
+    // Não executar click se estiver arrastando
+    if (!isDragging) {
+      onClick?.();
+    }
+  }, [onClick, isDragging]);
 
   // Memoizar objeto taskForMenu
   const taskForMenu = useMemo(() => ({
@@ -403,12 +405,14 @@ function KanbanCardComponent({
       ref={setNodeRef}
       style={dragStyle}
       {...attributes}
-      {...(disabled ? {} : listeners)} // VOLTAMOS os listeners para a raiz
+      {...(disabled ? {} : listeners)} // Listeners de drag na raiz
       className={cn(
-        "group bg-white rounded-xl p-3 border border-gray-200 shadow-sm w-full relative",
-        "hover:shadow-md transition-all duration-200 flex flex-col min-h-[112px]",
+        "group bg-white rounded-xl p-3 border border-gray-200 w-full relative",
+        "flex flex-col min-h-[112px]",
+        // Remover transições durante drag para resposta instantânea
+        !isDragging && "transition-all duration-200",
         disabled ? "opacity-75 cursor-default" : "cursor-grab active:cursor-grabbing",
-        isDragging && "shadow-xl rotate-2 z-50 ring-2 ring-blue-500/20"
+        isDragging && "rotate-2 z-50 ring-2 ring-blue-500/20"
       )}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}

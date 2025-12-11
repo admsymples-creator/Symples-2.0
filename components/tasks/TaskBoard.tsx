@@ -309,6 +309,9 @@ function TaskBoardComponent({
   viewOption,
 }: TaskBoardProps) {
   
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TaskBoard.tsx:292',message:'TaskBoard render',data:{columnsCount:columns.length,totalTasks:columns.reduce((sum,col)=>sum+col.tasks.length,0)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   // 🔍 DEBUG: Verificar se callback está chegando no TaskBoardComponent
   return (
     <div className="flex h-full overflow-x-auto gap-4 scrollbar-thin px-4 pb-4 items-start">
@@ -339,6 +342,28 @@ function TaskBoardComponent({
 
 // Memoização Otimizada para evitar re-renders desnecessários no board
 export const TaskBoard = memo(TaskBoardComponent, (prev, next) => {
+  // #region agent log
+  const shouldRender = prev.columns !== next.columns || 
+    prev.groupBy !== next.groupBy ||
+    prev.isDragDisabled !== next.isDragDisabled ||
+    prev.members !== next.members ||
+    prev.onTaskClick !== next.onTaskClick ||
+    prev.onAddTask !== next.onAddTask ||
+    prev.onTaskMoved !== next.onTaskMoved ||
+    prev.onToggleComplete !== next.onToggleComplete ||
+    prev.onTaskUpdated !== next.onTaskUpdated ||
+    prev.onTaskUpdatedOptimistic !== next.onTaskUpdatedOptimistic ||
+    prev.onDelete !== next.onDelete ||
+    prev.onRenameGroup !== next.onRenameGroup ||
+    prev.onColorChange !== next.onColorChange ||
+    prev.onDeleteGroup !== next.onDeleteGroup ||
+    prev.onClearGroup !== next.onClearGroup ||
+    prev.showGroupActions !== next.showGroupActions ||
+    prev.viewOption !== next.viewOption;
+  if (shouldRender) {
+    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TaskBoard.tsx:344',message:'TaskBoard memo - will render',data:{columnsChanged:prev.columns!==next.columns,columnsRefSame:prev.columns===next.columns},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
   // ✅ Se a referência das colunas mudou, sempre re-renderizar
   // Isso garante que quando kanbanColumns é recalculado (nova referência), o componente atualiza
   if (prev.columns !== next.columns) {
