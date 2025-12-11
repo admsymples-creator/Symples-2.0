@@ -70,8 +70,17 @@ import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
 
 type ViewMode = "list" | "kanban";
-type GroupBy = "status" | "priority" | "assignee";
+type GroupBy = "status" | "priority" | "assignee" | "date";
 type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
+
+const DATE_COLOR_MAP: Record<string, string> = {
+    "Atrasadas": "#ef4444",
+    "Hoje": "#16a34a",
+    "Amanhã": "#eab308",
+    "Semana": "#2563eb",
+    "Futuro": "#475569",
+    "Sem data": "#cbd5e1",
+};
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
 import { SortMenu } from "@/components/tasks/SortMenu";
@@ -1105,9 +1114,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         } else if (taskDate.getTime() === today.getTime()) {
                             groupKey = "Hoje";
                         } else if (taskDate.getTime() === tomorrow.getTime()) {
-                            groupKey = "AmanhÃ£";
+                            groupKey = "Amanhã";
                         } else if (taskDate > tomorrow && taskDate <= nextWeek) {
-                            groupKey = "PrÃ³ximos 7 dias";
+                            groupKey = "Semana";
                         } else {
                             groupKey = "Futuro";
                         }
@@ -1213,6 +1222,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                          color = groupColors[key];
                     }
                 }
+            } else if (viewOption === "date") {
+                color = DATE_COLOR_MAP[title] || color;
             }
 
             return {
@@ -1248,7 +1259,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return columns.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);
@@ -1336,6 +1347,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         }
                     }
                 }
+            } else if (viewOption === "date") {
+                groupColor = DATE_COLOR_MAP[title] || groupColor;
             }
 
             return {
@@ -1373,7 +1386,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         if (viewOption === "date") {
-            const dateOrder = ["Atrasadas", "Hoje", "AmanhÃ£", "PrÃ³ximos 7 dias", "Futuro", "Sem data"];
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return groups.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
                 const bIndex = dateOrder.indexOf(b.title);

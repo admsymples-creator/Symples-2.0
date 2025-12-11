@@ -54,6 +54,14 @@ interface Task {
 }
 
 const DATE_ORDER = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"] as const;
+const DATE_COLORS: Record<(typeof DATE_ORDER)[number], string> = {
+    "Atrasadas": "#ef4444", // vermelho
+    "Hoje": "#16a34a", // verde
+    "Amanhã": "#eab308", // amarelo
+    "Esta Semana": "#2563eb", // azul
+    "Futuro": "#475569", // slate/acinzentado
+    "Sem Data": "#cbd5e1", // cinza claro
+};
 
 const startOfDay = (date: Date) => {
     const d = new Date(date);
@@ -192,10 +200,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
     // Agrupar tarefas
     const groupedData = useMemo(() => {
-        const groups: Record<string, Task[]> = {};
+        const groups: Record<string, { tasks: Task[]; color?: string }> = {};
 
         filteredTasks.forEach((task) => {
             let key: string;
+            let color: string | undefined;
 
             switch (groupBy) {
                 case "status":
@@ -207,6 +216,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 case "date": {
                     const bucket = getDateBucket(task.dueDate);
                     key = bucket;
+                    color = DATE_COLORS[bucket] || undefined;
                     break;
                 }
                 case "assignee":
@@ -217,16 +227,15 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             }
 
             if (!groups[key]) {
-                groups[key] = [];
+                groups[key] = { tasks: [], color };
             }
-            groups[key].push(task);
+            groups[key].tasks.push(task);
         });
 
         // ✅ Criar novos arrays para cada grupo para garantir novas referências
-        // Isso força o React a detectar mudanças mesmo quando o conteúdo é o mesmo
-        const newGroups: Record<string, Task[]> = {};
+        const newGroups: Record<string, { tasks: Task[]; color?: string }> = {};
         Object.keys(groups).forEach(key => {
-            newGroups[key] = [...groups[key]];
+            newGroups[key] = { tasks: [...groups[key].tasks], color: groups[key].color };
         });
 
         return newGroups;
@@ -235,10 +244,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     // Converter grupos para formato de colunas (Kanban)
     // ✅ IMPORTANTE: Criar novas referências para garantir que React detecte mudanças
     const kanbanColumns = useMemo(() => {
-        const columns = Object.entries(groupedData).map(([key, tasks]) => ({
+        const columns = Object.entries(groupedData).map(([key, group]) => ({
             id: key,
             title: key,
-            tasks: [...tasks], // ✅ Criar novo array para garantir nova referência
+            tasks: [...group.tasks], // ✅ Criar novo array para garantir nova referência
+            color: group.color,
         }));
 
         // Ordenar colunas baseado no tipo de agrupamento
@@ -294,10 +304,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 return aIndex - bIndex;
             });
         }
-        return entries.map(([key, tasks]) => ({
+        return entries.map(([key, group]) => ({
             id: key,
             title: key,
-            tasks,
+            tasks: group.tasks,
+            color: group.color,
         }));
     }, [groupedData, groupBy]);
     
@@ -978,6 +989,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                                     id={group.id}
                                     title={group.title}
                                     tasks={group.tasks}
+                                    groupColor={group.color}
                                     onTaskClick={handleTaskClick}
                                 />
                             ))}
