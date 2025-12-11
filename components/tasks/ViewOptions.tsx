@@ -99,6 +99,9 @@ export function GroupingMenu() {
             <DropdownMenuRadioItem value="status" className="cursor-pointer">
               Status
             </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="date" className="cursor-pointer">
+              Data
+            </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="assignee" className="cursor-pointer">
               Responsável
             </DropdownMenuRadioItem>

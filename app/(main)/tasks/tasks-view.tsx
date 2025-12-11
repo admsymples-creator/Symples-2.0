@@ -37,7 +37,7 @@ interface TasksViewProps {
 }
 
 type ContextTab = "minhas" | "time" | "todas";
-type GroupBy = "status" | "priority" | "assignee";
+type GroupBy = "status" | "priority" | "assignee" | "date";
 type ViewMode = "list" | "kanban";
 
 interface Task {
@@ -52,6 +52,70 @@ interface Task {
     hasUpdates?: boolean;
     workspaceId?: string | null;
 }
+
+const DATE_ORDER = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"] as const;
+
+const startOfDay = (date: Date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+const addDays = (date: Date, days: number) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+};
+
+const startOfISOWeek = (date: Date) => {
+    const d = startOfDay(date);
+    const day = d.getDay();
+    const diff = (day + 6) % 7; // segunda = 0, domingo = 6
+    return addDays(d, -diff);
+};
+
+const endOfISOWeek = (date: Date) => {
+    const start = startOfISOWeek(date);
+    return addDays(start, 6);
+};
+
+const getDateBucket = (dueDate?: string | null): typeof DATE_ORDER[number] => {
+    if (!dueDate) return "Sem Data";
+    const parsed = new Date(dueDate);
+    if (isNaN(parsed.getTime())) return "Sem Data";
+
+    const today = startOfDay(new Date());
+    const target = startOfDay(parsed);
+    const tomorrow = addDays(today, 1);
+    const endWeek = endOfISOWeek(today);
+
+    if (target < today) return "Atrasadas";
+    if (target.getTime() === today.getTime()) return "Hoje";
+    if (target.getTime() === tomorrow.getTime()) return "Amanhã";
+    if (target <= endWeek) return "Esta Semana";
+    return "Futuro";
+};
+
+const getDueDateForBucket = (bucket: string): string | null => {
+    const today = startOfDay(new Date());
+    const endWeek = endOfISOWeek(today);
+
+    switch (bucket) {
+        case "Atrasadas":
+            return addDays(today, -1).toISOString();
+        case "Hoje":
+            return today.toISOString();
+        case "Amanhã":
+            return addDays(today, 1).toISOString();
+        case "Esta Semana":
+            return endWeek.toISOString();
+        case "Futuro":
+            return addDays(endWeek, 7).toISOString();
+        case "Sem Data":
+        default:
+            return null;
+    }
+};
 
 export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps) {
     // ✅ MINIFY v2: initialTasks só é usado para inicializar o estado local
@@ -140,6 +204,11 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 case "priority":
                     key = task.priority || "medium";
                     break;
+                case "date": {
+                    const bucket = getDateBucket(task.dueDate);
+                    key = bucket;
+                    break;
+                }
                 case "assignee":
                     key = task.assignees?.[0]?.name || "Sem responsável";
                     break;
@@ -194,6 +263,16 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
             });
+        } else if (groupBy === "date") {
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"];
+            sortedColumns = columns.sort((a, b) => {
+                const aIndex = dateOrder.indexOf(a.title);
+                const bIndex = dateOrder.indexOf(b.title);
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
         } else {
             sortedColumns = columns;
         }
@@ -203,12 +282,24 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
     // Converter grupos para formato de lista (TaskGroup)
     const listGroups = useMemo(() => {
-        return Object.entries(groupedData).map(([key, tasks]) => ({
+        const entries = Object.entries(groupedData);
+        if (groupBy === "date") {
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"];
+            entries.sort((a, b) => {
+                const aIndex = dateOrder.indexOf(a[0]);
+                const bIndex = dateOrder.indexOf(b[0]);
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
+        }
+        return entries.map(([key, tasks]) => ({
             id: key,
             title: key,
             tasks,
         }));
-    }, [groupedData]);
+    }, [groupedData, groupBy]);
     
     // Refs para valores que mudam mas não devem causar re-criação de callbacks
     // Criados após os useMemo para terem acesso aos valores calculados
@@ -367,6 +458,28 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                         t.id === task.id ? { ...t, priority: nextPriority } : t
                     )
                 );
+            } else if (groupBy === "date") {
+                const targetBucket = destinationColumnId as
+                    | "Atrasadas"
+                    | "Hoje"
+                    | "Amanhã"
+                    | "Esta Semana"
+                    | "Futuro"
+                    | "Sem Data";
+
+                if (!["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"].includes(targetBucket)) {
+                    console.warn("Bucket de data inválido:", destinationColumnId);
+                    return;
+                }
+
+                const nextDueDate = getDueDateForBucket(targetBucket);
+                updateData.due_date = nextDueDate;
+
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === task.id ? { ...t, dueDate: nextDueDate || undefined } : t
+                    )
+                );
             } else if (groupBy === "assignee") {
                 // Encontrar o membro correspondente ao nome da coluna
                 // Member tem estrutura: { user_id, profiles: { full_name, email, avatar_url } }
@@ -458,42 +571,79 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             if (currentGroupBy === "status") {
                 nextStatusLabel = destinationGroupKey;
+
+                const nextStatusDb = statusMap[nextStatusLabel] || "todo";
+
+                // ✅ 2. Atualização otimista local
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === taskInGroup.id ? { ...t, status: nextStatusLabel } : t
+                    )
+                );
+                setIsSyncing(true);
+
+                // ✅ 3. Backend em background com rollback
+                updateTask({
+                    id: taskInGroup.id,
+                    status: nextStatusDb,
+                })
+                    .then(() => {
+                        // Sucesso silencioso
+                    })
+                    .catch((error) => {
+                        console.error("Erro ao mover tarefa:", error);
+                        // ✅ 4. Rollback em caso de erro
+                        setLocalTasks(previousTasks);
+                        toast.error("Erro ao salvar movimento. Tente novamente.");
+                    })
+                    .finally(() => {
+                        setIsSyncing(false);
+                    });
+            } else if (currentGroupBy === "date") {
+                const targetBucket = destinationGroupKey as
+                    | "Atrasadas"
+                    | "Hoje"
+                    | "Amanhã"
+                    | "Esta Semana"
+                    | "Futuro"
+                    | "Sem Data";
+
+                if (!["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"].includes(targetBucket)) {
+                    return;
+                }
+
+                const nextDueDate = getDueDateForBucket(targetBucket);
+
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === taskInGroup.id ? { ...t, dueDate: nextDueDate || undefined } : t
+                    )
+                );
+                setIsSyncing(true);
+
+                updateTask({
+                    id: taskInGroup.id,
+                    due_date: nextDueDate,
+                })
+                    .then(() => {
+                        // Sucesso silencioso
+                    })
+                    .catch((error) => {
+                        console.error("Erro ao mover tarefa:", error);
+                        setLocalTasks(previousTasks);
+                        toast.error("Erro ao salvar movimento. Tente novamente.");
+                    })
+                    .finally(() => {
+                        setIsSyncing(false);
+                    });
             }
-
-            const nextStatusDb = statusMap[nextStatusLabel] || "todo";
-
-            // ✅ 2. Atualização otimista local
-            setLocalTasks((prev) =>
-                prev.map((t) =>
-                    t.id === taskInGroup.id ? { ...t, status: nextStatusLabel } : t
-                )
-            );
-            setIsSyncing(true);
-
-            // ✅ 3. Backend em background com rollback
-            updateTask({
-                id: taskInGroup.id,
-                status: nextStatusDb,
-            })
-                .then(() => {
-                    // Sucesso silencioso
-                })
-                .catch((error) => {
-                    console.error("Erro ao mover tarefa:", error);
-                    // ✅ 4. Rollback em caso de erro
-                    setLocalTasks(previousTasks);
-                    toast.error("Erro ao salvar movimento. Tente novamente.");
-                })
-                .finally(() => {
-                    setIsSyncing(false);
-                });
         }
     }, [groupBy, viewMode]);
 
     // ✅ MINIFY v2: Handler de criação com rollback
     const handleAddTask = useCallback((
         title: string,
-        context: { status?: string; priority?: string; assignee?: string }
+        context: { status?: string; priority?: string; assignee?: string; dueDate?: string | null }
     ) => {
         const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
             Backlog: "todo",
@@ -520,6 +670,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 assignees: [],
                 tags: [],
                 hasUpdates: false,
+                dueDate: context.dueDate || undefined,
                 workspaceId,
             },
             ...prev,
@@ -532,6 +683,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             workspace_id: workspaceId,
             status: nextStatusDb,
             priority: context.priority as any,
+            due_date: context.dueDate || undefined,
             is_personal: false,
         })
             .then((result) => {
@@ -714,6 +866,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
         const context: any = {};
         if (groupBy === "status") context.status = columnId;
         if (groupBy === "priority") context.priority = columnId;
+        if (groupBy === "date") context.dueDate = getDueDateForBucket(columnId);
         handleAddTask("", context);
     }, [groupBy, handleAddTask]);
 
