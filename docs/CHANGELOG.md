@@ -5,6 +5,10 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 ## [Unreleased]
 
 ### Added
+- **Múltiplos membros por tarefa (task_members):**
+  - Tabela `task_members` para relacionar tarefas e usuários
+  - Funções `addTaskMember`, `removeTaskMember`, `updateTaskMembers`
+  - Picker com toggle múltiplo e exibição via `AvatarGroup`
 - **Seletor de Workspaces no Card de Confirmação:**
   - Dropdown para selecionar workspace ao criar tarefa pelo assistente
   - Lista todos os workspaces do usuário com logo e nome
@@ -27,6 +31,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Retorno único com `transcription`, `message` e `componentData`
 
 ### Changed
+- **TaskRowMinify / TaskDetailModal / Kanban:** agora exibem e editam múltiplos responsáveis usando `task_members`, mantendo `assignee_id` como responsável principal para compatibilidade.
 - **KanbanConfirmationCard:**
   - Adicionado seletor de workspaces no footer do card
   - Avatar do responsável reduzido para `w-3.5 h-3.5` (padrão com outros ícones)
@@ -99,7 +104,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 - **TaskRowMinify - Layout em Grid**:
   - Layout CSS Grid com colunas fixas para alinhamento vertical consistente
-  - Colunas: Drag Handle (40px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (100px) | Menu (40px)
+  - Colunas: Drag Handle (40px) | Checkbox (24px) | Título (1fr) | Responsável (auto) | Data (90px) | Status (130px) | Menu (40px)
+  - Coluna de Responsável posicionada antes da coluna de Data
+  - Coluna de Responsável usa largura `auto` para se ajustar ao conteúdo (múltiplos avatares)
   - Indicadores Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
 
 - **TaskGroup - Indicador de Cor**:
@@ -122,6 +129,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Corrigido `getWorkspaceMembers` para incluir o usuário atual mesmo que não esteja em `workspace_members`
   - Removido filtro que excluía o usuário logado da lista
   - Corrigido loop infinito de renderização em `TaskActionsMenu` e `TaskAssigneePicker`
+- **Correção de TaskMembersPicker no TaskDetailModal**:
+  - Corrigido problema onde `workspaceId` não estava sendo passado ao modal, fazendo com que apenas 1 membro aparecesse na lista
+  - Adicionado `workspaceId` ao objeto `taskDetails` em `handleTaskClick` em `page.tsx`
+  - Corrigido mapeamento de `getWorkspaceMembers` para tratar `member.user` como array ou objeto (consistente com `members.ts`)
+  - Agora todos os membros do workspace são exibidos corretamente no picker
 - **Correção de timezone na data do TaskDetailModal**: 
   - Corrigido problema onde a data aparecia com um dia antes devido à conversão de timezone
   - Implementada função `parseLocalDate` para criar datas no timezone local ao invés de UTC

@@ -39,3 +39,6 @@ export function WorkspaceSyncAfterInvite() {
   return null; // Componente não renderiza nada
 }
 
+
+
+

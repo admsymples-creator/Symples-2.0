@@ -35,6 +35,9 @@ import {
 } from "@/components/ui/tooltip";
 import { TaskActionsMenu } from "./TaskActionsMenu";
 import { InlineTextEdit } from "@/components/ui/inline-text-edit";
+import { TaskMembersPicker } from "./pickers/TaskMembersPicker";
+import { AvatarGroup } from "./Avatar";
+import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 
 interface TaskRowMinifyProps {
   task: {
@@ -115,7 +118,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   // Estados para controlar abertura dos Popovers
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
-  const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
   // Evitar erro de hidratação renderizando Popovers apenas após montagem
@@ -275,30 +277,53 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
     }
   };
 
-  // Handler para atualizar responsável
-  const handleAssigneeUpdate = async (memberId: string | null) => {
-    setIsAssigneeOpen(false); // Fechar Popover imediatamente
+  // Handler para atualizar membros (toggle múltiplos)
+  const handleMembersChange = async (memberIds: string[]) => {
     const previousAssignees = task.assignees || [];
-    const updatedAssignees = memberId && members 
-      ? members.filter(m => m.id === memberId).map(m => ({ name: m.name, avatar: m.avatar, id: m.id }))
+    const previousMemberIds = previousAssignees.map((a: any) => a.id).filter(Boolean);
+    
+    // Determinar membros adicionados e removidos
+    const added = memberIds.filter(id => !previousMemberIds.includes(id));
+    const removed = previousMemberIds.filter(id => !memberIds.includes(id));
+
+    // Construir array de assignees atualizado para optimistic UI
+    const updatedAssignees = memberIds && members 
+      ? memberIds.map(id => {
+          const member = members.find(m => m.id === id);
+          return member ? { name: member.name, avatar: member.avatar, id: member.id } : null;
+        }).filter(Boolean) as Array<{ name: string; avatar?: string; id: string }>
       : [];
+
+    // Atualizar UI otimisticamente
     onTaskUpdatedOptimistic?.(task.id, { assignees: updatedAssignees });
 
     try {
-      const result = await updateTask({ id: String(task.id), assignee_id: memberId });
-      
-      if (!result.success) {
+      // Adicionar novos membros
+      const addPromises = added.map(userId => addTaskMember(String(task.id), userId));
+      // Remover membros
+      const removePromises = removed.map(userId => removeTaskMember(String(task.id), userId));
+
+      const results = await Promise.all([...addPromises, ...removePromises]);
+      const hasError = results.some(r => !r.success);
+
+      if (hasError) {
         onTaskUpdatedOptimistic?.(task.id, { assignees: previousAssignees });
-        toast.error("Erro ao atualizar responsável");
+        toast.error("Erro ao atualizar membros");
       } else {
-        toast.success(memberId ? "Responsável atualizado" : "Responsável removido");
+        const changeCount = added.length + removed.length;
+        if (changeCount > 0) {
+          toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
+        }
         onTaskUpdated?.();
       }
     } catch (error) {
       onTaskUpdatedOptimistic?.(task.id, { assignees: previousAssignees });
-      toast.error("Erro ao atualizar responsável");
+      toast.error("Erro ao atualizar membros");
     }
   };
+
+  // IDs dos membros atuais para o picker
+  const currentMemberIds = task.assignees?.map((a: any) => a.id).filter(Boolean) || [];
 
   // Handler para Smart Triggers (Focus e Urgente)
   const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
@@ -417,8 +442,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       style={style}
       className={cn(
         "group grid items-center h-11 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1 relative",
-        "grid-cols-[40px_24px_1fr_90px_32px_130px_40px] gap-1",
-        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Data | Responsável | Status | Menu
+        "grid-cols-[40px_24px_1fr_auto_90px_130px_40px] gap-1",
+        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Responsável (auto) | Data | Status | Menu
         (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
         disabled && "opacity-75",
         task.isPending && "opacity-60" // ✅ Reduzir opacidade para tarefas pending
@@ -515,6 +540,53 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
             </div>
           ) : null}
         </div>
+      </div>
+
+      {/* Coluna: Responsável */}
+      <div 
+        className="flex items-center justify-center"
+        onClick={stopProp}
+        onPointerDown={stopProp}
+      >
+        {isMounted ? (
+          <TaskMembersPicker
+            memberIds={currentMemberIds}
+            onChange={handleMembersChange}
+            workspaceId={task.workspace_id || undefined}
+            members={membersWithCurrentUser}
+            align="end"
+            trigger={
+              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100" onClick={stopProp} onPointerDown={stopProp}>
+                {task.assignees && task.assignees.length > 0 ? (
+                  <AvatarGroup
+                    users={task.assignees}
+                    max={3}
+                    size="sm"
+                  />
+                ) : (
+                  <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
+                    <User size={12} />
+                  </div>
+                )}
+              </button>
+            }
+          />
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <button className="outline-none rounded-full" disabled>
+            {task.assignees && task.assignees.length > 0 ? (
+              <AvatarGroup
+                users={task.assignees}
+                max={3}
+                size="sm"
+              />
+            ) : (
+              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
+                <User size={12} />
+              </div>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Coluna: Data com indicadores Focus e Urgente */}
@@ -630,84 +702,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               </span>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Coluna: Responsável */}
-      <div 
-        className="flex items-center justify-center"
-        onClick={stopProp}
-        onPointerDown={stopProp}
-      >
-        {isMounted ? (
-          <Popover open={isAssigneeOpen} onOpenChange={setIsAssigneeOpen}>
-            <PopoverTrigger asChild>
-              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
-                {task.assignees && task.assignees.length > 0 ? (
-                  <Avatar
-                    name={task.assignees[0].name}
-                    avatar={task.assignees[0].avatar}
-                    size="sm"
-                    className="border border-white shadow-sm"
-                  />
-                ) : (
-                  <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
-                    <User size={12} />
-                  </div>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="p-0 w-56" align="end" onClick={stopProp} onPointerDown={stopProp}>
-              <Command>
-                <CommandInput placeholder="Buscar membro..." />
-                <CommandList>
-                  <CommandEmpty>Nenhum membro encontrado.</CommandEmpty>
-                  <CommandGroup>
-                    <CommandItem
-                      onSelect={() => handleAssigneeUpdate(null)}
-                      className="text-xs text-gray-500 cursor-pointer"
-                    >
-                      <div className="size-5 rounded-full border border-dashed border-gray-300 flex items-center justify-center mr-2">
-                        <User size={10} />
-                      </div>
-                      Sem responsável
-                    </CommandItem>
-                    {membersWithCurrentUser?.map((member) => (
-                      <CommandItem
-                        key={member.id}
-                        onSelect={() => handleAssigneeUpdate(member.id)}
-                        className="text-xs cursor-pointer"
-                      >
-                        <Avatar
-                          name={member.name}
-                          avatar={member.avatar}
-                          size="sm"
-                          className="size-5 mr-2"
-                        />
-                        {member.name}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        ) : (
-          // Renderizar placeholder durante SSR/hidratação
-          <button className="outline-none rounded-full" disabled>
-            {task.assignees && task.assignees.length > 0 ? (
-              <Avatar
-                name={task.assignees[0].name}
-                avatar={task.assignees[0].avatar}
-                size="sm"
-                className="border border-white shadow-sm"
-              />
-            ) : (
-              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
-                <User size={12} />
-              </div>
-            )}
-          </button>
         )}
       </div>
 

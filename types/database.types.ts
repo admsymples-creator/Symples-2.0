@@ -232,6 +232,39 @@ export type Database = {
           },
         ]
       }
+      task_members: {
+        Row: {
+          task_id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          task_id: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          task_id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_members_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transactions: {
         Row: {
           amount: number
