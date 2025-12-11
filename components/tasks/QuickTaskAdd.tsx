@@ -288,7 +288,7 @@ export function QuickTaskAdd({
         <>
             <div                 className={cn(
                 "flex items-center transition-all relative w-full",
-                variant === "default" && "bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
+                variant === "default" && "bg-white border border-gray-200 rounded-xl px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
                 variant === "ghost" && "h-10 px-4 border-b border-transparent hover:bg-gray-50",
                 isCreatingBatch && "opacity-50 pointer-events-none", // ✅ Apenas batch bloqueia interação
                 className

@@ -13,7 +13,7 @@ import {
   CheckCircle2
 } from "lucide-react";
 import { useTaskPreload } from "@/hooks/use-task-preload";
-import { Avatar } from "./Avatar";
+import { Avatar, AvatarGroup } from "./Avatar";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -217,7 +217,7 @@ function KanbanCardComponent({
   // Memoizar estilo de drag (evitar recriar objeto a cada render)
   const dragStyle = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? 'none' : transition, // Sem transição durante drag para resposta instantânea
     opacity: isDragging ? 0.3 : disabled ? 0.75 : 1, // Opacidade menor no original quando arrasta (padrão Trello)
     willChange: 'transform' as const,
   }), [transform, transition, isDragging, disabled]);
@@ -369,11 +369,70 @@ function KanbanCardComponent({
     }
   }, [id, dueDate, onTaskUpdatedOptimistic, onTaskUpdated]);
 
+  // Ref para rastrear se houve movimento antes do clique
+  const hasMovedRef = useRef(false);
+  const clickStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  // Handler de mouse down para detectar início do clique/drag
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Não capturar se for em elementos interativos
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('[role="button"]') || target.closest('[data-inline-edit]')) {
+      return;
+    }
+    
+    clickStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      time: Date.now(),
+    };
+    hasMovedRef.current = false;
+  }, []);
+
+  // Handler de mouse move para detectar movimento
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (clickStartRef.current && !hasMovedRef.current) {
+        const deltaX = Math.abs(e.clientX - clickStartRef.current.x);
+        const deltaY = Math.abs(e.clientY - clickStartRef.current.y);
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // Se moveu mais de 3px, considera como movimento (menor que distance do sensor)
+        if (distance > 3) {
+          hasMovedRef.current = true;
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      clickStartRef.current = null;
+    };
+
+    // Sempre adicionar listeners (não depender de clickStartRef.current)
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  // Resetar quando drag termina
+  useEffect(() => {
+    if (!isDragging) {
+      clickStartRef.current = null;
+      hasMovedRef.current = false;
+    }
+  }, [isDragging]);
+
   // Handler de clique no card (abre detalhes)
   const handleClick = useCallback(() => {
-    // Não precisa verificar isDragging aqui se o sensor do pai tiver 'distance: 8'
-    onClick?.();
-  }, [onClick]);
+    // Não executar click se estiver arrastando ou se houve movimento
+    if (!isDragging && !hasMovedRef.current) {
+      onClick?.();
+    }
+  }, [onClick, isDragging]);
 
   // Memoizar objeto taskForMenu
   const taskForMenu = useMemo(() => ({
@@ -403,14 +462,17 @@ function KanbanCardComponent({
       ref={setNodeRef}
       style={dragStyle}
       {...attributes}
-      {...(disabled ? {} : listeners)} // VOLTAMOS os listeners para a raiz
+      {...(disabled ? {} : listeners)} // Listeners de drag na raiz
       className={cn(
-        "group bg-white rounded-xl p-3 border border-gray-200 shadow-sm w-full relative",
-        "hover:shadow-md transition-all duration-200 flex flex-col min-h-[112px]",
-        disabled ? "opacity-75 cursor-default" : "cursor-grab active:cursor-grabbing",
-        isDragging && "shadow-xl rotate-2 z-50 ring-2 ring-blue-500/20"
+        "group bg-white rounded-xl p-3 border border-gray-200 w-full relative",
+        "flex flex-col min-h-[112px]",
+        // Remover transições durante drag para resposta instantânea
+        !isDragging && "transition-all duration-200",
+        disabled ? "opacity-75 cursor-default" : isDragging ? "cursor-grabbing" : "cursor-pointer",
+        isDragging && "rotate-2 z-50 ring-2 ring-blue-500/20"
       )}
       onClick={handleClick}
+      onMouseDown={handleMouseDown}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={cancelPreload}
     >
@@ -679,11 +741,10 @@ function KanbanCardComponent({
               <PopoverTrigger asChild>
                 <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
                   {assignees.length > 0 ? (
-                    <Avatar
-                      name={assignees[0].name}
-                      avatar={assignees[0].avatar}
+                    <AvatarGroup
+                      users={assignees}
+                      max={3}
                       size="sm"
-                      className="border border-white shadow-sm"
                     />
                   ) : (
                     <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">

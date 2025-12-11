@@ -1,0 +1,44 @@
+{"location":"KanbanCard.tsx:377","message":"handleMouseDown called","data":{"clientX":632,"clientY":513,"isDragging":false},"timestamp":1765481000914,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:380","message":"handleMouseDown skipped - interactive element","data":{"target":"DIV"},"timestamp":1765481000915,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"page.tsx:1664","message":"handleDragStart called","data":{"activeId":"eb158071-8025-4238-8e5d-c4dec5bc2fcb"},"timestamp":1765481001018,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":true,"hasMoved":false},"timestamp":1765481001488,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":false,"hasMoved":false},"timestamp":1765481003847,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:377","message":"handleMouseDown called","data":{"clientX":622,"clientY":501,"isDragging":false},"timestamp":1765481004715,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:380","message":"handleMouseDown skipped - interactive element","data":{"target":"DIV"},"timestamp":1765481004716,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"page.tsx:1664","message":"handleDragStart called","data":{"activeId":"eb158071-8025-4238-8e5d-c4dec5bc2fcb"},"timestamp":1765481004823,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":true,"hasMoved":false},"timestamp":1765481005156,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":false,"hasMoved":false},"timestamp":1765481007203,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:377","message":"handleMouseDown called","data":{"clientX":624,"clientY":638,"isDragging":false},"timestamp":1765481009057,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:380","message":"handleMouseDown skipped - interactive element","data":{"target":"DIV"},"timestamp":1765481009057,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"page.tsx:1664","message":"handleDragStart called","data":{"activeId":"bfe93db8-3592-4cdb-ab64-4c48651dcbfc"},"timestamp":1765481009163,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":true,"hasMoved":false},"timestamp":1765481009514,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":false,"hasMoved":false},"timestamp":1765481011014,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":false,"hasMoved":false},"timestamp":1765481011050,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":false,"hasMoved":false},"timestamp":1765481011055,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765481011382,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765481011382,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765481028257,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765481028258,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:377","message":"handleMouseDown called","data":{"clientX":600,"clientY":494,"isDragging":false},"timestamp":1765482625370,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:380","message":"handleMouseDown skipped - interactive element","data":{"target":"DIV"},"timestamp":1765482625370,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"page.tsx:1664","message":"handleDragStart called","data":{"activeId":"7474684f-3efa-4668-97a7-d6a292425cfb"},"timestamp":1765482625472,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":true,"hasMoved":false},"timestamp":1765482625880,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:423","message":"isDragging changed","data":{"isDragging":false,"hasMoved":false},"timestamp":1765482628756,"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482628913,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482628913,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:377","message":"handleMouseDown called","data":{"clientX":590,"clientY":497,"isDragging":false},"timestamp":1765482629700,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:380","message":"handleMouseDown skipped - interactive element","data":{"target":"DIV"},"timestamp":1765482629700,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482629792,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482629792,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:431","message":"handleClick called","data":{"isDragging":false,"hasMoved":false},"timestamp":1765482629793,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"KanbanCard.tsx:434","message":"onClick executing","data":{},"timestamp":1765482629793,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482631883,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482631883,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:377","message":"handleMouseDown called","data":{"clientX":625,"clientY":505,"isDragging":false},"timestamp":1765482633009,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:380","message":"handleMouseDown skipped - interactive element","data":{"target":"DIV"},"timestamp":1765482633009,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482633077,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482633077,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:431","message":"handleClick called","data":{"isDragging":false,"hasMoved":false},"timestamp":1765482633077,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"KanbanCard.tsx:434","message":"onClick executing","data":{},"timestamp":1765482633077,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482634964,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"KanbanCard.tsx:407","message":"mouseUp - resetting clickStartRef","data":{"hasMoved":false},"timestamp":1765482634965,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
