@@ -154,30 +154,11 @@ export function DayColumn({
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         description: null,
-        // user_id removido pois não existe na tabela tasks
         position: 0,
-        parent_id: null,
         assignee_id: null,
         priority: null,
-        recurrence_rule: null,
-        recurrence_parent_id: null,
-        is_recurring: false,
         created_by: null,
-        metadata: null,
-        recurrence_end_date: null,
-        recurrence_interval: null,
-        archived_at: null,
-        deleted_at: null,
-        start_date: null,
-        completed_at: null,
-        tags: [],
-        custom_fields: {},
-        attachments_count: 0,
-        comments_count: 0,
-        subtasks_count: 0,
-        cover_image: null,
-        estimated_time: null,
-        actual_time: null
+        origin_context: null
       };
       
       startTransition(() => {
