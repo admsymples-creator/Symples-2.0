@@ -542,12 +542,13 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             // Modo List: trabalhar com grupos
             const currentGroupedData = groupedDataRef.current;
 
-            const sourceGroup = Object.entries(currentGroupedData).find(([_, tasks]) =>
-                tasks.some((task) => task.id === active.id)
+            const sourceGroup = Object.entries(currentGroupedData).find(([_, group]) =>
+                group.tasks.some((task) => task.id === active.id)
             );
             if (!sourceGroup) return;
 
-            const [sourceGroupKey, sourceTasks] = sourceGroup;
+            const [sourceGroupKey, sourceGroupData] = sourceGroup;
+            const sourceTasks = sourceGroupData.tasks;
             const sourceTaskIndex = sourceTasks.findIndex((task) => task.id === active.id);
             const taskInGroup = sourceTasks[sourceTaskIndex];
             if (sourceTaskIndex === -1 || !taskInGroup) return;
@@ -557,8 +558,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             if (isGroupId) {
                 destinationGroupKey = over.id;
             } else {
-                destinationGroupKey = Object.entries(currentGroupedData).find(([_, tasks]) =>
-                    tasks.some((t) => t.id === over.id)
+                destinationGroupKey = Object.entries(currentGroupedData).find(([_, group]) =>
+                    group.tasks.some((t) => t.id === over.id)
                 )?.[0];
             }
 
