@@ -174,6 +174,14 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
       workspace:workspaces!tasks_workspace_id_fkey (
         id,
         name
+      ),
+      task_members (
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
       )
     `)
     .eq("id", taskId)
@@ -193,6 +201,34 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     }
   }
 
+  // Transformar task_members em array assignees
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if (task.task_members && Array.isArray(task.task_members)) {
+    task.task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
   return {
     id: task.id,
     title: task.title,
@@ -210,6 +246,7 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     assignee: task.assignee,
     creator: task.creator,
     workspace: task.workspace,
+    assignees, // Adicionar array de assignees
   };
 }
 
@@ -321,6 +358,14 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
         workspace:workspaces!tasks_workspace_id_fkey (
           id,
           name
+        ),
+        task_members (
+          user:user_id (
+            id,
+            full_name,
+            email,
+            avatar_url
+          )
         )
       `)
       .eq("id", taskId)
@@ -366,6 +411,34 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
     console.error("Erro ao buscar comentários:", commentsError);
   }
 
+  // Transformar task_members em array assignees
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if ((task as any).task_members && Array.isArray((task as any).task_members)) {
+    (task as any).task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
   return {
     ...task,
     status: (task.status as "todo" | "in_progress" | "done" | "archived") || "todo",
@@ -383,6 +456,7 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
     })),
     tags: (task as any).tags || [],
     subtasks: (task as any).subtasks || [],
+    assignees, // Adicionar array de assignees
   };
 }
 

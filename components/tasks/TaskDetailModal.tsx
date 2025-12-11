@@ -84,7 +84,8 @@ import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { AttachmentCard } from "@/components/tasks/AttachmentCard";
 import { Editor } from "@/components/ui/editor";
-import { TaskAssigneePicker } from "@/components/tasks/pickers/TaskAssigneePicker";
+import { TaskMembersPicker } from "@/components/tasks/pickers/TaskMembersPicker";
+import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
 import { TaskImageLightbox } from "@/components/tasks/TaskImageLightbox";
 import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudioModal";
@@ -450,7 +451,7 @@ export function TaskDetailModal({
     const [hasMoreComments, setHasMoreComments] = useState(false);
     const [commentsOffset, setCommentsOffset] = useState(0);
     // NÃO inicializar com dados do task prop - sempre começar vazio para forçar loading
-    const [localAssignee, setLocalAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
+    const [localMembers, setLocalMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [tags, setTags] = useState<string[]>([]);
     const { uploadToStorage } = useFileUpload();
     const taskCache = useTaskCache(); // Hook de cache - deve ser chamado antes de usar taskCache
@@ -779,7 +780,7 @@ export function TaskDetailModal({
             setDueDate("");
             setTags([]);
             setSubTasks([]);
-            setLocalAssignee(null);
+            setLocalMembers([]);
             setAttachments([]);
             setActivities([]);
             setCurrentTaskId(null);
@@ -801,7 +802,7 @@ export function TaskDetailModal({
                 setDueDate("");
                 setTags([]);
                 setSubTasks([]);
-                setLocalAssignee(null);
+                setLocalMembers([]);
                 setAttachments([]);
                 setActivities([]);
                 // NÃO definir currentTaskId aqui - será definido quando os dados forem carregados
@@ -842,14 +843,22 @@ export function TaskDetailModal({
                         setStatus(cachedBasic.status || "todo");
                         setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
                         
-                        if (cachedBasic.assignee) {
-                            setLocalAssignee({
+                        // Usar assignees do cache (já inclui task_members)
+                        if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
+                            setLocalMembers((cachedBasic as any).assignees.map((a: any) => ({
+                                id: a.id,
+                                name: a.name,
+                                avatar: a.avatar,
+                            })));
+                        } else if (cachedBasic.assignee) {
+                            // Fallback para assignee antigo (compatibilidade)
+                            setLocalMembers([{
                                 id: cachedBasic.assignee.id,
                                 name: cachedBasic.assignee.full_name || cachedBasic.assignee.email || "Sem nome",
                                 avatar: cachedBasic.assignee.avatar_url || undefined,
-                            });
+                            }]);
                         } else {
-                            setLocalAssignee(null);
+                            setLocalMembers([]);
                         }
                         
                         if (cachedBasic.origin_context?.tags) {
@@ -899,14 +908,22 @@ export function TaskDetailModal({
                         setStatus(basicDetails.status || "todo");
                         setDueDate(basicDetails.due_date ? new Date(basicDetails.due_date).toISOString().split("T")[0] : "");
                         
-                        if (basicDetails.assignee) {
-                            setLocalAssignee({
+                        // Usar assignees dos detalhes (já inclui task_members)
+                        if ((basicDetails as any).assignees && Array.isArray((basicDetails as any).assignees)) {
+                            setLocalMembers((basicDetails as any).assignees.map((a: any) => ({
+                                id: a.id,
+                                name: a.name,
+                                avatar: a.avatar,
+                            })));
+                        } else if (basicDetails.assignee) {
+                            // Fallback para assignee antigo (compatibilidade)
+                            setLocalMembers([{
                                 id: basicDetails.assignee.id,
                                 name: basicDetails.assignee.full_name || basicDetails.assignee.email || "Sem nome",
                                 avatar: basicDetails.assignee.avatar_url || undefined,
-                            });
+                            }]);
                         } else {
-                            setLocalAssignee(null);
+                            setLocalMembers([]);
                         }
                         
                         if (basicDetails.origin_context?.tags) {
@@ -1055,7 +1072,7 @@ export function TaskDetailModal({
             setActivities([]);
             setTags([]);
             setCurrentTaskId(null);
-            setLocalAssignee(null);
+            setLocalMembers([]);
             
             const loadCurrentUser = async () => {
                 try {
@@ -1699,58 +1716,55 @@ export function TaskDetailModal({
         }
     }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
 
-    const handleAssigneeChange = async (userId: string | null) => {
+    const handleMembersChange = async (memberIds: string[]) => {
         if (!currentTaskId || isCreateMode) return;
         
-        const oldAssignee = localAssignee;
+        const oldMembers = [...localMembers];
+        const oldMemberIds = oldMembers.map(m => m.id);
         
-        // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
-        let newAssignee: { id: string; name: string; avatar?: string } | null = null;
-        
-        if (userId) {
-            const selectedUser = availableUsers.find(u => u.id === userId);
-            if (selectedUser) {
-                newAssignee = {
-                    id: selectedUser.id,
-                    name: selectedUser.name,
-                    avatar: selectedUser.avatar,
-                };
-            }
-        }
+        // Determinar membros adicionados e removidos
+        const added = memberIds.filter(id => !oldMemberIds.includes(id));
+        const removed = oldMemberIds.filter(id => !memberIds.includes(id));
+
+        // Construir array de membros atualizado para optimistic UI
+        const newMembers = memberIds.map(id => {
+            const member = availableUsers.find(u => u.id === id);
+            return member ? { id: member.id, name: member.name, avatar: member.avatar } : null;
+        }).filter(Boolean) as Array<{ id: string; name: string; avatar?: string }>;
         
         // Atualizar UI imediatamente
-        setLocalAssignee(newAssignee);
+        setLocalMembers(newMembers);
         
         // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-        const optimisticAssignees = newAssignee ? [newAssignee] : [];
-        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: optimisticAssignees });
+        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
         
         try {
-            const result = await updateTaskField(
-                currentTaskId,
-                "assignee_id",
-                userId
-            );
+            // Adicionar novos membros
+            const addPromises = added.map(userId => addTaskMember(currentTaskId, userId));
+            // Remover membros
+            const removePromises = removed.map(userId => removeTaskMember(currentTaskId, userId));
+
+            const results = await Promise.all([...addPromises, ...removePromises]);
+            const hasError = results.some(r => !r.success);
             
-            if (result.success) {
-                invalidateCacheAndNotify(currentTaskId, { assignees: optimisticAssignees });
+            if (hasError) {
+                // ✅ REVERTER se falhar
+                setLocalMembers(oldMembers);
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                toast.error("Erro ao atualizar membros");
+            } else {
+                invalidateCacheAndNotify(currentTaskId, { assignees: newMembers });
                 // Recarregar apenas atividades (não precisa recarregar dados básicos)
                 await reloadActivities(currentTaskId);
-                toast.success("Responsável atualizado");
-            } else {
-                // ✅ REVERTER se falhar
-                setLocalAssignee(oldAssignee);
-                const oldAssignees = oldAssignee ? [{ id: oldAssignee.id, name: oldAssignee.name, avatar: oldAssignee.avatar }] : [];
-                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldAssignees });
-                toast.error(result.error || "Erro ao atualizar responsável");
+                const changeCount = added.length + removed.length;
+                toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
             }
         } catch (error) {
             // ✅ REVERTER em caso de exceção
-            console.error("Erro ao atualizar responsável:", error);
-            setLocalAssignee(oldAssignee);
-            const oldAssignees = oldAssignee ? [{ id: oldAssignee.id, name: oldAssignee.name, avatar: oldAssignee.avatar }] : [];
-            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldAssignees });
-            toast.error("Erro ao atualizar responsável");
+            console.error("Erro ao atualizar membros:", error);
+            setLocalMembers(oldMembers);
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+            toast.error("Erro ao atualizar membros");
         }
     };
 
@@ -1996,9 +2010,10 @@ export function TaskDetailModal({
                                 {/* Assignee */}
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
-                                    <TaskAssigneePicker
-                                        assigneeId={localAssignee?.id || null}
-                                        onSelect={handleAssigneeChange}
+                                    <TaskMembersPicker
+                                        memberIds={localMembers.map(m => m.id)}
+                                        onChange={handleMembersChange}
+                                        members={availableUsers}
                                     />
                                 </div>
 

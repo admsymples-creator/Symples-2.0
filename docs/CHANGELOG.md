@@ -5,6 +5,10 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 ## [Unreleased]
 
 ### Added
+- **Múltiplos membros por tarefa (task_members):**
+  - Tabela `task_members` para relacionar tarefas e usuários
+  - Funções `addTaskMember`, `removeTaskMember`, `updateTaskMembers`
+  - Picker com toggle múltiplo e exibição via `AvatarGroup`
 - **Seletor de Workspaces no Card de Confirmação:**
   - Dropdown para selecionar workspace ao criar tarefa pelo assistente
   - Lista todos os workspaces do usuário com logo e nome
@@ -27,6 +31,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Retorno único com `transcription`, `message` e `componentData`
 
 ### Changed
+- **TaskRowMinify / TaskDetailModal / Kanban:** agora exibem e editam múltiplos responsáveis usando `task_members`, mantendo `assignee_id` como responsável principal para compatibilidade.
 - **KanbanConfirmationCard:**
   - Adicionado seletor de workspaces no footer do card
   - Avatar do responsável reduzido para `w-3.5 h-3.5` (padrão com outros ícones)

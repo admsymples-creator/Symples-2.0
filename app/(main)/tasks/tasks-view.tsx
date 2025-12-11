@@ -101,13 +101,15 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             completed: task.status === "done",
             priority: (task.priority as "low" | "medium" | "high" | "urgent" | undefined) || undefined,
             status: mapStatusToLabel(task.status || "todo"),
-            assignees: task.assignee 
-                ? [{ 
-                    name: task.assignee.full_name || task.assignee.email || "Sem nome", 
-                    avatar: task.assignee.avatar_url || undefined,
-                    id: task.assignee.email || undefined
-                }] 
-                : [],
+            assignees: (task as any).assignees && Array.isArray((task as any).assignees)
+                ? (task as any).assignees // Usar array assignees se disponível (inclui task_members)
+                : task.assignee 
+                    ? [{ 
+                        name: task.assignee.full_name || task.assignee.email || "Sem nome", 
+                        avatar: task.assignee.avatar_url || undefined,
+                        id: task.assignee_id || undefined
+                    }] 
+                    : [],
             dueDate: task.due_date || undefined,
             tags,
             hasUpdates: false,

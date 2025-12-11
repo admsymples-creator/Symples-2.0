@@ -24,7 +24,53 @@ export type TaskWithDetails = Task & {
     name: string;
     color: string | null;
   } | null;
+  task_members?: Array<{
+    user: {
+      id: string;
+      full_name: string | null;
+      email: string | null;
+      avatar_url: string | null;
+    };
+  }>;
 };
+
+/**
+ * Função helper para transformar tarefa com task_members em array assignees
+ * Combina assignee_id (se existir) com task_members, garantindo que assignee_id aparece primeiro
+ */
+function transformTaskWithMembers(task: any): any {
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if (task.task_members && Array.isArray(task.task_members)) {
+    task.task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
+  return {
+    ...task,
+    assignees,
+  };
+}
 
 /**
  * Busca tarefas de um workspace ou pessoais
@@ -86,6 +132,14 @@ export async function getTasks(filters?: {
         name,
         color,
         workspace_id
+      ),
+      task_members (
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
       )
     `)
     // ✅ Filtro 1: Soft Delete - Excluir tarefas arquivadas
@@ -219,11 +273,14 @@ export async function getTasks(filters?: {
     }
   }
 
-  // Adicionar contagem de comentários a cada tarefa
-  return filteredData.map((task) => ({
-    ...task,
-    comment_count: commentCountMap[task.id] || 0,
-  })) as unknown as TaskWithDetails[];
+  // Adicionar contagem de comentários e transformar membros
+  return filteredData.map((task) => {
+    const transformed = transformTaskWithMembers({
+      ...task,
+      comment_count: commentCountMap[task.id] || 0,
+    });
+    return transformed;
+  }) as unknown as TaskWithDetails[];
 }
 
 /**
@@ -956,6 +1013,14 @@ export async function getTasksForWorkspace(workspaceId: string): Promise<TaskWit
         name,
         color,
         workspace_id
+      ),
+      task_members (
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
       )
     `)
     .eq("workspace_id", workspaceId) // ✅ Scope: Apenas tarefas do workspace
@@ -1039,11 +1104,14 @@ export async function getTasksForWorkspace(workspaceId: string): Promise<TaskWit
     }
   }
 
-  // Adicionar contagem de comentários a cada tarefa
-  return filteredData.map((task) => ({
-    ...task,
-    comment_count: commentCountMap[task.id] || 0,
-  })) as unknown as TaskWithDetails[];
+  // Adicionar contagem de comentários e transformar membros
+  return filteredData.map((task) => {
+    const transformed = transformTaskWithMembers({
+      ...task,
+      comment_count: commentCountMap[task.id] || 0,
+    });
+    return transformed;
+  }) as unknown as TaskWithDetails[];
 }
 
 /**
