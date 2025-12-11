@@ -104,7 +104,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 - **TaskRowMinify - Layout em Grid**:
   - Layout CSS Grid com colunas fixas para alinhamento vertical consistente
-  - Colunas: Drag Handle (40px) | Título (1fr) | Data (90px) | Responsável (32px) | Status (100px) | Menu (40px)
+  - Colunas: Drag Handle (40px) | Checkbox (24px) | Título (1fr) | Responsável (auto) | Data (90px) | Status (130px) | Menu (40px)
+  - Coluna de Responsável posicionada antes da coluna de Data
+  - Coluna de Responsável usa largura `auto` para se ajustar ao conteúdo (múltiplos avatares)
   - Indicadores Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
 
 - **TaskGroup - Indicador de Cor**:

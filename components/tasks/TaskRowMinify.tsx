@@ -442,8 +442,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       style={style}
       className={cn(
         "group grid items-center h-11 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1 relative",
-        "grid-cols-[40px_24px_1fr_90px_32px_130px_40px] gap-1",
-        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Data | Responsável | Status | Menu
+        "grid-cols-[40px_24px_1fr_auto_90px_130px_40px] gap-1",
+        // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Responsável (auto) | Data | Status | Menu
         (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
         disabled && "opacity-75",
         task.isPending && "opacity-60" // ✅ Reduzir opacidade para tarefas pending
@@ -540,6 +540,53 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
             </div>
           ) : null}
         </div>
+      </div>
+
+      {/* Coluna: Responsável */}
+      <div 
+        className="flex items-center justify-center"
+        onClick={stopProp}
+        onPointerDown={stopProp}
+      >
+        {isMounted ? (
+          <TaskMembersPicker
+            memberIds={currentMemberIds}
+            onChange={handleMembersChange}
+            workspaceId={task.workspace_id || undefined}
+            members={membersWithCurrentUser}
+            align="end"
+            trigger={
+              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100" onClick={stopProp} onPointerDown={stopProp}>
+                {task.assignees && task.assignees.length > 0 ? (
+                  <AvatarGroup
+                    users={task.assignees}
+                    max={3}
+                    size="sm"
+                  />
+                ) : (
+                  <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
+                    <User size={12} />
+                  </div>
+                )}
+              </button>
+            }
+          />
+        ) : (
+          // Renderizar placeholder durante SSR/hidratação
+          <button className="outline-none rounded-full" disabled>
+            {task.assignees && task.assignees.length > 0 ? (
+              <AvatarGroup
+                users={task.assignees}
+                max={3}
+                size="sm"
+              />
+            ) : (
+              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
+                <User size={12} />
+              </div>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Coluna: Data com indicadores Focus e Urgente */}
@@ -655,53 +702,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               </span>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Coluna: Responsável */}
-      <div 
-        className="flex items-center justify-center"
-        onClick={stopProp}
-        onPointerDown={stopProp}
-      >
-        {isMounted ? (
-          <TaskMembersPicker
-            memberIds={currentMemberIds}
-            onChange={handleMembersChange}
-            workspaceId={task.workspace_id || undefined}
-            members={membersWithCurrentUser}
-            align="end"
-            trigger={
-              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100" onClick={stopProp} onPointerDown={stopProp}>
-                {task.assignees && task.assignees.length > 0 ? (
-                  <AvatarGroup
-                    users={task.assignees}
-                    max={3}
-                    size="sm"
-                  />
-                ) : (
-                  <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
-                    <User size={12} />
-                  </div>
-                )}
-              </button>
-            }
-          />
-        ) : (
-          // Renderizar placeholder durante SSR/hidratação
-          <button className="outline-none rounded-full" disabled>
-            {task.assignees && task.assignees.length > 0 ? (
-              <AvatarGroup
-                users={task.assignees}
-                max={3}
-                size="sm"
-              />
-            ) : (
-              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
-                <User size={12} />
-              </div>
-            )}
-          </button>
         )}
       </div>
 
