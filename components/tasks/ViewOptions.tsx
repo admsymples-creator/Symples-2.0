@@ -29,7 +29,6 @@ export function GroupingMenu() {
   const groupLabels: Record<string, string> = {
     none: "Nenhum",
     status: "Status",
-    priority: "Prioridade",
     date: "Data",
     assignee: "Responsável"
   }
@@ -80,7 +79,7 @@ export function GroupingMenu() {
                   variant="secondary" 
                   className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
                 >
-                  {groupLabels[currentGroup]}
+                  {groupLabels[currentGroup] || "Status"}
                 </Badge>
               </>
             )}
@@ -99,9 +98,6 @@ export function GroupingMenu() {
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="status" className="cursor-pointer">
               Status
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="priority" className="cursor-pointer">
-              Prioridade
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="assignee" className="cursor-pointer">
               Responsável

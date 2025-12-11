@@ -764,7 +764,6 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="status">Status</SelectItem>
-                            <SelectItem value="priority">Prioridade</SelectItem>
                             <SelectItem value="assignee">Responsável</SelectItem>
                         </SelectContent>
                     </Select>
