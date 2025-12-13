@@ -128,6 +128,12 @@ symples-v2/
 │   │   ├── OnboardingWizard.tsx
 │   │   └── SignupForm.tsx (✅ Formulário de cadastro com suporte a convite)
 │   │
+│   ├── 📁 landing-page/
+│   │   ├── BentoGrid.tsx (✅ Grid Bento com casos de uso)
+│   │   ├── FeatureTabs.tsx (✅ Abas interativas Input/Processamento/Gestão)
+│   │   ├── HeroSection.tsx (✅ Hero com animações flutuantes)
+│   │   └── PricingFAQ.tsx (✅ Preços e FAQ)
+│   │
 │   ├── 📁 layout/
 │   │   ├── AppShell.tsx
 │   │   ├── GlobalSearch.tsx
@@ -198,6 +204,13 @@ symples-v2/
 │   │   ├── tabs.tsx
 │   │   ├── textarea.tsx
 │   │   └── tooltip.tsx
+│   │
+│   ├── 📁 ui-mocks/
+│   │   ├── MockAIAssistant.tsx (✅ Interface de IA com gráficos)
+│   │   ├── MockChatInterface.tsx (✅ Interface WhatsApp com áudio)
+│   │   ├── MockComparison.tsx (✅ Tabela comparativa glassmorphism)
+│   │   ├── MockKanbanCard.tsx (✅ Card de tarefa compacto)
+│   │   └── MockMobileFrame.tsx (✅ Container smartphone mobile-first)
 │   │
 │   └── components.json
 │

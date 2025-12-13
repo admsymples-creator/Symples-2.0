@@ -6,6 +6,34 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-13 - Landing Page Mobile-First & Branding V2
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🚀 Nova Landing Page (Mobile-First Business OS)
+- **Conceito**: "Gerir uma empresa tem que ser Symples".
+- **Design Strategy**: Mobile-First, com mocks flutuantes de alta fidelidade e visual "Apple-like".
+- **Componentes de Mocks (`components/ui-mocks/`)**:
+  - `MockMobileFrame`: Container smartphone reutilizável.
+  - `MockChatInterface`: Interface estilo WhatsApp Business com visualização de áudio.
+  - `MockAIAssistant`: Interface de IA com gráficos CSS-only.
+  - `MockKanbanCard`: Cards de tarefa compactos e densos.
+  - `MockComparison`: Tabela glassmorphism comparando "Tradicional vs Symples".
+- **Seções Implementadas (`components/landing-page/`)**:
+  - `HeroSection`: Animações Framer Motion, "cérebro" IA centralizado.
+  - `FeatureTabs`: Abas interativas (Input -> Processamento -> Gestão).
+  - `BentoGrid`: Grid estilo Apple Bento com casos de uso (Segundo Cérebro, Financeiro).
+  - `PricingFAQ`: Planos e dúvidas frequentes.
+- **Página Principal**:
+  - Nova montagem em `app/page.tsx` integrando todas as seções.
+  - Footer minimalista "Symples Tecnologia 2025".
+
+### 2. Trabalho em andamento
+- Refinamento de performance das animações.
+- Testes de responsividade em dispositivos reais.
+
+---
+
 ## 2025-01-XX - Correção: Comentário Otimista Desaparecendo Tardio em TaskDetailModal
 
 ### 1. Melhorias, bugs e features implementadas em preview
