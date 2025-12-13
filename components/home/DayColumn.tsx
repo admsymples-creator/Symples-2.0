@@ -8,18 +8,18 @@ import { createTask, deleteTask, updateTask } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner"; 
+import { toast } from "sonner";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
-type OptimisticAction = 
+type OptimisticAction =
   | { type: 'add'; task: Task }
   | { type: 'update'; task: Partial<Task> & { id: string } }
   | { type: 'delete'; id: string };
 
 interface DayColumnProps {
   dayName: string;
-  date: string; 
+  date: string;
   dateObj?: Date;
   tasks: Task[];
   isToday?: boolean;
@@ -82,7 +82,7 @@ export function DayColumn({
     setQuickAddValue(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-    
+
     if (showTutorialHint && e.target.value.trim().length > 0) {
       setShowTutorialHint(false);
     }
@@ -112,14 +112,21 @@ export function DayColumn({
       if (bIsPersonal && bHasTime && !(aIsPersonal && aHasTime)) return 1;
       if (aIsPersonal && !aHasTime && !bIsPersonal) return -1;
       if (bIsPersonal && !bHasTime && !aIsPersonal) return 1;
-      if (!aIsPersonal && !bIsPersonal) return 0;
+
+
+      // Se empatar nos critérios acima (ex: ambos pessoais sem hora),
+      // ordena por data de criação (mais antigo primeiro -> mais novo no final)
+      if (a.created_at && b.created_at) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+
       return 0;
     });
   }, [optimisticTasks]);
 
-  const pendingCount = useMemo(() => 
-    optimisticTasks.filter(t => t.status !== 'done').length, 
-  [optimisticTasks]);
+  const pendingCount = useMemo(() =>
+    optimisticTasks.filter(t => t.status !== 'done').length,
+    [optimisticTasks]);
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +167,7 @@ export function DayColumn({
         created_by: null,
         origin_context: null
       };
-      
+
       startTransition(() => {
         addOptimisticTask({ type: 'add', task: tempTask });
       });
@@ -179,7 +186,7 @@ export function DayColumn({
 
       setSelectedDateTime(null);
       const results = await Promise.all(createPromises);
-      
+
       if (results.some((r) => r.success)) {
         startTransition(() => {
           router.refresh();
@@ -198,12 +205,12 @@ export function DayColumn({
   const handleToggle = async (id: string, checked: boolean) => {
     try {
       startTransition(() => {
-        addOptimisticTask({ 
-          type: 'update', 
-          task: { id, status: checked ? "done" : "todo" } 
+        addOptimisticTask({
+          type: 'update',
+          task: { id, status: checked ? "done" : "todo" }
         });
       });
-      
+
       await updateTask({ id, status: checked ? "done" : "todo" });
       router.refresh();
     } catch (error) {
@@ -214,13 +221,13 @@ export function DayColumn({
   };
 
   const handleDelete = async (id: string) => {
-    if(confirm("Excluir?")) { 
+    if (confirm("Excluir?")) {
       try {
         startTransition(() => {
           addOptimisticTask({ type: 'delete', id });
         });
-        await deleteTask(id); 
-        router.refresh(); 
+        await deleteTask(id);
+        router.refresh();
       } catch (error) {
         console.error("Erro ao excluir:", error);
         toast.error("Erro ao excluir tarefa");
@@ -232,9 +239,9 @@ export function DayColumn({
   const handleEdit = async (id: string, title: string) => {
     try {
       startTransition(() => {
-        addOptimisticTask({ 
-          type: 'update', 
-          task: { id, title } 
+        addOptimisticTask({
+          type: 'update',
+          task: { id, title }
         });
       });
       await updateTask({ id, title });
@@ -249,9 +256,9 @@ export function DayColumn({
   const handleMove = async (id: string, wid: string) => {
     try {
       startTransition(() => {
-        addOptimisticTask({ 
-          type: 'update', 
-          task: { id, workspace_id: wid, is_personal: false } 
+        addOptimisticTask({
+          type: 'update',
+          task: { id, workspace_id: wid, is_personal: false }
         });
       });
       await updateTask({ id, workspace_id: wid, is_personal: false });
@@ -267,8 +274,8 @@ export function DayColumn({
     <div
       className={cn(
         "group/column flex flex-col h-full min-h-[500px] max-h-[80vh] rounded-2xl transition-all duration-300",
-        isToday 
-          ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md" 
+        isToday
+          ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md"
           : "bg-surface border border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
       )}
     >
@@ -302,13 +309,10 @@ export function DayColumn({
       </div>
 
       {/* --- TASK LIST (SCROLL AREA) --- */}
-      <div 
+      <div
         className={cn(
           "flex-1 px-2 py-2 relative flex flex-col",
-          // CORREÇÃO: Scroll apenas se houver itens. Hidden se vazio para travar o layout.
-          sortedTasks.length > 0 
-            ? "overflow-y-auto overflow-x-hidden custom-scrollbar" 
-            : "overflow-hidden"
+          "overflow-y-auto overflow-x-hidden custom-scrollbar"
         )}
       >
         {sortedTasks.length > 0 ? (
@@ -344,19 +348,19 @@ export function DayColumn({
       {/* --- FOOTER / INPUT AREA --- */}
       <div className="flex-none px-3 pb-3 pt-2 relative">
         <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
-        
+
         <form onSubmit={handleQuickAddSubmit} className="relative z-10">
           <div
             className={cn(
               "flex flex-col bg-white rounded-xl border shadow-sm transition-all duration-200 overflow-hidden",
-              isQuickAddFocused 
-                ? "border-gray-400 ring-4 ring-gray-100 shadow-md transform -translate-y-1" 
+              isQuickAddFocused
+                ? "border-gray-400 ring-4 ring-gray-100 shadow-md transform -translate-y-1"
                 : "border-gray-200 hover:border-gray-300"
             )}
           >
             {highlightInput && isToday && !isQuickAddFocused && (
-              <div 
-                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl" 
+              <div
+                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl"
                 style={{ backgroundColor: 'rgba(0,0,0,0.03)' }}
               />
             )}
@@ -369,7 +373,7 @@ export function DayColumn({
                   <Plus className="w-4 h-4 text-gray-400" />
                 )}
               </div>
-              
+
               <textarea
                 ref={inputRef}
                 placeholder="Nova tarefa..."
@@ -408,7 +412,7 @@ export function DayColumn({
                     }
                   />
                 </div>
-                
+
                 <div className="text-[10px] text-gray-400 font-medium">
                   ENTER para salvar
                 </div>
