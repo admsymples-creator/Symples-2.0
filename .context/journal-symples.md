@@ -6,6 +6,36 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-13 - Correção: Zero State do Tutorial
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção: Inconsistência no Zero State (Tutorial)
+- **Problema**: O "Zero State" (tela ilustrativa quando não há tarefas) às vezes não aparecia imediatamente após fechar o modal de boas-vindas na primeira visita.
+- **Causa**: O estado de visualização do tutorial era lido apenas na montagem inicial do componente, não reagindo ao fechamento do modal.
+- **Solução**:
+  - `HomePageClient.tsx`: O estado `welcomeSeen` foi elevado para este componente pai.
+  - Sincronização: O estado agora é atualizado imediatamente ao fechar o modal.
+  - `WeeklyViewWrapper`: Passou a receber `welcomeSeen` via props, garantindo re-renderização reativa.
+- **Resultado**: A transição do Modal para o Zero State agora é instantânea e garantida.
+
+---
+
+## 2025-12-13 - Correção: Redirect de Convite (Race Condition)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção: Race Condition no Aceite Manual de Convite
+- **Problema**: Usuários logados que aceitavam convites eram redirecionados para `/home`. Devido à latência do banco de dados (replica lag), a query `getUserWorkspaces` na Home às vezes retornava vazio, lançando o usuário para o Onboarding indevidamente.
+- **Solução**:
+  - `lib/actions/members.ts`: Atualizado `acceptInvite` para retornar também o `workspaceSlug`.
+  - `app/invite/[token]/page.tsx`: Atualizado `handleAccept` para redirecionar diretamente para `/[slug]/tasks`.
+- **Benefício**:
+  - Elimina a race condition (não depende mais de `getUserWorkspaces` na Home).
+  - Melhora a UX levando o usuário direto para o contexto do trabalho.
+
+---
+
 ## 2025-12-13 - Landing Page Mobile-First & Branding V2
 
 ### 1. Melhorias, bugs e features implementadas em preview
