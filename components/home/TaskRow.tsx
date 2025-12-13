@@ -49,12 +49,20 @@ export function TaskRow({
   const [isChecked, setIsChecked] = useState(task.status === "done");
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.title);
+  // Estado local para evitar flash de conteúdo antigo enquanto o pai atualiza
+  const [optimisticTitle, setOptimisticTitle] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Garantir que renderiza apenas no cliente para evitar problemas de hidratação
   useEffect(() => {
     setIsMounted(true);
   }, []);
+  
+  // Sincronizar título quando a prop mudar (confirmação do servidor ou optimistic do pai)
+  useEffect(() => {
+    setOptimisticTitle(task.title);
+    setEditValue(task.title);
+  }, [task.title]);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -71,20 +79,29 @@ export function TaskRow({
 
   const startEditing = () => {
     setIsEditing(true);
-    setEditValue(task.title);
+    setEditValue(optimisticTitle);
   };
 
   const saveEdit = async () => {
-    if (!editValue.trim() || editValue === task.title) {
+    if (!editValue.trim() || editValue === optimisticTitle) {
       setIsEditing(false);
-      setEditValue(task.title);
+      setEditValue(optimisticTitle);
       return;
     }
 
-    if (onEdit) {
-      await onEdit(task.id, editValue.trim());
-    }
+    // Optimistic update local imediato
+    const newValue = editValue.trim();
+    setOptimisticTitle(newValue);
     setIsEditing(false);
+
+    if (onEdit) {
+      // Fire and forget - não esperamos a resposta para não travar a UI
+      onEdit(task.id, newValue).catch(err => {
+        // Reverter em caso de erro (opcional, mas boa prática)
+        console.error("Failed to update task title", err);
+        setOptimisticTitle(task.title); 
+      });
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -230,11 +247,11 @@ export function TaskRow({
                                         : "text-gray-700"
                                 )}
                             >
-                                {task.title}
+                                {optimisticTitle}
                             </p>
                         </TooltipTrigger>
                         <TooltipContent side="top" align="start" className="max-w-[300px] break-words">
-                            <p>{task.title}</p>
+                            <p>{optimisticTitle}</p>
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
