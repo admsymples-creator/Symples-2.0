@@ -112,7 +112,14 @@ export function DayColumn({
       if (bIsPersonal && bHasTime && !(aIsPersonal && aHasTime)) return 1;
       if (aIsPersonal && !aHasTime && !bIsPersonal) return -1;
       if (bIsPersonal && !bHasTime && !aIsPersonal) return 1;
-      if (!aIsPersonal && !bIsPersonal) return 0;
+
+
+      // Se empatar nos critérios acima (ex: ambos pessoais sem hora),
+      // ordena por data de criação (mais antigo primeiro -> mais novo no final)
+      if (a.created_at && b.created_at) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+
       return 0;
     });
   }, [optimisticTasks]);

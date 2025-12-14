@@ -54,7 +54,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
     const today = new Date();
     const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const fullDayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-    
+
     const days = [];
     let startOffset = 0;
     let endOffset = 0;
@@ -104,7 +104,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
         </Tabs>
       </div>
 
-      <motion.div 
+      <motion.div
         layout
         className={`grid gap-4 ${daysToShow === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-5'}`}
       >

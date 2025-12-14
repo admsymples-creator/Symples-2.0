@@ -167,6 +167,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Adicionado `tabIndex={-1}` na descrição para evitar foco via teclado
   - Removidos `focus-within:ring` e `focus-visible:ring` do Editor
 
+### Weekly View Update
+- **Weekly Card Scroll**: Scroll horizontal implementado com snap.
+- **Ordenação**: Novas tarefas adicionadas ao final da lista.
+- **UI**: Scrollbar minimalista (3px).
+
 
 
 
