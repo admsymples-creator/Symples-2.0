@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { MoreHorizontal, MessageSquare, CheckSquare, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { Avatar } from "@/components/tasks/Avatar";
 import {
@@ -28,10 +28,12 @@ interface WorkspaceCardProps {
     pendingCount: number;
     totalCount: number;
     members?: WorkspaceMember[];
+    isFirst?: boolean;
 }
 
-export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [] }: WorkspaceCardProps) {
+export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [], isFirst = false }: WorkspaceCardProps) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { setActiveWorkspaceId } = useWorkspace();
     const [isMounted, setIsMounted] = useState(false);
 
@@ -39,7 +41,17 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     useEffect(() => {
         setIsMounted(true);
     }, []);
-    
+
+    const isTutorial = searchParams.get('tutorial') === 'true';
+    const highlightTargetId = searchParams.get('highlight_workspace');
+
+    // Check if THIS card is the one to highlight
+    const isHighlighted = isMounted && isTutorial && (
+        highlightTargetId
+            ? highlightTargetId === id
+            : isFirst // Fallback to first if no ID specified
+    );
+
     // Calculate progress
     const progress = totalCount > 0 ? ((totalCount - pendingCount) / totalCount) * 100 : 0;
     const completedCount = totalCount - pendingCount;
@@ -47,7 +59,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     const handleCardClick = () => {
         // Atualizar workspace ativo no contexto
         setActiveWorkspaceId(id);
-        
+
         // Navegar para a página de tarefas do workspace
         const workspaceBase = slug || id;
         router.push(`/${workspaceBase}/tasks`);
@@ -69,7 +81,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     // Mock Data Generator (Deterministic based on name length)
     const seed = name.length;
     const commentsCount = (seed * 3) % 12;
-    
+
     // Workspace Image - usar logo real ou fallback para imagem mockada
     // Using Unsplash source for consistent, nice-looking workspace/office/tech images
     const workspaceImages = [
@@ -82,25 +94,41 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     const workspaceImage = logo_url || fallbackImage;
 
     return (
-        <div 
+        <div
             onClick={handleCardClick}
-            className="group bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-200 cursor-pointer relative flex flex-col h-full"
+            className={cn(
+                "group bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-300 cursor-pointer relative flex flex-col h-full",
+                // Highlight Styles
+                isHighlighted && "ring-2 ring-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)] border-green-500 scale-[1.02] z-10"
+            )}
         >
+            {/* Tutorial Tooltip Hint */}
+            {isHighlighted && (
+                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-xl animate-bounce z-20 whitespace-nowrap after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-[6px] after:border-transparent after:border-t-gray-900">
+                    Seus projetos da empresa estão aqui
+                </div>
+            )}
+
+            {/* Background Pulse */}
+            {isHighlighted && (
+                <div className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl bg-green-50/50" />
+            )}
+
             {/* 2. Header (Topo) */}
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-start mb-4 relative z-10">
                 {/* Workspace Image */}
                 <div className="h-12 w-12 rounded-lg overflow-hidden border border-gray-100 shadow-sm">
-                    <img 
-                        src={workspaceImage} 
+                    <img
+                        src={workspaceImage}
                         alt={name}
                         className="h-full w-full object-cover"
                     />
                 </div>
-                
+
                 {isMounted ? (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <button 
+                            <button
                                 onClick={(e) => {
                                     e.stopPropagation(); // Prevenir navegação ao clicar no menu
                                 }}
@@ -110,7 +138,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                                 onClick={handleOpenWorkspace}
                                 className="cursor-pointer"
                             >
@@ -118,7 +146,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
                                 <span>Abrir workspace</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                                 onClick={handleOpenSettings}
                                 className="cursor-pointer"
                             >
@@ -129,7 +157,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
                     </DropdownMenu>
                 ) : (
                     // Renderizar botão simples durante SSR/hidratação
-                    <button 
+                    <button
                         className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
                         disabled
                     >
@@ -139,14 +167,17 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
             </div>
 
             {/* 3. Corpo (Info Principal) */}
-            <div className="mb-auto">
-                <h3 className="font-bold text-gray-900 text-base leading-tight group-hover:text-green-700 transition-colors">
+            <div className="mb-auto relative z-10">
+                <h3 className={cn(
+                    "font-bold text-gray-900 text-base leading-tight group-hover:text-green-700 transition-colors",
+                    isHighlighted && "text-green-700"
+                )}>
                     {name}
                 </h3>
             </div>
 
             {/* 4. Indicador de Progresso */}
-            <div className="mt-6">
+            <div className="mt-6 relative z-10">
                 <div className="flex justify-between items-end mb-2">
                     <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Progresso da Semana</span>
                     <span className="text-xs font-bold text-gray-700">{Math.round(progress)}%</span>
@@ -163,7 +194,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
             </div>
 
             {/* 5. Rodapé (Meta & Social) */}
-            <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-50">
+            <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-50 relative z-10">
                 {/* Avatar Group */}
                 <div className="flex -space-x-2 overflow-hidden pl-1">
                     {members.length > 0 ? (
@@ -179,8 +210,8 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
                     ) : (
                         // Fallback: mostrar avatares mockados se não houver membros
                         [1, 2, 3].map((i) => (
-                            <div 
-                                key={i} 
+                            <div
+                                key={i}
                                 className="relative inline-block h-6 w-6 rounded-full ring-2 ring-white bg-gray-100"
                             >
                                 <img

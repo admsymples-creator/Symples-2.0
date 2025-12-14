@@ -36,6 +36,23 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
   // Se ainda não viu (welcomeSeen === false), mostra o placeholder de loading ou nada (esperando o modal)
   const showEmptyState = !hasTasks && welcomeSeen;
 
+  const handleStartTutorial = () => {
+    setIsTutorialActive(true);
+
+    // ✅ Atualiza URL para ativar hints na Sidebar (se houver workspace criado recentemente)
+    // O ID do workspace novo poderia vir de um cookie ou contexto, mas por simplificação
+    // vamos ativar o modo tutorial genérico que a Sidebar já escuta.
+    const params = new URLSearchParams(window.location.search);
+    params.set('tutorial', 'true');
+
+    // Tenta recuperar cookie de workspace recém criado se ainda existir (ou lê de sessionStorage se tivéssemos salvo)
+    // Como o cookie 'newly_accepted_workspace_id' é limpo rapido, talvez o highlight da sidebar
+    // seja mais efetivo se for genérico ou se persistirmos o ID em memória no HomePageClient.
+    // Por enquanto, apenas 'tutorial=true' já ativa o destaque visual na Sidebar se implementado.
+
+    router.push(`?${params.toString()}`);
+  };
+
   const handleCreateTask = () => {
     setIsCreateTaskModalOpen(true);
   };
@@ -68,7 +85,8 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
           {!isMounted ? (
             // Renderização inicial (servidor e primeiro render do cliente)
             // ✅ Usa o Skeleton do EmptyState para evitar "flash" branco
-            <div key="placeholder-hydration">
+            // suppressHydrationWarning: Extensões do navegador podem adicionar atributos (ex: bis_skin_checked)
+            <div key="placeholder-hydration" suppressHydrationWarning>
               <EmptyWeekState skeletonOnly />
             </div>
           ) : shouldShowEmptyState ? (
@@ -85,7 +103,7 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
                     Visão Semanal
                   </h2>
                 </div>
-                <EmptyWeekState onAction={() => setIsTutorialActive(true)} />
+                <EmptyWeekState onAction={handleStartTutorial} />
               </div>
             </motion.div>
           ) : shouldShowWeeklyView ? (
@@ -104,7 +122,8 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
             </motion.div>
           ) : (
             // Fallback (ex: carregando dados finais)
-            <div key="placeholder-waiting">
+            // suppressHydrationWarning: Extensões do navegador podem adicionar atributos (ex: bis_skin_checked)
+            <div key="placeholder-waiting" suppressHydrationWarning>
               <EmptyWeekState skeletonOnly />
             </div>
           )}

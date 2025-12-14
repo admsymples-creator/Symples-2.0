@@ -16,11 +16,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // ✅ CORREÇÃO: Next.js 15+ requer await para params (são Promises)
   const { token } = await params;
   const inviteId = token;
-  
+
   // ✅ NOTA: O cookie 'pending_invite' é criado automaticamente pelo middleware
   // quando o usuário acessa /invite/[token]. Isso permite que o token sobreviva
   // a redirects OAuth e Magic Link sem depender de localStorage ou parâmetros de URL.
-  
+
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -28,36 +28,44 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // Nota: Se o usuário não estiver logado, getInviteDetails falhará devido ao RLS.
   // Se o email do usuário não bater com o convite, também falhará.
   const invite = await getInviteDetails(inviteId);
-  
+
   // Se o convite foi encontrado e já foi aceito
   if (invite && invite.status === 'accepted') {
-     return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-           <Card className="w-full max-w-md text-center">
-              <CardHeader>
-                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-                    <CheckCircle2 className="h-6 w-6 text-green-600" />
-                 </div>
-                 <CardTitle>Convite já aceito</CardTitle>
-                 <CardDescription>
-                    Você já é membro deste workspace.
-                 </CardDescription>
-              </CardHeader>
-              <CardFooter className="justify-center">
-                 <Link href="/home">
-                    <Button>Ir para Dashboard</Button>
-                 </Link>
-              </CardFooter>
-           </Card>
-        </div>
-     );
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle2 className="h-6 w-6 text-green-600" />
+            </div>
+            <CardTitle>Convite já aceito</CardTitle>
+            <CardDescription>
+              Você já é membro deste workspace.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="justify-center">
+            <Link href="/home">
+              <Button>Ir para Dashboard</Button>
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+    );
   }
 
   // Action de aceite para ser chamada pelo formulário
   async function handleAccept() {
     "use server";
-    await acceptInvite(inviteId);
-    redirect("/home");
+    const result = await acceptInvite(inviteId);
+
+    // ✅ CORREÇÃO: Redirecionar direto para o workspace
+    // Evita loop de redirecionamento na Home se o banco ainda não propagou
+    if (result.success && result.workspaceSlug) {
+      redirect(`/${result.workspaceSlug}/tasks`);
+    } else {
+      // Fallback para home se não conseguir o slug (mas deve ter)
+      redirect("/home?invite_accepted=true");
+    }
   }
 
   // Caso 1: Usuário NÃO logado
@@ -66,7 +74,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
     if (invite) {
       const workspaceName = (invite as any).workspaces ? ((invite as any).workspaces as any).name : "um Workspace";
       const inviterName = (invite as any).invited_by_profile ? ((invite as any).invited_by_profile as any).full_name : "Alguém";
-      
+
       return (
         <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
           <Card className="w-full max-w-md">
@@ -103,14 +111,14 @@ export default async function InvitePage({ params }: InvitePageProps) {
         </div>
       );
     }
-    
+
     // Se não encontrou o convite, mostrar mensagem genérica
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-               <Building2 className="h-6 w-6 text-blue-600" />
+              <Building2 className="h-6 w-6 text-blue-600" />
             </div>
             <CardTitle>Convite para Workspace</CardTitle>
             <CardDescription>
@@ -118,9 +126,9 @@ export default async function InvitePage({ params }: InvitePageProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-4">
-             <p className="text-sm text-muted-foreground">
-                Para visualizar os detalhes e aceitar o convite, você precisa fazer login.
-             </p>
+            <p className="text-sm text-muted-foreground">
+              Para visualizar os detalhes e aceitar o convite, você precisa fazer login.
+            </p>
           </CardContent>
           <CardFooter>
             {/* ✅ TASK 2: URL Redundancy - Passar invite token na URL */}
@@ -139,45 +147,45 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // Caso 2: Usuário logado, mas convite não encontrado (RLS bloqueou ou inválido)
   // Provavelmente o email do usuário não bate com o do convite
   if (!invite) {
-     return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-           <Card className="w-full max-w-md border-red-100">
-              <CardHeader className="text-center">
-                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                    <AlertCircle className="h-6 w-6 text-red-600" />
-                 </div>
-                 <CardTitle className="text-red-900">Acesso não autorizado</CardTitle>
-                 <CardDescription>
-                    Não encontramos este convite ou ele não pertence à sua conta atual.
-                 </CardDescription>
-              </CardHeader>
-              <CardContent className="text-center space-y-4">
-                 <div className="rounded-md bg-slate-50 p-3 text-sm">
-                    <p className="text-slate-500 mb-1">Logado como:</p>
-                    <p className="font-medium text-slate-900">{user.email}</p>
-                 </div>
-                 <p className="text-sm text-muted-foreground">
-                    Verifique se você está logado com o mesmo email que recebeu o convite.
-                 </p>
-              </CardContent>
-              <CardFooter className="flex-col gap-2">
-                 <form action={async () => {
-                    "use server";
-                    const supabase = await createServerActionClient();
-                    await supabase.auth.signOut();
-                    redirect(`/login?next=/invite/${inviteId}`);
-                 }} className="w-full">
-                    <Button variant="outline" className="w-full">
-                       Trocar de conta
-                    </Button>
-                 </form>
-                 <Link href="/home" className="text-sm text-muted-foreground hover:underline">
-                    Voltar para Home
-                 </Link>
-              </CardFooter>
-           </Card>
-        </div>
-     );
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md border-red-100">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+            </div>
+            <CardTitle className="text-red-900">Acesso não autorizado</CardTitle>
+            <CardDescription>
+              Não encontramos este convite ou ele não pertence à sua conta atual.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <div className="rounded-md bg-slate-50 p-3 text-sm">
+              <p className="text-slate-500 mb-1">Logado como:</p>
+              <p className="font-medium text-slate-900">{user.email}</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Verifique se você está logado com o mesmo email que recebeu o convite.
+            </p>
+          </CardContent>
+          <CardFooter className="flex-col gap-2">
+            <form action={async () => {
+              "use server";
+              const supabase = await createServerActionClient();
+              await supabase.auth.signOut();
+              redirect(`/login?next=/invite/${inviteId}`);
+            }} className="w-full">
+              <Button variant="outline" className="w-full">
+                Trocar de conta
+              </Button>
+            </form>
+            <Link href="/home" className="text-sm text-muted-foreground hover:underline">
+              Voltar para Home
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+    );
   }
 
   // Caso 3: Usuário logado e convite válido encontrado
@@ -185,7 +193,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
   if (user && invite) {
     // Verificar se o email do usuário logado bate com o do convite
     const emailMatches = invite.email.toLowerCase() === user.email?.toLowerCase();
-    
+
     if (!emailMatches) {
       // Email não bate - mostrar UI de erro com opção de trocar conta
       const workspaceName = (invite as any).workspaces ? ((invite as any).workspaces as any).name : "um Workspace";
@@ -277,26 +285,26 @@ export default async function InvitePage({ params }: InvitePageProps) {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-2xl font-bold text-green-600">
-              {workspaceName.substring(0, 2).toUpperCase()}
-           </div>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-2xl font-bold text-green-600">
+            {workspaceName.substring(0, 2).toUpperCase()}
+          </div>
           <CardTitle>Convite para {workspaceName}</CardTitle>
           <CardDescription>
             <strong>{inviterName}</strong> convidou você para participar como <strong>{invite.role}</strong>.
           </CardDescription>
         </CardHeader>
         <CardContent>
-           <div className="rounded-md bg-green-50 p-4 border border-green-100">
-              <div className="flex items-center gap-3">
-                 <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-sm border border-green-100">
-                    {user?.email?.substring(0, 2).toUpperCase()}
-                 </div>
-                 <div className="overflow-hidden">
-                    <p className="text-xs text-green-600 font-medium uppercase tracking-wider">Aceitar como</p>
-                    <p className="text-sm font-semibold text-green-900 truncate">{user?.email}</p>
-                 </div>
+          <div className="rounded-md bg-green-50 p-4 border border-green-100">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-sm border border-green-100">
+                {user?.email?.substring(0, 2).toUpperCase()}
               </div>
-           </div>
+              <div className="overflow-hidden">
+                <p className="text-xs text-green-600 font-medium uppercase tracking-wider">Aceitar como</p>
+                <p className="text-sm font-semibold text-green-900 truncate">{user?.email}</p>
+              </div>
+            </div>
+          </div>
         </CardContent>
         <CardFooter className="flex-col gap-3">
           <form action={handleAccept} className="w-full">
@@ -305,7 +313,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
             </Button>
           </form>
           <Button variant="ghost" className="text-muted-foreground" asChild>
-             <Link href="/home">Agora não</Link>
+            <Link href="/home">Agora não</Link>
           </Button>
         </CardFooter>
       </Card>

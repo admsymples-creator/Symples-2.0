@@ -8,18 +8,18 @@ import { createTask, deleteTask, updateTask } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner"; 
+import { toast } from "sonner";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
-type OptimisticAction = 
+type OptimisticAction =
   | { type: 'add'; task: Task }
   | { type: 'update'; task: Partial<Task> & { id: string } }
   | { type: 'delete'; id: string };
 
 interface DayColumnProps {
   dayName: string;
-  date: string; 
+  date: string;
   dateObj?: Date;
   tasks: Task[];
   isToday?: boolean;
@@ -82,7 +82,7 @@ export function DayColumn({
     setQuickAddValue(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-    
+
     if (showTutorialHint && e.target.value.trim().length > 0) {
       setShowTutorialHint(false);
     }
@@ -117,9 +117,9 @@ export function DayColumn({
     });
   }, [optimisticTasks]);
 
-  const pendingCount = useMemo(() => 
-    optimisticTasks.filter(t => t.status !== 'done').length, 
-  [optimisticTasks]);
+  const pendingCount = useMemo(() =>
+    optimisticTasks.filter(t => t.status !== 'done').length,
+    [optimisticTasks]);
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +160,7 @@ export function DayColumn({
         created_by: null,
         origin_context: null
       };
-      
+
       startTransition(() => {
         addOptimisticTask({ type: 'add', task: tempTask });
       });
@@ -179,7 +179,7 @@ export function DayColumn({
 
       setSelectedDateTime(null);
       const results = await Promise.all(createPromises);
-      
+
       if (results.some((r) => r.success)) {
         startTransition(() => {
           router.refresh();
@@ -198,12 +198,12 @@ export function DayColumn({
   const handleToggle = async (id: string, checked: boolean) => {
     try {
       startTransition(() => {
-        addOptimisticTask({ 
-          type: 'update', 
-          task: { id, status: checked ? "done" : "todo" } 
+        addOptimisticTask({
+          type: 'update',
+          task: { id, status: checked ? "done" : "todo" }
         });
       });
-      
+
       await updateTask({ id, status: checked ? "done" : "todo" });
       router.refresh();
     } catch (error) {
@@ -214,13 +214,13 @@ export function DayColumn({
   };
 
   const handleDelete = async (id: string) => {
-    if(confirm("Excluir?")) { 
+    if (confirm("Excluir?")) {
       try {
         startTransition(() => {
           addOptimisticTask({ type: 'delete', id });
         });
-        await deleteTask(id); 
-        router.refresh(); 
+        await deleteTask(id);
+        router.refresh();
       } catch (error) {
         console.error("Erro ao excluir:", error);
         toast.error("Erro ao excluir tarefa");
@@ -232,9 +232,9 @@ export function DayColumn({
   const handleEdit = async (id: string, title: string) => {
     try {
       startTransition(() => {
-        addOptimisticTask({ 
-          type: 'update', 
-          task: { id, title } 
+        addOptimisticTask({
+          type: 'update',
+          task: { id, title }
         });
       });
       await updateTask({ id, title });
@@ -249,9 +249,9 @@ export function DayColumn({
   const handleMove = async (id: string, wid: string) => {
     try {
       startTransition(() => {
-        addOptimisticTask({ 
-          type: 'update', 
-          task: { id, workspace_id: wid, is_personal: false } 
+        addOptimisticTask({
+          type: 'update',
+          task: { id, workspace_id: wid, is_personal: false }
         });
       });
       await updateTask({ id, workspace_id: wid, is_personal: false });
@@ -267,8 +267,8 @@ export function DayColumn({
     <div
       className={cn(
         "group/column flex flex-col h-full min-h-[500px] max-h-[80vh] rounded-2xl transition-all duration-300",
-        isToday 
-          ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md" 
+        isToday
+          ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md"
           : "bg-surface border border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
       )}
     >
@@ -302,12 +302,12 @@ export function DayColumn({
       </div>
 
       {/* --- TASK LIST (SCROLL AREA) --- */}
-      <div 
+      <div
         className={cn(
           "flex-1 px-2 py-2 relative flex flex-col",
           // CORREÇÃO: Scroll apenas se houver itens. Hidden se vazio para travar o layout.
-          sortedTasks.length > 0 
-            ? "overflow-y-auto overflow-x-hidden custom-scrollbar" 
+          sortedTasks.length > 0
+            ? "overflow-y-auto overflow-x-hidden custom-scrollbar"
             : "overflow-hidden"
         )}
       >
@@ -344,32 +344,42 @@ export function DayColumn({
       {/* --- FOOTER / INPUT AREA --- */}
       <div className="flex-none px-3 pb-3 pt-2 relative">
         <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
-        
+
         <form onSubmit={handleQuickAddSubmit} className="relative z-10">
+
+          {/* Tutorial Tooltip Hint */}
+          {highlightInput && isToday && !isQuickAddFocused && (
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-xl animate-bounce z-20 whitespace-nowrap after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-[6px] after:border-transparent after:border-t-gray-900">
+              Organize sua vida pessoal aqui
+            </div>
+          )}
+
           <div
             className={cn(
-              "flex flex-col bg-white rounded-xl border shadow-sm transition-all duration-200 overflow-hidden",
-              isQuickAddFocused 
-                ? "border-gray-400 ring-4 ring-gray-100 shadow-md transform -translate-y-1" 
-                : "border-gray-200 hover:border-gray-300"
+              "flex flex-col bg-white rounded-xl border shadow-sm transition-all duration-300 overflow-hidden",
+              isQuickAddFocused
+                ? "border-gray-400 ring-4 ring-gray-100 shadow-md transform -translate-y-1"
+                : "border-gray-200 hover:border-gray-300",
+              // Tutorial Highlight: Green Ring & Shadow
+              highlightInput && isToday && !isQuickAddFocused && "ring-2 ring-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)] border-green-500 scale-[1.02]"
             )}
           >
+            {/* Background Pulse for Extra Attention */}
             {highlightInput && isToday && !isQuickAddFocused && (
-              <div 
-                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl" 
-                style={{ backgroundColor: 'rgba(0,0,0,0.03)' }}
+              <div
+                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl bg-green-50/50"
               />
             )}
 
-            <div className="flex items-start gap-2 p-2">
+            <div className="flex items-start gap-2 p-2 relative z-10">
               <div className="mt-1.5 ml-1">
                 {isQuickAddFocused ? (
                   <div className="w-2 h-2 bg-gray-900 rounded-full animate-pulse" />
                 ) : (
-                  <Plus className="w-4 h-4 text-gray-400" />
+                  <Plus className={cn("w-4 h-4 transition-colors", highlightInput && isToday ? "text-green-600" : "text-gray-400")} />
                 )}
               </div>
-              
+
               <textarea
                 ref={inputRef}
                 placeholder="Nova tarefa..."
@@ -390,7 +400,7 @@ export function DayColumn({
             </div>
 
             {(isQuickAddFocused || quickAddValue) && (
-              <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50">
+              <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50 relative z-10">
                 <div className="flex items-center gap-1">
                   <TaskDateTimePicker
                     date={selectedDateTime}
@@ -408,7 +418,7 @@ export function DayColumn({
                     }
                   />
                 </div>
-                
+
                 <div className="text-[10px] text-gray-400 font-medium">
                   ENTER para salvar
                 </div>
