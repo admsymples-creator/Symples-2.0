@@ -23,6 +23,7 @@ function getEndOfWeek(date: Date): Date {
   return end;
 }
 
+// ✅ Componente Server-Side limpo (sem lógica de params propensos a erro/crash)
 export default async function HomePage() {
   // Calcular range da semana (Segunda a Domingo)
   const today = new Date();
@@ -65,28 +66,31 @@ export default async function HomePage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Visão por Workspace
           </h2>
-          
+
           {workspaceStats.length > 0 ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {workspaceStats.map((workspace) => (
-                <WorkspaceCard
-                  key={workspace.id}
-                  id={workspace.id}
-                  name={workspace.name}
-                  slug={workspace.slug}
-                  logo_url={workspace.logo_url}
-                  pendingCount={workspace.pendingCount}
-                  totalCount={workspace.totalCount}
-                  members={workspace.members}
-                />
-              ))}
+              {workspaceStats.map((workspace, index) => {
+                return (
+                  <WorkspaceCard
+                    key={workspace.id}
+                    id={workspace.id}
+                    name={workspace.name}
+                    slug={workspace.slug}
+                    logo_url={workspace.logo_url}
+                    pendingCount={workspace.pendingCount}
+                    totalCount={workspace.totalCount}
+                    members={workspace.members}
+                    isFirst={index === 0} // ✅ Passa apenas se é o primeiro para fallback de highlight
+                  />
+                );
+              })}
             </div>
           ) : (
-             <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-200 border-dashed">
-                <FolderOpen className="w-12 h-12 text-gray-300 mb-3" />
-                <p className="text-gray-500 font-medium">Nenhum workspace encontrado</p>
-                <p className="text-sm text-gray-400 mt-1">Você ainda não participa de nenhum workspace.</p>
-             </div>
+            <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-200 border-dashed">
+              <FolderOpen className="w-12 h-12 text-gray-300 mb-3" />
+              <p className="text-gray-500 font-medium">Nenhum workspace encontrado</p>
+              <p className="text-sm text-gray-400 mt-1">Você ainda não participa de nenhum workspace.</p>
+            </div>
           )}
         </div>
       </div>

@@ -6,6 +6,84 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-14 - Refinamento do Tutorial Interativo e Correção de Crash
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção: Crash no HomePage (Server Component)
+- **Problema**: Acesso direto a `searchParams` em componente assíncrono do servidor no Next.js 15+ causava crash em runtime.
+- **Solução**: Removida lógica de visualização do servidor. O `HomePage` agora é puramente leitura de dados, delegando a responsabilidade de UI para componentes clientes.
+- **Arquivo**: `app/(main)/home/page.tsx`
+
+#### 🎨 Melhoria: Highlight do Workspace Card (Client-Side)
+- **Mudança**: Migração da lógica de destaque "Tutorial" para o próprio componente `WorkspaceCard`.
+- **Como Funciona**: O card usa o hook `useSearchParams` para detectar `?tutorial=true`.
+- **Inteligência**: Se nenhum ID for passado, o primeiro card da lista assume o destaque automaticamente via prop `isFirst`.
+- **Resultado**: Interação instantânea sem depender de hidratação ou dados do servidor.
+
+#### 🔧 Correção: Sidebar Limpa
+- **Fix**: Removido código legado que mantinha um destaque visual (glow) indesejado no seletor de workspaces da Sidebar.
+
+---
+
+## 2025-12-13 - Correção: Zero State do Tutorial
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção: Inconsistência no Zero State (Tutorial)
+- **Problema**: O "Zero State" (tela ilustrativa quando não há tarefas) às vezes não aparecia imediatamente após fechar o modal de boas-vindas na primeira visita.
+- **Causa**: O estado de visualização do tutorial era lido apenas na montagem inicial do componente, não reagindo ao fechamento do modal.
+- **Solução**:
+  - `HomePageClient.tsx`: O estado `welcomeSeen` foi elevado para este componente pai.
+  - Sincronização: O estado agora é atualizado imediatamente ao fechar o modal.
+  - `WeeklyViewWrapper`: Passou a receber `welcomeSeen` via props, garantindo re-renderização reativa.
+- **Resultado**: A transição do Modal para o Zero State agora é instantânea e garantida.
+
+---
+
+## 2025-12-13 - Correção: Redirect de Convite (Race Condition)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção: Race Condition no Aceite Manual de Convite
+- **Problema**: Usuários logados que aceitavam convites eram redirecionados para `/home`. Devido à latência do banco de dados (replica lag), a query `getUserWorkspaces` na Home às vezes retornava vazio, lançando o usuário para o Onboarding indevidamente.
+- **Solução**:
+  - `lib/actions/members.ts`: Atualizado `acceptInvite` para retornar também o `workspaceSlug`.
+  - `app/invite/[token]/page.tsx`: Atualizado `handleAccept` para redirecionar diretamente para `/[slug]/tasks`.
+- **Benefício**:
+  - Elimina a race condition (não depende mais de `getUserWorkspaces` na Home).
+  - Melhora a UX levando o usuário direto para o contexto do trabalho.
+
+---
+
+## 2025-12-13 - Landing Page Mobile-First & Branding V2
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🚀 Nova Landing Page (Mobile-First Business OS)
+- **Conceito**: "Gerir uma empresa tem que ser Symples".
+- **Design Strategy**: Mobile-First, com mocks flutuantes de alta fidelidade e visual "Apple-like".
+- **Componentes de Mocks (`components/ui-mocks/`)**:
+  - `MockMobileFrame`: Container smartphone reutilizável.
+  - `MockChatInterface`: Interface estilo WhatsApp Business com visualização de áudio.
+  - `MockAIAssistant`: Interface de IA com gráficos CSS-only.
+  - `MockKanbanCard`: Cards de tarefa compactos e densos.
+  - `MockComparison`: Tabela glassmorphism comparando "Tradicional vs Symples".
+- **Seções Implementadas (`components/landing-page/`)**:
+  - `HeroSection`: Animações Framer Motion, "cérebro" IA centralizado.
+  - `FeatureTabs`: Abas interativas (Input -> Processamento -> Gestão).
+  - `BentoGrid`: Grid estilo Apple Bento com casos de uso (Segundo Cérebro, Financeiro).
+  - `PricingFAQ`: Planos e dúvidas frequentes.
+- **Página Principal**:
+  - Nova montagem em `app/page.tsx` integrando todas as seções.
+  - Footer minimalista "Symples Tecnologia 2025".
+
+### 2. Trabalho em andamento
+- Refinamento de performance das animações.
+- Testes de responsividade em dispositivos reais.
+
+---
+
 ## 2025-01-XX - Correção: Comentário Otimista Desaparecendo Tardio em TaskDetailModal
 
 ### 1. Melhorias, bugs e features implementadas em preview

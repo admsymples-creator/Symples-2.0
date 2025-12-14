@@ -42,9 +42,9 @@ interface SidebarProps {
 
 function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
     const Icon = item.icon;
-    
+
     const content = (
-         <Link
+        <Link
             href={item.href}
             className={cn(
                 "flex items-center gap-3 rounded-lg transition-colors relative group whitespace-nowrap",
@@ -97,7 +97,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
             const params = new URLSearchParams(query);
             const targetTab = params.get('tab');
             const currentTab = searchParams.get('tab');
-            
+
             return pathname === path && currentTab === targetTab;
         }
 
@@ -112,7 +112,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
     };
 
     const hasWorkspaces = workspaces.length > 0;
-    
+
     // Set initial workspace if not set
     React.useEffect(() => {
         if (hasWorkspaces && !activeWorkspaceId) {
@@ -128,7 +128,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
     const workspacePrefix = workspaceBase ? `/${workspaceBase}` : "";
 
     return (
-        <aside 
+        <aside
             className={cn(
                 "bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50 transition-all duration-300 ease-in-out",
                 isCollapsed ? "w-[80px]" : "w-[260px]"
@@ -141,7 +141,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
             )}>
                 <Link href="/home" className={cn("block", isCollapsed ? "mx-auto" : "")}>
                     {isCollapsed ? (
-                         <Image
+                        <Image
                             src="/logo-dock.png"
                             alt="Symples"
                             width={32}
@@ -161,14 +161,14 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                 </Link>
 
                 {/* Toggle Button - Top Right */}
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={toggleSidebar} 
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleSidebar}
                     className={cn(
                         "text-gray-400 hover:text-gray-600 transition-all",
-                        isCollapsed 
-                            ? "absolute -right-3 top-6 h-6 w-6 bg-white border border-gray-200 rounded-full shadow-sm hover:bg-gray-50 z-50" 
+                        isCollapsed
+                            ? "absolute -right-3 top-6 h-6 w-6 bg-white border border-gray-200 rounded-full shadow-sm hover:bg-gray-50 z-50"
                             : "h-8 w-8"
                     )}
                 >
@@ -191,12 +191,12 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                 </div>
 
                 {/* Workspace Selector */}
-                <div className="mb-6">
-                     {hasWorkspaces ? (
+                <div className="mb-6 relative">
+                    {hasWorkspaces ? (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button 
-                                    variant="ghost" 
+                                <Button
+                                    variant="ghost"
                                     className={cn(
                                         "w-full h-12 gap-3 hover:bg-gray-100/80 transition-all group p-0",
                                         isCollapsed ? "justify-center px-0" : "justify-start px-3"
@@ -204,16 +204,16 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                 >
                                     <div className="w-8 h-8 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow overflow-hidden">
                                         {currentWorkspace?.logo_url ? (
-                                            <img 
-                                                src={currentWorkspace.logo_url} 
-                                                alt={currentWorkspace.name} 
+                                            <img
+                                                src={currentWorkspace.logo_url}
+                                                alt={currentWorkspace.name}
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
                                             <Building2 className="w-4 h-4" />
                                         )}
                                     </div>
-                                    
+
                                     {!isCollapsed && (
                                         <>
                                             <div className="flex flex-col items-start text-left flex-1 min-w-0">
@@ -240,8 +240,8 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                     Trocar Workspace
                                 </DropdownMenuLabel>
                                 {workspaces.map((workspace) => (
-                                    <DropdownMenuItem 
-                                        key={workspace.id} 
+                                    <DropdownMenuItem
+                                        key={workspace.id}
                                         onClick={() => {
                                             setActiveWorkspaceId(workspace.id);
                                             const base = workspace.slug || workspace.id;
@@ -253,9 +253,9 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                     >
                                         <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
                                             {workspace.logo_url ? (
-                                                <img 
-                                                    src={workspace.logo_url} 
-                                                    alt={workspace.name} 
+                                                <img
+                                                    src={workspace.logo_url}
+                                                    alt={workspace.name}
                                                     className="w-full h-full object-cover"
                                                 />
                                             ) : (
@@ -278,8 +278,8 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     ) : (
-                        <Link 
-                            href="/onboarding" 
+                        <Link
+                            href="/onboarding"
                             className={cn(
                                 "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-green-600 hover:border-green-500 hover:bg-green-50 transition-all",
                                 isCollapsed ? "px-0" : ""
@@ -328,10 +328,10 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
 
                 <div className={cn("flex items-center", isCollapsed ? "justify-center flex-col gap-4" : "justify-between")}>
                     {/* Settings Link */}
-                    <NavItemView 
-                        item={{ label: "Configurações", href: "/settings", icon: Settings }} 
-                        isActive={isActive("/settings")} 
-                        isCollapsed={isCollapsed} 
+                    <NavItemView
+                        item={{ label: "Configurações", href: "/settings", icon: Settings }}
+                        isActive={isActive("/settings")}
+                        isCollapsed={isCollapsed}
                     />
                 </div>
             </div>

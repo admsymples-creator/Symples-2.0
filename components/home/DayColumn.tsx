@@ -312,7 +312,10 @@ export function DayColumn({
       <div
         className={cn(
           "flex-1 px-2 py-2 relative flex flex-col",
-          "overflow-y-auto overflow-x-hidden custom-scrollbar"
+          // CORREÇÃO: Scroll apenas se houver itens. Hidden se vazio para travar o layout.
+          sortedTasks.length > 0
+            ? "overflow-y-auto overflow-x-hidden custom-scrollbar"
+            : "overflow-hidden"
         )}
       >
         {sortedTasks.length > 0 ? (
@@ -350,27 +353,37 @@ export function DayColumn({
         <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
 
         <form onSubmit={handleQuickAddSubmit} className="relative z-10">
+
+          {/* Tutorial Tooltip Hint */}
+          {highlightInput && isToday && !isQuickAddFocused && (
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-xl animate-bounce z-20 whitespace-nowrap after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-[6px] after:border-transparent after:border-t-gray-900">
+              Organize sua vida pessoal aqui
+            </div>
+          )}
+
           <div
             className={cn(
-              "flex flex-col bg-white rounded-xl border shadow-sm transition-all duration-200 overflow-hidden",
+              "flex flex-col bg-white rounded-xl border shadow-sm transition-all duration-300 overflow-hidden",
               isQuickAddFocused
                 ? "border-gray-400 ring-4 ring-gray-100 shadow-md transform -translate-y-1"
-                : "border-gray-200 hover:border-gray-300"
+                : "border-gray-200 hover:border-gray-300",
+              // Tutorial Highlight: Green Ring & Shadow
+              highlightInput && isToday && !isQuickAddFocused && "ring-2 ring-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)] border-green-500 scale-[1.02]"
             )}
           >
+            {/* Background Pulse for Extra Attention */}
             {highlightInput && isToday && !isQuickAddFocused && (
               <div
-                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl"
-                style={{ backgroundColor: 'rgba(0,0,0,0.03)' }}
+                className="absolute inset-0 z-0 animate-pulse pointer-events-none rounded-xl bg-green-50/50"
               />
             )}
 
-            <div className="flex items-start gap-2 p-2">
+            <div className="flex items-start gap-2 p-2 relative z-10">
               <div className="mt-1.5 ml-1">
                 {isQuickAddFocused ? (
                   <div className="w-2 h-2 bg-gray-900 rounded-full animate-pulse" />
                 ) : (
-                  <Plus className="w-4 h-4 text-gray-400" />
+                  <Plus className={cn("w-4 h-4 transition-colors", highlightInput && isToday ? "text-green-600" : "text-gray-400")} />
                 )}
               </div>
 
@@ -394,7 +407,7 @@ export function DayColumn({
             </div>
 
             {(isQuickAddFocused || quickAddValue) && (
-              <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50">
+              <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50 relative z-10">
                 <div className="flex items-center gap-1">
                   <TaskDateTimePicker
                     date={selectedDateTime}

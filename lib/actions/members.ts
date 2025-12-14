@@ -54,7 +54,7 @@ export async function getCurrentUserRole(workspaceId: string): Promise<string | 
  */
 export async function getWorkspaceMembers(workspaceId: string) {
   const supabase = await createServerActionClient();
-  
+
   // Verificar autenticação
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -95,10 +95,10 @@ export async function getWorkspaceMembers(workspaceId: string) {
         workspaceId,
         userId: user?.id,
       };
-      
+
       console.error("Erro ao buscar membros do workspace:");
       console.error(JSON.stringify(errorInfo, null, 2));
-      
+
       // Também logar o objeto de erro completo de forma segura
       try {
         console.error("Objeto de erro completo:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
@@ -180,8 +180,8 @@ export async function getWorkspaceMembers(workspaceId: string) {
     // Transformar os dados para o formato esperado
     // A query retorna user ao invés de profiles
     return data.map((member: any) => {
-      const userData = Array.isArray(member.user) 
-        ? member.user[0] 
+      const userData = Array.isArray(member.user)
+        ? member.user[0]
         : member.user;
 
       return {
@@ -238,319 +238,319 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
     if (!user) throw new Error("Não autenticado");
 
-  // 1. Verificar permissões (se é admin do workspace)
-  // Consultamos a tabela workspace_members diretamente
-  const { data: memberData, error: memberDataError } = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (memberDataError && memberDataError.code !== 'PGRST116') {
-    console.error("Erro ao verificar permissões:", memberDataError);
-    throw new Error("Erro ao verificar permissões.");
-  }
-
-  if (!memberData || (memberData.role !== "owner" && memberData.role !== "admin")) {
-    throw new Error("Permissão negada. Apenas admins podem convidar.");
-  }
-
-  // 2. Normalizar email e verificar se usuário já existe
-  const normalizedEmail = email.toLowerCase().trim();
-  
-  // Validação de email
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(normalizedEmail)) {
-    throw new Error("Email inválido.");
-  }
-  
-  // Validação de workspaceId
-  if (!workspaceId || typeof workspaceId !== 'string') {
-    throw new Error("Workspace ID inválido.");
-  }
-
-  // 3. Verificar se o usuário já é membro do workspace
-  // Buscar o ID do usuário pelo email (se existir no banco) para verificar membership
-  const { data: existingProfile } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-  
-  // Se o usuário existe, verificar se já é membro
-  if (existingProfile) {
-    const { data: isMember } = await supabase
+    // 1. Verificar permissões (se é admin do workspace)
+    // Consultamos a tabela workspace_members diretamente
+    const { data: memberData, error: memberDataError } = await supabase
       .from("workspace_members")
-      .select("user_id")
+      .select("role")
       .eq("workspace_id", workspaceId)
-      .eq("user_id", existingProfile.id)
+      .eq("user_id", user.id)
       .maybeSingle();
-      
-    if (isMember) {
-      throw new Error("Este usuário já é membro do workspace.");
+
+    if (memberDataError && memberDataError.code !== 'PGRST116') {
+      console.error("Erro ao verificar permissões:", memberDataError);
+      throw new Error("Erro ao verificar permissões.");
     }
-  }
 
-  // 4. Verificar se já existe convite pendente (ou qualquer convite com esse email)
-  // ✅ SEGURANÇA: Sempre criar convite pendente, mesmo para usuários existentes
-  // Isso garante consentimento explícito antes de adicionar ao workspace
-  // Verificamos todos os status para dar uma mensagem mais clara
-  const { data: existingInvite, error: inviteCheckError } = await supabase
-    .from("workspace_invites")
-    .select("id, status")
-    .eq("workspace_id", workspaceId)
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-  
-  // Se houver erro (não relacionado a "não encontrado"), logar mas continuar
-  if (inviteCheckError && inviteCheckError.code !== 'PGRST116') {
-    console.error("Erro ao verificar convite existente:", inviteCheckError);
-  }
+    if (!memberData || (memberData.role !== "owner" && memberData.role !== "admin")) {
+      throw new Error("Permissão negada. Apenas admins podem convidar.");
+    }
 
-  if (existingInvite) {
-    if (existingInvite.status === 'pending') {
-      throw new Error("Já existe um convite pendente para este email. Você pode cancelar o convite existente antes de criar um novo.");
-    } else if (existingInvite.status === 'accepted') {
-      // ✅ CORREÇÃO: Se o convite foi aceito, verificar se o usuário ainda é membro
-      // Se não for mais membro (foi removido), permitir criar novo convite
-      if (existingProfile) {
-        const { data: stillMember } = await supabase
-          .from("workspace_members")
-          .select("user_id")
-          .eq("workspace_id", workspaceId)
-          .eq("user_id", existingProfile.id)
-          .maybeSingle();
-        
-        if (stillMember) {
-          // Ainda é membro - não permitir novo convite
-          throw new Error("Este email já foi aceito neste workspace. O usuário já é membro.");
+    // 2. Normalizar email e verificar se usuário já existe
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Validação de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      throw new Error("Email inválido.");
+    }
+
+    // Validação de workspaceId
+    if (!workspaceId || typeof workspaceId !== 'string') {
+      throw new Error("Workspace ID inválido.");
+    }
+
+    // 3. Verificar se o usuário já é membro do workspace
+    // Buscar o ID do usuário pelo email (se existir no banco) para verificar membership
+    const { data: existingProfile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    // Se o usuário existe, verificar se já é membro
+    if (existingProfile) {
+      const { data: isMember } = await supabase
+        .from("workspace_members")
+        .select("user_id")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", existingProfile.id)
+        .maybeSingle();
+
+      if (isMember) {
+        throw new Error("Este usuário já é membro do workspace.");
+      }
+    }
+
+    // 4. Verificar se já existe convite pendente (ou qualquer convite com esse email)
+    // ✅ SEGURANÇA: Sempre criar convite pendente, mesmo para usuários existentes
+    // Isso garante consentimento explícito antes de adicionar ao workspace
+    // Verificamos todos os status para dar uma mensagem mais clara
+    const { data: existingInvite, error: inviteCheckError } = await supabase
+      .from("workspace_invites")
+      .select("id, status")
+      .eq("workspace_id", workspaceId)
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    // Se houver erro (não relacionado a "não encontrado"), logar mas continuar
+    if (inviteCheckError && inviteCheckError.code !== 'PGRST116') {
+      console.error("Erro ao verificar convite existente:", inviteCheckError);
+    }
+
+    if (existingInvite) {
+      if (existingInvite.status === 'pending') {
+        throw new Error("Já existe um convite pendente para este email. Você pode cancelar o convite existente antes de criar um novo.");
+      } else if (existingInvite.status === 'accepted') {
+        // ✅ CORREÇÃO: Se o convite foi aceito, verificar se o usuário ainda é membro
+        // Se não for mais membro (foi removido), permitir criar novo convite
+        if (existingProfile) {
+          const { data: stillMember } = await supabase
+            .from("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", workspaceId)
+            .eq("user_id", existingProfile.id)
+            .maybeSingle();
+
+          if (stillMember) {
+            // Ainda é membro - não permitir novo convite
+            throw new Error("Este email já foi aceito neste workspace. O usuário já é membro.");
+          } else {
+            // Não é mais membro - limpar convite antigo e permitir criar novo
+            console.log("🔄 Convite aceito encontrado, mas usuário não é mais membro. Limpando convite antigo para permitir reinvite:", existingInvite.id);
+
+            // Deletar o convite antigo (accepted) para permitir criar novo
+            const { error: deleteError } = await supabase
+              .from("workspace_invites")
+              .delete()
+              .eq("id", existingInvite.id);
+
+            if (deleteError) {
+              console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
+              throw new Error("Erro ao limpar convite antigo. Tente novamente.");
+            }
+
+            console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
+            // Continuar o fluxo normalmente para criar o novo convite
+          }
         } else {
-          // Não é mais membro - limpar convite antigo e permitir criar novo
-          console.log("🔄 Convite aceito encontrado, mas usuário não é mais membro. Limpando convite antigo para permitir reinvite:", existingInvite.id);
-          
-          // Deletar o convite antigo (accepted) para permitir criar novo
+          // Não encontrou perfil do usuário - pode ser que o convite seja de um email que nunca foi usado
+          // Nesse caso, deletar o convite aceito antigo e permitir criar novo
+          console.log("🔄 Convite aceito encontrado, mas usuário não existe. Limpando convite antigo:", existingInvite.id);
+
           const { error: deleteError } = await supabase
             .from("workspace_invites")
             .delete()
             .eq("id", existingInvite.id);
-          
+
           if (deleteError) {
             console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
             throw new Error("Erro ao limpar convite antigo. Tente novamente.");
           }
-          
+
           console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
-          // Continuar o fluxo normalmente para criar o novo convite
         }
-      } else {
-        // Não encontrou perfil do usuário - pode ser que o convite seja de um email que nunca foi usado
-        // Nesse caso, deletar o convite aceito antigo e permitir criar novo
-        console.log("🔄 Convite aceito encontrado, mas usuário não existe. Limpando convite antigo:", existingInvite.id);
-        
+      } else if (existingInvite.status === 'cancelled') {
+        // Se o convite foi cancelado, excluir o registro antigo antes de criar um novo
+        console.log("🗑️ Excluindo convite cancelado antes de criar novo:", existingInvite.id);
         const { error: deleteError } = await supabase
           .from("workspace_invites")
           .delete()
           .eq("id", existingInvite.id);
-        
+
         if (deleteError) {
-          console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
-          throw new Error("Erro ao limpar convite antigo. Tente novamente.");
+          console.error("❌ Erro ao excluir convite cancelado:", deleteError);
+          throw new Error("Erro ao limpar convite cancelado. Tente novamente.");
         }
-        
-        console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
+
+        // Continuar o fluxo normalmente para criar o novo convite
+        console.log("✅ Convite cancelado removido. Prosseguindo com criação do novo convite.");
+      } else {
+        throw new Error("Já existe um convite para este email (status: " + existingInvite.status + "). Você pode cancelar o convite existente antes de criar um novo.");
       }
-    } else if (existingInvite.status === 'cancelled') {
-      // Se o convite foi cancelado, excluir o registro antigo antes de criar um novo
-      console.log("🗑️ Excluindo convite cancelado antes de criar novo:", existingInvite.id);
-      const { error: deleteError } = await supabase
-        .from("workspace_invites")
-        .delete()
-        .eq("id", existingInvite.id);
-      
-      if (deleteError) {
-        console.error("❌ Erro ao excluir convite cancelado:", deleteError);
-        throw new Error("Erro ao limpar convite cancelado. Tente novamente.");
-      }
-      
-      // Continuar o fluxo normalmente para criar o novo convite
-      console.log("✅ Convite cancelado removido. Prosseguindo com criação do novo convite.");
-    } else {
-      throw new Error("Já existe um convite para este email (status: " + existingInvite.status + "). Você pode cancelar o convite existente antes de criar um novo.");
     }
-  }
 
-  // 5. Buscar informações do workspace e do usuário que está convidando
-  const { data: workspaceData, error: workspaceError } = await supabase
-    .from("workspaces")
-    .select("name")
-    .eq("id", workspaceId)
-    .maybeSingle();
+    // 5. Buscar informações do workspace e do usuário que está convidando
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from("workspaces")
+      .select("name")
+      .eq("id", workspaceId)
+      .maybeSingle();
 
-  if (workspaceError && workspaceError.code !== 'PGRST116') {
-    console.error("Erro ao buscar dados do workspace:", workspaceError);
-    throw new Error("Erro ao buscar informações do workspace.");
-  }
-
-  if (!workspaceData) {
-    throw new Error("Workspace não encontrado.");
-  }
-
-  const { data: inviterProfile, error: inviterError } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (inviterError && inviterError.code !== 'PGRST116') {
-    console.error("Erro ao buscar perfil do inviter:", inviterError);
-    // Não falhamos o fluxo, apenas logamos - podemos continuar sem o nome
-  }
-
-  // 6. Criar o convite (unificado para novos e existentes)
-  const { data: newInvite, error: insertError } = await supabase
-    .from("workspace_invites")
-    .insert({
-      workspace_id: workspaceId,
-      email: normalizedEmail,
-      role,
-      invited_by: user.id,
-      status: "pending",
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
-    })
-    .select("id")
-    .maybeSingle();
-
-  if (insertError) {
-    console.error("❌ Erro ao criar convite:", {
-      error: insertError.message,
-      code: insertError.code,
-      details: insertError.details,
-      hint: insertError.hint,
-      fullError: JSON.stringify(insertError, Object.getOwnPropertyNames(insertError), 2),
-    });
-    
-    // Tratar erro de constraint unique violation (convite duplicado)
-    if (insertError.code === '23505') {
-      throw new Error("Já existe um convite para este email neste workspace. Verifique a lista de convites pendentes.");
+    if (workspaceError && workspaceError.code !== 'PGRST116') {
+      console.error("Erro ao buscar dados do workspace:", workspaceError);
+      throw new Error("Erro ao buscar informações do workspace.");
     }
-    
-    throw new Error(`Erro ao criar convite: ${insertError.message || 'Erro desconhecido'}`);
-  }
 
-  if (!newInvite || !newInvite.id) {
-    console.error("❌ Convite criado mas não retornou ID:", { newInvite });
-    throw new Error("Erro ao criar convite: ID não foi retornado.");
-  }
+    if (!workspaceData) {
+      throw new Error("Workspace não encontrado.");
+    }
 
-  // 7. Gerar link de convite
-  // ✅ UNIFICADO: Todos os convites usam /invite/[token]
-  // A página de convite detecta se o usuário está logado e mostra UI apropriada
-  let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL;
-  
-  // Em produção/preview, validar que a URL está configurada
-  if (process.env.NODE_ENV !== "development" && !baseUrl) {
-    console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
-    throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
-  }
-  
-  // Fallback para desenvolvimento
-  if (!baseUrl) {
-    baseUrl = "http://localhost:3000";
-  }
-  
-  const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
-  const inviteLink = `${finalUrl}/invite/${newInvite.id}`;
-  
-  console.log("🔗 Link de convite gerado:", {
-    baseUrl,
-    finalUrl,
-    inviteLink,
-    environment: process.env.NODE_ENV,
-  });
+    const { data: inviterProfile, error: inviterError } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", user.id)
+      .maybeSingle();
 
-  // 8. Enviar email de convite via Resend
-  // ✅ DIFERENCIAÇÃO: Email diferente para usuários novos vs existentes
-  const isNewUser = !existingProfile;
-  
-  let emailSent = false;
-  let emailError: string | null = null;
-  
-  console.log("📧 Iniciando envio de email de convite:", {
-    to: normalizedEmail,
-    workspaceId: workspaceId,
-    inviteId: newInvite.id,
-    isNewUser,
-    hasApiKey: !!process.env.RESEND_API_KEY,
-    fromEmail: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
-    inviteLink,
-  });
-  
-  try {
-    const emailResult = await sendInviteEmail({
-      to: normalizedEmail,
-      workspaceName: workspaceData?.name || "Workspace",
-      inviterName: inviterProfile?.full_name || null,
-      inviteLink,
-      role,
-      isNewUser, // ✅ CORRIGIDO: Usa o valor real baseado em existingProfile
-    });
-    
-    emailSent = emailResult.success;
-    
-    if (emailResult.success) {
-      console.log("✅ Email de convite enviado com sucesso:", { 
-        to: normalizedEmail, 
-        inviteId: newInvite.id,
-        emailId: emailResult.id,
+    if (inviterError && inviterError.code !== 'PGRST116') {
+      console.error("Erro ao buscar perfil do inviter:", inviterError);
+      // Não falhamos o fluxo, apenas logamos - podemos continuar sem o nome
+    }
+
+    // 6. Criar o convite (unificado para novos e existentes)
+    const { data: newInvite, error: insertError } = await supabase
+      .from("workspace_invites")
+      .insert({
+        workspace_id: workspaceId,
+        email: normalizedEmail,
+        role,
+        invited_by: user.id,
+        status: "pending",
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (insertError) {
+      console.error("❌ Erro ao criar convite:", {
+        error: insertError.message,
+        code: insertError.code,
+        details: insertError.details,
+        hint: insertError.hint,
+        fullError: JSON.stringify(insertError, Object.getOwnPropertyNames(insertError), 2),
       });
-    } else {
-      emailError = emailResult.error || "Erro desconhecido";
-      console.warn("⚠️ Email não foi enviado:", {
+
+      // Tratar erro de constraint unique violation (convite duplicado)
+      if (insertError.code === '23505') {
+        throw new Error("Já existe um convite para este email neste workspace. Verifique a lista de convites pendentes.");
+      }
+
+      throw new Error(`Erro ao criar convite: ${insertError.message || 'Erro desconhecido'}`);
+    }
+
+    if (!newInvite || !newInvite.id) {
+      console.error("❌ Convite criado mas não retornou ID:", { newInvite });
+      throw new Error("Erro ao criar convite: ID não foi retornado.");
+    }
+
+    // 7. Gerar link de convite
+    // ✅ UNIFICADO: Todos os convites usam /invite/[token]
+    // A página de convite detecta se o usuário está logado e mostra UI apropriada
+    let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL;
+
+    // Em produção/preview, validar que a URL está configurada
+    if (process.env.NODE_ENV !== "development" && !baseUrl) {
+      console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
+      throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
+    }
+
+    // Fallback para desenvolvimento
+    if (!baseUrl) {
+      baseUrl = "http://localhost:3000";
+    }
+
+    const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
+    const inviteLink = `${finalUrl}/invite/${newInvite.id}`;
+
+    console.log("🔗 Link de convite gerado:", {
+      baseUrl,
+      finalUrl,
+      inviteLink,
+      environment: process.env.NODE_ENV,
+    });
+
+    // 8. Enviar email de convite via Resend
+    // ✅ DIFERENCIAÇÃO: Email diferente para usuários novos vs existentes
+    const isNewUser = !existingProfile;
+
+    let emailSent = false;
+    let emailError: string | null = null;
+
+    console.log("📧 Iniciando envio de email de convite:", {
+      to: normalizedEmail,
+      workspaceId: workspaceId,
+      inviteId: newInvite.id,
+      isNewUser,
+      hasApiKey: !!process.env.RESEND_API_KEY,
+      fromEmail: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
+      inviteLink,
+    });
+
+    try {
+      const emailResult = await sendInviteEmail({
+        to: normalizedEmail,
+        workspaceName: workspaceData?.name || "Workspace",
+        inviterName: inviterProfile?.full_name || null,
+        inviteLink,
+        role,
+        isNewUser, // ✅ CORRIGIDO: Usa o valor real baseado em existingProfile
+      });
+
+      emailSent = emailResult.success;
+
+      if (emailResult.success) {
+        console.log("✅ Email de convite enviado com sucesso:", {
+          to: normalizedEmail,
+          inviteId: newInvite.id,
+          emailId: emailResult.id,
+        });
+      } else {
+        emailError = emailResult.error || "Erro desconhecido";
+        console.warn("⚠️ Email não foi enviado:", {
+          to: normalizedEmail,
+          inviteId: newInvite.id,
+          error: emailError,
+        });
+
+        // Em produção/preview, se o email falhar, lançar erro para não silenciar
+        if (process.env.NODE_ENV !== "development") {
+          throw new Error(emailError || "Falha ao enviar email de convite");
+        }
+      }
+    } catch (err: any) {
+      emailError = err.message || "Erro desconhecido ao enviar email";
+      console.error("❌ Erro ao enviar email de convite:", {
         to: normalizedEmail,
         inviteId: newInvite.id,
         error: emailError,
+        stack: err.stack,
+        fullError: JSON.stringify(err, null, 2),
+        environment: process.env.NODE_ENV,
+        hasApiKey: !!process.env.RESEND_API_KEY,
+        siteUrl: process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "não configurado",
       });
-      
-      // Em produção/preview, se o email falhar, lançar erro para não silenciar
+
+      // Em produção/preview, lançar erro para não silenciar o problema
+      // Em desenvolvimento, permitir continuar sem email (para facilitar testes)
       if (process.env.NODE_ENV !== "development") {
-        throw new Error(emailError || "Falha ao enviar email de convite");
+        throw new Error(`Falha ao enviar email de convite: ${emailError}. Verifique se RESEND_API_KEY está configurada no Vercel.`);
       }
     }
-  } catch (err: any) {
-    emailError = err.message || "Erro desconhecido ao enviar email";
-    console.error("❌ Erro ao enviar email de convite:", {
-      to: normalizedEmail,
-      inviteId: newInvite.id,
-      error: emailError,
-      stack: err.stack,
-      fullError: JSON.stringify(err, null, 2),
-      environment: process.env.NODE_ENV,
-      hasApiKey: !!process.env.RESEND_API_KEY,
-      siteUrl: process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "não configurado",
-    });
-    
-    // Em produção/preview, lançar erro para não silenciar o problema
-    // Em desenvolvimento, permitir continuar sem email (para facilitar testes)
-    if (process.env.NODE_ENV !== "development") {
-      throw new Error(`Falha ao enviar email de convite: ${emailError}. Verifique se RESEND_API_KEY está configurada no Vercel.`);
-    }
-  }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+    revalidatePath("/settings");
+    revalidatePath("/team");
 
-  return { 
-    success: true, 
-    inviteLink: inviteLink, // ✅ Sempre retornar o link para permitir copiar
-    message: emailError 
-      ? `Convite criado, mas houve erro ao enviar email: ${emailError}`
-      : process.env.NODE_ENV === "development" 
-        ? "Email simulado em desenvolvimento. Link disponível abaixo."
-        : "Convite enviado por email com sucesso!",
-    emailSent,
-    emailError: emailError || undefined,
-  };
+    return {
+      success: true,
+      inviteLink: inviteLink, // ✅ Sempre retornar o link para permitir copiar
+      message: emailError
+        ? `Convite criado, mas houve erro ao enviar email: ${emailError}`
+        : process.env.NODE_ENV === "development"
+          ? "Email simulado em desenvolvimento. Link disponível abaixo."
+          : "Convite enviado por email com sucesso!",
+      emailSent,
+      emailError: emailError || undefined,
+    };
   } catch (error: any) {
     console.error("❌ Erro crítico em inviteMember:", {
       message: error?.message || "Erro desconhecido",
@@ -600,7 +600,7 @@ export async function revokeInvite(inviteId: string) {
   // Em desenvolvimento, excluir realmente para facilitar debug
   // Em produção, apenas marcar como cancelled para manter histórico
   const isDevelopment = process.env.NODE_ENV === 'development';
-  
+
   if (isDevelopment) {
     const { error } = await supabase
       .from("workspace_invites")
@@ -610,7 +610,7 @@ export async function revokeInvite(inviteId: string) {
     if (error) {
       throw new Error("Erro ao excluir convite");
     }
-    
+
     console.log("🗑️ Convite excluído (modo desenvolvimento):", inviteId);
   } else {
     const { error } = await supabase
@@ -672,11 +672,11 @@ export async function resendInvite(inviteId: string) {
   // ✅ CORREÇÃO: Resetar expires_at para +7 dias a partir de agora
   // Manter status como 'pending' (não alterar)
   const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  
+
   // Usar supabaseAdmin para garantir que a atualização funcione mesmo com RLS
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
+
   if (!serviceRoleKey) {
     console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
     throw new Error("Configuração do servidor inválida. Contate o suporte.");
@@ -692,7 +692,7 @@ export async function resendInvite(inviteId: string) {
   // Atualizar expires_at mantendo status como pending
   const { error: updateError } = await supabaseAdmin
     .from("workspace_invites")
-    .update({ 
+    .update({
       expires_at: newExpiresAt,
       // Garantir que o status permanece 'pending'
       status: 'pending'
@@ -706,18 +706,18 @@ export async function resendInvite(inviteId: string) {
 
   // Gerar link de convite
   let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL;
-  
+
   // Em produção/preview, validar que a URL está configurada
   if (process.env.NODE_ENV !== "development" && !baseUrl) {
     console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
     throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
   }
-  
+
   // Fallback para desenvolvimento
   if (!baseUrl) {
     baseUrl = "http://localhost:3000";
   }
-  
+
   const finalUrl = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
   const inviteLink = `${finalUrl}/invite/${inviteId}`;
 
@@ -814,7 +814,7 @@ export async function removeMember(workspaceId: string, userId: string) {
   // Usar supabaseAdmin para garantir que a remoção funcione mesmo com RLS restritivo
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
+
   if (!serviceRoleKey) {
     console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
     throw new Error("Configuração do servidor inválida. Contate o suporte.");
@@ -865,8 +865,8 @@ export async function removeMember(workspaceId: string, userId: string) {
 
   revalidatePath("/settings");
   revalidatePath("/team");
-  
-  return { 
+
+  return {
     success: true,
     warning: isLastAdmin ? "Atenção: Este era o último admin do workspace. O workspace ficará sem administradores." : undefined,
   };
@@ -963,7 +963,7 @@ export async function acceptInvite(inviteId: string) {
   if (invite.status !== 'pending') {
     throw new Error("Este convite não está mais pendente.");
   }
-  
+
   // Validar se o email do usuário logado bate com o convite
   if (invite.email.toLowerCase() !== user.email?.toLowerCase()) {
     throw new Error(`Este convite foi enviado para ${invite.email}, mas você está logado como ${user.email}.`);
@@ -979,7 +979,7 @@ export async function acceptInvite(inviteId: string) {
   // Usamos Service Role para bypass, já que todas as validações acima foram feitas.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
+
   if (!serviceRoleKey) {
     console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
     throw new Error("Configuração do servidor inválida. Contate o suporte.");
@@ -998,7 +998,7 @@ export async function acceptInvite(inviteId: string) {
   try {
     // Buscar dados do usuário em auth.users usando Admin API
     const { data: authUserData, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(user.id);
-    
+
     if (authUserError || !authUserData?.user) {
       console.error("❌ Erro ao buscar dados do usuário em auth.users:", authUserError);
       throw new Error("Não foi possível buscar dados do usuário. Tente novamente.");
@@ -1007,7 +1007,7 @@ export async function acceptInvite(inviteId: string) {
     const authUser = authUserData.user;
     const userEmail = authUser.email || user.email || '';
     const userMetadata = authUser.user_metadata || {};
-    
+
     // Extrair full_name dos metadados ou gerar a partir do email
     let fullName = userMetadata.full_name || userMetadata.name || null;
     if (!fullName && userEmail) {
@@ -1071,17 +1071,17 @@ export async function acceptInvite(inviteId: string) {
   if (memberError) {
     // Se der erro de duplicidade (PK), é pq já é membro
     if (memberError.code === '23505') { // Unique violation
-       console.log("✅ Usuário já é membro do workspace, apenas atualizando convite");
-       // Apenas atualiza o convite para accepted
+      console.log("✅ Usuário já é membro do workspace, apenas atualizando convite");
+      // Apenas atualiza o convite para accepted
     } else {
-       console.error("❌ Erro ao adicionar membro ao aceitar convite:", {
-         error: memberError.message,
-         code: memberError.code,
-         details: memberError.details,
-         hint: memberError.hint,
-         fullError: JSON.stringify(memberError, Object.getOwnPropertyNames(memberError), 2),
-       });
-       throw new Error(`Erro ao processar adesão ao workspace: ${memberError.message || 'Erro desconhecido'}`);
+      console.error("❌ Erro ao adicionar membro ao aceitar convite:", {
+        error: memberError.message,
+        code: memberError.code,
+        details: memberError.details,
+        hint: memberError.hint,
+        fullError: JSON.stringify(memberError, Object.getOwnPropertyNames(memberError), 2),
+      });
+      throw new Error(`Erro ao processar adesão ao workspace: ${memberError.message || 'Erro desconhecido'}`);
     }
   }
 
@@ -1118,10 +1118,22 @@ export async function acceptInvite(inviteId: string) {
   revalidatePath("/", "layout");
   revalidatePath("/home");
   revalidatePath("/settings");
-  
-  return { 
+
+  // ✅ Buscar slug do workspace para redirecionar diretamente
+  // Isso evita race condition onde o usuário é redirecionado para /home antes
+  // da propagação do banco de dados, o que causava redirect falso para onboarding
+  const { data: workspaceData } = await supabase
+    .from('workspaces')
+    .select('slug')
+    .eq('id', invite.workspace_id)
+    .single();
+
+  const workspaceSlug = workspaceData?.slug || null;
+
+  return {
     success: true,
-    workspaceId: invite.workspace_id, // Retornar workspace_id para uso no callback
+    workspaceId: invite.workspace_id,
+    workspaceSlug, // ✅ Retornar slug para redirecionamento direto
   };
 }
 
@@ -1138,130 +1150,130 @@ export async function acceptInvite(inviteId: string) {
  * só vê "Faça login para aceitar".
  */
 export async function getInviteDetails(inviteId: string) {
-    try {
-        const supabase = await createServerActionClient();
-        
-        // Verificar autenticação para logs
-        const { data: { user } } = await supabase.auth.getUser();
-        console.log("🔍 Buscando detalhes do convite:", {
-            inviteId,
-            isAuthenticated: !!user,
-            userEmail: user?.email || "não autenticado",
-        });
-        
-        // Primeiro, tentar buscar o convite básico (sem joins que podem falhar por RLS)
-        const { data: inviteData, error: inviteError } = await supabase
-            .from("workspace_invites")
-            .select("*")
-            .eq("id", inviteId)
-            .maybeSingle();
-            
-        if (inviteError) {
-            // Melhorar serialização do erro
-            const errorInfo: any = {
-                inviteId,
-                isAuthenticated: !!user,
-                userEmail: user?.email || "não autenticado",
-            };
-            
-            // Tentar extrair informações do erro de várias formas
-            if (inviteError && typeof inviteError === 'object') {
-                errorInfo.errorMessage = inviteError.message || "Sem mensagem";
-                errorInfo.errorCode = inviteError.code || "Sem código";
-                errorInfo.errorDetails = inviteError.details;
-                errorInfo.errorHint = inviteError.hint;
-                
-                // Tentar serializar o erro completo
-                try {
-                    errorInfo.fullError = JSON.stringify(inviteError, Object.getOwnPropertyNames(inviteError), 2);
-                } catch (e: any) {
-                    errorInfo.fullError = String(inviteError);
-                    errorInfo.serializeError = e?.message;
-                }
-                
-                // Verificar se é um erro de RLS
-                if (inviteError.code === '42501' || inviteError.message?.includes('permission denied') || inviteError.message?.includes('row-level security')) {
-                    errorInfo.isRLSError = true;
-                    errorInfo.suggestion = "Verifique se a política RLS 'Allow public read of pending invites by id' está ativa e foi aplicada";
-                }
-            } else {
-                errorInfo.unknownError = "Erro objeto está vazio, undefined ou não serializável";
-                errorInfo.rawError = String(inviteError);
-                errorInfo.errorType = typeof inviteError;
-            }
-            
-            console.error("❌ Erro ao buscar detalhes do convite:", errorInfo);
-            return null;
-        }
-    
-        if (!inviteData) {
-            console.warn("⚠️ Convite não encontrado:", {
-                inviteId,
-                isAuthenticated: !!user,
-                suggestion: "Verifique se o ID do convite está correto ou se a política RLS permite leitura",
-            });
-            return null;
-        }
-        
-        console.log("✅ Convite encontrado:", {
-            inviteId,
-            status: inviteData.status,
-            email: inviteData.email,
-            expiresAt: inviteData.expires_at,
-        });
-        
-        // Verificar se o convite é válido (pendente e não expirado)
-        if (inviteData.status !== 'pending') {
-            return inviteData; // Retornar mesmo que não esteja pendente para mostrar status
-        }
-        
-        if (inviteData.expires_at && new Date(inviteData.expires_at) < new Date()) {
-            console.warn("⚠️ Convite expirado:", {
-                inviteId,
-                expiresAt: inviteData.expires_at,
-                now: new Date().toISOString(),
-            });
-            return null;
-        }
-        
-        // Tentar buscar informações adicionais (workspace e inviter) se possível
-        // Se falhar, retornamos pelo menos os dados básicos do convite
+  try {
+    const supabase = await createServerActionClient();
+
+    // Verificar autenticação para logs
+    const { data: { user } } = await supabase.auth.getUser();
+    console.log("🔍 Buscando detalhes do convite:", {
+      inviteId,
+      isAuthenticated: !!user,
+      userEmail: user?.email || "não autenticado",
+    });
+
+    // Primeiro, tentar buscar o convite básico (sem joins que podem falhar por RLS)
+    const { data: inviteData, error: inviteError } = await supabase
+      .from("workspace_invites")
+      .select("*")
+      .eq("id", inviteId)
+      .maybeSingle();
+
+    if (inviteError) {
+      // Melhorar serialização do erro
+      const errorInfo: any = {
+        inviteId,
+        isAuthenticated: !!user,
+        userEmail: user?.email || "não autenticado",
+      };
+
+      // Tentar extrair informações do erro de várias formas
+      if (inviteError && typeof inviteError === 'object') {
+        errorInfo.errorMessage = inviteError.message || "Sem mensagem";
+        errorInfo.errorCode = inviteError.code || "Sem código";
+        errorInfo.errorDetails = inviteError.details;
+        errorInfo.errorHint = inviteError.hint;
+
+        // Tentar serializar o erro completo
         try {
-            const { data: workspaceData } = await supabase
-                .from("workspaces")
-                .select("name")
-                .eq("id", inviteData.workspace_id)
-                .maybeSingle();
-                
-            const { data: inviterData } = await supabase
-                .from("profiles")
-                .select("full_name")
-                .eq("id", inviteData.invited_by || '')
-                .maybeSingle();
-            
-            // Retornar com informações adicionais se disponíveis
-            return {
-                ...inviteData,
-                workspaces: workspaceData ? { name: workspaceData.name } : null,
-                invited_by_profile: inviterData ? { full_name: inviterData.full_name } : null,
-            };
-        } catch (joinError: any) {
-            // Se os joins falharem (por RLS), retornar pelo menos os dados básicos
-            console.warn("⚠️ Não foi possível buscar informações adicionais do convite (RLS pode estar bloqueando):", {
-                inviteId,
-                error: joinError?.message || String(joinError),
-                suggestion: "Isso é normal se o usuário não tiver permissão para ver dados do workspace",
-            });
-            return inviteData;
+          errorInfo.fullError = JSON.stringify(inviteError, Object.getOwnPropertyNames(inviteError), 2);
+        } catch (e: any) {
+          errorInfo.fullError = String(inviteError);
+          errorInfo.serializeError = e?.message;
         }
-    } catch (outerError: any) {
-        // Capturar erros não relacionados ao Supabase
-        console.error("❌ Erro inesperado em getInviteDetails:", {
-            inviteId,
-            error: outerError?.message || String(outerError),
-            stack: outerError?.stack,
-        });
-        return null;
+
+        // Verificar se é um erro de RLS
+        if (inviteError.code === '42501' || inviteError.message?.includes('permission denied') || inviteError.message?.includes('row-level security')) {
+          errorInfo.isRLSError = true;
+          errorInfo.suggestion = "Verifique se a política RLS 'Allow public read of pending invites by id' está ativa e foi aplicada";
+        }
+      } else {
+        errorInfo.unknownError = "Erro objeto está vazio, undefined ou não serializável";
+        errorInfo.rawError = String(inviteError);
+        errorInfo.errorType = typeof inviteError;
+      }
+
+      console.error("❌ Erro ao buscar detalhes do convite:", errorInfo);
+      return null;
     }
+
+    if (!inviteData) {
+      console.warn("⚠️ Convite não encontrado:", {
+        inviteId,
+        isAuthenticated: !!user,
+        suggestion: "Verifique se o ID do convite está correto ou se a política RLS permite leitura",
+      });
+      return null;
+    }
+
+    console.log("✅ Convite encontrado:", {
+      inviteId,
+      status: inviteData.status,
+      email: inviteData.email,
+      expiresAt: inviteData.expires_at,
+    });
+
+    // Verificar se o convite é válido (pendente e não expirado)
+    if (inviteData.status !== 'pending') {
+      return inviteData; // Retornar mesmo que não esteja pendente para mostrar status
+    }
+
+    if (inviteData.expires_at && new Date(inviteData.expires_at) < new Date()) {
+      console.warn("⚠️ Convite expirado:", {
+        inviteId,
+        expiresAt: inviteData.expires_at,
+        now: new Date().toISOString(),
+      });
+      return null;
+    }
+
+    // Tentar buscar informações adicionais (workspace e inviter) se possível
+    // Se falhar, retornamos pelo menos os dados básicos do convite
+    try {
+      const { data: workspaceData } = await supabase
+        .from("workspaces")
+        .select("name")
+        .eq("id", inviteData.workspace_id)
+        .maybeSingle();
+
+      const { data: inviterData } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", inviteData.invited_by || '')
+        .maybeSingle();
+
+      // Retornar com informações adicionais se disponíveis
+      return {
+        ...inviteData,
+        workspaces: workspaceData ? { name: workspaceData.name } : null,
+        invited_by_profile: inviterData ? { full_name: inviterData.full_name } : null,
+      };
+    } catch (joinError: any) {
+      // Se os joins falharem (por RLS), retornar pelo menos os dados básicos
+      console.warn("⚠️ Não foi possível buscar informações adicionais do convite (RLS pode estar bloqueando):", {
+        inviteId,
+        error: joinError?.message || String(joinError),
+        suggestion: "Isso é normal se o usuário não tiver permissão para ver dados do workspace",
+      });
+      return inviteData;
+    }
+  } catch (outerError: any) {
+    // Capturar erros não relacionados ao Supabase
+    console.error("❌ Erro inesperado em getInviteDetails:", {
+      inviteId,
+      error: outerError?.message || String(outerError),
+      stack: outerError?.stack,
+    });
+    return null;
+  }
 }
 
