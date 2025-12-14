@@ -40,7 +40,7 @@ interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
 }
 
-function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
+const NavItemView = React.memo(({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) => {
     const Icon = item.icon;
 
     const content = (
@@ -82,7 +82,13 @@ function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive:
     }
 
     return content;
-}
+}, (prevProps, nextProps) => {
+    // Only re-render if these props actually change
+    return prevProps.isActive === nextProps.isActive &&
+        prevProps.isCollapsed === nextProps.isCollapsed &&
+        prevProps.item.href === nextProps.item.href;
+});
+NavItemView.displayName = 'NavItemView';
 
 function SidebarContent({ workspaces = [] }: SidebarProps) {
     const pathname = usePathname();
@@ -111,7 +117,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
         return pathname?.startsWith(href);
     };
 
-    const hasWorkspaces = workspaces.length > 0;
+    const hasWorkspaces = React.useMemo(() => workspaces.length > 0, [workspaces.length]);
 
     // Set initial workspace if not set
     React.useEffect(() => {
@@ -123,9 +129,14 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
         }
     }, [workspaces, hasWorkspaces, activeWorkspaceId, setActiveWorkspaceId]);
 
-    const currentWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
-    const workspaceBase = currentWorkspace?.slug || currentWorkspace?.id || "";
-    const workspacePrefix = workspaceBase ? `/${workspaceBase}` : "";
+    const { currentWorkspace, workspacePrefix } = React.useMemo(() => {
+        const workspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
+        const base = workspace?.slug || workspace?.id || "";
+        return {
+            currentWorkspace: workspace,
+            workspacePrefix: base ? `/${base}` : ""
+        };
+    }, [workspaces, activeWorkspaceId]);
 
     return (
         <aside
@@ -242,6 +253,13 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                 {workspaces.map((workspace) => (
                                     <DropdownMenuItem
                                         key={workspace.id}
+                                        onMouseEnter={() => {
+                                            // Prefetch route on hover for faster navigation
+                                            const base = workspace.slug || workspace.id;
+                                            if (base) {
+                                                router.prefetch(`/${base}/tasks`);
+                                            }
+                                        }}
                                         onClick={() => {
                                             setActiveWorkspaceId(workspace.id);
                                             const base = workspace.slug || workspace.id;
