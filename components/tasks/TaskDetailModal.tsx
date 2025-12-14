@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
+import { AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useTaskCache } from "@/hooks/use-task-cache";
 import { saveAttachment, deleteAttachment } from "@/lib/actions/attachments";
-import { 
+import {
     getTaskDetails,
     getTaskBasicDetails,
     getTaskExtendedDetails,
-    addComment, 
-    updateTaskField, 
+    addComment,
+    updateTaskField,
     updateTaskFields,
     updateTaskTags,
     updateTaskSubtasks,
@@ -221,7 +222,7 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
             const barGap = 2;
             const totalGap = (bars - 1) * barGap;
             const barWidth = (canvas.width - totalGap) / bars;
-            
+
             let x = 0;
             const step = Math.floor(bufferLength / bars);
 
@@ -232,9 +233,9 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
                 }
                 const value = sum / step;
                 const percent = value / 255;
-                const height = Math.max(2, percent * (canvas.height * 0.8)); 
+                const height = Math.max(2, percent * (canvas.height * 0.8));
                 ctx.fillStyle = percent > 0.4 ? "#ef4444" : "#fca5a5";
-                const y = (canvas.height - height) / 2; 
+                const y = (canvas.height - height) / 2;
                 ctx.beginPath();
                 ctx.roundRect(x, y, barWidth, height, 2);
                 ctx.fill();
@@ -346,9 +347,9 @@ const mapCommentToActivityBase = (
     return {
         id: comment.id,
         type: comment.type === "comment" ? "commented" :
-              comment.type === "file" ? "file_shared" :
-              comment.type === "log" ? "updated" :
-              comment.type === "audio" ? "audio" : "commented",
+            comment.type === "file" ? "file_shared" :
+                comment.type === "log" ? "updated" :
+                    comment.type === "audio" ? "audio" : "commented",
         user: displayUser,
         message: comment.type === "audio" ? undefined : comment.content,
         timestamp: formatActivityTimestamp(comment.created_at),
@@ -361,11 +362,11 @@ const mapCommentToActivityBase = (
     };
 };
 
-export function TaskDetailModal({ 
-    open, 
-    onOpenChange, 
-    mode = "edit", 
-    task, 
+export function TaskDetailModal({
+    open,
+    onOpenChange,
+    mode = "edit",
+    task,
     initialDueDate,
     onTaskCreated,
     onTaskUpdated,
@@ -373,7 +374,7 @@ export function TaskDetailModal({
 }: TaskDetailModalProps) {
     const isCreateMode = mode === "create";
     const isViewMode = mode === "view";
-    
+
     // State - Inicializar vazios para evitar flash de conteúdo antigo
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
@@ -392,7 +393,7 @@ export function TaskDetailModal({
     const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
     const optimisticIdRef = useRef<string | null>(null); // Ref para rastrear ID do comentário otimista
     const activitiesScrollRef = useRef<HTMLDivElement>(null); // Ref para o container de scroll do histórico
-    
+
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
@@ -465,15 +466,22 @@ export function TaskDetailModal({
     const [shareLink, setShareLink] = useState<string>("");
     const [isGeneratingLink, setIsGeneratingLink] = useState(false);
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
+    const [uploadingAttachments, setUploadingAttachments] = useState<Array<{
+        id: string;
+        name: string;
+        type: "image" | "pdf" | "other";
+        size: string;
+        progress: number;
+    }>>([]);
 
     // Derived - memoizado para melhor performance
-    const imageAttachments = useMemo(() => 
+    const imageAttachments = useMemo(() =>
         attachments
             .filter(att => att.type === "image")
             .map(att => ({ id: att.id, url: att.url || "", name: att.name })),
         [attachments]
     );
-    
+
     // Helper para invalidar cache e notificar atualização (definido antes dos handlers que o usam)
     const invalidateCacheAndNotify = useCallback((
         taskId: string | null,
@@ -496,18 +504,18 @@ export function TaskDetailModal({
         // Notificar atualização (pode fazer refetch se necessário)
         onTaskUpdated?.();
     }, [taskCache, onTaskUpdated, onTaskUpdatedOptimistic]);
-    
+
     // Memoizar handlers para evitar re-renders desnecessários
     const handleAttachmentDeleteClick = useCallback((id: string) => {
         setAttachmentToDelete(id);
     }, []);
-    
+
     const confirmAttachmentDelete = useCallback(async () => {
         if (!attachmentToDelete) return;
-        
+
         const id = attachmentToDelete;
         setAttachmentToDelete(null);
-        
+
         try {
             if (currentTaskId) {
                 await deleteAttachment(id);
@@ -520,7 +528,7 @@ export function TaskDetailModal({
             toast.error("Erro ao excluir arquivo");
         }
     }, [attachmentToDelete, currentTaskId, invalidateCacheAndNotify]);
-    
+
     const handleImagePreview = useCallback((index: number) => {
         setLightboxIndex(index);
     }, []);
@@ -528,18 +536,18 @@ export function TaskDetailModal({
     // Handler para gerar link de compartilhamento
     const handleGenerateShareLink = useCallback(async () => {
         if (!currentTaskId) return;
-        
+
         setIsGeneratingLink(true);
         try {
             const result = await generateTaskShareLink(currentTaskId, shareLinkType);
-            
+
             if (result.success && result.shareLink) {
                 setShareLink(result.shareLink);
                 // Copiar automaticamente para a área de transferência
                 await navigator.clipboard.writeText(result.shareLink);
                 toast.success(
-                    shareLinkType === "public" 
-                        ? "Link público gerado e copiado!" 
+                    shareLinkType === "public"
+                        ? "Link público gerado e copiado!"
                         : "Link privado gerado e copiado!"
                 );
             } else {
@@ -552,21 +560,21 @@ export function TaskDetailModal({
             setIsGeneratingLink(false);
         }
     }, [currentTaskId, shareLinkType]);
-    
+
     // Handler para visualizar transcrição (definido antes de renderedActivities que o usa)
     const handleViewTranscriptionRef = useRef<((activityId: string, audioUrl: string) => Promise<void>) | null>(null);
-    
+
     const handleViewTranscription = useCallback(async (activityId: string, audioUrl: string) => {
         const activity = activities.find(a => a.id === activityId);
         if (activity?.audio?.transcription) {
             return;
         }
-        
+
         setTranscribingActivityId(activityId);
         try {
             const response = await fetch(audioUrl);
             const blob = await response.blob();
-            
+
             const formData = new FormData();
             formData.append("audio", blob, "audio.webm");
 
@@ -584,8 +592,8 @@ export function TaskDetailModal({
             const transcribedText = transcribeData.transcription || "";
 
             // Atualizar localmente
-            setActivities(prev => prev.map(act => 
-                act.id === activityId 
+            setActivities(prev => prev.map(act =>
+                act.id === activityId
                     ? {
                         ...act,
                         audio: {
@@ -614,10 +622,10 @@ export function TaskDetailModal({
             setTranscribingActivityId(null);
         }
     }, [activities, currentTaskId, isCreateMode]);
-    
+
     // Atualizar ref quando handleViewTranscription mudar
     handleViewTranscriptionRef.current = handleViewTranscription;
-    
+
     // Memoizar lista de atividades renderizadas para melhor performance
     const renderedActivities = useMemo(() => {
         return activities.map((act: Activity) => (
@@ -625,7 +633,7 @@ export function TaskDetailModal({
                 <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
                     <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
                 </div>
-                
+
                 <div className="flex-1 pb-2">
                     {act.type === "origin" && act.origin && (
                         <div className="flex items-start gap-2">
@@ -655,7 +663,7 @@ export function TaskDetailModal({
                             </div>
                         </div>
                     )}
-                    
+
                     {act.type !== "origin" && (
                         <>
                             <p className="text-gray-700">
@@ -670,10 +678,10 @@ export function TaskDetailModal({
                             {act.type === "audio" && (
                                 <div className="mt-2 space-y-2">
                                     <div className="max-w-[240px]">
-                                        <AudioMessageBubble 
-                                            duration={act.audio?.duration || 0} 
-                                            isOwnMessage={act.user === "Você"} 
-                                            audioUrl={act.audio?.url} 
+                                        <AudioMessageBubble
+                                            duration={act.audio?.duration || 0}
+                                            isOwnMessage={act.user === "Você"}
+                                            audioUrl={act.audio?.url}
                                         />
                                     </div>
                                     {act.audio?.url && (
@@ -714,7 +722,7 @@ export function TaskDetailModal({
                                     {act.message}
                                 </div>
                             )}
-                            
+
                             {act.attachedFiles && act.attachedFiles.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {act.attachedFiles.map((f, idx) => (
@@ -748,13 +756,13 @@ export function TaskDetailModal({
             </div>
         ));
     }, [activities, transcribingActivityId]);
-    
+
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
     // Dados básicos prontos = isDataReady === true
     // Removida dependência de task?.id para evitar flash branco quando task ainda não está disponível
     const shouldShowSkeleton = open && !isCreateMode && !isDataReady;
-    
+
     // Determinar quais seções ainda estão carregando
     const showAttachmentsSkeleton = isLoadingAttachments;
     const showCommentsSkeleton = isLoadingComments;
@@ -765,7 +773,7 @@ export function TaskDetailModal({
         if (!open) return;
         if (!activitiesScrollRef.current) return;
         if (activitiesLength === 0) return;
-        
+
         // Usar requestAnimationFrame para garantir que o DOM foi atualizado após render
         requestAnimationFrame(() => {
             if (activitiesScrollRef.current) {
@@ -837,17 +845,17 @@ export function TaskDetailModal({
                 try {
                     // Verificar cache primeiro
                     const cachedBasic = taskCache.getBasicData(task.id);
-                    
+
                     if (cachedBasic) {
                         // Dados do cache - atualizar imediatamente
                         if (!active) return;
-                        
+
                         setCurrentTaskId(cachedBasic.id);
                         setTitle(cachedBasic.title || "");
                         setDescription(cachedBasic.description || "");
                         setStatus(cachedBasic.status || "todo");
                         setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
-                        
+
                         // Usar assignees do cache (já inclui task_members)
                         if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
                             setLocalMembers((cachedBasic as any).assignees.map((a: any) => ({
@@ -865,14 +873,14 @@ export function TaskDetailModal({
                         } else {
                             setLocalMembers([]);
                         }
-                        
+
                         if (cachedBasic.origin_context?.tags) {
                             setTags(cachedBasic.origin_context.tags);
                         }
-                        
+
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
-                        
+
                         // Carregar membros em background (não está no cache)
                         getWorkspaceMembers(task.workspaceId || null).then(members => {
                             if (active) {
@@ -885,16 +893,16 @@ export function TaskDetailModal({
                                 );
                             }
                         });
-                        
+
                         return; // Dados do cache, não precisa buscar do backend
                     }
-                    
+
                     // FASE 1: Carregar dados básicos do backend (rápido)
                     const [basicDetails, members] = await Promise.all([
                         getTaskBasicDetails(task.id),
                         getWorkspaceMembers(task.workspaceId || null)
                     ]);
-                    
+
                     if (!active) return;
 
                     if (basicDetails && active) {
@@ -902,17 +910,17 @@ export function TaskDetailModal({
                         if (basicDetails.id !== task.id) {
                             return;
                         }
-                        
+
                         // Armazenar no cache
                         taskCache.setBasicData(task.id, basicDetails);
-                        
+
                         // Atualizar dados básicos imediatamente
                         setCurrentTaskId(basicDetails.id);
                         setTitle(basicDetails.title || "");
                         setDescription(basicDetails.description || "");
                         setStatus(basicDetails.status || "todo");
                         setDueDate(basicDetails.due_date ? new Date(basicDetails.due_date).toISOString().split("T")[0] : "");
-                        
+
                         // Usar assignees dos detalhes (já inclui task_members)
                         if ((basicDetails as any).assignees && Array.isArray((basicDetails as any).assignees)) {
                             setLocalMembers((basicDetails as any).assignees.map((a: any) => ({
@@ -930,7 +938,7 @@ export function TaskDetailModal({
                         } else {
                             setLocalMembers([]);
                         }
-                        
+
                         if (basicDetails.origin_context?.tags) {
                             setTags(basicDetails.origin_context.tags);
                         }
@@ -942,7 +950,7 @@ export function TaskDetailModal({
                                 avatar: m.avatar_url || undefined,
                             }))
                         );
-                        
+
                         // Marcar dados básicos como prontos - formulário pode ser mostrado agora
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
@@ -961,50 +969,50 @@ export function TaskDetailModal({
                 try {
                     // Verificar cache primeiro
                     const cachedExtended = taskCache.getExtendedData(task.id);
-                    
+
                     if (cachedExtended) {
                         // Dados do cache - atualizar imediatamente
                         if (!active) return;
-                        
+
                         // Verificar se ainda é a mesma tarefa (mas não bloquear se currentTaskId ainda não foi definido)
                         if (currentTaskId !== null && currentTaskId !== task.id) {
                             return;
                         }
-                        
+
                         // Atualizar anexos
                         const mappedAttachments: FileAttachment[] = cachedExtended.attachments.map((att) => ({
                             id: att.id,
                             name: att.file_name,
-                            type: (att.file_type || "other") as "image" | "pdf" | "other",
+                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
                             size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                             url: att.file_url,
                         }));
                         setAttachments(mappedAttachments);
                         setIsLoadingAttachments(false);
-                        
+
                         // Atualizar comentários
                         const mappedActivities: Activity[] = cachedExtended.comments.map(mapCommentToActivity);
                         setActivities(mappedActivities);
                         setIsLoadingComments(false);
-                        
+
                         // Verificar se há mais comentários para carregar
                         setHasMoreComments(cachedExtended.comments.length >= COMMENTS_PAGE_SIZE);
                         setCommentsOffset(0); // Resetar offset quando usar cache
-                        
+
                         // Atualizar subtarefas
                         if (cachedExtended.subtasks && Array.isArray(cachedExtended.subtasks)) {
                             setSubTasks(cachedExtended.subtasks);
                         }
-                        
+
                         return; // Dados do cache, não precisa buscar do backend
                     }
-                    
+
                     // FASE 2: Carregar dados estendidos do backend (anexos, comentários, subtarefas)
                     setIsLoadingAttachments(true);
                     setIsLoadingComments(true);
-                    
+
                     const extendedDetails = await getTaskExtendedDetails(task.id, COMMENTS_PAGE_SIZE, 0);
-                    
+
                     if (!active) return;
 
                     if (extendedDetails) {
@@ -1015,30 +1023,30 @@ export function TaskDetailModal({
                             setIsLoadingComments(false);
                             return;
                         }
-                        
+
                         // Armazenar no cache
                         taskCache.setExtendedData(task.id, extendedDetails);
-                        
+
                         // Atualizar anexos
                         const mappedAttachments: FileAttachment[] = (extendedDetails.attachments || []).map((att) => ({
                             id: att.id,
                             name: att.file_name,
-                            type: (att.file_type || "other") as "image" | "pdf" | "other",
+                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
                             size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                             url: att.file_url,
                         }));
                         setAttachments(mappedAttachments);
                         setIsLoadingAttachments(false);
-                        
+
                         // Atualizar comentários
                         const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
                         setActivities(mappedActivities);
                         setIsLoadingComments(false);
-                        
+
                         // Verificar se há mais comentários para carregar
                         setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
                         setCommentsOffset(0); // Resetar offset quando carregar dados iniciais
-                        
+
                         // Atualizar subtarefas
                         if (extendedDetails.subtasks && Array.isArray(extendedDetails.subtasks)) {
                             setSubTasks(extendedDetails.subtasks);
@@ -1060,7 +1068,7 @@ export function TaskDetailModal({
                     }
                 }
             };
-            
+
             // Carregar dados básicos primeiro, depois estendidos
             loadBasicData().then(() => {
                 if (active) {
@@ -1078,7 +1086,7 @@ export function TaskDetailModal({
             setTags([]);
             setCurrentTaskId(null);
             setLocalMembers([]);
-            
+
             const loadCurrentUser = async () => {
                 try {
                     const members = await getWorkspaceMembers(null);
@@ -1109,15 +1117,15 @@ export function TaskDetailModal({
     // Função para carregar mais comentários
     const loadMoreComments = useCallback(async () => {
         if (!currentTaskId || !hasMoreComments || isLoadingComments) return;
-        
+
         setIsLoadingComments(true);
         try {
             const newOffset = commentsOffset + COMMENTS_PAGE_SIZE;
             const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, newOffset);
-            
+
             if (extendedDetails && extendedDetails.comments.length > 0) {
                 const mappedActivities: Activity[] = extendedDetails.comments.map(mapCommentToActivity);
-                
+
                 setActivities(prev => [...prev, ...mappedActivities]);
                 setCommentsOffset(newOffset);
                 setHasMoreComments(extendedDetails.comments.length >= COMMENTS_PAGE_SIZE);
@@ -1141,10 +1149,10 @@ export function TaskDetailModal({
                 // Substituir completamente o estado base
                 // Filtrar qualquer comentário otimista pendente antes de atualizar
                 const optimisticIdToFilter = optimisticIdRef.current;
-                const filteredActivities = optimisticIdToFilter 
+                const filteredActivities = optimisticIdToFilter
                     ? mappedActivities.filter(act => act.id !== optimisticIdToFilter)
                     : mappedActivities;
-                
+
                 // Atualizar estado base - o useOptimistic automaticamente atualizará
                 setActivities(filteredActivities);
                 // Limpar ref do otimista após atualizar o estado
@@ -1163,14 +1171,14 @@ export function TaskDetailModal({
         const oldStatus = status; // Guardar valor antigo para rollback
         const oldLabel = STATUS_TO_LABEL[status];
         const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
-        
+
         // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
         setStatus(newStatus as TaskStatus);
-        
+
         if (currentTaskId && !isCreateMode) {
             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
             onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
-            
+
             try {
                 const result = await updateTaskField(currentTaskId, "status", newStatus);
                 if (result.success) {
@@ -1205,11 +1213,11 @@ export function TaskDetailModal({
             assignee_id: null,
             assignee: null
         };
-        
+
         const updatedSubTasks = [...subTasks, newItem];
         setSubTasks(updatedSubTasks);
         setNewSubTask("");
-        
+
         if (currentTaskId && !isCreateMode) {
             try {
                 // Salvar valor antigo para o log
@@ -1391,12 +1399,12 @@ export function TaskDetailModal({
     const handleToggleSubTask = async (id: string) => {
         const task = subTasks.find(t => t.id === id);
         if (!task) return;
-        
+
         const newCompleted = !task.completed;
         const oldSubtasks = subTasks;
         const updated = subTasks.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
         setSubTasks(updated);
-        
+
         if (currentTaskId && !isCreateMode) {
             try {
                 const result = await updateTaskSubtasks(currentTaskId, updated);
@@ -1451,7 +1459,7 @@ export function TaskDetailModal({
 
         if (currentTaskId && !isCreateMode) {
             setIsSubmitting(true);
-            
+
             // Adicionar comentário otimista no estado base (order ASC: adicionamos ao final)
             const optimisticId = `optimistic-${Date.now()}`;
             optimisticIdRef.current = optimisticId;
@@ -1486,7 +1494,7 @@ export function TaskDetailModal({
                                     fileSize: file.size,
                                     filePath: uploadResult.path,
                                 });
-                                
+
                                 if (saveResult.success) {
                                     uploadedFileUrls.push(uploadResult.url);
                                 } else {
@@ -1506,14 +1514,14 @@ export function TaskDetailModal({
                 // Salvar comentário com metadata dos anexos
                 const commentType = pendingAttachments.length > 0 ? "file" : "comment";
                 const result = await addComment(
-                    currentTaskId, 
+                    currentTaskId,
                     commentText,
                     {
                         attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined
                     },
                     commentType as any
                 );
-                
+
                 if (!result.success) {
                     // Em caso de erro, mostrar toast de erro (substitui o toast otimista)
                     toast.error(result.error || "Erro ao criar comentário");
@@ -1543,14 +1551,14 @@ export function TaskDetailModal({
                         optimisticIdRef.current = null;
                     }
                 }
-                
+
                 // Atualizar anexos também
                 const taskDetails = await getTaskDetails(currentTaskId);
                 if (taskDetails) {
                     const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
                         id: att.id,
                         name: att.file_name,
-                        type: (att.file_type || "other") as "image" | "pdf" | "other",
+                        type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
                         size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                         url: att.file_url,
                     }));
@@ -1618,15 +1626,51 @@ export function TaskDetailModal({
             return;
         }
 
-        for (const file of files) {
+        // Criar entradas de upload inicial
+        const newUploads = files.map(file => {
             const isImage = file.type.startsWith("image/");
             const isPdf = file.type === "application/pdf";
-            const type = isImage ? "image" : isPdf ? "pdf" : "other";
-            
+            return {
+                id: `upload-${Date.now()}-${file.name}`,
+                name: file.name,
+                type: (isImage ? "image" : isPdf ? "pdf" : "other") as "image" | "pdf" | "other",
+                size: `${(file.size / 1024).toFixed(0)} KB`,
+                progress: 0,
+                file: file // manter referência para usar no loop
+            };
+        });
+
+        // Adicionar ao estado de uploads
+        setUploadingAttachments(prev => [...prev, ...newUploads.map(({ file, ...rest }) => rest)]);
+
+        // Processar cada arquivo
+        for (const uploadItem of newUploads) {
+            const { file, ...itemInfo } = uploadItem;
+
             try {
+                // Simular progresso
+                const progressInterval = setInterval(() => {
+                    setUploadingAttachments(prev => prev.map(u => {
+                        if (u.id === itemInfo.id) {
+                            // Incrementar até 90% aleatoriamente
+                            const next = Math.min(90, u.progress + Math.random() * 20);
+                            return { ...u, progress: next };
+                        }
+                        return u;
+                    }));
+                }, 200);
+
                 if (currentTaskId) {
                     const result = await uploadToStorage(file, "task-files");
+
+                    clearInterval(progressInterval);
+
                     if (result.success && result.url) {
+                        // Setar 100%
+                        setUploadingAttachments(prev => prev.map(u =>
+                            u.id === itemInfo.id ? { ...u, progress: 100 } : u
+                        ));
+
                         await saveAttachment({
                             taskId: currentTaskId,
                             fileUrl: result.url,
@@ -1634,41 +1678,47 @@ export function TaskDetailModal({
                             fileType: file.type,
                             fileSize: file.size,
                         });
-                        
+
                         const newFile: FileAttachment = {
                             id: `f-${Date.now()}`,
                             name: file.name,
-                            type,
-                            size: `${(file.size / 1024).toFixed(0)} KB`,
+                            type: itemInfo.type,
+                            size: itemInfo.size,
                             url: result.url
                         };
-                        
+
+                        // Pequeno delay para mostrar o 100% antes de trocar pelo card real
+                        await new Promise(resolve => setTimeout(resolve, 500));
+
                         setAttachments(prev => [...prev, newFile]);
+                        // Remover do estado de upload
+                        setUploadingAttachments(prev => prev.filter(u => u.id !== itemInfo.id));
                     }
                 }
             } catch (error) {
                 console.error("Erro ao fazer upload:", error);
                 toast.error("Erro ao fazer upload do arquivo");
+                setUploadingAttachments(prev => prev.filter(u => u.id !== itemInfo.id));
             }
         }
-        
-        // Recarregar atividades do banco para garantir que logs de upload foram criados
+
+        // Recarregar atividades e anexos finais
         if (currentTaskId) {
             await reloadActivities(currentTaskId);
-            // Recarregar anexos também
             const taskDetails = await getTaskDetails(currentTaskId);
             if (taskDetails) {
                 const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
                     id: att.id,
                     name: att.file_name,
-                    type: (att.file_type || "other") as "image" | "pdf" | "other",
+                    type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
                     size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                     url: att.file_url,
                 }));
+                // Atualizar final garante consistência
                 setAttachments(mappedAttachments);
             }
         }
-        
+
         toast.success(`${files.length} arquivo(s) adicionado(s)`);
         invalidateCacheAndNotify(currentTaskId);
     };
@@ -1687,43 +1737,43 @@ export function TaskDetailModal({
     const startRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
+
             audioChunksRef.current = [];
             recordingTimeRef.current = 0;
-            
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
-                ? 'audio/webm' 
-                : MediaRecorder.isTypeSupported('audio/mp4') 
-                ? 'audio/mp4' 
-                : 'audio/ogg';
-            
+
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+                ? 'audio/webm'
+                : MediaRecorder.isTypeSupported('audio/mp4')
+                    ? 'audio/mp4'
+                    : 'audio/ogg';
+
             mimeTypeRef.current = mimeType;
-            
+
             const recorder = new MediaRecorder(stream, { mimeType });
-            
+
             recorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
                     audioChunksRef.current.push(e.data);
                 }
             };
-            
+
             recorder.onstop = async () => {
                 if (audioChunksRef.current.length > 0) {
                     const blob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
                     const url = URL.createObjectURL(blob);
                     const finalDuration = finalDurationRef.current || recordingTimeRef.current || 1;
-                    
+
                     if (currentTaskId && !isCreateMode) {
                         try {
                             const formData = new FormData();
                             formData.append("audio", blob, "audio.webm");
                             formData.append("duration", finalDuration.toString());
-                            
+
                             const result = await uploadAudioComment(currentTaskId, formData);
                             if (result.success && result.data) {
                                 // Recarregar atividades do banco para garantir que está salvo
                                 await reloadActivities(currentTaskId);
-                                
+
                                 toast.success(`Áudio enviado (${finalDuration}s)`);
                                 invalidateCacheAndNotify(currentTaskId);
                             } else {
@@ -1745,7 +1795,7 @@ export function TaskDetailModal({
                         toast.success(`Áudio enviado (${finalDuration}s)`);
                     }
                 }
-                
+
                 stream.getTracks().forEach(track => track.stop());
                 setMediaStream(null);
                 setMediaRecorder(null);
@@ -1753,14 +1803,14 @@ export function TaskDetailModal({
                 finalDurationRef.current = 0;
                 audioChunksRef.current = [];
             };
-            
+
             recorder.onerror = (e) => {
                 console.error("Erro no MediaRecorder:", e);
                 toast.error("Erro ao gravar áudio");
             };
-            
+
             recorder.start(100);
-            
+
             setMediaRecorder(recorder);
             setMediaStream(stream);
             setIsRecording(true);
@@ -1785,12 +1835,12 @@ export function TaskDetailModal({
             mediaRecorder.onstop = null;
             mediaRecorder.stop();
         }
-        
+
         if (mediaStream) {
             mediaStream.getTracks().forEach(track => track.stop());
             setMediaStream(null);
         }
-        
+
         setMediaRecorder(null);
         setIsRecording(false);
         finalDurationRef.current = 0;
@@ -1826,7 +1876,7 @@ export function TaskDetailModal({
             element.style.maxHeight = "none";
             const height = element.scrollHeight;
             element.style.maxHeight = "";
-            
+
             // Se altura real > 160px (40 * 4px = 160px), mostrar botão
             setShowExpandButton(height > 160);
         } else {
@@ -1866,10 +1916,10 @@ export function TaskDetailModal({
 
     const handleMembersChange = async (memberIds: string[]) => {
         if (!currentTaskId || isCreateMode) return;
-        
+
         const oldMembers = [...localMembers];
         const oldMemberIds = oldMembers.map(m => m.id);
-        
+
         // Determinar membros adicionados e removidos
         const added = memberIds.filter(id => !oldMemberIds.includes(id));
         const removed = oldMemberIds.filter(id => !memberIds.includes(id));
@@ -1879,13 +1929,13 @@ export function TaskDetailModal({
             const member = availableUsers.find(u => u.id === id);
             return member ? { id: member.id, name: member.name, avatar: member.avatar } : null;
         }).filter(Boolean) as Array<{ id: string; name: string; avatar?: string }>;
-        
+
         // Atualizar UI imediatamente
         setLocalMembers(newMembers);
-        
+
         // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
         onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
-        
+
         try {
             // Adicionar novos membros
             const addPromises = added.map(userId => addTaskMember(currentTaskId, userId));
@@ -1894,7 +1944,7 @@ export function TaskDetailModal({
 
             const results = await Promise.all([...addPromises, ...removePromises]);
             const hasError = results.some(r => !r.success);
-            
+
             if (hasError) {
                 // ✅ REVERTER se falhar
                 setLocalMembers(oldMembers);
@@ -1927,12 +1977,12 @@ export function TaskDetailModal({
         const dateString = date ? date.toISOString().split("T")[0] : "";
         const oldDate = dueDate;
         setDueDate(dateString);
-        
+
         if (currentTaskId && !isCreateMode) {
             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
             const optimisticDueDate = date ? date.toISOString() : undefined;
             onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
-            
+
             try {
                 const result = await updateTaskField(
                     currentTaskId,
@@ -1943,7 +1993,7 @@ export function TaskDetailModal({
                     invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate });
                     // Recarregar atividades do banco para garantir que o log foi persistido
                     await reloadActivities(currentTaskId);
-                    
+
                     const dateFormatted = date ? date.toLocaleDateString("pt-BR") : "removida";
                     toast.success(date ? `Data de entrega atualizada para ${dateFormatted}` : "Data de entrega removida");
                 } else {
@@ -1976,666 +2026,681 @@ export function TaskDetailModal({
 
     return (
         <>
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogPortal>
-                <DialogOverlay className="bg-black/50" />
-                <DialogPrimitive.Content
-                    className={cn(
-                        "fixed z-50 bg-background duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 p-0 flex flex-col overflow-hidden shadow-lg",
-                        isMaximized 
-                            ? "left-0 top-0 w-screen h-screen translate-x-0 translate-y-0 rounded-none border-0"
-                            : "left-[50%] top-[50%] w-[90vw] max-w-6xl h-[80vh] translate-x-[-50%] translate-y-[-50%] rounded-xl border data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]"
-                    )}
-                >
-                    <DialogTitle className="sr-only">
-                        {isCreateMode ? "Criar Nova Tarefa" : `Detalhes da Tarefa: ${task?.title || ""}`}
-                    </DialogTitle>
-                    
-                    {/* Header */}
-                    <div className="px-6 py-4 border-b border-gray-100 shrink-0 bg-white">
-                        <div className="flex items-center justify-between">
-                            {!isCreateMode && task?.breadcrumbs && (
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    {task.breadcrumbs.map((crumb, i) => (
-                                        <div key={i} className="flex items-center gap-2">
-                                            <span>{crumb}</span>
-                                            {i < task.breadcrumbs.length - 1 && <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {isCreateMode && (
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    <span>Nova Tarefa</span>
-                                </div>
-                            )}
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogPortal>
+                    <DialogOverlay className="bg-black/50" />
+                    <DialogPrimitive.Content
+                        className={cn(
+                            "fixed z-50 bg-background duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 p-0 flex flex-col overflow-hidden shadow-lg",
+                            isMaximized
+                                ? "left-0 top-0 w-screen h-screen translate-x-0 translate-y-0 rounded-none border-0"
+                                : "left-[50%] top-[50%] w-[90vw] max-w-6xl h-[80vh] translate-x-[-50%] translate-y-[-50%] rounded-xl border data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]"
+                        )}
+                    >
+                        <DialogTitle className="sr-only">
+                            {isCreateMode ? "Criar Nova Tarefa" : `Detalhes da Tarefa: ${task?.title || ""}`}
+                        </DialogTitle>
 
-                            <div className="flex items-center gap-2 ml-auto">
-                                {!isCreateMode && (
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-100 shrink-0 bg-white">
+                            <div className="flex items-center justify-between">
+                                {!isCreateMode && task?.breadcrumbs && (
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        {task.breadcrumbs.map((crumb, i) => (
+                                            <div key={i} className="flex items-center gap-2">
+                                                <span>{crumb}</span>
+                                                {i < task.breadcrumbs.length - 1 && <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {isCreateMode && (
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <span>Nova Tarefa</span>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-2 ml-auto">
+                                    {!isCreateMode && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8"
+                                            onClick={() => setIsShareModalOpen(true)}
+                                            title="Compartilhar tarefa"
+                                        >
+                                            <Share2 className="h-4 w-4" />
+                                        </Button>
+                                    )}
                                     <Button
                                         variant="ghost"
                                         size="icon"
                                         className="h-8 w-8"
-                                        onClick={() => setIsShareModalOpen(true)}
-                                        title="Compartilhar tarefa"
+                                        onClick={() => setIsMaximized(!isMaximized)}
                                     >
-                                        <Share2 className="h-4 w-4" />
+                                        {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                                     </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => setIsMaximized(!isMaximized)}
-                                >
-                                    {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => onOpenChange(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => onOpenChange(false)}
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Main Grid */}
-                    <div className="flex-1 grid md:grid-cols-[1.5fr_1fr] overflow-hidden bg-white">
-                        
-                        {/* LEFT COLUMN: Editor */}
-                        <div className="border-r border-gray-100 p-6 overflow-y-auto custom-scrollbar flex flex-col">
-                            {shouldShowSkeleton ? (
-                                // Skeleton Loading
-                                <div className="space-y-6 animate-pulse">
-                                    {/* Title Skeleton */}
-                                    <div className="h-12 bg-gray-200 rounded w-3/4" />
-                                    
-                                    {/* Properties Skeleton */}
-                                    <div className="grid grid-cols-3 gap-6">
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-16" />
-                                            <div className="h-8 bg-gray-200 rounded w-24" />
+                        {/* Main Grid */}
+                        <div className="flex-1 grid md:grid-cols-[1.5fr_1fr] overflow-hidden bg-white">
+
+                            {/* LEFT COLUMN: Editor */}
+                            <div className="border-r border-gray-100 p-6 overflow-y-auto custom-scrollbar flex flex-col">
+                                {shouldShowSkeleton ? (
+                                    // Skeleton Loading
+                                    <div className="space-y-6 animate-pulse">
+                                        {/* Title Skeleton */}
+                                        <div className="h-12 bg-gray-200 rounded w-3/4" />
+
+                                        {/* Properties Skeleton */}
+                                        <div className="grid grid-cols-3 gap-6">
+                                            <div className="space-y-2">
+                                                <div className="h-3 bg-gray-200 rounded w-16" />
+                                                <div className="h-8 bg-gray-200 rounded w-24" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="h-3 bg-gray-200 rounded w-20" />
+                                                <div className="h-8 bg-gray-200 rounded w-32" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="h-3 bg-gray-200 rounded w-16" />
+                                                <div className="h-8 bg-gray-200 rounded w-28" />
+                                            </div>
                                         </div>
+
+                                        {/* Description Skeleton */}
+                                        <div className="space-y-2">
+                                            <div className="h-3 bg-gray-200 rounded w-24" />
+                                            <div className="h-32 bg-gray-100 rounded" />
+                                        </div>
+
+                                        {/* Attachments Skeleton */}
                                         <div className="space-y-2">
                                             <div className="h-3 bg-gray-200 rounded w-20" />
-                                            <div className="h-8 bg-gray-200 rounded w-32" />
+                                            <div className="h-32 bg-gray-100 rounded border-2 border-dashed border-gray-200" />
                                         </div>
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-16" />
-                                            <div className="h-8 bg-gray-200 rounded w-28" />
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Description Skeleton */}
-                                    <div className="space-y-2">
-                                        <div className="h-3 bg-gray-200 rounded w-24" />
-                                        <div className="h-32 bg-gray-100 rounded" />
-                                    </div>
-                                    
-                                    {/* Attachments Skeleton */}
-                                    <div className="space-y-2">
-                                        <div className="h-3 bg-gray-200 rounded w-20" />
-                                        <div className="h-32 bg-gray-100 rounded border-2 border-dashed border-gray-200" />
-                                    </div>
-                                    
-                                    {/* Subtasks Skeleton */}
-                                    <div className="space-y-2">
-                                        <div className="h-3 bg-gray-200 rounded w-24" />
-                                        <div className="space-y-2">
-                                            <div className="h-10 bg-gray-100 rounded" />
-                                            <div className="h-10 bg-gray-100 rounded" />
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                            {/* Title */}
-                            <div className="group relative mb-6">
-                                {isViewMode ? (
-                                    <h1 className="text-4xl font-bold">{title}</h1>
-                                ) : (
-                                    <Input
-                                        value={title}
-                                        onChange={(e) => {
-                                            const newTitle = e.target.value;
-                                            setTitle(newTitle);
-                                            if (currentTaskId && !isCreateMode) {
-                                                // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-                                                onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
-                                                // Salvar no backend em background
-                                                updateTaskField(currentTaskId, "title", newTitle).catch((error) => {
-                                                    console.error("Erro ao salvar título:", error);
-                                                    // Reverter em caso de erro
-                                                    onTaskUpdatedOptimistic?.(currentTaskId, { title: task?.title || "" });
-                                                });
-                                            }
-                                        }}
-                                        className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
-                                    />
-                                )}
-                            </div>
 
-                            {/* Properties */}
-                            <div className="grid grid-cols-3 gap-6 mb-8 items-start">
-                                {/* Status */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Status</label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <button className="flex items-center gap-2 text-sm hover:bg-gray-100 p-1.5 -ml-1.5 rounded transition-colors w-fit">
-                                                <Badge 
-                                                    variant="secondary" 
-                                                    className={cn("pointer-events-none font-normal px-2 py-0.5", TASK_CONFIG[status]?.lightColor)}
-                                                >
-                                                    {mapStatusToLabel(status)}
-                                                </Badge>
-                                                <ChevronDown className="h-3 w-3 text-gray-400" />
-                                            </button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-48 p-1" align="start">
-                                            <div className="flex flex-col gap-0.5">
-                                                {ORDERED_STATUSES.map((s) => (
-                                                    <button
-                                                        key={s}
-                                                        className={cn(
-                                                            "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
-                                                            status === s && "bg-gray-50 font-medium"
-                                                        )}
-                                                        onClick={() => handleStatusChange(s)}
-                                                    >
-                                                        <span>{STATUS_TO_LABEL[s]}</span>
-                                                        {status === s && <Check className="h-3 w-3 text-green-600" />}
-                                                    </button>
-                                                ))}
+                                        {/* Subtasks Skeleton */}
+                                        <div className="space-y-2">
+                                            <div className="h-3 bg-gray-200 rounded w-24" />
+                                            <div className="space-y-2">
+                                                <div className="h-10 bg-gray-100 rounded" />
+                                                <div className="h-10 bg-gray-100 rounded" />
                                             </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Title */}
+                                        <div className="group relative mb-6">
+                                            {isViewMode ? (
+                                                <h1 className="text-4xl font-bold">{title}</h1>
+                                            ) : (
+                                                <Input
+                                                    value={title}
+                                                    onChange={(e) => {
+                                                        const newTitle = e.target.value;
+                                                        setTitle(newTitle);
+                                                        if (currentTaskId && !isCreateMode) {
+                                                            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+                                                            onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
+                                                            // Salvar no backend em background
+                                                            updateTaskField(currentTaskId, "title", newTitle).catch((error) => {
+                                                                console.error("Erro ao salvar título:", error);
+                                                                // Reverter em caso de erro
+                                                                onTaskUpdatedOptimistic?.(currentTaskId, { title: task?.title || "" });
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
+                                                />
+                                            )}
+                                        </div>
 
-                                {/* Assignee */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
-                                    <TaskMembersPicker
-                                        memberIds={localMembers.map(m => m.id)}
-                                        onChange={handleMembersChange}
-                                        members={availableUsers}
-                                        workspaceId={task?.workspaceId || undefined}
-                                    />
-                                </div>
+                                        {/* Properties */}
+                                        <div className="grid grid-cols-3 gap-6 mb-8 items-start">
+                                            {/* Status */}
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Status</label>
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <button className="flex items-center gap-2 text-sm hover:bg-gray-100 p-1.5 -ml-1.5 rounded transition-colors w-fit">
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className={cn("pointer-events-none font-normal px-2 py-0.5", TASK_CONFIG[status]?.lightColor)}
+                                                            >
+                                                                {mapStatusToLabel(status)}
+                                                            </Badge>
+                                                            <ChevronDown className="h-3 w-3 text-gray-400" />
+                                                        </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-48 p-1" align="start">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            {ORDERED_STATUSES.map((s) => (
+                                                                <button
+                                                                    key={s}
+                                                                    className={cn(
+                                                                        "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
+                                                                        status === s && "bg-gray-50 font-medium"
+                                                                    )}
+                                                                    onClick={() => handleStatusChange(s)}
+                                                                >
+                                                                    <span>{STATUS_TO_LABEL[s]}</span>
+                                                                    {status === s && <Check className="h-3 w-3 text-green-600" />}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
 
-                                {/* Due Date */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
-                                    <TaskDatePicker
-                                        date={dueDate ? parseLocalDate(dueDate) : null}
-                                        onSelect={handleDueDateChange}
-                                        align="start"
-                                        isCompleted={status === TASK_STATUS.DONE}
-                                    />
-                                </div>
-                            </div>
+                                            {/* Assignee */}
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
+                                                <TaskMembersPicker
+                                                    memberIds={localMembers.map(m => m.id)}
+                                                    onChange={handleMembersChange}
+                                                    members={availableUsers}
+                                                    workspaceId={task?.workspaceId || undefined}
+                                                />
+                                            </div>
 
-                            {/* Description */}
-                            <div className="mb-8 group/desc">
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
-                                    {!isEditingDescription && (
-                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => {
-                                            setIsDescriptionExpanded(false);
-                                            setIsEditingDescription(true);
-                                        }}>
-                                            <Pencil className="w-3 h-3 mr-1" /> Editar
-                                        </Button>
-                                    )}
-                                </div>
-                                {isEditingDescription ? (
-                                    <div className="border rounded-md p-1">
-                                        <Editor 
-                                            value={description} 
-                                            onChange={setDescription}
-                                            placeholder="Adicione uma descrição..."
-                                        />
-                                        <div className="flex items-center justify-between mt-2 p-2">
-                                            <div className="flex flex-col">
-                                                <span className={cn(
-                                                    "text-xs",
-                                                    isDescriptionOverLimit ? "text-red-500" : "text-gray-400"
-                                                )}>
-                                                    {getDescriptionCharCount}/{MAX_DESCRIPTION_LENGTH}
-                                                </span>
-                                                {isDescriptionOverLimit && (
-                                                    <span className="text-xs text-red-500 mt-0.5">
-                                                        Limite de caracteres excedido.
-                                                    </span>
+                                            {/* Due Date */}
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
+                                                <TaskDatePicker
+                                                    date={dueDate ? parseLocalDate(dueDate) : null}
+                                                    onSelect={handleDueDateChange}
+                                                    align="start"
+                                                    isCompleted={status === TASK_STATUS.DONE}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Description */}
+                                        <div className="mb-8 group/desc">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
+                                                {!isEditingDescription && (
+                                                    <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => {
+                                                        setIsDescriptionExpanded(false);
+                                                        setIsEditingDescription(true);
+                                                    }}>
+                                                        <Pencil className="w-3 h-3 mr-1" /> Editar
+                                                    </Button>
                                                 )}
                                             </div>
-                                            <Button 
-                                                size="sm" 
-                                                onClick={handleSaveDescription}
-                                                disabled={isDescriptionOverLimit}
-                                            >
-                                                Concluir
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="relative">
-                                        <div 
-                                            ref={descriptionRef}
-                                            className={cn(
-                                                "p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200 outline-none focus:outline-none focus-visible:outline-none active:outline-none",
-                                                !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
-                                            )}
-                                            onClick={() => {
-                                                setIsDescriptionExpanded(false);
-                                                setIsEditingDescription(true);
-                                            }}
-                                            onMouseDown={(e) => e.preventDefault()}
-                                            tabIndex={-1}
-                                            dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
-                                        />
-                                        {!isDescriptionExpanded && showExpandButton && (
-                                            <>
-                                                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />
-                                                <div className="flex justify-center mt-2">
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="sm"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setIsDescriptionExpanded(true);
-                                                        }}
-                                                    >
-                                                        Ver mais
-                                                    </Button>
-                                                </div>
-                                            </>
-                                        )}
-                                        {isDescriptionExpanded && showExpandButton && (
-                                            <div className="flex justify-center mt-2">
-                                                <Button 
-                                                    variant="ghost" 
-                                                    size="sm"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setIsDescriptionExpanded(false);
-                                                    }}
-                                                >
-                                                    Ver menos
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Attachments Dropzone */}
-                            <div className="mb-8">
-                                <label className="text-xs font-medium text-gray-500 uppercase mb-2 block">Arquivos</label>
-                                <div 
-                                    {...getRootProps()}
-                                    className={cn(
-                                        "border-dashed border-2 rounded-md p-6 mb-4 cursor-pointer group transition-colors",
-                                        isDragActive ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-green-400"
-                                    )}
-                                >
-                                    <input {...getInputProps()} />
-                                    <div className="flex flex-col items-center justify-center gap-2 text-gray-400 group-hover:text-green-600">
-                                        <UploadCloud className="w-8 h-8" />
-                                        <p className="text-sm">Arraste arquivos ou clique para fazer upload</p>
-                                    </div>
-                                </div>
-                                
-                                {showAttachmentsSkeleton ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 animate-pulse">
-                                        {[1, 2, 3].map((i) => (
-                                            <div key={i} className="h-24 bg-gray-100 rounded-lg border border-gray-200" />
-                                        ))}
-                                    </div>
-                                ) : attachments.length > 0 ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                        {attachments.map(att => {
-                                            const imageIndex = att.type === "image" 
-                                                ? imageAttachments.findIndex(img => img.id === att.id)
-                                                : -1;
-                                            return (
-                                                <AttachmentCard
-                                                    key={att.id}
-                                                    file={att}
-                                                    onDelete={handleAttachmentDeleteClick}
-                                                    onPreview={imageIndex >= 0 ? () => handleImagePreview(imageIndex) : undefined}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                ) : null}
-                            </div>
-
-                            {/* Subtasks */}
-                            <div>
-                                <label className="text-xs font-medium text-gray-500 uppercase mb-3 block">Sub-tarefas</label>
-                                <div className="space-y-2 mb-3">
-                                    {subTasks.map(st => (
-                                        <div key={st.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group">
-                                            <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
-                                            <div className="flex-1 min-w-0">
-                                                {editingSubTaskId === st.id ? (
-                                                    <Input
-                                                        value={editingSubTaskTitle}
-                                                        autoFocus
-                                                        onChange={(e) => setEditingSubTaskTitle(e.target.value)}
-                                                        onBlur={() => handleUpdateSubTaskTitle(st.id, editingSubTaskTitle)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter") {
-                                                                handleUpdateSubTaskTitle(st.id, editingSubTaskTitle);
-                                                            } else if (e.key === "Escape") {
-                                                                setEditingSubTaskId(null);
-                                                                setEditingSubTaskTitle("");
-                                                            }
-                                                        }}
-                                                        className="h-8 text-sm"
-                                                        disabled={savingSubTaskId === st.id}
+                                            {isEditingDescription ? (
+                                                <div className="border rounded-md p-1">
+                                                    <Editor
+                                                        value={description}
+                                                        onChange={setDescription}
+                                                        placeholder="Adicione uma descrição..."
                                                     />
-                                                ) : (
-                                                    <button
-                                                        type="button"
+                                                    <div className="flex items-center justify-between mt-2 p-2">
+                                                        <div className="flex flex-col">
+                                                            <span className={cn(
+                                                                "text-xs",
+                                                                isDescriptionOverLimit ? "text-red-500" : "text-gray-400"
+                                                            )}>
+                                                                {getDescriptionCharCount}/{MAX_DESCRIPTION_LENGTH}
+                                                            </span>
+                                                            {isDescriptionOverLimit && (
+                                                                <span className="text-xs text-red-500 mt-0.5">
+                                                                    Limite de caracteres excedido.
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={handleSaveDescription}
+                                                            disabled={isDescriptionOverLimit}
+                                                        >
+                                                            Concluir
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="relative">
+                                                    <div
+                                                        ref={descriptionRef}
                                                         className={cn(
-                                                            "w-full text-left text-sm truncate",
-                                                            st.completed && "line-through text-gray-400",
-                                                            savingSubTaskId === st.id && "opacity-60"
+                                                            "p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200 outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                            !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
                                                         )}
                                                         onClick={() => {
-                                                            setEditingSubTaskId(st.id);
-                                                            setEditingSubTaskTitle(st.title);
+                                                            setIsDescriptionExpanded(false);
+                                                            setIsEditingDescription(true);
                                                         }}
-                                                    >
-                                                        {st.title}
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <TaskMembersPicker
-                                                memberIds={st.assignee_id ? [st.assignee_id] : []}
-                                                onChange={(ids) => handleUpdateSubTaskAssignee(st.id, ids[0] || null)}
-                                                members={availableUsers}
-                                                workspaceId={task?.workspaceId || undefined}
-                                                maxAvatars={1}
-                                                trigger={
-                                                    <div className="size-7 rounded-full border border-dashed border-gray-200 flex items-center justify-center hover:border-gray-300 transition-colors overflow-hidden">
-                                                        {st.assignee ? (
-                                                            st.assignee.avatar ? (
-                                                                <img
-                                                                    src={st.assignee.avatar}
-                                                                    alt={st.assignee.name}
-                                                                    className="size-7 object-cover"
-                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                                                                />
-                                                            ) : (
-                                                                <span className="text-xs text-gray-600 font-medium">
-                                                                    {st.assignee.name.charAt(0)}
-                                                                </span>
-                                                            )
-                                                        ) : (
-                                                            <User className="size-3 text-gray-400" />
-                                                        )}
-                                                    </div>
-                                                }
-                                            />
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
-                                                const oldSubtasks = subTasks; // ✅ Guardar valor antigo para rollback
-                                                const updated = subTasks.filter(t => t.id !== st.id);
-                                                // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
-                                                setSubTasks(updated);
-                                                if (currentTaskId && !isCreateMode) {
-                                                    try {
-                                                        const result = await updateTaskSubtasks(currentTaskId, updated);
-                                                        if (result.success) {
-                                                            invalidateCacheAndNotify(currentTaskId);
-                                                            // Criar log manual para subtarefas
-                                                            await addComment(
-                                                                currentTaskId,
-                                                                `removeu a sub-tarefa: "${st.title}"`,
-                                                                {
-                                                                    field: "subtasks",
-                                                                    action: "subtask_removed",
-                                                                    subtask_title: st.title
-                                                                },
-                                                                "log"
-                                                            );
-                                                            // Recarregar atividades do banco
-                                                            await reloadActivities(currentTaskId);
-                                                        } else {
-                                                            // ✅ REVERTER se falhar
-                                                            setSubTasks(oldSubtasks);
-                                                            toast.error(result.error || "Erro ao remover sub-tarefa");
-                                                        }
-                                                    } catch (error) {
-                                                        // ✅ REVERTER em caso de exceção
-                                                        console.error("Erro ao remover sub-tarefa:", error);
-                                                        setSubTasks(oldSubtasks);
-                                                        toast.error("Erro ao remover sub-tarefa");
-                                                    }
-                                                }
-                                            }}>
-                                                <X className="w-3 h-3" />
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <Input 
-                                        value={newSubTask} 
-                                        onChange={(e) => setNewSubTask(e.target.value)} 
-                                        onKeyDown={(e) => e.key === "Enter" && handleAddSubTask()}
-                                        placeholder="Adicionar item..." 
-                                        className="flex-1"
-                                    />
-                                    <Button onClick={handleAddSubTask} size="icon" variant="outline" className="h-10 w-10">
-                                        <Plus className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                                </>
-                            )}
-
-                        </div>
-
-                        {/* RIGHT COLUMN: Context & Timeline */}
-                        <div className="bg-gray-50 p-6 flex flex-col overflow-hidden h-full">
-                            {shouldShowSkeleton ? (
-                                // Timeline Skeleton
-                                <div className="space-y-4 animate-pulse">
-                                    <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
-                                    <div className="space-y-4">
-                                        {[1, 2, 3].map((i) => (
-                                            <div key={i} className="flex gap-3">
-                                                <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0" />
-                                                <div className="flex-1 space-y-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-24 h-4 bg-gray-200 rounded" />
-                                                        <div className="w-16 h-3 bg-gray-200 rounded" />
-                                                    </div>
-                                                    <div className="w-full h-10 bg-gray-100 rounded-lg" />
+                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        tabIndex={-1}
+                                                        dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
+                                                    />
+                                                    {!isDescriptionExpanded && showExpandButton && (
+                                                        <>
+                                                            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                                                            <div className="flex justify-center mt-2">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setIsDescriptionExpanded(true);
+                                                                    }}
+                                                                >
+                                                                    Ver mais
+                                                                </Button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {isDescriptionExpanded && showExpandButton && (
+                                                        <div className="flex justify-center mt-2">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setIsDescriptionExpanded(false);
+                                                                }}
+                                                            >
+                                                                Ver menos
+                                                            </Button>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                            {/* Origin Card */}
-                            {task?.contextMessage && (
-                                <>
-                                    <h3 className="text-sm font-semibold text-gray-700 mb-4">Contexto Original</h3>
-                                    <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4 shadow-sm flex items-start gap-3">
-                                        <div className={cn(
-                                            "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-                                            task.contextMessage.type === "audio" ? "bg-green-100" : "bg-blue-100"
-                                        )}>
-                                            {task.contextMessage.type === "audio" ? (
-                                                <Play className="w-5 h-5 text-green-600" />
-                                            ) : (
-                                                <MessageSquare className="w-5 h-5 text-blue-600" />
                                             )}
                                         </div>
-                                        <div className="flex-1">
-                                            <p className="text-xs text-gray-500 mb-1 font-medium">
-                                                Criada via {task.contextMessage.type === "audio" ? "WhatsApp" : "App Web"}
-                                            </p>
-                                            <p className="text-sm text-gray-700 mb-1">"{task.contextMessage.content}"</p>
-                                            <p className="text-xs text-gray-400">{task.contextMessage.timestamp}</p>
+
+                                        {/* Attachments Dropzone */}
+                                        <div className="mb-8">
+                                            <label className="text-xs font-medium text-gray-500 uppercase mb-2 block">Arquivos</label>
+                                            <div
+                                                {...getRootProps()}
+                                                className={cn(
+                                                    "border-dashed border-2 rounded-md p-6 mb-4 cursor-pointer group transition-colors",
+                                                    isDragActive ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-green-400"
+                                                )}
+                                            >
+                                                <input {...getInputProps()} />
+                                                <div className="flex flex-col items-center justify-center gap-2 text-gray-400 group-hover:text-green-600">
+                                                    <UploadCloud className="w-8 h-8" />
+                                                    <p className="text-sm">Arraste arquivos ou clique para fazer upload</p>
+                                                </div>
+                                            </div>
+
+                                            {showAttachmentsSkeleton ? (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 animate-pulse">
+                                                    {[1, 2, 3].map((i) => (
+                                                        <div key={i} className="h-24 bg-gray-100 rounded-lg border border-gray-200" />
+                                                    ))}
+                                                </div>
+                                            ) : attachments.length > 0 || uploadingAttachments.length > 0 ? (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                    {/* Uploading Attachments */}
+                                                    <AnimatePresence>
+                                                        {uploadingAttachments.map(att => (
+                                                            <AttachmentCard
+                                                                key={att.id}
+                                                                file={att}
+                                                                onDelete={() => { }} // Desabilitar delete durante upload
+                                                                uploadProgress={att.progress}
+                                                            />
+                                                        ))}
+                                                    </AnimatePresence>
+
+                                                    {/* Existing Attachments */}
+                                                    <AnimatePresence>
+                                                        {attachments.map(att => {
+                                                            const imageIndex = att.type === "image"
+                                                                ? imageAttachments.findIndex(img => img.id === att.id)
+                                                                : -1;
+                                                            return (
+                                                                <AttachmentCard
+                                                                    key={att.id}
+                                                                    file={att}
+                                                                    onDelete={handleAttachmentDeleteClick}
+                                                                    onPreview={imageIndex >= 0 ? () => handleImagePreview(imageIndex) : undefined}
+                                                                />
+                                                            );
+                                                        })}
+                                                    </AnimatePresence>
+                                                </div>
+                                            ) : null}
                                         </div>
-                                    </div>
-                                </>
-                            )}
 
-                            {/* Timeline */}
-                            <div className="flex-1 flex flex-col min-h-0">
-                                <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Histórico</h4>
-                                
-                                <div 
-                                    ref={activitiesScrollRef}
-                                    className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar"
-                                >
-                                    <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
-
-                                    <div className="space-y-4 relative pl-1">
-                                        {showCommentsSkeleton ? (
-                                            <div className="space-y-4 py-2">
-                                                {[1, 2, 3].map((i) => (
-                                                    <div key={i} className="flex gap-3 relative z-10">
-                                                        <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0 animate-pulse" />
-                                                        <div className="flex-1 space-y-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-24 h-4 bg-gray-100 rounded animate-pulse" />
-                                                                <div className="w-16 h-3 bg-gray-100 rounded animate-pulse" />
-                                                            </div>
-                                                            <div className="w-full h-10 bg-gray-50 rounded-lg animate-pulse border border-gray-100" />
+                                        {/* Subtasks */}
+                                        <div>
+                                            <label className="text-xs font-medium text-gray-500 uppercase mb-3 block">Sub-tarefas</label>
+                                            <div className="space-y-2 mb-3">
+                                                {subTasks.map(st => (
+                                                    <div key={st.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group">
+                                                        <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
+                                                        <div className="flex-1 min-w-0">
+                                                            {editingSubTaskId === st.id ? (
+                                                                <Input
+                                                                    value={editingSubTaskTitle}
+                                                                    autoFocus
+                                                                    onChange={(e) => setEditingSubTaskTitle(e.target.value)}
+                                                                    onBlur={() => handleUpdateSubTaskTitle(st.id, editingSubTaskTitle)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === "Enter") {
+                                                                            handleUpdateSubTaskTitle(st.id, editingSubTaskTitle);
+                                                                        } else if (e.key === "Escape") {
+                                                                            setEditingSubTaskId(null);
+                                                                            setEditingSubTaskTitle("");
+                                                                        }
+                                                                    }}
+                                                                    className="h-8 text-sm"
+                                                                    disabled={savingSubTaskId === st.id}
+                                                                />
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    className={cn(
+                                                                        "w-full text-left text-sm truncate",
+                                                                        st.completed && "line-through text-gray-400",
+                                                                        savingSubTaskId === st.id && "opacity-60"
+                                                                    )}
+                                                                    onClick={() => {
+                                                                        setEditingSubTaskId(st.id);
+                                                                        setEditingSubTaskTitle(st.title);
+                                                                    }}
+                                                                >
+                                                                    {st.title}
+                                                                </button>
+                                                            )}
                                                         </div>
+                                                        <TaskMembersPicker
+                                                            memberIds={st.assignee_id ? [st.assignee_id] : []}
+                                                            onChange={(ids) => handleUpdateSubTaskAssignee(st.id, ids[0] || null)}
+                                                            members={availableUsers}
+                                                            workspaceId={task?.workspaceId || undefined}
+                                                            maxAvatars={1}
+                                                            trigger={
+                                                                <div className="size-7 rounded-full border border-dashed border-gray-200 flex items-center justify-center hover:border-gray-300 transition-colors overflow-hidden">
+                                                                    {st.assignee ? (
+                                                                        st.assignee.avatar ? (
+                                                                            <img
+                                                                                src={st.assignee.avatar}
+                                                                                alt={st.assignee.name}
+                                                                                className="size-7 object-cover"
+                                                                                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-xs text-gray-600 font-medium">
+                                                                                {st.assignee.name.charAt(0)}
+                                                                            </span>
+                                                                        )
+                                                                    ) : (
+                                                                        <User className="size-3 text-gray-400" />
+                                                                    )}
+                                                                </div>
+                                                            }
+                                                        />
+                                                        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
+                                                            const oldSubtasks = subTasks; // ✅ Guardar valor antigo para rollback
+                                                            const updated = subTasks.filter(t => t.id !== st.id);
+                                                            // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
+                                                            setSubTasks(updated);
+                                                            if (currentTaskId && !isCreateMode) {
+                                                                try {
+                                                                    const result = await updateTaskSubtasks(currentTaskId, updated);
+                                                                    if (result.success) {
+                                                                        invalidateCacheAndNotify(currentTaskId);
+                                                                        // Criar log manual para subtarefas
+                                                                        await addComment(
+                                                                            currentTaskId,
+                                                                            `removeu a sub-tarefa: "${st.title}"`,
+                                                                            {
+                                                                                field: "subtasks",
+                                                                                action: "subtask_removed",
+                                                                                subtask_title: st.title
+                                                                            },
+                                                                            "log"
+                                                                        );
+                                                                        // Recarregar atividades do banco
+                                                                        await reloadActivities(currentTaskId);
+                                                                    } else {
+                                                                        // ✅ REVERTER se falhar
+                                                                        setSubTasks(oldSubtasks);
+                                                                        toast.error(result.error || "Erro ao remover sub-tarefa");
+                                                                    }
+                                                                } catch (error) {
+                                                                    // ✅ REVERTER em caso de exceção
+                                                                    console.error("Erro ao remover sub-tarefa:", error);
+                                                                    setSubTasks(oldSubtasks);
+                                                                    toast.error("Erro ao remover sub-tarefa");
+                                                                }
+                                                            }
+                                                        }}>
+                                                            <X className="w-3 h-3" />
+                                                        </Button>
                                                     </div>
                                                 ))}
                                             </div>
-                                        ) : activities.length === 0 ? (
-                                            <p className="text-sm text-gray-400 text-center py-4">Nenhuma atividade</p>
-                                        ) : (
-                                            renderedActivities
-                                        )}
-                                    </div>
-                                    
-                                    {hasMoreComments && (
-                                        <div className="flex justify-center pb-4">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={loadMoreComments}
-                                                disabled={isLoadingComments}
-                                            >
-                                                {isLoadingComments ? (
-                                                    <>
-                                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                                        Carregando...
-                                                    </>
-                                                ) : (
-                                                    "Carregar mais"
-                                                )}
-                                            </Button>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    value={newSubTask}
+                                                    onChange={(e) => setNewSubTask(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && handleAddSubTask()}
+                                                    placeholder="Adicionar item..."
+                                                    className="flex-1"
+                                                />
+                                                <Button onClick={handleAddSubTask} size="icon" variant="outline" className="h-10 w-10">
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-                                
-                                {/* Input Area */}
-                                <div className="pt-4 border-t border-gray-200 bg-gray-50">
-                                    {pendingAttachments.length > 0 && (
-                                        <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
-                                            {pendingAttachments.map((file) => (
-                                                <div key={file.id} className="relative group bg-white border border-gray-200 rounded-md p-2 w-24 h-20 flex flex-col items-center justify-center shrink-0">
-                                                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button 
-                                                            className="bg-red-500 text-white rounded-full p-0.5"
-                                                            onClick={() => {
-                                                                setPendingAttachments(prev => prev.filter(f => f.id !== file.id));
-                                                                setPendingFiles(prev => prev.filter((_, i) => pendingAttachments.findIndex(pf => pf.id === file.id) !== i));
-                                                            }}
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
+                                    </>
+                                )}
+
+                            </div>
+
+                            {/* RIGHT COLUMN: Context & Timeline */}
+                            <div className="bg-gray-50 p-6 flex flex-col overflow-hidden h-full">
+                                {shouldShowSkeleton ? (
+                                    // Timeline Skeleton
+                                    <div className="space-y-4 animate-pulse">
+                                        <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
+                                        <div className="space-y-4">
+                                            {[1, 2, 3].map((i) => (
+                                                <div key={i} className="flex gap-3">
+                                                    <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0" />
+                                                    <div className="flex-1 space-y-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-24 h-4 bg-gray-200 rounded" />
+                                                            <div className="w-16 h-3 bg-gray-200 rounded" />
+                                                        </div>
+                                                        <div className="w-full h-10 bg-gray-100 rounded-lg" />
                                                     </div>
-                                                    {file.type === "image" ? (
-                                                        <FileImage className="w-8 h-8 text-blue-500 mb-1" />
-                                                    ) : (
-                                                        <FileText className="w-8 h-8 text-red-500 mb-1" />
-                                                    )}
-                                                    <span className="text-[10px] text-gray-600 truncate w-full text-center">{file.name}</span>
                                                 </div>
                                             ))}
                                         </div>
-                                    )}
-                                    
-                                    {isRecording ? (
-                                        <AudioRecorderDisplay
-                                            stream={mediaStream}
-                                            onCancel={handleCancelRecording}
-                                            onStop={handleStopRecording}
-                                        />
-                                    ) : (
-                                        <div className="relative">
-                                            <input {...getCommentInputProps()} />
-                                            <Input
-                                                value={comment}
-                                                onChange={(e) => setComment(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter" && !e.shiftKey && !isSubmitting) {
-                                                        e.preventDefault();
-                                                        handleSendComment();
-                                                    }
-                                                }}
-                                                placeholder="Adicionar comentário..."
-                                                className="pr-32 bg-white shadow-sm"
-                                                disabled={isSubmitting}
-                                            />
-                                            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-gray-400 hover:text-green-600"
-                                                    onClick={openCommentUpload}
-                                                    title="Anexar arquivo"
-                                                >
-                                                    <Paperclip className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-gray-400 hover:text-red-500"
-                                                    onClick={startRecording}
-                                                    title="Enviar áudio"
-                                                >
-                                                    <Mic className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    size="icon"
-                                                    className="h-8 w-8 bg-green-600 hover:bg-green-700"
-                                                    onClick={handleSendComment}
-                                                    disabled={isSubmitting || (!comment.trim() && pendingAttachments.length === 0)}
-                                                    title="Enviar comentário"
-                                                >
-                                                    <Send className="h-3 w-3" />
-                                                </Button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Origin Card */}
+                                        {task?.contextMessage && (
+                                            <>
+                                                <h3 className="text-sm font-semibold text-gray-700 mb-4">Contexto Original</h3>
+                                                <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4 shadow-sm flex items-start gap-3">
+                                                    <div className={cn(
+                                                        "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+                                                        task.contextMessage.type === "audio" ? "bg-green-100" : "bg-blue-100"
+                                                    )}>
+                                                        {task.contextMessage.type === "audio" ? (
+                                                            <Play className="w-5 h-5 text-green-600" />
+                                                        ) : (
+                                                            <MessageSquare className="w-5 h-5 text-blue-600" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="text-xs text-gray-500 mb-1 font-medium">
+                                                            Criada via {task.contextMessage.type === "audio" ? "WhatsApp" : "App Web"}
+                                                        </p>
+                                                        <p className="text-sm text-gray-700 mb-1">"{task.contextMessage.content}"</p>
+                                                        <p className="text-xs text-gray-400">{task.contextMessage.timestamp}</p>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {/* Timeline */}
+                                        <div className="flex-1 flex flex-col min-h-0">
+                                            <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Histórico</h4>
+
+                                            <div
+                                                ref={activitiesScrollRef}
+                                                className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar"
+                                            >
+                                                <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
+
+                                                <div className="space-y-4 relative pl-1">
+                                                    {showCommentsSkeleton ? (
+                                                        <div className="space-y-4 py-2">
+                                                            {[1, 2, 3].map((i) => (
+                                                                <div key={i} className="flex gap-3 relative z-10">
+                                                                    <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0 animate-pulse" />
+                                                                    <div className="flex-1 space-y-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="w-24 h-4 bg-gray-100 rounded animate-pulse" />
+                                                                            <div className="w-16 h-3 bg-gray-100 rounded animate-pulse" />
+                                                                        </div>
+                                                                        <div className="w-full h-10 bg-gray-50 rounded-lg animate-pulse border border-gray-100" />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : activities.length === 0 ? (
+                                                        <p className="text-sm text-gray-400 text-center py-4">Nenhuma atividade</p>
+                                                    ) : (
+                                                        renderedActivities
+                                                    )}
+                                                </div>
+
+                                                {hasMoreComments && (
+                                                    <div className="flex justify-center pb-4">
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={loadMoreComments}
+                                                            disabled={isLoadingComments}
+                                                        >
+                                                            {isLoadingComments ? (
+                                                                <>
+                                                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                                    Carregando...
+                                                                </>
+                                                            ) : (
+                                                                "Carregar mais"
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Input Area */}
+                                            <div className="pt-4 border-t border-gray-200 bg-gray-50">
+                                                {pendingAttachments.length > 0 && (
+                                                    <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+                                                        {pendingAttachments.map((file) => (
+                                                            <div key={file.id} className="relative group bg-white border border-gray-200 rounded-md p-2 w-24 h-20 flex flex-col items-center justify-center shrink-0">
+                                                                <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <button
+                                                                        className="bg-red-500 text-white rounded-full p-0.5"
+                                                                        onClick={() => {
+                                                                            setPendingAttachments(prev => prev.filter(f => f.id !== file.id));
+                                                                            setPendingFiles(prev => prev.filter((_, i) => pendingAttachments.findIndex(pf => pf.id === file.id) !== i));
+                                                                        }}
+                                                                    >
+                                                                        <X className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
+                                                                {file.type === "image" ? (
+                                                                    <FileImage className="w-8 h-8 text-blue-500 mb-1" />
+                                                                ) : (
+                                                                    <FileText className="w-8 h-8 text-red-500 mb-1" />
+                                                                )}
+                                                                <span className="text-[10px] text-gray-600 truncate w-full text-center">{file.name}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {isRecording ? (
+                                                    <AudioRecorderDisplay
+                                                        stream={mediaStream}
+                                                        onCancel={handleCancelRecording}
+                                                        onStop={handleStopRecording}
+                                                    />
+                                                ) : (
+                                                    <div className="relative">
+                                                        <input {...getCommentInputProps()} />
+                                                        <Input
+                                                            value={comment}
+                                                            onChange={(e) => setComment(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" && !e.shiftKey && !isSubmitting) {
+                                                                    e.preventDefault();
+                                                                    handleSendComment();
+                                                                }
+                                                            }}
+                                                            placeholder="Adicionar comentário..."
+                                                            className="pr-32 bg-white shadow-sm"
+                                                            disabled={isSubmitting}
+                                                        />
+                                                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-gray-400 hover:text-green-600"
+                                                                onClick={openCommentUpload}
+                                                                title="Anexar arquivo"
+                                                            >
+                                                                <Paperclip className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-gray-400 hover:text-red-500"
+                                                                onClick={startRecording}
+                                                                title="Enviar áudio"
+                                                            >
+                                                                <Mic className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                size="icon"
+                                                                className="h-8 w-8 bg-green-600 hover:bg-green-700"
+                                                                onClick={handleSendComment}
+                                                                disabled={isSubmitting || (!comment.trim() && pendingAttachments.length === 0)}
+                                                                title="Enviar comentário"
+                                                            >
+                                                                <Send className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+                                    </>
+                                )}
                             </div>
-                                </>
-                            )}
                         </div>
-                    </div>
                     </DialogPrimitive.Content>
                 </DialogPortal>
             </Dialog>
-            
+
             {/* Modal de Confirmação de Exclusão de Arquivo */}
             <ConfirmModal
                 open={!!attachmentToDelete}
@@ -2671,7 +2736,7 @@ export function TaskDetailModal({
                         <DialogTitle className="text-lg font-semibold mb-4">
                             Compartilhar Tarefa
                         </DialogTitle>
-                        
+
                         <div className="space-y-4">
                             {/* Seleção de Tipo */}
                             <div className="space-y-2">
@@ -2705,7 +2770,7 @@ export function TaskDetailModal({
                                             Apenas membros do workspace
                                         </p>
                                     </button>
-                                    
+
                                     <button
                                         type="button"
                                         onClick={() => setShareLinkType("public")}
@@ -2795,5 +2860,5 @@ export function TaskDetailModal({
                 </DialogPortal>
             </Dialog>
         </>
-        );
+    );
 }
