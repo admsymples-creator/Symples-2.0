@@ -6,6 +6,26 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-12-14 - Refinamento do Tutorial Interativo e Correção de Crash
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🐛 Correção: Crash no HomePage (Server Component)
+- **Problema**: Acesso direto a `searchParams` em componente assíncrono do servidor no Next.js 15+ causava crash em runtime.
+- **Solução**: Removida lógica de visualização do servidor. O `HomePage` agora é puramente leitura de dados, delegando a responsabilidade de UI para componentes clientes.
+- **Arquivo**: `app/(main)/home/page.tsx`
+
+#### 🎨 Melhoria: Highlight do Workspace Card (Client-Side)
+- **Mudança**: Migração da lógica de destaque "Tutorial" para o próprio componente `WorkspaceCard`.
+- **Como Funciona**: O card usa o hook `useSearchParams` para detectar `?tutorial=true`.
+- **Inteligência**: Se nenhum ID for passado, o primeiro card da lista assume o destaque automaticamente via prop `isFirst`.
+- **Resultado**: Interação instantânea sem depender de hidratação ou dados do servidor.
+
+#### 🔧 Correção: Sidebar Limpa
+- **Fix**: Removido código legado que mantinha um destaque visual (glow) indesejado no seletor de workspaces da Sidebar.
+
+---
+
 ## 2025-12-13 - Correção: Zero State do Tutorial
 
 ### 1. Melhorias, bugs e features implementadas em preview
