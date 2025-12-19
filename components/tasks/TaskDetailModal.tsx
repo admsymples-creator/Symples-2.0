@@ -347,7 +347,7 @@ const mapCommentToActivityBase = (
     currentUserId: string | null,
     currentUserName: string
 ): Activity => {
-    const isCurrentUser = currentUserId && comment?.user?.id === currentUserId;
+    const isCurrentUser = currentUserId ? comment?.user?.id === currentUserId : undefined;
     const displayUser =
         isCurrentUser
             ? "Você"
