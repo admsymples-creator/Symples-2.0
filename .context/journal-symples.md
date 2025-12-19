@@ -49,29 +49,48 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
   - Removido botão "Editar" do header da descrição
 - **Links Apenas Clicáveis**: Apenas os links são clicáveis, não toda a descrição
 
-#### 📋 Reordenação de Grupos de Tarefas
-- **Funcionalidade**: Usuários podem reordenar grupos de tarefas via menu de ações
+#### 📋 Reordenação de Grupos de Tarefas (Melhorado)
+- **Funcionalidade**: Usuários podem reordenar grupos de tarefas via submenu "Ordenar" no menu de ações
 - **Interface**: 
-  - Opções "Mover para cima" e "Mover para baixo" no menu do grupo
-  - Botões desabilitados automaticamente quando grupo está no topo/final
+  - Submenu "Ordenar" com 4 opções:
+    - Mover para o topo (ArrowUpToLine)
+    - Mover para cima (ArrowUp)
+    - Mover para baixo (ArrowDown)
+    - Mover para o final (ArrowDownToLine)
+  - Opções desabilitadas automaticamente quando não aplicáveis (ex: "Mover para o topo" desabilitado se já estiver no topo)
 - **Optimistic UI**: Reordenação local imediata com rollback em caso de erro
-- **Server Action**: `reorderTaskGroup` em `lib/actions/task-groups.ts`
-  - Usa `created_at` para determinar ordem
-  - Calcula novo timestamp entre grupos adjacentes para manter ordem
-- **Persistência**: Ordem salva no banco de dados via `created_at`
+- **Múltiplas Chamadas**: Para "top" e "bottom", faz múltiplas chamadas sequenciais até chegar na posição desejada
+- **Sincronização**: Ordem atualizada incrementalmente após cada chamada bem-sucedida
+- **Persistência**: 
+  - Ordem salva no banco de dados via `created_at` (múltiplas atualizações)
+  - Ordem também salva no `localStorage` para evitar flicker no refresh
+- **Cálculo de Posição**: Usa `groupOrder` (não `listGroups`) para calcular posições corretamente
+- **Preservação de Ordem**: `loadGroups()` preserva ordem existente e só adiciona grupos novos ao final
 - **Restrições**: 
   - Apenas funciona na visualização por grupos (`viewOption === "group"`)
-  - Grupo "Inbox" não pode ser reordenado
+  - Grupo "Inbox" não pode ser reordenado (sempre primeiro)
 - **Arquivos**:
-  - `lib/actions/task-groups.ts`: Função `reorderTaskGroup`
-  - `app/(main)/tasks/page.tsx`: Handler `handleReorderGroup` com optimistic UI
-  - `components/tasks/GroupActionMenu.tsx`: Opções de reordenação no menu
-  - `components/tasks/TaskGroup.tsx`: Passa `onReorderGroup` para o menu
+  - `lib/actions/task-groups.ts`: Função `reorderTaskGroup` (suporta "up" e "down")
+  - `app/(main)/tasks/page.tsx`: 
+    - Handler `handleReorderGroup` atualizado para suportar "top" e "bottom"
+    - Cálculo de `canMoveToTop` e `canMoveToBottom` baseado em `groupOrder`
+    - Preservação de ordem no `loadGroups()`
+  - `components/tasks/GroupActionMenu.tsx`: 
+    - Submenu "Ordenar" com 4 opções e ícones apropriados
+    - Props `canMoveToTop` e `canMoveToBottom` para desabilitar opções
+  - `components/tasks/TaskGroup.tsx`: 
+    - Props `canMoveToTop` e `canMoveToBottom` passadas para o menu
+    - Tipo de `onReorderGroup` atualizado para aceitar "top" e "bottom"
 
 #### 🐛 Correções
 - **Correção**: Condição em `TaskGroup.tsx` não incluía `onReorderGroup`, impedindo menu de aparecer
 - **Correção**: Ordem de definição de handlers em `TaskDetailModal.tsx` causava `ReferenceError`
 - **Correção**: Links na descrição não ficavam azuis devido a conflito com estilos do prose
+- **Correção**: `index` não definido no `.map()` de `listGroups` - adicionado parâmetro `index`
+- **Correção**: `setListGroups` não existe - corrigido para usar `setGroupOrder` (que é o estado real)
+- **Correção**: Cálculo de `canMoveToTop` e `canMoveToBottom` usando índice de `listGroups` em vez de `groupOrder`
+- **Correção**: Flicker de 1 segundo no refresh - ordem agora preservada desde o início via `localStorage` e `loadGroups()` não sobrescreve ordem existente
+- **Correção**: Grupo voltando para posição original após mover para topo/final - ordem agora atualizada incrementalmente após cada chamada bem-sucedida
 
 ---
 

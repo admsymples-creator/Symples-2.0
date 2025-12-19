@@ -47,14 +47,16 @@ interface TaskGroupProps {
     onColorChange?: (groupId: string, color: string) => void;
     onDeleteGroup?: (groupId: string) => void;
     onClearGroup?: (groupId: string) => void;
-    onReorderGroup?: (groupId: string, direction: "up" | "down") => void;
+    onReorderGroup?: (groupId: string, direction: "up" | "down" | "top" | "bottom") => void;
     canMoveUp?: boolean;
     canMoveDown?: boolean;
+    canMoveToTop?: boolean;
+    canMoveToBottom?: boolean;
     showGroupActions?: boolean;
     onAddTask?: (groupId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, showGroupActions = true, onAddTask }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask }: TaskGroupProps) {
     const [isAdding, setIsAdding] = useState(false);
     
     // Normalizar IDs para string (dnd-kit requer strings)
@@ -129,6 +131,8 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                 onReorder={onReorderGroup}
                                 canMoveUp={canMoveUp}
                                 canMoveDown={canMoveDown}
+                                canMoveToTop={canMoveToTop}
+                                canMoveToBottom={canMoveToBottom}
                             />
                         ) : undefined
                     }

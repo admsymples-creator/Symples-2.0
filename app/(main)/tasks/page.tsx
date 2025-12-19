@@ -201,6 +201,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const { activeWorkspaceId, isLoaded } = useWorkspace();
     const localTasksRef = useRef<Task[]>([]);
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
+    const previousGroupOrderRef = useRef<string[]>([]);
     
     // âœ… NOVO: Usar workspaceId da prop se fornecido, senÃ£o usar do contexto
     const effectiveWorkspaceId = propWorkspaceId ?? activeWorkspaceId;
@@ -874,24 +875,61 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 const groupsData = result.data;
                 setAvailableGroups(groupsData);
                 
-                // Inicializar ordem dos grupos se nÃ£o existir
+                // Preservar ordem existente ou inicializar se não existir
                 // Usar funÃ§Ã£o de callback do setState para acessar o valor atual de groupOrder
                 setGroupOrder((currentOrder) => {
-                    if (viewOption === "group" && currentOrder.length === 0) {
-                        const savedOrder = localStorage.getItem("taskGroupOrder");
-                        if (savedOrder) {
-                            try {
-                                const parsed = JSON.parse(savedOrder);
-                                return parsed;
-                            } catch (e) {
-                                console.error("Erro ao carregar ordem dos grupos:", e);
-                                // Ordem padrÃ£o: inbox primeiro, depois grupos do banco
-                                return ["inbox", ...groupsData.map((g: any) => g.id)];
+                    if (viewOption === "group") {
+                        // Se já existe ordem, apenas adicionar grupos novos ao final (preservar ordem existente)
+                        if (currentOrder.length > 0) {
+                            const groupIds = new Set(groupsData.map((g: any) => g.id));
+                            const existingIds = new Set(currentOrder);
+                            const newGroups = groupsData
+                                .map((g: any) => g.id)
+                                .filter((id: string) => !existingIds.has(id));
+                            if (newGroups.length > 0) {
+                                // Adicionar novos grupos ao final, preservando a ordem existente
+                                const updatedOrder = [...currentOrder, ...newGroups];
+                                // Salvar no localStorage
+                                if (typeof window !== "undefined") {
+                                    localStorage.setItem("taskGroupOrder", JSON.stringify(updatedOrder));
+                                }
+                                return updatedOrder;
                             }
-                        } else {
-                            // Ordem padrÃ£o: inbox primeiro, depois grupos do banco
-                            return ["inbox", ...groupsData.map((g: any) => g.id)];
+                            // Ordem já está completa, não precisa modificar
+                            return currentOrder;
                         }
+                        
+                        // Se não existe ordem, tentar carregar do localStorage primeiro
+                        if (typeof window !== "undefined") {
+                            const savedOrder = localStorage.getItem("taskGroupOrder");
+                            if (savedOrder) {
+                                try {
+                                    const parsed = JSON.parse(savedOrder);
+                                    // Validar que todos os IDs existem nos grupos carregados
+                                    const groupIds = new Set(groupsData.map((g: any) => g.id));
+                                    const validOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
+                                    // Adicionar grupos novos que não estão na ordem salva
+                                    const newGroups = groupsData
+                                        .map((g: any) => g.id)
+                                        .filter((id: string) => !validOrder.includes(id));
+                                    if (validOrder.length > 0 || newGroups.length > 0) {
+                                        const finalOrder = ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
+                                        // Garantir que está salvo no localStorage
+                                        localStorage.setItem("taskGroupOrder", JSON.stringify(finalOrder));
+                                        return finalOrder;
+                                    }
+                                } catch (e) {
+                                    console.error("Erro ao carregar ordem dos grupos:", e);
+                                }
+                            }
+                        }
+                        // Ordem padrÃ£o: inbox primeiro, depois grupos do banco
+                        const defaultOrder = ["inbox", ...groupsData.map((g: any) => g.id)];
+                        // Salvar no localStorage
+                        if (typeof window !== "undefined") {
+                            localStorage.setItem("taskGroupOrder", JSON.stringify(defaultOrder));
+                        }
+                        return defaultOrder;
                     }
                     return currentOrder;
                 });
@@ -963,9 +1001,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
     }, []);
 
-    const handleReorderGroup = useCallback(async (groupId: string, direction: "up" | "down") => {
+    const handleReorderGroup = useCallback(async (groupId: string, direction: "up" | "down" | "top" | "bottom") => {
         const currentViewOption = viewOptionRef.current;
-        const currentListGroups = listGroupsRef.current;
 
         if (currentViewOption !== "group") return;
         if (groupId === "inbox" || groupId === "Inbox") {
@@ -984,51 +1021,181 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return;
         }
 
-        // Optimistic UI: reordenar grupos localmente
-        const previousGroups = [...currentListGroups];
-        const currentIndex = previousGroups.findIndex(g => g.id === groupId);
-        
-        if (currentIndex === -1) {
-            toast.error("Grupo não encontrado.");
-            return;
-        }
+        // Optimistic UI: reordenar groupOrder localmente
+        setGroupOrder((currentOrder) => {
+            previousGroupOrderRef.current = [...currentOrder]; // Salvar para rollback
+            const previousOrder = [...currentOrder];
+            const currentIndex = previousOrder.findIndex(id => id === groupId);
+            
+            if (currentIndex === -1) {
+                toast.error("Grupo não encontrado.");
+                return currentOrder;
+            }
 
-        // Verificar limites
-        if (direction === "up" && currentIndex === 0) {
-            return; // Já está no topo
-        }
-        if (direction === "down" && currentIndex === previousGroups.length - 1) {
-            return; // Já está no final
-        }
+            // Calcular índice mínimo (após inbox se existir)
+            const minIndex = previousOrder[0] === "inbox" ? 1 : 0;
+            const maxIndex = previousOrder.length - 1;
 
-        // Calcular novo índice
-        const newIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+            // Verificar limites e calcular novo índice
+            let newIndex: number;
+            
+            if (direction === "top") {
+                // Mover para o topo (após inbox se existir)
+                if (currentIndex === minIndex) {
+                    return currentOrder; // Já está no topo permitido
+                }
+                newIndex = minIndex;
+            } else if (direction === "bottom") {
+                // Mover para o final
+                if (currentIndex === maxIndex) {
+                    return currentOrder; // Já está no final
+                }
+                newIndex = maxIndex;
+            } else if (direction === "up") {
+                // Mover para cima
+                if (currentIndex <= minIndex) {
+                    return currentOrder; // Já está no topo permitido
+                }
+                newIndex = currentIndex - 1;
+            } else { // direction === "down"
+                // Mover para baixo
+                if (currentIndex === maxIndex) {
+                    return currentOrder; // Já está no final
+                }
+                newIndex = currentIndex + 1;
+            }
 
-        // Reordenar localmente
-        const reorderedGroups = [...previousGroups];
-        const [movedGroup] = reorderedGroups.splice(currentIndex, 1);
-        reorderedGroups.splice(newIndex, 0, movedGroup);
+            // Reordenar localmente
+            const reorderedOrder = [...previousOrder];
+            const [movedGroupId] = reorderedOrder.splice(currentIndex, 1);
+            reorderedOrder.splice(newIndex, 0, movedGroupId);
 
-        // Atualizar estado local
-        setListGroups(reorderedGroups);
-        listGroupsRef.current = reorderedGroups;
+            // Salvar no localStorage
+            if (typeof window !== "undefined") {
+                localStorage.setItem("taskGroupOrder", JSON.stringify(reorderedOrder));
+            }
+
+            return reorderedOrder;
+        });
 
         try {
-            const result = await reorderTaskGroup(groupId, direction, activeWorkspaceId);
-            if (!result.success) {
-                // Rollback em caso de erro
-                setListGroups(previousGroups);
-                listGroupsRef.current = previousGroups;
-                toast.error(result.error || "Erro ao reordenar grupo");
-            } else {
-                // Recarregar grupos do servidor para garantir sincronização
-                await loadGroups();
+            // Para "top" e "bottom", fazer múltiplas chamadas de "up" ou "down"
+            // até chegar na posição desejada
+            if (direction === "top" || direction === "bottom") {
+                const currentOrder = previousGroupOrderRef.current;
+                const currentIndex = currentOrder.findIndex(id => id === groupId);
+                const minIndex = currentOrder[0] === "inbox" ? 1 : 0;
+                const maxIndex = currentOrder.length - 1;
+                
+                if (direction === "top") {
+                    // Mover para o topo: fazer múltiplas chamadas "up"
+                    const steps = currentIndex - minIndex;
+                    let lastSuccessfulOrder = [...currentOrder];
+                    
+                    for (let i = 0; i < steps; i++) {
+                        const result = await reorderTaskGroup(groupId, "up", activeWorkspaceId);
+                        if (!result.success) {
+                            // Se o erro for "já está no topo", significa que chegamos na posição desejada
+                            if (result.error?.includes("já está no topo") || result.error?.includes("já está no final")) {
+                                // Já está na posição desejada - sucesso!
+                                break;
+                            }
+                            // Rollback em caso de outro erro
+                            setGroupOrder(previousGroupOrderRef.current);
+                            if (typeof window !== "undefined") {
+                                localStorage.setItem("taskGroupOrder", JSON.stringify(previousGroupOrderRef.current));
+                            }
+                            toast.error(result.error || "Erro ao reordenar grupo");
+                            return;
+                        }
+                        
+                        // Atualizar ordem local após cada chamada bem-sucedida
+                        setGroupOrder((prevOrder) => {
+                            const updatedOrder = [...prevOrder];
+                            const groupIndex = updatedOrder.findIndex(id => id === groupId);
+                            if (groupIndex > minIndex) {
+                                const [movedGroup] = updatedOrder.splice(groupIndex, 1);
+                                updatedOrder.splice(groupIndex - 1, 0, movedGroup);
+                                lastSuccessfulOrder = updatedOrder;
+                                if (typeof window !== "undefined") {
+                                    localStorage.setItem("taskGroupOrder", JSON.stringify(updatedOrder));
+                                }
+                            }
+                            return updatedOrder;
+                        });
+                        
+                        // Pequeno delay para garantir que a mudança foi processada
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                } else { // direction === "bottom"
+                    // Mover para o final: fazer múltiplas chamadas "down"
+                    const steps = maxIndex - currentIndex;
+                    let lastSuccessfulOrder = [...currentOrder];
+                    
+                    for (let i = 0; i < steps; i++) {
+                        const result = await reorderTaskGroup(groupId, "down", activeWorkspaceId);
+                        if (!result.success) {
+                            // Se o erro for "já está no final", significa que chegamos na posição desejada
+                            if (result.error?.includes("já está no final") || result.error?.includes("já está no topo")) {
+                                // Já está na posição desejada - sucesso!
+                                break;
+                            }
+                            // Rollback em caso de outro erro
+                            setGroupOrder(previousGroupOrderRef.current);
+                            if (typeof window !== "undefined") {
+                                localStorage.setItem("taskGroupOrder", JSON.stringify(previousGroupOrderRef.current));
+                            }
+                            toast.error(result.error || "Erro ao reordenar grupo");
+                            return;
+                        }
+                        
+                        // Atualizar ordem local após cada chamada bem-sucedida
+                        setGroupOrder((prevOrder) => {
+                            const updatedOrder = [...prevOrder];
+                            const groupIndex = updatedOrder.findIndex(id => id === groupId);
+                            if (groupIndex < maxIndex) {
+                                const [movedGroup] = updatedOrder.splice(groupIndex, 1);
+                                updatedOrder.splice(groupIndex + 1, 0, movedGroup);
+                                lastSuccessfulOrder = updatedOrder;
+                                if (typeof window !== "undefined") {
+                                    localStorage.setItem("taskGroupOrder", JSON.stringify(updatedOrder));
+                                }
+                            }
+                            return updatedOrder;
+                        });
+                        
+                        // Pequeno delay para garantir que a mudança foi processada
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
+                
+                // Não recarregar grupos aqui - a ordem já foi atualizada otimisticamente
+                // e as múltiplas chamadas já atualizaram o servidor
                 toast.success("Grupo reordenado");
+            } else {
+                // Para "up" e "down", fazer chamada única
+                const result = await reorderTaskGroup(groupId, direction, activeWorkspaceId);
+                if (!result.success) {
+                    // Rollback em caso de erro
+                    const previousOrder = previousGroupOrderRef.current;
+                    setGroupOrder(previousOrder);
+                    if (typeof window !== "undefined") {
+                        localStorage.setItem("taskGroupOrder", JSON.stringify(previousOrder));
+                    }
+                    toast.error(result.error || "Erro ao reordenar grupo");
+                } else {
+                    // Recarregar grupos do servidor para garantir sincronização
+                    await loadGroups();
+                    toast.success("Grupo reordenado");
+                }
             }
         } catch (error) {
             // Rollback em caso de exceção
-            setListGroups(previousGroups);
-            listGroupsRef.current = previousGroups;
+            const previousOrder = previousGroupOrderRef.current;
+            setGroupOrder(previousOrder);
+            if (typeof window !== "undefined") {
+                localStorage.setItem("taskGroupOrder", JSON.stringify(previousOrder));
+            }
             console.error("Erro ao reordenar grupo:", error);
             toast.error("Erro ao reordenar grupo");
         }
@@ -1223,25 +1390,32 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // ✅ CORREÇÃO: Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
-        if (viewOption === "group" && groupOrder.length > 0) {
-            // Criar um novo objeto ordenado baseado em groupOrder
-            const ordered: Record<string, Task[]> = {};
-            
-            // Primeiro, adicionar grupos na ordem especificada
-            groupOrder.forEach(groupId => {
-                if (groupedData[groupId]) {
-                    ordered[groupId] = groupedData[groupId];
-                }
-            });
-            
-            // Depois, adicionar grupos que não estão em groupOrder (caso existam)
-            Object.keys(groupedData).forEach(key => {
-                if (!ordered[key]) {
-                    ordered[key] = groupedData[key];
-                }
-            });
-            
-            return ordered;
+        if (viewOption === "group") {
+            // Sempre usar groupOrder se disponível, mesmo que esteja vazio inicialmente
+            // Isso garante que a ordem seja preservada desde o início
+            if (groupOrder.length > 0) {
+                // Criar um novo objeto ordenado baseado em groupOrder
+                const ordered: Record<string, Task[]> = {};
+                
+                // Primeiro, adicionar grupos na ordem especificada
+                groupOrder.forEach(groupId => {
+                    if (groupedData[groupId]) {
+                        ordered[groupId] = groupedData[groupId];
+                    }
+                });
+                
+                // Depois, adicionar grupos que não estão em groupOrder (caso existam)
+                Object.keys(groupedData).forEach(key => {
+                    if (!ordered[key]) {
+                        ordered[key] = groupedData[key];
+                    }
+                });
+                
+                return ordered;
+            }
+            // Se groupOrder está vazio mas temos groupedData, retornar groupedData
+            // mas isso só deve acontecer no primeiro render antes de groupOrder ser inicializado
+            return groupedData;
         }
         return groupedData;
     }, [groupedData, viewOption, groupOrder]);
@@ -2432,28 +2606,53 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     />
                                                 </div>
                                             )}
-                                            {listGroups.map((group) => (
-                                                <TaskGroup
-                                                    key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
-                                                    id={group.id}
-                                                    title={group.title}
-                                                    tasks={group.tasks}
-                                                    groupColor={group.groupColor || groupColors[group.id]}
-                                                    onTaskClick={handleTaskClick}
-                                                    isDragDisabled={isDragDisabled}
-                                                    onTaskUpdated={handleTaskUpdated}
-                                                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
-                                                    onTaskDeletedOptimistic={handleOptimisticDelete}
-                                                    onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
-                                                    members={workspaceMembers}
-                                                    onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
-                                                    onColorChange={viewOption === "group" ? handleColorChange : undefined}
-                                                    onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
-                                                    onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
-                                                    showGroupActions={viewOption === "group"}
-                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
-                                                />
-                                            ))}
+                                            {listGroups.map((group, index) => {
+                                                // Calcular posições para ordenação baseado em groupOrder
+                                                let canMoveToTop = false;
+                                                let canMoveToBottom = false;
+                                                if (viewOption === "group") {
+                                                    const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
+                                                    if (groupIndexInOrder !== -1) {
+                                                        const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
+                                                        const maxIndex = groupOrder.length - 1;
+                                                        canMoveToTop = groupIndexInOrder > minIndex;
+                                                        canMoveToBottom = groupIndexInOrder < maxIndex;
+                                                    }
+                                                }
+                                                const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
+                                                const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
+                                                const canMoveUp = viewOption === "group" ? (groupIndexInOrder > minIndex) : true;
+                                                const maxIndex = groupOrder.length - 1;
+                                                const canMoveDown = viewOption === "group" ? (groupIndexInOrder < maxIndex && groupIndexInOrder !== -1) : true;
+                                                
+                                                return (
+                                                    <TaskGroup
+                                                        key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
+                                                        id={group.id}
+                                                        title={group.title}
+                                                        tasks={group.tasks}
+                                                        groupColor={group.groupColor || groupColors[group.id]}
+                                                        onTaskClick={handleTaskClick}
+                                                        isDragDisabled={isDragDisabled}
+                                                        onTaskUpdated={handleTaskUpdated}
+                                                        onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                        onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                        onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
+                                                        members={workspaceMembers}
+                                                        onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                        onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                        onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                        onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                        onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
+                                                        canMoveUp={canMoveUp}
+                                                        canMoveDown={canMoveDown}
+                                                        canMoveToTop={canMoveToTop}
+                                                        canMoveToBottom={canMoveToBottom}
+                                                        showGroupActions={viewOption === "group"}
+                                                        onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                    />
+                                                );
+                                            })}
                                             {/* Ghost Group para criação rápida - apenas na visão de grupos */}
                                             {viewOption === "group" && (
                                                 <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
@@ -2473,31 +2672,52 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 />
                                             </div>
                                         )}
-                                        {listGroups.map((group) => (
-                                            <TaskGroup
-                                                key={group.id}
-                                                id={group.id}
-                                                title={group.title}
-                                                tasks={group.tasks}
-                                                groupColor={group.groupColor || groupColors[group.id]}
-                                                onTaskClick={handleTaskClick}
-                                                isDragDisabled={isDragDisabled}
-                                                onTaskUpdated={handleTaskUpdated}
-                                                onTaskUpdatedOptimistic={handleOptimisticUpdate}
-                                                onTaskDeletedOptimistic={handleOptimisticDelete}
-                                                onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
-                                                members={workspaceMembers}
-                                                onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
-                                                onColorChange={viewOption === "group" ? handleColorChange : undefined}
-                                                onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
-                                                onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
-                                                onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
-                                                canMoveUp={viewOption === "group" ? index > 0 : true}
-                                                canMoveDown={viewOption === "group" ? index < listGroups.length - 1 : true}
-                                                showGroupActions={viewOption === "group"}
-                                                onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
-                                            />
-                                        ))}
+                                        {listGroups.map((group, index) => {
+                                            // Calcular posições para ordenação baseado em groupOrder
+                                            let canMoveToTop = false;
+                                            let canMoveToBottom = false;
+                                            let canMoveUp = true;
+                                            let canMoveDown = true;
+                                            if (viewOption === "group") {
+                                                const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
+                                                if (groupIndexInOrder !== -1) {
+                                                    const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
+                                                    const maxIndex = groupOrder.length - 1;
+                                                    canMoveToTop = groupIndexInOrder > minIndex;
+                                                    canMoveToBottom = groupIndexInOrder < maxIndex;
+                                                    canMoveUp = groupIndexInOrder > minIndex;
+                                                    canMoveDown = groupIndexInOrder < maxIndex;
+                                                }
+                                            }
+                                            
+                                            return (
+                                                <TaskGroup
+                                                    key={group.id}
+                                                    id={group.id}
+                                                    title={group.title}
+                                                    tasks={group.tasks}
+                                                    groupColor={group.groupColor || groupColors[group.id]}
+                                                    onTaskClick={handleTaskClick}
+                                                    isDragDisabled={isDragDisabled}
+                                                    onTaskUpdated={handleTaskUpdated}
+                                                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                    onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                    onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
+                                                    members={workspaceMembers}
+                                                    onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                    onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                    onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                    onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                    onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
+                                                    canMoveUp={canMoveUp}
+                                                    canMoveDown={canMoveDown}
+                                                    canMoveToTop={canMoveToTop}
+                                                    canMoveToBottom={canMoveToBottom}
+                                                    showGroupActions={viewOption === "group"}
+                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                />
+                                            );
+                                        })}
                                         {/* Ghost Group para criação rápida - apenas na visão de grupos */}
                                         {viewOption === "group" && (
                                             <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
