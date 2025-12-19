@@ -11,6 +11,8 @@ import {
     getTaskBasicDetails,
     getTaskExtendedDetails,
     addComment,
+    updateComment,
+    deleteComment,
     updateTaskField,
     updateTaskFields,
     updateTaskTags,
@@ -85,6 +87,8 @@ import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { AttachmentCard } from "@/components/tasks/AttachmentCard";
 import { Editor } from "@/components/ui/editor";
+import { LinkifyText } from "@/components/ui/linkify-text";
+import { linkifyHtml } from "@/lib/utils/linkify-html";
 import { TaskMembersPicker } from "@/components/tasks/pickers/TaskMembersPicker";
 import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
@@ -135,6 +139,11 @@ interface Activity {
         source: "whatsapp" | "web";
         content?: string;
     };
+    isCurrentUser?: boolean;
+    edited?: boolean;
+    deleted?: boolean;
+    editedAt?: string;
+    deletedAt?: string;
 }
 
 interface FileAttachment {
@@ -344,6 +353,10 @@ const mapCommentToActivityBase = (
             ? "Você"
             : comment?.user?.full_name || comment?.user?.email || currentUserName || "Sem nome";
 
+    const metadata = comment.metadata && typeof comment.metadata === 'object' ? comment.metadata : {};
+    const isDeleted = metadata.deleted === true || metadata.deleted_at;
+    const isEdited = metadata.edited === true || metadata.edited_at;
+
     return {
         id: comment.id,
         type: comment.type === "comment" ? "commented" :
@@ -351,14 +364,19 @@ const mapCommentToActivityBase = (
                 comment.type === "log" ? "updated" :
                     comment.type === "audio" ? "audio" : "commented",
         user: displayUser,
-        message: comment.type === "audio" ? undefined : comment.content,
+        message: comment.type === "audio" ? undefined : (isDeleted ? "Esta mensagem foi removida" : comment.content),
         timestamp: formatActivityTimestamp(comment.created_at),
-        attachedFiles: comment.metadata?.attachedFiles,
-        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-            url: comment.metadata.audio_url || comment.metadata.url,
-            duration: comment.metadata.duration,
-            transcription: comment.metadata.transcription,
+        attachedFiles: metadata.attachedFiles,
+        audio: (metadata.audio_url || metadata.url) ? {
+            url: metadata.audio_url || metadata.url,
+            duration: metadata.duration,
+            transcription: metadata.transcription,
         } : undefined,
+        isCurrentUser,
+        edited: isEdited,
+        deleted: isDeleted,
+        editedAt: metadata.edited_at,
+        deletedAt: metadata.deleted_at,
     };
 };
 
@@ -414,6 +432,10 @@ export function TaskDetailModal({
     const [selectedAudioForTask, setSelectedAudioForTask] = useState<{ url: string; duration: number } | null>(null);
     const [transcribingActivityId, setTranscribingActivityId] = useState<string | null>(null);
     const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [editingCommentText, setEditingCommentText] = useState<string>("");
+    const [isUpdatingComment, setIsUpdatingComment] = useState(false);
+    const [isDeletingComment, setIsDeletingComment] = useState<string | null>(null);
     // Usuário atual para padronizar exibição de comentários
     useEffect(() => {
         const supabase = createBrowserClient();
@@ -625,137 +647,6 @@ export function TaskDetailModal({
 
     // Atualizar ref quando handleViewTranscription mudar
     handleViewTranscriptionRef.current = handleViewTranscription;
-
-    // Memoizar lista de atividades renderizadas para melhor performance
-    const renderedActivities = useMemo(() => {
-        return activities.map((act: Activity) => (
-            <div key={act.id} className="flex gap-3 text-sm relative group">
-                <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
-                    <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
-                </div>
-
-                <div className="flex-1 pb-2">
-                    {act.type === "origin" && act.origin && (
-                        <div className="flex items-start gap-2">
-                            <div className={cn(
-                                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                act.origin.source === "whatsapp" ? "bg-green-100" : "bg-blue-100"
-                            )}>
-                                {act.origin.source === "whatsapp" ? (
-                                    <MessageSquare className="w-4 h-4 text-green-600" />
-                                ) : (
-                                    <Monitor className="w-4 h-4 text-blue-600" />
-                                )}
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-gray-700 mb-1">
-                                    <span className="font-medium text-gray-900">Tarefa criada via </span>
-                                    <span className="font-semibold text-gray-900">
-                                        {act.origin.source === "whatsapp" ? "WhatsApp" : "App Web"}
-                                    </span>
-                                </p>
-                                {act.origin.content && (
-                                    <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600">
-                                        "{act.origin.content}"
-                                    </div>
-                                )}
-                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {act.type !== "origin" && (
-                        <>
-                            <p className="text-gray-700">
-                                <span className="font-medium text-gray-900">{act.user}</span>{" "}
-                                {act.type === "created" && "criou a tarefa"}
-                                {act.type === "commented" && "comentou"}
-                                {act.type === "updated" && "atualizou a tarefa"}
-                                {act.type === "file_shared" && "enviou um arquivo"}
-                                {act.type === "audio" && "enviou um áudio"}
-                            </p>
-
-                            {act.type === "audio" && (
-                                <div className="mt-2 space-y-2">
-                                    <div className="max-w-[240px]">
-                                        <AudioMessageBubble
-                                            duration={act.audio?.duration || 0}
-                                            isOwnMessage={act.user === "Você"}
-                                            audioUrl={act.audio?.url}
-                                        />
-                                    </div>
-                                    {act.audio?.url && (
-                                        <div className="space-y-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-xs text-gray-500 hover:text-gray-700"
-                                                onClick={() => handleViewTranscriptionRef.current?.(act.id, act.audio!.url!)}
-                                                disabled={transcribingActivityId === act.id}
-                                            >
-                                                {transcribingActivityId === act.id ? (
-                                                    <>
-                                                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                                        Transcrevendo...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <FileText className="w-3 h-3 mr-1" />
-                                                        {act.audio?.transcription ? "Ver transcrição" : "Gerar transcrição"}
-                                                    </>
-                                                )}
-                                            </Button>
-                                            {act.audio?.transcription && (
-                                                <div className="mt-2 p-3 border rounded-md bg-gray-50">
-                                                    <p className="text-xs text-gray-600 whitespace-pre-wrap">
-                                                        {act.audio.transcription}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {act.message && act.type !== "updated" && (
-                                <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600">
-                                    {act.message}
-                                </div>
-                            )}
-
-                            {act.attachedFiles && act.attachedFiles.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {act.attachedFiles.map((f, idx) => (
-                                        <div key={idx} className="p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                                            {f.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-medium">{f.name}</span>
-                                                <span className="text-[10px] text-gray-400">{f.size}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {act.file && !act.attachedFiles && (
-                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                                    {act.file.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-medium">{act.file.name}</span>
-                                        <span className="text-[10px] text-gray-400">{act.file.size}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {(act.type as Activity["type"]) !== "origin" && (
-                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
-        ));
-    }, [activities, transcribingActivityId]);
 
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
@@ -1163,7 +1054,365 @@ export function TaskDetailModal({
         } catch (error) {
             console.error("Erro ao recarregar atividades:", error);
         }
+    }, [mapCommentToActivity]);
+
+    // Handler para editar comentário com optimistic UI
+    const handleEditComment = useCallback((activityId: string, currentMessage: string) => {
+        setEditingCommentId(activityId);
+        setEditingCommentText(currentMessage);
     }, []);
+
+    const handleSaveEditComment = useCallback(async () => {
+        if (!editingCommentId || !editingCommentText.trim()) {
+            setEditingCommentId(null);
+            setEditingCommentText("");
+            return;
+        }
+
+        const trimmedText = editingCommentText.trim();
+        const previousActivity = activities.find(a => a.id === editingCommentId);
+        if (!previousActivity) return;
+
+        // Optimistic UI: atualizar estado local imediatamente
+        const previousMessage = previousActivity.message;
+        setActivities(prev => prev.map(act => 
+            act.id === editingCommentId 
+                ? { 
+                    ...act, 
+                    message: trimmedText,
+                    edited: true,
+                    editedAt: new Date().toISOString()
+                }
+                : act
+        ));
+
+        setIsUpdatingComment(true);
+        try {
+            const result = await updateComment(editingCommentId, trimmedText);
+            if (!result.success) {
+                // Rollback em caso de erro
+                setActivities(prev => prev.map(act => 
+                    act.id === editingCommentId 
+                        ? { ...act, message: previousMessage, edited: previousActivity.edited, editedAt: previousActivity.editedAt }
+                        : act
+                ));
+                toast.error(result.error || "Erro ao editar comentário");
+            } else {
+                // Recarregar atividades para garantir sincronização
+                if (currentTaskId) {
+                    await reloadActivities(currentTaskId);
+                }
+                toast.success("Comentário editado");
+            }
+        } catch (error) {
+            // Rollback em caso de exceção
+            setActivities(prev => prev.map(act => 
+                act.id === editingCommentId 
+                    ? { ...act, message: previousMessage, edited: previousActivity.edited, editedAt: previousActivity.editedAt }
+                    : act
+            ));
+            console.error("Erro ao editar comentário:", error);
+            toast.error("Erro ao editar comentário");
+        } finally {
+            setIsUpdatingComment(false);
+            setEditingCommentId(null);
+            setEditingCommentText("");
+        }
+    }, [editingCommentId, editingCommentText, activities, currentTaskId, reloadActivities]);
+
+    const handleCancelEditComment = useCallback(() => {
+        setEditingCommentId(null);
+        setEditingCommentText("");
+    }, []);
+
+    // Handler para excluir comentário com optimistic UI
+    const handleDeleteComment = useCallback(async (activityId: string) => {
+        const previousActivity = activities.find(a => a.id === activityId);
+        if (!previousActivity) return;
+
+        // Optimistic UI: marcar como deletado imediatamente
+        setActivities(prev => prev.map(act => 
+            act.id === activityId 
+                ? { 
+                    ...act, 
+                    message: "Esta mensagem foi removida",
+                    deleted: true,
+                    deletedAt: new Date().toISOString()
+                }
+                : act
+        ));
+
+        setIsDeletingComment(activityId);
+        try {
+            const result = await deleteComment(activityId);
+            if (!result.success) {
+                // Rollback em caso de erro
+                setActivities(prev => prev.map(act => 
+                    act.id === activityId 
+                        ? { 
+                            ...act, 
+                            message: previousActivity.message,
+                            deleted: previousActivity.deleted,
+                            deletedAt: previousActivity.deletedAt
+                        }
+                        : act
+                ));
+                toast.error(result.error || "Erro ao excluir comentário");
+            } else {
+                // Recarregar atividades para garantir sincronização
+                if (currentTaskId) {
+                    await reloadActivities(currentTaskId);
+                }
+                toast.success("Comentário removido");
+            }
+        } catch (error) {
+            // Rollback em caso de exceção
+            setActivities(prev => prev.map(act => 
+                act.id === activityId 
+                    ? { 
+                        ...act, 
+                        message: previousActivity.message,
+                        deleted: previousActivity.deleted,
+                        deletedAt: previousActivity.deletedAt
+                    }
+                    : act
+            ));
+            console.error("Erro ao excluir comentário:", error);
+            toast.error("Erro ao excluir comentário");
+        } finally {
+            setIsDeletingComment(null);
+        }
+    }, [activities, currentTaskId, reloadActivities]);
+
+    // Memoizar lista de atividades renderizadas para melhor performance (depois dos handlers)
+    const renderedActivities = useMemo(() => {
+        return activities.map((act: Activity) => (
+            <div key={act.id} className="flex gap-3 text-sm relative group">
+                <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
+                    <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
+                </div>
+
+                <div className="flex-1 pb-2">
+                    {act.type === "origin" && act.origin && (
+                        <div className="flex items-start gap-2">
+                            <div className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                                act.origin.source === "whatsapp" ? "bg-green-100" : "bg-blue-100"
+                            )}>
+                                {act.origin.source === "whatsapp" ? (
+                                    <MessageSquare className="w-4 h-4 text-green-600" />
+                                ) : (
+                                    <Monitor className="w-4 h-4 text-blue-600" />
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-gray-700 mb-1">
+                                    <span className="font-medium text-gray-900">Tarefa criada via </span>
+                                    <span className="font-semibold text-gray-900">
+                                        {act.origin.source === "whatsapp" ? "WhatsApp" : "App Web"}
+                                    </span>
+                                </p>
+                                {act.origin.content && (
+                                    <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600">
+                                        "{act.origin.content}"
+                                    </div>
+                                )}
+                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {act.type !== "origin" && (
+                        <>
+                            <p className="text-gray-700">
+                                <span className="font-medium text-gray-900">{act.user}</span>{" "}
+                                {act.type === "created" && "criou a tarefa"}
+                                {act.type === "commented" && "comentou"}
+                                {act.type === "updated" && "atualizou a tarefa"}
+                                {act.type === "file_shared" && "enviou um arquivo"}
+                                {act.type === "audio" && "enviou um áudio"}
+                            </p>
+
+                            {act.type === "audio" && (
+                                <div className="mt-2 space-y-2">
+                                    <div className="max-w-[240px]">
+                                        <AudioMessageBubble
+                                            duration={act.audio?.duration || 0}
+                                            isOwnMessage={act.user === "Você"}
+                                            audioUrl={act.audio?.url}
+                                        />
+                                    </div>
+                                    {act.audio?.url && (
+                                        <div className="space-y-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-xs text-gray-500 hover:text-gray-700"
+                                                onClick={() => handleViewTranscriptionRef.current?.(act.id, act.audio!.url!)}
+                                                disabled={transcribingActivityId === act.id}
+                                            >
+                                                {transcribingActivityId === act.id ? (
+                                                    <>
+                                                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                                        Transcrevendo...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <FileText className="w-3 h-3 mr-1" />
+                                                        {act.audio?.transcription ? "Ver transcrição" : "Gerar transcrição"}
+                                                    </>
+                                                )}
+                                            </Button>
+                                            {act.audio?.transcription && (
+                                                <div className="mt-2 p-3 border rounded-md bg-gray-50">
+                                                    <p className="text-xs text-gray-600 whitespace-pre-wrap">
+                                                        {act.audio.transcription}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {act.message && act.type !== "updated" && (
+                                <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600 relative group/comment">
+                                    {editingCommentId === act.id ? (
+                                        <div className="space-y-2">
+                                            <Textarea
+                                                value={editingCommentText}
+                                                onChange={(e) => setEditingCommentText(e.target.value)}
+                                                className="min-h-[60px] resize-none"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" && e.ctrlKey) {
+                                                        e.preventDefault();
+                                                        handleSaveEditComment();
+                                                    } else if (e.key === "Escape") {
+                                                        handleCancelEditComment();
+                                                    }
+                                                }}
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={handleCancelEditComment}
+                                                    disabled={isUpdatingComment}
+                                                >
+                                                    Cancelar
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    onClick={handleSaveEditComment}
+                                                    disabled={isUpdatingComment || !editingCommentText.trim()}
+                                                >
+                                                    {isUpdatingComment ? (
+                                                        <>
+                                                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                                            Salvando...
+                                                        </>
+                                                    ) : (
+                                                        "Salvar"
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <p className={cn(
+                                                act.deleted && "italic text-gray-400"
+                                            )}>
+                                                <LinkifyText text={act.message || ""} />
+                                            </p>
+                                            {(act.edited || act.deleted) && (
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    {act.edited && (
+                                                        <span className="text-[10px] text-gray-400">
+                                                            Editado
+                                                        </span>
+                                                    )}
+                                                    {act.deleted && (
+                                                        <span className="text-[10px] text-gray-400">
+                                                            Removido
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {act.isCurrentUser && !act.deleted && act.type === "commented" && (
+                                                <>
+                                                    {/* Gradiente da direita para esquerda no hover */}
+                                                    <div 
+                                                        className={cn(
+                                                            "absolute right-0 top-0 bottom-0 w-20 pointer-events-none opacity-0 group-hover/comment:opacity-100 transition-opacity duration-200",
+                                                            "bg-gradient-to-l from-white via-white via-60% to-transparent"
+                                                        )}
+                                                    />
+                                                    <div className="absolute top-2 right-2 opacity-0 group-hover/comment:opacity-100 transition-opacity flex gap-1 z-10">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6 text-gray-400 hover:text-gray-600"
+                                                            onClick={() => handleEditComment(act.id, act.message || "")}
+                                                            title="Editar comentário"
+                                                        >
+                                                            <Pencil className="w-3 h-3" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6 text-gray-400 hover:text-red-600"
+                                                            onClick={() => handleDeleteComment(act.id)}
+                                                            disabled={isDeletingComment === act.id}
+                                                            title="Excluir comentário"
+                                                        >
+                                                            {isDeletingComment === act.id ? (
+                                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                                            ) : (
+                                                                <Trash2 className="w-3 h-3" />
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {act.attachedFiles && act.attachedFiles.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    {act.attachedFiles.map((f, idx) => (
+                                        <div key={idx} className="p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
+                                            {f.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-medium">{f.name}</span>
+                                                <span className="text-[10px] text-gray-400">{f.size}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {act.file && !act.attachedFiles && (
+                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
+                                    {act.file.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-medium">{act.file.name}</span>
+                                        <span className="text-[10px] text-gray-400">{act.file.size}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {(act.type as Activity["type"]) !== "origin" && (
+                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+        ));
+    }, [activities, transcribingActivityId, editingCommentId, editingCommentText, isUpdatingComment, isDeletingComment, currentUserId, handleSaveEditComment, handleCancelEditComment, handleEditComment, handleDeleteComment]);
 
     // Handlers
     const handleStatusChange = async (newStatus: string) => {
@@ -2229,17 +2478,9 @@ export function TaskDetailModal({
                                         </div>
 
                                         {/* Description */}
-                                        <div className="mb-8 group/desc">
+                                        <div className="mb-8">
                                             <div className="flex items-center justify-between mb-2">
                                                 <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
-                                                {!isEditingDescription && (
-                                                    <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => {
-                                                        setIsDescriptionExpanded(false);
-                                                        setIsEditingDescription(true);
-                                                    }}>
-                                                        <Pencil className="w-3 h-3 mr-1" /> Editar
-                                                    </Button>
-                                                )}
                                             </div>
                                             {isEditingDescription ? (
                                                 <div className="border rounded-md p-1">
@@ -2272,21 +2513,42 @@ export function TaskDetailModal({
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="relative">
+                                                <div className="relative group/description">
                                                     <div
                                                         ref={descriptionRef}
                                                         className={cn(
-                                                            "p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200 outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                            "p-3 rounded-md prose prose-sm max-w-none text-gray-700 border border-transparent outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                            "[&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:hover:underline [&_a]:no-underline",
                                                             !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
                                                         )}
-                                                        onClick={() => {
-                                                            setIsDescriptionExpanded(false);
-                                                            setIsEditingDescription(true);
-                                                        }}
-                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        style={{
+                                                            // Garantir que links fiquem azuis mesmo com prose
+                                                            '--tw-prose-links': '#2563eb',
+                                                        } as React.CSSProperties}
                                                         tabIndex={-1}
-                                                        dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
+                                                        dangerouslySetInnerHTML={{ __html: linkifyHtml(description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>") }}
                                                     />
+                                                    {/* Gradiente da direita para esquerda no hover */}
+                                                    <div 
+                                                        className={cn(
+                                                            "absolute right-0 top-0 bottom-0 w-24 pointer-events-none opacity-0 group-hover/description:opacity-100 transition-opacity duration-200",
+                                                            "bg-gradient-to-l from-white via-white via-60% to-transparent"
+                                                        )}
+                                                    />
+                                                    <div className="absolute top-2 right-2 opacity-0 group-hover/description:opacity-100 transition-opacity z-10">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setIsDescriptionExpanded(false);
+                                                                setIsEditingDescription(true);
+                                                            }}
+                                                            className="h-7 text-xs"
+                                                        >
+                                                            <Pencil className="w-3 h-3 mr-1" /> Editar
+                                                        </Button>
+                                                    </div>
                                                     {!isDescriptionExpanded && showExpandButton && (
                                                         <>
                                                             <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />

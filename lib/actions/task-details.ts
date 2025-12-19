@@ -502,6 +502,144 @@ export async function addComment(
 }
 
 /**
+ * Atualiza um comentário (apenas o autor pode editar)
+ */
+export async function updateComment(
+  commentId: string,
+  newContent: string
+): Promise<{ success: boolean; error?: string; comment?: any }> {
+  const supabase = await createServerActionClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Buscar o comentário para verificar se o usuário é o autor
+  const { data: comment, error: fetchError } = await supabase
+    .from("task_comments")
+    .select("id, user_id, content, metadata")
+    .eq("id", commentId)
+    .single();
+
+  if (fetchError || !comment) {
+    return { success: false, error: "Comentário não encontrado" };
+  }
+
+  // Verificar se o usuário é o autor
+  if (comment.user_id !== user.id) {
+    return { success: false, error: "Você não tem permissão para editar este comentário" };
+  }
+
+  // Não permitir editar comentários do tipo "log" ou "system"
+  const { data: fullComment } = await supabase
+    .from("task_comments")
+    .select("type")
+    .eq("id", commentId)
+    .single();
+
+  if (fullComment && (fullComment.type === "log" || fullComment.type === "system")) {
+    return { success: false, error: "Comentários do sistema não podem ser editados" };
+  }
+
+  // Preparar metadata atualizado
+  const currentMetadata = (comment.metadata && typeof comment.metadata === 'object') 
+    ? comment.metadata 
+    : {};
+  
+  const updatedMetadata = {
+    ...currentMetadata,
+    edited_at: new Date().toISOString(),
+    edited: true,
+  };
+
+  // Atualizar o comentário
+  const { data: updatedComment, error: updateError } = await supabase
+    .from("task_comments")
+    .update({
+      content: newContent,
+      metadata: updatedMetadata,
+    })
+    .eq("id", commentId)
+    .select()
+    .single();
+
+  if (updateError) {
+    console.error("Erro ao atualizar comentário:", updateError);
+    return { success: false, error: updateError.message };
+  }
+
+  revalidatePath(`/tasks`);
+  return { success: true, comment: updatedComment };
+}
+
+/**
+ * Exclui um comentário (apenas o autor pode excluir)
+ * Marca como deletado ao invés de remover fisicamente
+ */
+export async function deleteComment(
+  commentId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerActionClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Buscar o comentário para verificar se o usuário é o autor
+  const { data: comment, error: fetchError } = await supabase
+    .from("task_comments")
+    .select("id, user_id, content, metadata, type")
+    .eq("id", commentId)
+    .single();
+
+  if (fetchError || !comment) {
+    return { success: false, error: "Comentário não encontrado" };
+  }
+
+  // Verificar se o usuário é o autor
+  if (comment.user_id !== user.id) {
+    return { success: false, error: "Você não tem permissão para excluir este comentário" };
+  }
+
+  // Não permitir excluir comentários do tipo "log" ou "system"
+  if (comment.type === "log" || comment.type === "system") {
+    return { success: false, error: "Comentários do sistema não podem ser excluídos" };
+  }
+
+  // Preparar metadata atualizado
+  const currentMetadata = (comment.metadata && typeof comment.metadata === 'object') 
+    ? comment.metadata 
+    : {};
+  
+  const updatedMetadata = {
+    ...currentMetadata,
+    deleted_at: new Date().toISOString(),
+    deleted: true,
+  };
+
+  // Marcar como deletado (não remover fisicamente)
+  const { error: updateError } = await supabase
+    .from("task_comments")
+    .update({
+      content: "Esta mensagem foi removida",
+      metadata: updatedMetadata,
+    })
+    .eq("id", commentId);
+
+  if (updateError) {
+    console.error("Erro ao excluir comentário:", updateError);
+    return { success: false, error: updateError.message };
+  }
+
+  revalidatePath(`/tasks`);
+  return { success: true };
+}
+
+/**
  * Atualiza um campo específico da tarefa e cria log de atividade
  */
 export async function updateTaskField(

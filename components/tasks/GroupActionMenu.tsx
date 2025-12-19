@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2, MoreHorizontal, Palette, Eraser } from "lucide-react";
+import { Pencil, Trash2, MoreHorizontal, Palette, Eraser, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -33,6 +33,9 @@ interface GroupActionMenuProps {
     onColorChange?: (groupId: string, color: string) => void;
     onDelete?: (groupId: string) => void;
     onClear?: (groupId: string) => void;
+    onReorder?: (groupId: string, direction: "up" | "down") => void;
+    canMoveUp?: boolean;
+    canMoveDown?: boolean;
     className?: string;
 }
 
@@ -60,6 +63,9 @@ export function GroupActionMenu({
     onColorChange,
     onDelete,
     onClear,
+    onReorder,
+    canMoveUp = true,
+    canMoveDown = true,
     className,
 }: GroupActionMenuProps) {
     const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -153,6 +159,11 @@ export function GroupActionMenu({
 
     const actualCurrentColor = getCurrentColor();
 
+    // Debug: verificar se onReorder está definido
+    if (process.env.NODE_ENV === 'development' && onReorder) {
+        console.log('[GroupActionMenu] onReorder está definido para grupo:', groupId, { canMoveUp, canMoveDown });
+    }
+
     return (
         <>
             <DropdownMenu>
@@ -216,6 +227,35 @@ export function GroupActionMenu({
                                 </div>
                             </DropdownMenuSubContent>
                         </DropdownMenuSub>
+                    )}
+
+                    {/* Reordenar Grupo */}
+                    {onReorder && (
+                        <>
+                            {(onRename || onColorChange) && <DropdownMenuSeparator />}
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onReorder(groupId, "up");
+                                }}
+                                className="text-xs"
+                                disabled={!canMoveUp}
+                            >
+                                <ArrowUp className="w-4 h-4 mr-2" />
+                                Mover para cima
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onReorder(groupId, "down");
+                                }}
+                                className="text-xs"
+                                disabled={!canMoveDown}
+                            >
+                                <ArrowDown className="w-4 h-4 mr-2" />
+                                Mover para baixo
+                            </DropdownMenuItem>
+                        </>
                     )}
 
                     {/* Limpar Tarefas */}

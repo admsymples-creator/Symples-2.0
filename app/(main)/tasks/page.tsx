@@ -60,7 +60,7 @@ import {
     deleteTask,
     type Task as TaskFromDB 
 } from "@/lib/actions/tasks";
-import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups } from "@/lib/actions/task-groups";
+import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups, reorderTaskGroup } from "@/lib/actions/task-groups";
 import { getTaskDetails } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -200,6 +200,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     });
     const { activeWorkspaceId, isLoaded } = useWorkspace();
     const localTasksRef = useRef<Task[]>([]);
+    const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
     
     // âœ… NOVO: Usar workspaceId da prop se fornecido, senÃ£o usar do contexto
     const effectiveWorkspaceId = propWorkspaceId ?? activeWorkspaceId;
@@ -962,6 +963,77 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
     }, []);
 
+    const handleReorderGroup = useCallback(async (groupId: string, direction: "up" | "down") => {
+        const currentViewOption = viewOptionRef.current;
+        const currentListGroups = listGroupsRef.current;
+
+        if (currentViewOption !== "group") return;
+        if (groupId === "inbox" || groupId === "Inbox") {
+            toast.error("O grupo Inbox não pode ser reordenado.");
+            return;
+        }
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(groupId)) {
+            toast.error("Grupo inválido.");
+            return;
+        }
+
+        if (!activeWorkspaceId) {
+            toast.error("Workspace não encontrado.");
+            return;
+        }
+
+        // Optimistic UI: reordenar grupos localmente
+        const previousGroups = [...currentListGroups];
+        const currentIndex = previousGroups.findIndex(g => g.id === groupId);
+        
+        if (currentIndex === -1) {
+            toast.error("Grupo não encontrado.");
+            return;
+        }
+
+        // Verificar limites
+        if (direction === "up" && currentIndex === 0) {
+            return; // Já está no topo
+        }
+        if (direction === "down" && currentIndex === previousGroups.length - 1) {
+            return; // Já está no final
+        }
+
+        // Calcular novo índice
+        const newIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+        // Reordenar localmente
+        const reorderedGroups = [...previousGroups];
+        const [movedGroup] = reorderedGroups.splice(currentIndex, 1);
+        reorderedGroups.splice(newIndex, 0, movedGroup);
+
+        // Atualizar estado local
+        setListGroups(reorderedGroups);
+        listGroupsRef.current = reorderedGroups;
+
+        try {
+            const result = await reorderTaskGroup(groupId, direction, activeWorkspaceId);
+            if (!result.success) {
+                // Rollback em caso de erro
+                setListGroups(previousGroups);
+                listGroupsRef.current = previousGroups;
+                toast.error(result.error || "Erro ao reordenar grupo");
+            } else {
+                // Recarregar grupos do servidor para garantir sincronização
+                await loadGroups();
+                toast.success("Grupo reordenado");
+            }
+        } catch (error) {
+            // Rollback em caso de exceção
+            setListGroups(previousGroups);
+            listGroupsRef.current = previousGroups;
+            console.error("Erro ao reordenar grupo:", error);
+            toast.error("Erro ao reordenar grupo");
+        }
+    }, [activeWorkspaceId, loadGroups]);
+
     // ✅ Callback memoizado para optimistic updates
     const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
         const localUpdates: Partial<Task> = {};
@@ -1427,6 +1499,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return groups;
     }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ✅ Adicionar groupOrder para recalcular quando a ordem mudar
 
+    // Atualizar ref quando listGroups mudar
+    useEffect(() => {
+        listGroupsRef.current = listGroups;
+    }, [listGroups]);
 
     // Mapear status customizÃ¡veis para status do banco (usando config centralizado)
     const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archived" => {
@@ -2415,6 +2491,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 onColorChange={viewOption === "group" ? handleColorChange : undefined}
                                                 onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
                                                 onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
+                                                canMoveUp={viewOption === "group" ? index > 0 : true}
+                                                canMoveDown={viewOption === "group" ? index < listGroups.length - 1 : true}
                                                 showGroupActions={viewOption === "group"}
                                                 onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                             />

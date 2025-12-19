@@ -6,6 +6,75 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Edição/Exclusão de Comentários, Links Clicáveis e Reordenação de Grupos
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Edição e Exclusão de Comentários com Optimistic UI
+- **Funcionalidade**: Usuários podem editar e excluir seus próprios comentários no `TaskDetailModal`
+- **Permissões**: Apenas o autor do comentário pode editar/excluir
+- **Indicadores Visuais**: 
+  - Comentários editados mostram "Editado" (similar ao WhatsApp)
+  - Comentários removidos mostram "Removido" e o texto "Esta mensagem foi removida"
+- **Optimistic UI**: Atualizações locais imediatas com rollback em caso de erro
+- **Server Actions**:
+  - `updateComment`: Atualiza comentário e adiciona `edited_at` no metadata
+  - `deleteComment`: Marca comentário como deletado (soft delete) com `deleted_at` no metadata
+- **Arquivos**:
+  - `lib/actions/task-details.ts`: Novas funções `updateComment` e `deleteComment`
+  - `components/tasks/TaskDetailModal.tsx`: Handlers `handleEditComment`, `handleSaveEditComment`, `handleCancelEditComment`, `handleDeleteComment`
+
+#### 🔗 Links Clicáveis Automáticos na Descrição e Comentários
+- **Funcionalidade**: URLs e links Markdown são automaticamente convertidos em links clicáveis azuis
+- **Suporte**:
+  - URLs automáticas: `https://`, `http://`, `www.`
+  - Links Markdown: `[texto](url)`
+- **Componentes**:
+  - `lib/utils/link-parser.ts`: Função `parseLinks` para detectar URLs e links Markdown em texto
+  - `lib/utils/linkify-html.ts`: Função `linkifyHtml` para processar HTML e converter URLs em links azuis
+  - `components/ui/linkify-text.tsx`: Componente `LinkifyText` para renderizar texto com links clicáveis
+- **Aplicação**:
+  - Descrição da tarefa: Links processados no HTML do TipTap editor
+  - Comentários: Links processados no texto dos comentários
+- **Estilização**: Links azuis (`text-blue-600`) com hover underline
+
+#### 🎨 Melhorias de UX na Descrição
+- **Fade Overlay (Gradient Fade Mask)**: 
+  - Gradiente da direita para esquerda aparece no hover da descrição
+  - Evita que o botão "Editar" sobreponha o texto
+  - Técnica: `bg-gradient-to-l from-white via-white via-60% to-transparent`
+- **Botão Editar no Hover**: 
+  - Botão "Editar" aparece apenas no hover da div da descrição
+  - Removido hover da div (não é mais toda clicável)
+  - Removido botão "Editar" do header da descrição
+- **Links Apenas Clicáveis**: Apenas os links são clicáveis, não toda a descrição
+
+#### 📋 Reordenação de Grupos de Tarefas
+- **Funcionalidade**: Usuários podem reordenar grupos de tarefas via menu de ações
+- **Interface**: 
+  - Opções "Mover para cima" e "Mover para baixo" no menu do grupo
+  - Botões desabilitados automaticamente quando grupo está no topo/final
+- **Optimistic UI**: Reordenação local imediata com rollback em caso de erro
+- **Server Action**: `reorderTaskGroup` em `lib/actions/task-groups.ts`
+  - Usa `created_at` para determinar ordem
+  - Calcula novo timestamp entre grupos adjacentes para manter ordem
+- **Persistência**: Ordem salva no banco de dados via `created_at`
+- **Restrições**: 
+  - Apenas funciona na visualização por grupos (`viewOption === "group"`)
+  - Grupo "Inbox" não pode ser reordenado
+- **Arquivos**:
+  - `lib/actions/task-groups.ts`: Função `reorderTaskGroup`
+  - `app/(main)/tasks/page.tsx`: Handler `handleReorderGroup` com optimistic UI
+  - `components/tasks/GroupActionMenu.tsx`: Opções de reordenação no menu
+  - `components/tasks/TaskGroup.tsx`: Passa `onReorderGroup` para o menu
+
+#### 🐛 Correções
+- **Correção**: Condição em `TaskGroup.tsx` não incluía `onReorderGroup`, impedindo menu de aparecer
+- **Correção**: Ordem de definição de handlers em `TaskDetailModal.tsx` causava `ReferenceError`
+- **Correção**: Links na descrição não ficavam azuis devido a conflito com estilos do prose
+
+---
+
 ## 2025-12-14 - Refinamento do Tutorial Interativo e Correção de Crash
 
 ### 1. Melhorias, bugs e features implementadas em preview
