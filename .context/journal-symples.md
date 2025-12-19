@@ -6,6 +6,94 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-XX - Edição/Exclusão de Comentários, Links Clicáveis e Reordenação de Grupos
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Edição e Exclusão de Comentários com Optimistic UI
+- **Funcionalidade**: Usuários podem editar e excluir seus próprios comentários no `TaskDetailModal`
+- **Permissões**: Apenas o autor do comentário pode editar/excluir
+- **Indicadores Visuais**: 
+  - Comentários editados mostram "Editado" (similar ao WhatsApp)
+  - Comentários removidos mostram "Removido" e o texto "Esta mensagem foi removida"
+- **Optimistic UI**: Atualizações locais imediatas com rollback em caso de erro
+- **Server Actions**:
+  - `updateComment`: Atualiza comentário e adiciona `edited_at` no metadata
+  - `deleteComment`: Marca comentário como deletado (soft delete) com `deleted_at` no metadata
+- **Arquivos**:
+  - `lib/actions/task-details.ts`: Novas funções `updateComment` e `deleteComment`
+  - `components/tasks/TaskDetailModal.tsx`: Handlers `handleEditComment`, `handleSaveEditComment`, `handleCancelEditComment`, `handleDeleteComment`
+
+#### 🔗 Links Clicáveis Automáticos na Descrição e Comentários
+- **Funcionalidade**: URLs e links Markdown são automaticamente convertidos em links clicáveis azuis
+- **Suporte**:
+  - URLs automáticas: `https://`, `http://`, `www.`
+  - Links Markdown: `[texto](url)`
+- **Componentes**:
+  - `lib/utils/link-parser.ts`: Função `parseLinks` para detectar URLs e links Markdown em texto
+  - `lib/utils/linkify-html.ts`: Função `linkifyHtml` para processar HTML e converter URLs em links azuis
+  - `components/ui/linkify-text.tsx`: Componente `LinkifyText` para renderizar texto com links clicáveis
+- **Aplicação**:
+  - Descrição da tarefa: Links processados no HTML do TipTap editor
+  - Comentários: Links processados no texto dos comentários
+- **Estilização**: Links azuis (`text-blue-600`) com hover underline
+
+#### 🎨 Melhorias de UX na Descrição
+- **Fade Overlay (Gradient Fade Mask)**: 
+  - Gradiente da direita para esquerda aparece no hover da descrição
+  - Evita que o botão "Editar" sobreponha o texto
+  - Técnica: `bg-gradient-to-l from-white via-white via-60% to-transparent`
+- **Botão Editar no Hover**: 
+  - Botão "Editar" aparece apenas no hover da div da descrição
+  - Removido hover da div (não é mais toda clicável)
+  - Removido botão "Editar" do header da descrição
+- **Links Apenas Clicáveis**: Apenas os links são clicáveis, não toda a descrição
+
+#### 📋 Reordenação de Grupos de Tarefas (Melhorado)
+- **Funcionalidade**: Usuários podem reordenar grupos de tarefas via submenu "Ordenar" no menu de ações
+- **Interface**: 
+  - Submenu "Ordenar" com 4 opções:
+    - Mover para o topo (ArrowUpToLine)
+    - Mover para cima (ArrowUp)
+    - Mover para baixo (ArrowDown)
+    - Mover para o final (ArrowDownToLine)
+  - Opções desabilitadas automaticamente quando não aplicáveis (ex: "Mover para o topo" desabilitado se já estiver no topo)
+- **Optimistic UI**: Reordenação local imediata com rollback em caso de erro
+- **Múltiplas Chamadas**: Para "top" e "bottom", faz múltiplas chamadas sequenciais até chegar na posição desejada
+- **Sincronização**: Ordem atualizada incrementalmente após cada chamada bem-sucedida
+- **Persistência**: 
+  - Ordem salva no banco de dados via `created_at` (múltiplas atualizações)
+  - Ordem também salva no `localStorage` para evitar flicker no refresh
+- **Cálculo de Posição**: Usa `groupOrder` (não `listGroups`) para calcular posições corretamente
+- **Preservação de Ordem**: `loadGroups()` preserva ordem existente e só adiciona grupos novos ao final
+- **Restrições**: 
+  - Apenas funciona na visualização por grupos (`viewOption === "group"`)
+  - Grupo "Inbox" não pode ser reordenado (sempre primeiro)
+- **Arquivos**:
+  - `lib/actions/task-groups.ts`: Função `reorderTaskGroup` (suporta "up" e "down")
+  - `app/(main)/tasks/page.tsx`: 
+    - Handler `handleReorderGroup` atualizado para suportar "top" e "bottom"
+    - Cálculo de `canMoveToTop` e `canMoveToBottom` baseado em `groupOrder`
+    - Preservação de ordem no `loadGroups()`
+  - `components/tasks/GroupActionMenu.tsx`: 
+    - Submenu "Ordenar" com 4 opções e ícones apropriados
+    - Props `canMoveToTop` e `canMoveToBottom` para desabilitar opções
+  - `components/tasks/TaskGroup.tsx`: 
+    - Props `canMoveToTop` e `canMoveToBottom` passadas para o menu
+    - Tipo de `onReorderGroup` atualizado para aceitar "top" e "bottom"
+
+#### 🐛 Correções
+- **Correção**: Condição em `TaskGroup.tsx` não incluía `onReorderGroup`, impedindo menu de aparecer
+- **Correção**: Ordem de definição de handlers em `TaskDetailModal.tsx` causava `ReferenceError`
+- **Correção**: Links na descrição não ficavam azuis devido a conflito com estilos do prose
+- **Correção**: `index` não definido no `.map()` de `listGroups` - adicionado parâmetro `index`
+- **Correção**: `setListGroups` não existe - corrigido para usar `setGroupOrder` (que é o estado real)
+- **Correção**: Cálculo de `canMoveToTop` e `canMoveToBottom` usando índice de `listGroups` em vez de `groupOrder`
+- **Correção**: Flicker de 1 segundo no refresh - ordem agora preservada desde o início via `localStorage` e `loadGroups()` não sobrescreve ordem existente
+- **Correção**: Grupo voltando para posição original após mover para topo/final - ordem agora atualizada incrementalmente após cada chamada bem-sucedida
+
+---
+
 ## 2025-12-14 - Refinamento do Tutorial Interativo e Correção de Crash
 
 ### 1. Melhorias, bugs e features implementadas em preview
