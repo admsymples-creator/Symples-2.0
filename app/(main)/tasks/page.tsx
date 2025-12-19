@@ -783,14 +783,26 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ref para groupedData (serÃ¡ atualizado apÃ³s groupedData ser definido)
     const groupedDataRef = useRef<Record<string, Task[]>>({});
 
-    const handleClearGroup = useCallback(async (groupId: string) => {
+    const handleClearGroup = useCallback(async (groupId: string, type?: "all" | "completed") => {
         const currentViewOption = viewOptionRef.current;
         const currentGroupedData = groupedDataRef.current; // Usar ref (atualizado apÃ³s groupedData)
         const currentLocalTasks = localTasksRef.current;
 
-        const groupTasks = currentGroupedData[groupId] || [];
+        let groupTasks = currentGroupedData[groupId] || [];
+        
+        // Filtrar tarefas baseado no tipo de limpeza
+        // Nota: t.status é o label da UI (ex: "Concluido"), não o status do banco (ex: "done")
+        // Usamos t.completed que é calculado como task.status === "done" no mapTaskFromDB
+        if (type === "completed") {
+            groupTasks = groupTasks.filter((t: Task) => t.completed === true);
+        }
+        // Se type === "all" ou undefined, usa todas as tarefas (comportamento padrão)
+        
         if (groupTasks.length === 0) {
-            toast.info("Nenhuma tarefa para limpar neste grupo");
+            const message = type === "completed" 
+                ? "Nenhuma tarefa concluída para limpar neste grupo"
+                : "Nenhuma tarefa para limpar neste grupo";
+            toast.info(message);
             return;
         }
 
@@ -798,15 +810,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const taskIdsToArchive = groupTasks.map((t: Task) => t.id);
         
         setLocalTasks((prev) => prev.filter((t: Task) => {
-            if (currentViewOption === "group") {
-                if (groupId === "inbox") {
-                    return t.group?.id !== null && t.group?.id !== undefined;
-                }
-                return t.group?.id !== groupId;
+            // Se a tarefa está na lista de tarefas a arquivar, removê-la
+            if (taskIdsToArchive.includes(t.id)) {
+                return false;
             }
-            // Para outros viewOptions, usar getTaskGroupKey
-            const taskGroupKey = getTaskGroupKey(t);
-            return taskGroupKey !== groupId;
+            return true;
         }));
 
         try {
@@ -815,7 +823,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             ));
             invalidateTasksCache(activeWorkspaceId, activeTab);
             refetchTasksRef.current();
-            toast.success(`${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`);
+            const message = type === "completed"
+                ? `${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} concluída${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`
+                : `${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`;
+            toast.success(message);
         } catch (error) {
             setLocalTasks(previousTasks);
             invalidateTasksCache(activeWorkspaceId, activeTab);

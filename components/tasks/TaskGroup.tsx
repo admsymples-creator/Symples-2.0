@@ -124,6 +124,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                 groupId={id}
                                 groupTitle={title}
                                 currentColor={groupColor}
+                                tasks={tasks}
                                 onRename={onRenameGroup}
                                 onColorChange={onColorChange}
                                 onDelete={onDeleteGroup}
