@@ -15,7 +15,7 @@ export function linkifyHtml(html: string): string {
     if (!html) return html;
 
     // Primeiro, garantir que todos os links <a> existentes tenham a cor azul
-    let processed = html.replace(/<a\s+([^>]*)>/gi, (match, attributes) => {
+    let processed = html.replace(/<a\s+([^>]*)>/gi, (match: string, attributes: string) => {
         // Verificar se já tem class ou style
         const hasClass = /class\s*=/i.test(attributes);
         const hasStyle = /style\s*=/i.test(attributes);
@@ -24,7 +24,7 @@ export function linkifyHtml(html: string): string {
         
         // Adicionar ou atualizar class
         if (hasClass) {
-            newAttributes = newAttributes.replace(/class\s*=\s*["']([^"']*)["']/i, (m, classes) => {
+            newAttributes = newAttributes.replace(/class\s*=\s*["']([^"']*)["']/i, (m: string, classes: string) => {
                 if (!classes.includes('text-blue-600')) {
                     return `class="${classes} text-blue-600 hover:text-blue-800 hover:underline"`;
                 }
@@ -36,7 +36,7 @@ export function linkifyHtml(html: string): string {
         
         // Adicionar ou atualizar style para garantir cor azul
         if (hasStyle) {
-            newAttributes = newAttributes.replace(/style\s*=\s*["']([^"']*)["']/i, (m, styles) => {
+            newAttributes = newAttributes.replace(/style\s*=\s*["']([^"']*)["']/i, (m: string, styles: string) => {
                 if (!styles.includes('color:')) {
                     return `style="${styles}; color: #2563eb !important;"`;
                 } else if (!styles.includes('#2563eb') && !styles.includes('rgb(37, 99, 235)')) {
@@ -60,7 +60,7 @@ export function linkifyHtml(html: string): string {
     });
 
     // Processar links markdown [texto](url)
-    processed = processed.replace(MARKDOWN_LINK_REGEX, (match, text, url) => {
+    processed = processed.replace(MARKDOWN_LINK_REGEX, (match: string, text: string, url: string) => {
         return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 hover:underline" style="color: #2563eb !important;">${text}</a>`;
     });
 
