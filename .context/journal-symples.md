@@ -82,6 +82,32 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
     - Props `canMoveToTop` e `canMoveToBottom` passadas para o menu
     - Tipo de `onReorderGroup` atualizado para aceitar "top" e "bottom"
 
+#### 🧹 Submenu Limpar Tarefas
+- **Funcionalidade**: Usuários podem limpar tarefas de um grupo via submenu "Limpar" no menu de ações
+- **Interface**: 
+  - Submenu "Limpar" com 2 opções:
+    - Todas as Tarefas (arquiva todas as tarefas do grupo)
+    - Somente concluídas (arquiva apenas tarefas com status "done")
+- **Modal de Confirmação**: 
+  - Mostra quantidade exata de tarefas que serão arquivadas
+  - Mensagens personalizadas baseadas no tipo de limpeza
+  - Título e descrição dinâmicos
+- **Filtragem**: 
+  - Para "completed": filtra tarefas usando `t.completed === true` (não `t.status === "done"` pois status é o label da UI)
+  - Para "all": arquiva todas as tarefas do grupo
+- **Optimistic UI**: Remoção local imediata com rollback em caso de erro
+- **Arquivos**:
+  - `app/(main)/tasks/page.tsx`: 
+    - Handler `handleClearGroup` atualizado para aceitar `type?: "all" | "completed"`
+    - Filtragem correta de tarefas concluídas usando campo `completed`
+  - `components/tasks/GroupActionMenu.tsx`: 
+    - Submenu "Limpar" com 2 opções
+    - Prop `tasks` adicionada para calcular quantidade de tarefas afetadas
+    - Função `getTasksToClearCount` para calcular quantidade baseada no tipo
+    - Modal de confirmação atualizado para mostrar quantidade de tarefas
+  - `components/tasks/TaskGroup.tsx`: 
+    - Prop `tasks` passada para o `GroupActionMenu`
+
 #### 🐛 Correções
 - **Correção**: Condição em `TaskGroup.tsx` não incluía `onReorderGroup`, impedindo menu de aparecer
 - **Correção**: Ordem de definição de handlers em `TaskDetailModal.tsx` causava `ReferenceError`
@@ -91,6 +117,9 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 - **Correção**: Cálculo de `canMoveToTop` e `canMoveToBottom` usando índice de `listGroups` em vez de `groupOrder`
 - **Correção**: Flicker de 1 segundo no refresh - ordem agora preservada desde o início via `localStorage` e `loadGroups()` não sobrescreve ordem existente
 - **Correção**: Grupo voltando para posição original após mover para topo/final - ordem agora atualizada incrementalmente após cada chamada bem-sucedida
+- **Correção**: Filtragem de tarefas concluídas não funcionava - alterado de `t.status === "done"` para `t.completed === true` (status é o label da UI, não o valor do banco)
+- **Correção**: Tipo de `isCurrentUser` em `TaskDetailModal.tsx` - alterado para retornar `boolean | undefined` em vez de `boolean | "" | null`
+- **Correção**: Tipos implícitos `any` em callbacks de `linkify-html.ts` - adicionados tipos explícitos aos parâmetros
 
 ---
 
