@@ -108,6 +108,10 @@ export async function updateSubscription(
       return { success: false, error: "Perfil do usuário não encontrado" };
     }
 
+    if (!profile.email) {
+      return { success: false, error: "Email do usuário não encontrado. Por favor, atualize seu perfil." };
+    }
+
     // Obter limites do novo plano
     const { getPlanLimits } = await import("@/lib/utils/subscription-helpers");
     const { data: currentWorkspace } = await supabase
