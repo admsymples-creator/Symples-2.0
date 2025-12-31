@@ -45,7 +45,7 @@ import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
-import { getPlanName } from "@/lib/utils/subscription";
+import { getPlanName } from "@/lib/utils/subscription-helpers";
 
 interface SubscriptionData {
   id: string;
