@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-12-31T08:14:50.559960",
+  "total_issues": 3,
+  "issues": [
+    {
+      "severity": "HIGH",
+      "component": "Login",
+      "description": "Erro ao tentar fazer login: Page.query_selector: Target page, context or browser has been closed",
+      "details": "",
+      "timestamp": "2025-12-31T08:14:48.552818"
+    },
+    {
+      "severity": "CRITICAL",
+      "component": "Estrutura",
+      "description": "Erro ao testar estrutura da página: Page.goto: Target page, context or browser has been closed",
+      "details": "",
+      "timestamp": "2025-12-31T08:14:50.557456"
+    },
+    {
+      "severity": "HIGH",
+      "component": "Geral",
+      "description": "Página Financeiro não acessível - pode requerer autenticação",
+      "details": "",
+      "timestamp": "2025-12-31T08:14:50.557875"
+    }
+  ],
+  "summary": {
+    "CRITICAL": 1,
+    "HIGH": 2,
+    "MEDIUM": 0,
+    "LOW": 0,
+    "INFO": 0
+  }
+}

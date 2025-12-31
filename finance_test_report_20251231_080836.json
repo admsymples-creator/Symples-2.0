@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-12-31T08:08:36.659958",
+  "total_issues": 3,
+  "issues": [
+    {
+      "severity": "HIGH",
+      "component": "Login",
+      "description": "Resposta do login não clara após envio de Magic Link",
+      "details": "",
+      "timestamp": "2025-12-31T08:08:30.805749"
+    },
+    {
+      "severity": "INFO",
+      "component": "Autenticação",
+      "description": "Redirecionado para login - necessário autenticação prévia",
+      "details": "",
+      "timestamp": "2025-12-31T08:08:36.657542"
+    },
+    {
+      "severity": "HIGH",
+      "component": "Geral",
+      "description": "Página Financeiro não acessível - pode requerer autenticação",
+      "details": "",
+      "timestamp": "2025-12-31T08:08:36.657901"
+    }
+  ],
+  "summary": {
+    "CRITICAL": 0,
+    "HIGH": 2,
+    "MEDIUM": 0,
+    "LOW": 0,
+    "INFO": 1
+  }
+}

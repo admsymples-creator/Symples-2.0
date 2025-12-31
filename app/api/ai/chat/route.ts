@@ -46,6 +46,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verificar acesso do workspace (gatekeeper) - apenas se workspaceId fornecido
+    if (workspaceId) {
+      const { checkWorkspaceAccess } = await import("@/lib/utils/subscription");
+      const accessCheck = await checkWorkspaceAccess(workspaceId);
+      
+      if (!accessCheck.allowed) {
+        return NextResponse.json(
+          { 
+            error: accessCheck.reason || 'Seu trial expirou. Escolha um plano para continuar usando o assistente IA.',
+            upgradeRequired: true
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // Construir contexto do sistema
     let systemContext = `Você é o Assistente Symples, um assistente inteligente para gestão de empresas.
 Você ajuda usuários a gerenciar tarefas, finanças e organização do trabalho.

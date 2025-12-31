@@ -506,6 +506,12 @@ export type Database = {
           name: string
           owner_id: string | null
           slug: string | null
+          plan: 'starter' | 'pro' | 'business' | null
+          subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null
+          subscription_id: string | null
+          trial_ends_at: string | null
+          member_limit: number | null
+          updated_at: string | null
         }
         Insert: {
           created_at?: string | null
@@ -514,6 +520,12 @@ export type Database = {
           name: string
           owner_id?: string | null
           slug?: string | null
+          plan?: 'starter' | 'pro' | 'business' | null
+          subscription_status?: 'trialing' | 'active' | 'past_due' | 'canceled' | null
+          subscription_id?: string | null
+          trial_ends_at?: string | null
+          member_limit?: number | null
+          updated_at?: string | null
         }
         Update: {
           created_at?: string | null
@@ -522,6 +534,12 @@ export type Database = {
           name?: string
           owner_id?: string | null
           slug?: string | null
+          plan?: 'starter' | 'pro' | 'business' | null
+          subscription_status?: 'trialing' | 'active' | 'past_due' | 'canceled' | null
+          subscription_id?: string | null
+          trial_ends_at?: string | null
+          member_limit?: number | null
+          updated_at?: string | null
         }
         Relationships: [
           {

@@ -61,6 +61,17 @@ export async function createTransaction(data: TransactionData) {
       throw new Error("Você não tem permissão para criar transações neste workspace.");
     }
 
+    // Verificar acesso do workspace (gatekeeper)
+    const { checkWorkspaceAccess } = await import("@/lib/utils/subscription");
+    const accessCheck = await checkWorkspaceAccess(workspaceId);
+    
+    if (!accessCheck.allowed) {
+      return {
+        success: false,
+        error: accessCheck.reason || "Seu trial expirou. Escolha um plano para continuar criando transações.",
+      };
+    }
+
     // Preparar payload
     const payload: any = {
       amount: data.amount,
