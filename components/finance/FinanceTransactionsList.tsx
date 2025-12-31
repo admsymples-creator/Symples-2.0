@@ -70,7 +70,6 @@ export function FinanceTransactionsList({
   title,
   icon,
   totalAmount,
-  formatCurrency,
 }: FinanceTransactionsListProps) {
   const router = useRouter();
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
