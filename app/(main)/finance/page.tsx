@@ -23,7 +23,6 @@ import { startOfMonth, endOfMonth } from "date-fns";
 import { NewTransactionButton, MonthSelector } from "@/components/finance/FinanceClientComponents";
 import { FinanceTransactionsList } from "@/components/finance/FinanceTransactionsList";
 import { getUserWorkspaces } from "@/lib/actions/user";
-import { ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
 // --- TYPES ---
 
