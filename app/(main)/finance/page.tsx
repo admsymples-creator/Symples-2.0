@@ -262,7 +262,6 @@ export default async function FinancePage(props: {
                     title="Entradas"
                     icon={<div className="p-1.5 bg-green-100 rounded-full"><ArrowUpCircle className="w-4 h-4 text-green-600" /></div>}
                     totalAmount={metrics.totalIncome}
-                    formatCurrency={formatCurrency}
                   />
 
                   {/* EXPENSES CARD */}
@@ -272,7 +271,6 @@ export default async function FinancePage(props: {
                     title="Saídas"
                     icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
                     totalAmount={metrics.totalExpense}
-                    formatCurrency={formatCurrency}
                   />
 
                 </div>
