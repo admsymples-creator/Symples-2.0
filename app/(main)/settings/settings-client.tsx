@@ -45,22 +45,31 @@ import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
-import { getCurrentSubscription } from "@/lib/actions/billing";
 import { getPlanName } from "@/lib/utils/subscription";
+
+interface SubscriptionData {
+  id: string;
+  plan: 'starter' | 'pro' | 'business' | null;
+  subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null;
+  subscription_id: string | null;
+  trial_ends_at: string | null;
+  member_limit: number | null;
+}
 
 interface SettingsPageClientProps {
   user: Profile | null;
   workspace: Workspace | null;
   initialMembers: Member[];
   initialInvites: Invite[];
+  initialSubscription?: SubscriptionData | null;
 }
 
-export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites }: SettingsPageClientProps) {
+export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites, initialSubscription }: SettingsPageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const activeTab = searchParams.get("tab") || "general";
   const { activeWorkspaceId, isLoaded } = useWorkspace();
-  const [subscriptionData, setSubscriptionData] = useState<any>(null);
+  const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
 
   // Workspace state - agora dinâmico baseado no contexto
@@ -133,8 +142,14 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     const loadSubscription = async () => {
       setIsLoadingSubscription(true);
       try {
-        const subscription = await getCurrentSubscription(activeWorkspaceId);
-        setSubscriptionData(subscription);
+        // Usar API route ao invés de Server Action no Client Component
+        const response = await fetch(`/api/workspace/subscription?workspaceId=${activeWorkspaceId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setSubscriptionData(data);
+        } else {
+          setSubscriptionData(null);
+        }
       } catch (error) {
         console.error("Erro ao carregar subscription:", error);
         setSubscriptionData(null);
