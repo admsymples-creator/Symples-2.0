@@ -748,7 +748,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       
       // Salvar mensagens do assistente no banco APÓS atualizar o estado
       if (activeWorkspaceId && assistantMessage) {
-        const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
+        const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
         if (confirmationCardMessage) {
           // Caso de criação de tarefa com confirmação
           Promise.all([
@@ -931,7 +931,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       
       // Salvar no banco APÓS atualizar o estado
       if (activeWorkspaceId && assistantMessage) {
-        const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
+        const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
         saveAssistantMessage({
           workspace_id: activeWorkspaceId,
           role: "assistant",
@@ -1146,7 +1146,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               
               // Salvar no banco APÓS atualizar o estado
               if (activeWorkspaceId && assistantMessage && memeMessage) {
-                const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
+                const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
                 Promise.all([
                   saveAssistantMessage({
                     workspace_id: activeWorkspaceId,
@@ -1282,7 +1282,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               
               // Salvar no banco APÓS atualizar o estado
               if (activeWorkspaceId && assistantMessage) {
-                const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
+                const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
                 if (confirmationCardMessage) {
                   // Caso de criação de tarefa com confirmação
                   Promise.all([
