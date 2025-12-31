@@ -1148,6 +1148,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               // Salvar no banco APÓS atualizar o estado
               if (activeWorkspaceId && assistantMessage && memeMessage) {
                 const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
+                const memeMessageToSave: Message = memeMessage; // Garantir que TypeScript entenda que não é null
                 Promise.all([
                   saveAssistantMessage({
                     workspace_id: activeWorkspaceId,
@@ -1175,7 +1176,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                       }
                       if (results[1].success && results[1].messageId) {
                         updated = updated.map((msg) =>
-                          msg.id === memeMessage.id
+                          msg.id === memeMessageToSave.id
                             ? { ...msg, id: `db-${results[1].messageId}` }
                             : msg
                         );
