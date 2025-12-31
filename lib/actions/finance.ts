@@ -413,7 +413,19 @@ export interface BudgetData {
   workspace_id?: string;
 }
 
-export async function getBudgets(month: number, year: number, workspaceId?: string) {
+export interface Budget {
+  id: string;
+  workspace_id: string;
+  category: string;
+  amount: number;
+  month: number;
+  year: number;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function getBudgets(month: number, year: number, workspaceId?: string): Promise<Budget[]> {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -448,7 +460,7 @@ export async function getBudgets(month: number, year: number, workspaceId?: stri
     return [];
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("budgets")
     .select("*")
     .eq("workspace_id", effectiveWorkspaceId)
@@ -496,12 +508,12 @@ export async function createBudget(data: BudgetData) {
       .eq("user_id", user.id)
       .single();
     
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
+    if (!membership || !membership.role || !["owner", "admin"].includes(membership.role)) {
       throw new Error("Você não tem permissão para criar orçamentos neste workspace.");
     }
 
     // Usar upsert para criar ou atualizar
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("budgets")
       .upsert({
         workspace_id: workspaceId,
@@ -528,7 +540,16 @@ export async function createBudget(data: BudgetData) {
   }
 }
 
-export async function getProjections(months: number = 6, workspaceId?: string) {
+export interface Projection {
+  month: number;
+  year: number;
+  monthName: string;
+  income: number;
+  expense: number;
+  balance: number;
+}
+
+export async function getProjections(months: number = 6, workspaceId?: string): Promise<Projection[]> {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -638,7 +659,22 @@ export interface FinancialGoalData {
   workspace_id?: string;
 }
 
-export async function getFinancialGoals(workspaceId?: string) {
+export interface FinancialGoal {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+  target_amount: number;
+  current_amount: number;
+  type: "savings" | "spending_limit";
+  deadline: string | null;
+  status: "active" | "completed" | "cancelled";
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function getFinancialGoals(workspaceId?: string): Promise<FinancialGoal[]> {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -673,7 +709,7 @@ export async function getFinancialGoals(workspaceId?: string) {
     return [];
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("financial_goals")
     .select("*")
     .eq("workspace_id", effectiveWorkspaceId)
@@ -721,11 +757,11 @@ export async function createFinancialGoal(data: FinancialGoalData) {
       .eq("user_id", user.id)
       .single();
     
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
+    if (!membership || !membership.role || !["owner", "admin"].includes(membership.role)) {
       throw new Error("Você não tem permissão para criar metas neste workspace.");
     }
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("financial_goals")
       .insert({
         workspace_id: workspaceId,
@@ -771,7 +807,7 @@ export async function updateFinancialGoal(id: string, data: UpdateFinancialGoalD
     }
 
     // Buscar a meta para verificar workspace e permissões
-    const { data: goal, error: fetchError } = await supabase
+    const { data: goal, error: fetchError } = await (supabase as any)
       .from("financial_goals")
       .select("workspace_id")
       .eq("id", id)
@@ -789,7 +825,7 @@ export async function updateFinancialGoal(id: string, data: UpdateFinancialGoalD
       .eq("user_id", user.id)
       .single();
     
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
+    if (!membership || !membership.role || !["owner", "admin"].includes(membership.role)) {
       throw new Error("Você não tem permissão para editar metas neste workspace.");
     }
 
@@ -804,7 +840,7 @@ export async function updateFinancialGoal(id: string, data: UpdateFinancialGoalD
     if (data.deadline !== undefined) payload.deadline = data.deadline ? data.deadline.toISOString() : null;
     if (data.status !== undefined) payload.status = data.status;
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("financial_goals")
       .update(payload)
       .eq("id", id);
@@ -822,7 +858,16 @@ export async function updateFinancialGoal(id: string, data: UpdateFinancialGoalD
   }
 }
 
-export async function getCashFlowForecast(months: number = 6, workspaceId?: string) {
+export interface CashFlowForecast {
+  month: number;
+  year: number;
+  monthName: string;
+  income: number;
+  expense: number;
+  balance: number;
+}
+
+export async function getCashFlowForecast(months: number = 6, workspaceId?: string): Promise<CashFlowForecast[]> {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 

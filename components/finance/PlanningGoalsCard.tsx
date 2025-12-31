@@ -7,21 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Target, Plus, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GoalModal } from "./GoalModal";
-import { getFinancialGoals, updateFinancialGoal } from "@/lib/actions/finance";
+import { getFinancialGoals, updateFinancialGoal, type FinancialGoal } from "@/lib/actions/finance";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
-interface FinancialGoal {
-  id: string;
-  title: string;
-  description?: string;
-  target_amount: number;
-  current_amount: number;
-  type: "savings" | "spending_limit";
-  deadline?: string;
-  status: "active" | "completed" | "cancelled";
-}
 
 interface PlanningGoalsCardProps {
   workspaceId?: string;
@@ -45,7 +34,7 @@ export function PlanningGoalsCard({ workspaceId }: PlanningGoalsCardProps) {
     async function loadGoals() {
       setIsLoading(true);
       const data = await getFinancialGoals(workspaceId);
-      setGoals(data as FinancialGoal[]);
+      setGoals(data);
       setIsLoading(false);
     }
     loadGoals();

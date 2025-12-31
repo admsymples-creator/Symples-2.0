@@ -4,15 +4,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface CashFlowForecast {
-  month: number;
-  year: number;
-  monthName: string;
-  income: number;
-  expense: number;
-  balance: number;
-}
+import { type CashFlowForecast } from "@/lib/actions/finance";
 
 interface PlanningCashFlowCardProps {
   forecast: CashFlowForecast[];

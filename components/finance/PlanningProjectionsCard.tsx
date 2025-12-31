@@ -4,15 +4,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface Projection {
-  month: number;
-  year: number;
-  monthName: string;
-  income: number;
-  expense: number;
-  balance: number;
-}
+import { type Projection } from "@/lib/actions/finance";
 
 interface PlanningProjectionsCardProps {
   projections: Projection[];

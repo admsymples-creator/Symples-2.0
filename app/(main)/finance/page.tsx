@@ -400,12 +400,12 @@ export default async function FinancePage(props: {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Projeções Futuras */}
               <PlanningProjectionsCard
-                projections={projections as any}
+                projections={projections}
               />
 
               {/* Previsão de Fluxo de Caixa */}
               <PlanningCashFlowCard
-                forecast={cashFlowForecast as any}
+                forecast={cashFlowForecast}
               />
             </div>
           </TabsContent>

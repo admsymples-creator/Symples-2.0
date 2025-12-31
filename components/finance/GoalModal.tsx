@@ -23,7 +23,7 @@ import { createFinancialGoal, updateFinancialGoal } from "@/lib/actions/finance"
 interface GoalModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  goal?: { id: string; title: string; description?: string; target_amount: number; current_amount: number; type: "savings" | "spending_limit"; deadline?: string } | null;
+  goal?: { id: string; title: string; description?: string | null; target_amount: number; current_amount: number; type: "savings" | "spending_limit"; deadline?: string | null } | null;
   workspaceId?: string;
   onSuccess: () => void;
 }

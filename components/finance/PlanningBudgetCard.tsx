@@ -7,16 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Wallet, Plus, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BudgetModal } from "./BudgetModal";
-import { getBudgets, createBudget } from "@/lib/actions/finance";
+import { getBudgets, createBudget, type Budget } from "@/lib/actions/finance";
 import { useRouter } from "next/navigation";
-
-interface Budget {
-  id: string;
-  category: string;
-  amount: number;
-  month: number;
-  year: number;
-}
 
 interface PlanningBudgetCardProps {
   month: number;
@@ -48,7 +40,7 @@ export function PlanningBudgetCard({
     async function loadBudgets() {
       setIsLoading(true);
       const data = await getBudgets(month, year, workspaceId);
-      setBudgets(data as Budget[]);
+      setBudgets(data);
       setIsLoading(false);
     }
     loadBudgets();
