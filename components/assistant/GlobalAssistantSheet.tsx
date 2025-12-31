@@ -750,6 +750,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       if (activeWorkspaceId && assistantMessage) {
         const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
         if (confirmationCardMessage) {
+          const cardMessageToSave: Message = confirmationCardMessage; // Garantir que TypeScript entenda que não é null
           // Caso de criação de tarefa com confirmação
           Promise.all([
             saveAssistantMessage({
@@ -763,7 +764,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               role: "assistant",
               content: "",
               type: "component",
-              component_data: confirmationCardMessage.componentData,
+              component_data: cardMessageToSave.componentData,
             }),
           ]).then((results) => {
             startTransition(() => {
@@ -778,7 +779,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                 }
                 if (results[1].success && results[1].messageId) {
                   updated = updated.map((msg) =>
-                    msg.id === confirmationCardMessage.id
+                    msg.id === cardMessageToSave.id
                       ? { ...msg, id: `db-${results[1].messageId}` }
                       : msg
                   );
@@ -1284,6 +1285,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               if (activeWorkspaceId && assistantMessage) {
                 const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
                 if (confirmationCardMessage) {
+                  const cardMessageToSave: Message = confirmationCardMessage; // Garantir que TypeScript entenda que não é null
                   // Caso de criação de tarefa com confirmação
                   Promise.all([
                     saveAssistantMessage({
@@ -1297,7 +1299,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                       role: "assistant",
                       content: "",
                       type: "component",
-                      component_data: confirmationCardMessage.componentData,
+                      component_data: cardMessageToSave.componentData,
                     }),
                   ]).then((results) => {
                     startTransition(() => {
@@ -1312,7 +1314,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                         }
                         if (results[1].success && results[1].messageId) {
                           updated = updated.map((msg) =>
-                            msg.id === confirmationCardMessage.id
+                            msg.id === cardMessageToSave.id
                               ? { ...msg, id: `db-${results[1].messageId}` }
                               : msg
                           );
