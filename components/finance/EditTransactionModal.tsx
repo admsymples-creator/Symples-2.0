@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Loader2
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 
@@ -30,21 +30,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { createTransaction } from "@/lib/actions/finance";
+import { updateTransaction } from "@/lib/actions/finance";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
 
-interface CreateTransactionModalProps {
+interface Transaction {
+  id: string;
+  amount: number;
+  type: "income" | "expense";
+  description: string;
+  category: string;
+  due_date: string; // Data de vencimento
+  created_at?: string; // Data de criação
+  status: "paid" | "pending" | "scheduled" | "cancelled";
+  is_recurring: boolean;
+}
+
+interface EditTransactionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  transaction: Transaction | null;
+  onSuccess?: () => void;
 }
 
 type TransactionType = "income" | "expense";
 
-export function CreateTransactionModal({ open, onOpenChange }: CreateTransactionModalProps) {
+export function EditTransactionModal({ open, onOpenChange, transaction, onSuccess }: EditTransactionModalProps) {
   const [isPending, startTransition] = useTransition();
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
@@ -52,21 +64,40 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
   const [category, setCategory] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [dueDate, setDueDate] = useState<Date | undefined>(new Date());
-  const [status, setStatus] = useState<"paid" | "pending">("paid");
+  const [status, setStatus] = useState<"paid" | "pending" | "scheduled" | "cancelled">("paid");
   const [isRecurring, setIsRecurring] = useState(false);
 
-  // Reset form when modal opens/closes
+  // Preencher form quando transaction mudar ou modal abrir
   useEffect(() => {
-    if (open) {
-      setAmount("");
-      setDescription("");
-      setCategory("");
-      setDate(new Date());
-      setDueDate(new Date());
-      setStatus("paid");
-      setIsRecurring(false);
+    if (open && transaction) {
+      setType(transaction.type);
+      setDescription(transaction.description);
+      setCategory(transaction.category);
+      setStatus(transaction.status as "paid" | "pending" | "scheduled" | "cancelled");
+      setIsRecurring(transaction.is_recurring || false);
+      
+      // Formatar valor monetário
+      const formattedAmount = new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      }).format(Number(transaction.amount));
+      setAmount(formattedAmount);
+
+      // Parse das datas
+      try {
+        // Data da transação (created_at)
+        const parsedDate = transaction.created_at ? parseISO(transaction.created_at) : new Date();
+        setDate(parsedDate);
+        
+        // Data de vencimento (due_date)
+        const parsedDueDate = transaction.due_date ? parseISO(transaction.due_date) : new Date();
+        setDueDate(parsedDueDate);
+      } catch {
+        setDate(new Date());
+        setDueDate(new Date());
+      }
     }
-  }, [open]);
+  }, [open, transaction]);
 
   // Handle amount input (currency mask simulation)
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,6 +110,8 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
   };
 
   const handleSubmit = async () => {
+    if (!transaction) return;
+
     if (!amount || !description) {
       toast.error("Preencha o valor e a descrição");
       return;
@@ -99,7 +132,7 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
     }
 
     startTransition(async () => {
-      const result = await createTransaction({
+      const result = await updateTransaction(transaction.id, {
         amount: numericAmount,
         type,
         description,
@@ -111,25 +144,28 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
       });
 
       if (result.success) {
-        toast.success("Transação criada com sucesso!");
+        toast.success("Transação atualizada com sucesso!");
         onOpenChange(false);
+        onSuccess?.();
       } else {
-        toast.error(result.error || "Erro ao criar transação");
+        toast.error(result.error || "Erro ao atualizar transação");
       }
     });
   };
+
+  if (!transaction) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md p-0 border-none shadow-xl overflow-hidden bg-white">
         <DialogHeader className="sr-only">
-          <DialogTitle>Nova transação</DialogTitle>
+          <DialogTitle>Editar transação</DialogTitle>
         </DialogHeader>
         
         <div className="px-6 pt-8 pb-6">
           {/* 1. TITULO DISCRETO */}
           <h2 className="text-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
-            Nova transação
+            Editar transação
           </h2>
 
           {/* 2. HERO INPUT (VALOR MONETÁRIO) - TOPO ABSOLUTO */}
@@ -200,6 +236,7 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="Geral">Geral</SelectItem>
                   <SelectItem value="marketing">Marketing</SelectItem>
                   <SelectItem value="services">Serviços</SelectItem>
                   <SelectItem value="software">Software</SelectItem>
@@ -269,7 +306,7 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
               </div>
               <Select 
                 value={status} 
-                onValueChange={(v) => setStatus(v as "paid" | "pending")}
+                onValueChange={(v) => setStatus(v as "paid" | "pending" | "scheduled" | "cancelled")}
               >
                 <SelectTrigger className="bg-transparent border-0 border-b-0 focus:ring-0 shadow-none p-0 h-auto text-sm font-medium text-gray-900">
                   <SelectValue />
@@ -277,6 +314,8 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
                 <SelectContent>
                   <SelectItem value="paid">Pago</SelectItem>
                   <SelectItem value="pending">Pendente</SelectItem>
+                  <SelectItem value="scheduled">Agendado</SelectItem>
+                  <SelectItem value="cancelled">Cancelado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -289,13 +328,13 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox 
-                  id="recurring" 
+                  id="recurring-edit" 
                   checked={isRecurring}
                   onCheckedChange={(checked) => setIsRecurring(checked as boolean)}
                   className="border-gray-300 data-[state=checked]:bg-slate-900 data-[state=checked]:border-slate-900"
                 />
                 <label
-                  htmlFor="recurring"
+                  htmlFor="recurring-edit"
                   className="text-sm font-medium text-gray-900 cursor-pointer select-none"
                 >
                   Mensalmente
@@ -319,7 +358,7 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
                 Salvando...
               </>
             ) : (
-              "Adicionar lançamento"
+              "Salvar alterações"
             )}
           </Button>
           <Button 
@@ -336,3 +375,4 @@ export function CreateTransactionModal({ open, onOpenChange }: CreateTransaction
     </Dialog>
   );
 }
+

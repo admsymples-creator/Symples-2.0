@@ -18,22 +18,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { getFinanceMetrics, getTransactions } from "@/lib/actions/finance";
+import { getFinanceMetrics, getTransactions, getProjections, getCashFlowForecast } from "@/lib/actions/finance";
 import { startOfMonth, endOfMonth } from "date-fns";
 import { NewTransactionButton, MonthSelector } from "@/components/finance/FinanceClientComponents";
+import { FinanceTransactionsList } from "@/components/finance/FinanceTransactionsList";
+import { getUserWorkspaces } from "@/lib/actions/user";
+import { PlanningBudgetCard } from "@/components/finance/PlanningBudgetCard";
+import { PlanningProjectionsCard } from "@/components/finance/PlanningProjectionsCard";
+import { PlanningGoalsCard } from "@/components/finance/PlanningGoalsCard";
+import { PlanningCashFlowCard } from "@/components/finance/PlanningCashFlowCard";
 
 // --- TYPES ---
 
-type TransactionStatus = "paid" | "pending" | "overdue";
-
-interface Transaction {
-  id: string;
-  date: string; // Formatted for UI
-  description: string;
-  amount: number;
-  status: TransactionStatus;
-  category: string;
-}
+type TransactionStatus = "paid" | "pending" | "overdue" | "scheduled" | "cancelled";
 
 // --- HELPER COMPONENTS ---
 
@@ -44,28 +41,6 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const StatusBadge = ({ status }: { status: string }) => {
-  const styles: Record<string, string> = {
-    paid: "bg-green-100 text-green-700 hover:bg-green-100 border-green-200",
-    pending: "bg-gray-100 text-gray-700 hover:bg-gray-100 border-gray-200",
-    overdue: "bg-orange-100 text-orange-700 hover:bg-orange-100 border-orange-200",
-  };
-
-  const labels: Record<string, string> = {
-    paid: "Pago",
-    pending: "Pendente",
-    overdue: "Atrasado",
-  };
-
-  // Fallback for unknown status
-  const safeStatus = styles[status] ? status : "pending";
-
-  return (
-    <Badge variant="outline" className={`${styles[safeStatus]} border font-normal`}>
-      {labels[safeStatus] || status}
-    </Badge>
-  );
-};
 
 const FinancialHealthCard = ({ data }: { data: any }) => {
   const themes = {
@@ -156,53 +131,91 @@ export default async function FinancePage(props: {
   const monthParam = typeof searchParams.month === 'string' ? parseInt(searchParams.month) : currentDate.getMonth() + 1;
   const yearParam = typeof searchParams.year === 'string' ? parseInt(searchParams.year) : currentDate.getFullYear();
   
+  // Get workspace (use first workspace as default)
+  const workspaces = await getUserWorkspaces();
+  const workspaceId = workspaces.length > 0 ? workspaces[0].id : undefined;
+  
   // Fetch Metrics
-  const metrics = await getFinanceMetrics(monthParam, yearParam);
+  const metrics = await getFinanceMetrics(monthParam, yearParam, workspaceId);
 
-  // Fetch Transactions for the period
+  // Fetch Transactions for the period (Visão Geral)
   const dateForRange = new Date(yearParam, monthParam - 1, 1);
   const startDate = startOfMonth(dateForRange).toISOString();
   const endDate = endOfMonth(dateForRange).toISOString();
   
-  const rawTransactions = await getTransactions({ startDate, endDate });
+  const rawTransactions = await getTransactions({ startDate, endDate, workspaceId });
 
-  // Process Transactions for UI
+  // Fetch ALL Recurring Transactions (para aba Recorrentes - não filtrar por mês)
+  const allRecurringTransactions = await getTransactions({ 
+    isRecurring: true, 
+    workspaceId 
+  });
+
+  // Process Transactions for UI (using due_date instead of date)
   const incomeTransactions = rawTransactions
     .filter(t => t.type === 'income')
-    .map(t => ({
-      id: t.id,
-      date: format(parseISO(t.date || new Date().toISOString()), "dd/MM"),
-      description: t.description,
-      amount: t.amount,
-      status: (t.status as TransactionStatus) || 'pending',
-      category: t.category || 'Geral',
-      type: t.type as 'income' | 'expense'
-    }));
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || 'pending') as TransactionStatus,
+        category: tx.category || 'Geral',
+        type: tx.type as 'income' | 'expense',
+        is_recurring: tx.is_recurring || false,
+      };
+    });
 
   const expenseTransactions = rawTransactions
     .filter(t => t.type === 'expense')
-    .map(t => ({
-      id: t.id,
-      date: format(parseISO(t.date || new Date().toISOString()), "dd/MM"),
-      description: t.description,
-      amount: t.amount,
-      status: (t.status as TransactionStatus) || 'pending',
-      category: t.category || 'Geral',
-      type: t.type as 'income' | 'expense'
-    }));
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || 'pending') as TransactionStatus,
+        category: tx.category || 'Geral',
+        type: tx.type as 'income' | 'expense',
+        is_recurring: tx.is_recurring || false,
+      };
+    });
 
-  // Process Recurring Transactions
-  // TODO: Implementar campo is_recurring no schema quando necessário
-  const recurringTransactions: typeof incomeTransactions = [];
+  // Process Recurring Transactions (TODAS, não apenas do mês)
+  const recurringTransactions = allRecurringTransactions
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || 'pending') as TransactionStatus,
+        category: tx.category || 'Geral',
+        type: tx.type as 'income' | 'expense',
+        is_recurring: true,
+      };
+    });
 
-  // Process Categories
+  // Process Categories (garantir conversão numérica)
   const categoryTotals = rawTransactions
     .filter(t => t.type === 'expense')
     .reduce((acc, curr) => {
       const cat = curr.category || 'Outros';
-      acc[cat] = (acc[cat] || 0) + curr.amount;
+      const amount = Number(curr.amount) || 0;
+      acc[cat] = (acc[cat] || 0) + amount;
       return acc;
     }, {} as Record<string, number>);
+
+  // Fetch Planning Data
+  const projections = await getProjections(6, workspaceId);
+  const cashFlowForecast = await getCashFlowForecast(6, workspaceId);
 
   const totalExpensesVal = metrics.totalExpense || 1; // Avoid division by zero
   const categories = Object.entries(categoryTotals)
@@ -223,22 +236,17 @@ export default async function FinancePage(props: {
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20">
-      {/* HEADER AREA */}
+      {/* HEADER AREA - LINE 1 */}
       <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto">
-          {/* Título Principal e Botão de Ação */}
-          <div className="flex items-center justify-between mb-1">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
-              <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
-            </div>
-            
-            <NewTransactionButton />
+        <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
+            <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
         
         {/* NAVIGATION & CONTROLS */}
         <Tabs defaultValue="overview" className="w-full">
@@ -254,6 +262,7 @@ export default async function FinancePage(props: {
               <Button variant="outline" size="icon">
                  <MoreHorizontal className="w-4 h-4" />
               </Button>
+              <NewTransactionButton />
             </div>
           </div>
 
@@ -269,82 +278,22 @@ export default async function FinancePage(props: {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   
                   {/* INCOME CARD */}
-                  <Card className="border-none shadow-sm ring-1 ring-gray-200">
-                    <CardHeader className="pb-3 border-b border-gray-50">
-                      <div className="flex justify-between items-center">
-                        <CardTitle className="text-base font-semibold flex items-center gap-2">
-                          <div className="p-1.5 bg-green-100 rounded-full">
-                            <ArrowUpCircle className="w-4 h-4 text-green-600" />
-                          </div>
-                          Entradas
-                        </CardTitle>
-                        <span className="text-green-600 font-bold text-sm">
-                          {formatCurrency(metrics.totalIncome)}
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-4 px-0">
-                      <div className="space-y-1">
-                        {incomeTransactions.length === 0 ? (
-                          <p className="text-center text-gray-400 py-4 text-sm">Nenhuma entrada neste mês</p>
-                        ) : (
-                          incomeTransactions.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors group">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-xs text-gray-400 font-mono">{item.date}</span>
-                                <span className="font-medium text-sm text-gray-900">{item.description}</span>
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                <span className="font-semibold text-sm text-green-600">
-                                  + {formatCurrency(item.amount)}
-                                </span>
-                                <StatusBadge status={item.status} />
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <FinanceTransactionsList
+                    transactions={incomeTransactions}
+                    type="income"
+                    title="Entradas"
+                    icon={<div className="p-1.5 bg-green-100 rounded-full"><ArrowUpCircle className="w-4 h-4 text-green-600" /></div>}
+                    totalAmount={metrics.totalIncome}
+                  />
 
                   {/* EXPENSES CARD */}
-                  <Card className="border-none shadow-sm ring-1 ring-gray-200">
-                    <CardHeader className="pb-3 border-b border-gray-50">
-                      <div className="flex justify-between items-center">
-                        <CardTitle className="text-base font-semibold flex items-center gap-2">
-                          <div className="p-1.5 bg-red-100 rounded-full">
-                            <ArrowDownCircle className="w-4 h-4 text-red-600" />
-                          </div>
-                          Saídas
-                        </CardTitle>
-                        <span className="text-red-600 font-bold text-sm">
-                          {formatCurrency(metrics.totalExpense)}
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-4 px-0">
-                      <div className="space-y-1">
-                        {expenseTransactions.length === 0 ? (
-                          <p className="text-center text-gray-400 py-4 text-sm">Nenhuma saída neste mês</p>
-                        ) : (
-                          expenseTransactions.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-xs text-gray-400 font-mono">{item.date}</span>
-                                <span className="font-medium text-sm text-gray-900">{item.description}</span>
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                <span className="font-semibold text-sm text-gray-900">
-                                  - {formatCurrency(item.amount)}
-                                </span>
-                                <StatusBadge status={item.status} />
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <FinanceTransactionsList
+                    transactions={expenseTransactions}
+                    type="expense"
+                    title="Saídas"
+                    icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
+                    totalAmount={metrics.totalExpense}
+                  />
 
                 </div>
               </div>
@@ -381,7 +330,7 @@ export default async function FinancePage(props: {
             </div>
           </TabsContent>
 
-          <TabsContent value="recurring">
+          <TabsContent value="recurring" className="space-y-8 mt-0">
             <Card className="border-none shadow-sm ring-1 ring-gray-200">
               <CardHeader>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -402,32 +351,63 @@ export default async function FinancePage(props: {
                           <Calendar className="w-8 h-8 text-gray-400" />
                         </div>
                         <p className="text-gray-500 max-w-sm text-sm">
-                          Nenhuma transação recorrente encontrada neste mês.
+                          Nenhuma transação recorrente encontrada.
                         </p>
                      </div>
                   ) : (
-                    recurringTransactions.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between py-3 px-6 hover:bg-gray-50 transition-colors group border-b border-gray-50 last:border-0">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-xs text-gray-400 font-mono">{item.date}</span>
-                          <span className="font-medium text-sm text-gray-900">{item.description}</span>
-                          <span className="text-xs text-gray-400">{item.category}</span>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className={cn(
-                            "font-semibold text-sm",
-                            item.type === "income" ? "text-green-600" : "text-red-600"
-                          )}>
-                            {item.type === "income" ? "+" : "-"} {formatCurrency(item.amount)}
-                          </span>
-                          <StatusBadge status={item.status} />
-                        </div>
-                      </div>
-                    ))
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
+                      {recurringTransactions.filter(t => t.type === 'income').length > 0 && (
+                        <FinanceTransactionsList
+                          transactions={recurringTransactions.filter(t => t.type === 'income')}
+                          type="income"
+                          title="Recorrentes - Entradas"
+                          icon={<div className="p-1.5 bg-green-100 rounded-full"><ArrowUpCircle className="w-4 h-4 text-green-600" /></div>}
+                          totalAmount={recurringTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0)}
+                        />
+                      )}
+                      {recurringTransactions.filter(t => t.type === 'expense').length > 0 && (
+                        <FinanceTransactionsList
+                          transactions={recurringTransactions.filter(t => t.type === 'expense')}
+                          type="expense"
+                          title="Recorrentes - Saídas"
+                          icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
+                          totalAmount={recurringTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0)}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="planning" className="space-y-8 mt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Orçamento por Categoria */}
+              <PlanningBudgetCard
+                month={monthParam}
+                year={yearParam}
+                workspaceId={workspaceId}
+                categoryExpenses={categoryTotals}
+              />
+
+              {/* Metas Financeiras */}
+              <PlanningGoalsCard
+                workspaceId={workspaceId}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Projeções Futuras */}
+              <PlanningProjectionsCard
+                projections={projections}
+              />
+
+              {/* Previsão de Fluxo de Caixa */}
+              <PlanningCashFlowCard
+                forecast={cashFlowForecast}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

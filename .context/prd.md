@@ -65,8 +65,14 @@ A estrutura reflete uma arquitetura modular para suportar expansão futura.
 \- \*\*Input WhatsApp:\*\* Foto de Nota Fiscal ou Áudio ("Gastei 50 no Uber") \-\> Transação criada.  
 \- \*\*Dashboard:\*\*  
   \- Cards de KPI com bordas coloridas (Verde/Entrada, Vermelho/Saída, Azul/Saldo).  
-  \- Tabela de Extrato.  
-\- \*\*Vínculo:\*\* Capacidade de relacionar uma despesa a uma tarefa específica.
+  \- Tabela de Extrato com ações de editar/deletar.  
+  \- Tab "Visão Geral": Lista de entradas e saídas, métricas de saúde financeira, categorias.  
+  \- Tab "Recorrentes": Transações marcadas como recorrentes (mensais) com filtro por is_recurring.  
+  \- Tab "Planejamento": Placeholder para funcionalidades futuras.  
+\- \*\*Recorrência:\*\* Campo is_recurring para marcar transações mensais fixas (burn rate).  
+\- \*\*Edição/Exclusão:\*\* Todas as transações podem ser editadas ou excluídas (com permissões apropriadas).  
+\- \*\*Workspace Context:\*\* Filtragem automática por workspace ativo.  
+\- \*\*Vínculo:\*\* Capacidade de relacionar uma despesa a uma tarefa específica (related_task_id).
 
 **\#\#\# 3.5. Módulo: Time & Permissões (\*\*NOVO\*\*)**  
 \- \*\*Lista de Membros:\*\* Tabela com Nome, Email, Role.  
