@@ -1,5 +1,3 @@
-"use server";
-
 import { AsaasCustomer, AsaasSubscription, AsaasSubscriptionResponse } from "./types";
 
 // Detecção automática de ambiente: sandbox para dev, produção para prod

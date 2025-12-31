@@ -4,13 +4,9 @@ import { AlertCircle, Clock, Zap } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import type { SubscriptionData } from "@/lib/types/subscription";
 
-interface WorkspaceSubscription {
-  id: string;
-  plan: 'starter' | 'pro' | 'business' | null;
-  subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null;
-  trial_ends_at: string | null;
-}
+type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'>;
 
 interface TrialBannerProps {
   workspace?: WorkspaceSubscription | null;

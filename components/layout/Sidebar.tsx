@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSidebar, useWorkspace } from "@/components/providers/SidebarProvider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { SubscriptionData } from "@/lib/types/subscription";
 
 interface NavItem {
     label: string;
@@ -90,12 +91,7 @@ const NavItemView = React.memo(({ item, isActive, isCollapsed }: { item: NavItem
 });
 NavItemView.displayName = 'NavItemView';
 
-interface WorkspaceSubscription {
-    id: string;
-    plan: 'starter' | 'pro' | 'business' | null;
-    subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null;
-    trial_ends_at: string | null;
-}
+type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'>;
 
 function SidebarContent({ workspaces = [] }: SidebarProps) {
     const pathname = usePathname();

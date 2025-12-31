@@ -46,15 +46,7 @@ import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { getPlanName } from "@/lib/utils/subscription-helpers";
-
-interface SubscriptionData {
-  id: string;
-  plan: 'starter' | 'pro' | 'business' | null;
-  subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null;
-  subscription_id: string | null;
-  trial_ends_at: string | null;
-  member_limit: number | null;
-}
+import type { SubscriptionData } from "@/lib/types/subscription";
 
 interface SettingsPageClientProps {
   user: Profile | null;

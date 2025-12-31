@@ -4,15 +4,7 @@ import { createServerActionClient } from "@/lib/supabase/server";
 import { asaasClient } from "@/lib/integrations/asaas/client";
 import { PLAN_CONFIGS } from "@/lib/integrations/asaas/plans";
 import type { AsaasCustomer } from "@/lib/integrations/asaas/types";
-
-export interface SubscriptionData {
-  id: string;
-  plan: 'starter' | 'pro' | 'business' | null;
-  subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null;
-  subscription_id: string | null;
-  trial_ends_at: string | null;
-  member_limit: number | null;
-}
+import type { SubscriptionData } from "@/lib/types/subscription";
 
 /**
  * Busca dados da assinatura atual do workspace
@@ -117,7 +109,7 @@ export async function updateSubscription(
     }
 
     // Obter limites do novo plano
-    const { getPlanLimits } = await import("@/lib/utils/subscription");
+    const { getPlanLimits } = await import("@/lib/utils/subscription-helpers");
     const { data: currentWorkspace } = await supabase
       .from("workspaces")
       .select("subscription_status")

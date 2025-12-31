@@ -10,7 +10,8 @@ export default async function SettingsPage() {
   const workspaces = await getUserWorkspaces();
   
   // Buscar workspace ativo do cookie ou usar o primeiro
-  const activeWorkspaceId = cookies().get('active-workspace-id')?.value;
+  const cookieStore = await cookies();
+  const activeWorkspaceId = cookieStore.get('active-workspace-id')?.value;
   const activeWorkspace = activeWorkspaceId 
     ? workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0]
     : workspaces.length > 0 ? workspaces[0] : null;

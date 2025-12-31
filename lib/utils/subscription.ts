@@ -1,7 +1,6 @@
 "use server";
 
 import { createServerActionClient } from "@/lib/supabase/server";
-import { getPlanLimits as getPlanLimitsHelper } from "./subscription-helpers";
 
 export interface WorkspaceAccessResult {
   allowed: boolean;
@@ -67,8 +66,4 @@ export async function checkWorkspaceAccess(
     };
   }
 }
-
-// Re-exportar funções utilitárias para compatibilidade
-export { getPlanLimitsHelper as getPlanLimits } from "./subscription-helpers";
-export { getPlanName } from "./subscription-helpers";
 
