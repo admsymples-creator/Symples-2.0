@@ -683,6 +683,9 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       const data = await response.json();
 
       // Remove mensagem de "pensando" e adiciona resposta
+      let assistantMessage: Message | null = null;
+      let confirmationCardMessage: Message | null = null;
+      
       setMessages((prev) => {
         const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
         
@@ -700,7 +703,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           }
           
           // Criar tarefa - mostrar card de confirmação
-          const assistantMessage: Message = {
+          assistantMessage = {
             id: `temp-${Date.now() + 2}`,
             role: "assistant",
             content: messageContent,
@@ -708,7 +711,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             timestamp: new Date(),
           };
           
-          const confirmationCardMessage: Message = {
+          confirmationCardMessage = {
             id: `temp-${Date.now() + 3}`,
             role: "assistant",
             content: "",
@@ -728,52 +731,10 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             timestamp: new Date(),
           };
           
-          // Salvar mensagens do assistente no banco
-          if (activeWorkspaceId) {
-            Promise.all([
-              saveAssistantMessage({
-                workspace_id: activeWorkspaceId,
-                role: "assistant",
-                content: assistantMessage.content,
-                type: "text",
-              }),
-              saveAssistantMessage({
-                workspace_id: activeWorkspaceId,
-                role: "assistant",
-                content: "",
-                type: "component",
-                component_data: confirmationCardMessage.componentData,
-              }),
-            ]).then((results) => {
-              startTransition(() => {
-                setMessages((prev) => {
-                  let updated = [...prev];
-                  if (results[0].success && results[0].messageId) {
-                    updated = updated.map((msg) =>
-                      msg.id === assistantMessage.id
-                        ? { ...msg, id: `db-${results[0].messageId}` }
-                        : msg
-                    );
-                  }
-                  if (results[1].success && results[1].messageId) {
-                    updated = updated.map((msg) =>
-                      msg.id === confirmationCardMessage.id
-                        ? { ...msg, id: `db-${results[1].messageId}` }
-                        : msg
-                    );
-                  }
-                  return updated;
-                });
-              });
-            }).catch((error) => {
-              console.error("Erro ao salvar mensagens do assistente:", error);
-            });
-          }
-          
           return [...withoutThinking, assistantMessage, confirmationCardMessage];
         } else {
           // Resposta normal da IA
-          const assistantMessage: Message = {
+          assistantMessage = {
             id: `temp-${Date.now() + 2}`,
             role: "assistant",
             content: data.message || "Desculpe, não consegui processar sua mensagem.",
@@ -781,33 +742,78 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
             timestamp: new Date(),
           };
           
-          // Salvar mensagem do assistente no banco
-          if (activeWorkspaceId) {
-            saveAssistantMessage({
-              workspace_id: activeWorkspaceId,
-              role: "assistant",
-              content: assistantMessage.content,
-              type: "text",
-            }).then((result) => {
-              if (result.success && result.messageId) {
-                startTransition(() => {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantMessage.id
-                        ? { ...msg, id: `db-${result.messageId}` }
-                        : msg
-                    )
-                  );
-                });
-              }
-            }).catch((error) => {
-              console.error("Erro ao salvar mensagem do assistente:", error);
-            });
-          }
-          
           return [...withoutThinking, assistantMessage];
         }
       });
+      
+      // Salvar mensagens do assistente no banco APÓS atualizar o estado
+      if (activeWorkspaceId && assistantMessage) {
+        const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
+        if (confirmationCardMessage) {
+          const cardMessageToSave: Message = confirmationCardMessage; // Garantir que TypeScript entenda que não é null
+          // Caso de criação de tarefa com confirmação
+          Promise.all([
+            saveAssistantMessage({
+              workspace_id: activeWorkspaceId,
+              role: "assistant",
+              content: messageToSave.content,
+              type: "text",
+            }),
+            saveAssistantMessage({
+              workspace_id: activeWorkspaceId,
+              role: "assistant",
+              content: "",
+              type: "component",
+              component_data: cardMessageToSave.componentData,
+            }),
+          ]).then((results) => {
+            startTransition(() => {
+              setMessages((prev) => {
+                let updated = [...prev];
+                if (results[0].success && results[0].messageId) {
+                  updated = updated.map((msg) =>
+                    msg.id === messageToSave.id
+                      ? { ...msg, id: `db-${results[0].messageId}` }
+                      : msg
+                  );
+                }
+                if (results[1].success && results[1].messageId) {
+                  updated = updated.map((msg) =>
+                    msg.id === cardMessageToSave.id
+                      ? { ...msg, id: `db-${results[1].messageId}` }
+                      : msg
+                  );
+                }
+                return updated;
+              });
+            });
+          }).catch((error) => {
+            console.error("Erro ao salvar mensagens do assistente:", error);
+          });
+        } else {
+          // Resposta normal
+          saveAssistantMessage({
+            workspace_id: activeWorkspaceId,
+            role: "assistant",
+            content: messageToSave.content,
+            type: "text",
+          }).then((result) => {
+            if (result.success && result.messageId) {
+              startTransition(() => {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === messageToSave.id
+                      ? { ...msg, id: `db-${result.messageId}` }
+                      : msg
+                  )
+                );
+              });
+            }
+          }).catch((error) => {
+            console.error("Erro ao salvar mensagem do assistente:", error);
+          });
+        }
+      }
       
       setIsLoading(false);
     } catch (error) {
@@ -909,9 +915,11 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
       const data = await response.json();
 
+      let assistantMessage: Message | null = null;
+      
       setMessages((prev) => {
         const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
-        const assistantMessage: Message = {
+        assistantMessage = {
           id: `temp-${Date.now() + 2}`,
           role: "assistant",
           content: data.message || "Recebi sua imagem! Em breve, poderei analisar e processar imagens automaticamente.",
@@ -919,30 +927,33 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           timestamp: new Date(),
         };
         
-        // Salvar no banco
-        if (activeWorkspaceId) {
-          saveAssistantMessage({
-            workspace_id: activeWorkspaceId,
-            role: "assistant",
-            content: assistantMessage.content,
-            type: "text",
-          }).then((result) => {
-            if (result.success && result.messageId) {
-              startTransition(() => {
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === assistantMessage.id
-                      ? { ...msg, id: `db-${result.messageId}` }
-                      : msg
-                  )
-                );
-              });
-            }
-          });
-        }
-        
         return [...withoutThinking, assistantMessage];
       });
+      
+      // Salvar no banco APÓS atualizar o estado
+      if (activeWorkspaceId && assistantMessage) {
+        const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
+        saveAssistantMessage({
+          workspace_id: activeWorkspaceId,
+          role: "assistant",
+          content: messageToSave.content,
+          type: "text",
+        }).then((result) => {
+          if (result.success && result.messageId) {
+            startTransition(() => {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageToSave.id
+                    ? { ...msg, id: `db-${result.messageId}` }
+                    : msg
+                )
+              );
+            });
+          }
+        }).catch((error) => {
+          console.error("Erro ao salvar mensagem do assistente:", error);
+        });
+      }
       
       setIsLoading(false);
     } catch (error) {
@@ -1109,9 +1120,12 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
             // Se atingiu o limite de 2 minutos, mostrar resposta especial com meme
             if (isMaxDuration) {
+              let assistantMessage: Message | null = null;
+              let memeMessage: Message | null = null;
+              
               setMessages((prev) => {
                 const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
-                const assistantMessage: Message = {
+                assistantMessage = {
                   id: `temp-${Date.now() + 2}`,
                   role: "assistant",
                   content: "Hey, ninguem merece escutar audio de 2 minutos. Nem mesmo uma IA.",
@@ -1119,7 +1133,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                   timestamp: new Date(),
                 };
                 
-                const memeMessage: Message = {
+                memeMessage = {
                   id: `temp-${Date.now() + 3}`,
                   role: "assistant",
                   content: "",
@@ -1128,48 +1142,52 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                   timestamp: new Date(),
                 };
                 
-                // Salvar no banco
-                if (activeWorkspaceId) {
-                  Promise.all([
-                    saveAssistantMessage({
-                      workspace_id: activeWorkspaceId,
-                      role: "assistant",
-                      content: assistantMessage.content,
-                      type: "text",
-                    }),
-                    saveAssistantMessage({
-                      workspace_id: activeWorkspaceId,
-                      role: "assistant",
-                      content: "",
-                      type: "image",
-                      image_url: "/audiode2minutos.png",
-                    }),
-                  ]).then((results) => {
-                    startTransition(() => {
-                      setMessages((prev) => {
-                        let updated = [...prev];
-                        if (results[0].success && results[0].messageId) {
-                          updated = updated.map((msg) =>
-                            msg.id === assistantMessage.id
-                              ? { ...msg, id: `db-${results[0].messageId}` }
-                              : msg
-                          );
-                        }
-                        if (results[1].success && results[1].messageId) {
-                          updated = updated.map((msg) =>
-                            msg.id === memeMessage.id
-                              ? { ...msg, id: `db-${results[1].messageId}` }
-                              : msg
-                          );
-                        }
-                        return updated;
-                      });
-                    });
-                  });
-                }
-                
                 return [...withoutThinking, assistantMessage, memeMessage];
               });
+              
+              // Salvar no banco APÓS atualizar o estado
+              if (activeWorkspaceId && assistantMessage && memeMessage) {
+                const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
+                const memeMessageToSave: Message = memeMessage; // Garantir que TypeScript entenda que não é null
+                Promise.all([
+                  saveAssistantMessage({
+                    workspace_id: activeWorkspaceId,
+                    role: "assistant",
+                    content: messageToSave.content,
+                    type: "text",
+                  }),
+                  saveAssistantMessage({
+                    workspace_id: activeWorkspaceId,
+                    role: "assistant",
+                    content: "",
+                    type: "image",
+                    image_url: "/audiode2minutos.png",
+                  }),
+                ]).then((results) => {
+                  startTransition(() => {
+                    setMessages((prev) => {
+                      let updated = [...prev];
+                      if (results[0].success && results[0].messageId) {
+                        updated = updated.map((msg) =>
+                          msg.id === messageToSave.id
+                            ? { ...msg, id: `db-${results[0].messageId}` }
+                            : msg
+                        );
+                      }
+                      if (results[1].success && results[1].messageId) {
+                        updated = updated.map((msg) =>
+                          msg.id === memeMessageToSave.id
+                            ? { ...msg, id: `db-${results[1].messageId}` }
+                            : msg
+                        );
+                      }
+                      return updated;
+                    });
+                  });
+                }).catch((error) => {
+                  console.error("Erro ao salvar mensagens do assistente:", error);
+                });
+              }
               setIsLoading(false);
               setWasAutoStopped(false);
             } else {
@@ -1201,6 +1219,9 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
 
               const data = await response.json();
 
+              let assistantMessage: Message | null = null;
+              let confirmationCardMessage: Message | null = null;
+              
               setMessages((prev) => {
                 const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
                 
@@ -1218,7 +1239,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                   }
                   
                   // Criar tarefa - mostrar card de confirmação
-                  const assistantMessage: Message = {
+                  assistantMessage = {
                     id: `temp-${Date.now() + 2}`,
                     role: "assistant",
                     content: messageContent,
@@ -1226,7 +1247,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                     timestamp: new Date(),
                   };
                   
-                  const confirmationCardMessage: Message = {
+                  confirmationCardMessage = {
                     id: `temp-${Date.now() + 3}`,
                     role: "assistant",
                     content: "",
@@ -1246,50 +1267,10 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                     timestamp: new Date(),
                   };
                   
-                  // Salvar no banco
-                  if (activeWorkspaceId) {
-                    Promise.all([
-                      saveAssistantMessage({
-                        workspace_id: activeWorkspaceId,
-                        role: "assistant",
-                        content: assistantMessage.content,
-                        type: "text",
-                      }),
-                      saveAssistantMessage({
-                        workspace_id: activeWorkspaceId,
-                        role: "assistant",
-                        content: "",
-                        type: "component",
-                        component_data: confirmationCardMessage.componentData,
-                      }),
-            ]).then((results) => {
-              startTransition(() => {
-                setMessages((prev) => {
-                  let updated = [...prev];
-                  if (results[0].success && results[0].messageId) {
-                    updated = updated.map((msg) =>
-                      msg.id === assistantMessage.id
-                        ? { ...msg, id: `db-${results[0].messageId}` }
-                        : msg
-                    );
-                  }
-                  if (results[1].success && results[1].messageId) {
-                    updated = updated.map((msg) =>
-                      msg.id === confirmationCardMessage.id
-                        ? { ...msg, id: `db-${results[1].messageId}` }
-                        : msg
-                    );
-                  }
-                  return updated;
-                });
-              });
-            });
-                  }
-                  
                   return [...withoutThinking, assistantMessage, confirmationCardMessage];
                 } else {
                   // Resposta normal
-                  const assistantMessage: Message = {
+                  assistantMessage = {
                     id: `temp-${Date.now() + 2}`,
                     role: "assistant",
                     content: data.message || `Recebi sua mensagem de áudio (${Math.round(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, "0")}).`,
@@ -1297,31 +1278,78 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                     timestamp: new Date(),
                   };
                   
-                  // Salvar no banco
-                  if (activeWorkspaceId) {
-                    saveAssistantMessage({
-                      workspace_id: activeWorkspaceId,
-                      role: "assistant",
-                      content: assistantMessage.content,
-                      type: "text",
-                    }).then((result) => {
-                      if (result.success && result.messageId) {
-                        startTransition(() => {
-                          setMessages((prev) =>
-                            prev.map((msg) =>
-                              msg.id === assistantMessage.id
-                                ? { ...msg, id: `db-${result.messageId}` }
-                                : msg
-                            )
-                          );
-                        });
-                      }
-                    });
-                  }
-                  
                   return [...withoutThinking, assistantMessage];
                 }
               });
+              
+              // Salvar no banco APÓS atualizar o estado
+              if (activeWorkspaceId && assistantMessage) {
+                const messageToSave: Message = assistantMessage; // Garantir que TypeScript entenda que não é null
+                if (confirmationCardMessage) {
+                  const cardMessageToSave: Message = confirmationCardMessage; // Garantir que TypeScript entenda que não é null
+                  // Caso de criação de tarefa com confirmação
+                  Promise.all([
+                    saveAssistantMessage({
+                      workspace_id: activeWorkspaceId,
+                      role: "assistant",
+                      content: messageToSave.content,
+                      type: "text",
+                    }),
+                    saveAssistantMessage({
+                      workspace_id: activeWorkspaceId,
+                      role: "assistant",
+                      content: "",
+                      type: "component",
+                      component_data: cardMessageToSave.componentData,
+                    }),
+                  ]).then((results) => {
+                    startTransition(() => {
+                      setMessages((prev) => {
+                        let updated = [...prev];
+                        if (results[0].success && results[0].messageId) {
+                          updated = updated.map((msg) =>
+                            msg.id === messageToSave.id
+                              ? { ...msg, id: `db-${results[0].messageId}` }
+                              : msg
+                          );
+                        }
+                        if (results[1].success && results[1].messageId) {
+                          updated = updated.map((msg) =>
+                            msg.id === cardMessageToSave.id
+                              ? { ...msg, id: `db-${results[1].messageId}` }
+                              : msg
+                          );
+                        }
+                        return updated;
+                      });
+                    });
+                  }).catch((error) => {
+                    console.error("Erro ao salvar mensagens do assistente:", error);
+                  });
+                } else {
+                  // Resposta normal
+                  saveAssistantMessage({
+                    workspace_id: activeWorkspaceId,
+                    role: "assistant",
+                    content: messageToSave.content,
+                    type: "text",
+                  }).then((result) => {
+                    if (result.success && result.messageId) {
+                      startTransition(() => {
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === messageToSave.id
+                              ? { ...msg, id: `db-${result.messageId}` }
+                              : msg
+                          )
+                        );
+                      });
+                    }
+                  }).catch((error) => {
+                    console.error("Erro ao salvar mensagem do assistente:", error);
+                  });
+                }
+              }
               
               setIsLoading(false);
               setWasAutoStopped(false);

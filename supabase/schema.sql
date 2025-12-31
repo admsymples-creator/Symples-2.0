@@ -29,9 +29,11 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
     slug TEXT UNIQUE NOT NULL,
     magic_code TEXT UNIQUE,
     owner_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    trial_ends_at TIMESTAMPTZ DEFAULT (now() + interval '15 days'),
-    subscription_status TEXT DEFAULT 'trial' CHECK (subscription_status IN ('trial', 'active', 'cancelled', 'expired', 'past_due')),
+    plan TEXT DEFAULT 'business' CHECK (plan IN ('starter', 'pro', 'business')),
+    subscription_status TEXT DEFAULT 'trialing' CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled')),
     subscription_id TEXT, -- ID da assinatura no gateway de pagamento (Stripe, etc.)
+    trial_ends_at TIMESTAMPTZ DEFAULT (now() + interval '14 days'),
+    member_limit INTEGER DEFAULT 15,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

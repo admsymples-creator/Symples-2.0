@@ -102,6 +102,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
+    // Verificar acesso do workspace (gatekeeper) - apenas se workspaceId fornecido
+    if (workspaceId) {
+      const { checkWorkspaceAccess } = await import("@/lib/utils/subscription");
+      const accessCheck = await checkWorkspaceAccess(workspaceId);
+      
+      if (!accessCheck.allowed) {
+        return NextResponse.json(
+          { 
+            error: accessCheck.reason || 'Seu trial expirou. Escolha um plano para continuar usando o assistente IA.',
+            upgradeRequired: true
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const openai = new OpenAI({ apiKey });
 
     // Step A: Transcrição

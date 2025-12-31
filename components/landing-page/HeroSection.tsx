@@ -33,7 +33,7 @@ export function HeroSection() {
 
                         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                             <button className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-emerald-600 rounded-full hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95">
-                                Começar Grátis
+                                Teste Grátis por 14 dias
                             </button>
                             <button className="inline-flex items-center justify-center px-8 py-4 text-base font-medium text-slate-600 hover:text-slate-900 bg-transparent hover:bg-slate-50 rounded-full transition-colors gap-2">
                                 <Play className="w-4 h-4 fill-current" />

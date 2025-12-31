@@ -1,6 +1,7 @@
 import { getWeekTasks, getWorkspacesWeeklyStats, getUserWorkspaces } from "@/lib/actions/dashboard";
 import { HomePageClient } from "@/components/home/HomePageClient";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
+import { TrialBanner } from "@/components/home/TrialBanner";
 import { Database } from "@/types/database.types";
 import { FolderOpen } from "lucide-react";
 import { Suspense } from "react";
@@ -56,6 +57,9 @@ export default async function HomePage() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
+        {/* Trial Banner */}
+        <TrialBanner />
+        
         {/* Weekly View (Client Component with Onboarding Modal) */}
         <Suspense fallback={<div className="min-h-[400px]" />}>
           <HomePageClient tasks={typedTasks} workspaces={userWorkspaces} />

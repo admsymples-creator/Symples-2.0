@@ -394,6 +394,19 @@ export async function createTask(data: {
   // Define se é pessoal ou de workspace
   const is_personal = data.is_personal ?? (!data.workspace_id);
 
+  // Verificar acesso do workspace (gatekeeper) - apenas para tarefas de workspace
+  if (!is_personal && data.workspace_id) {
+    const { checkWorkspaceAccess } = await import("@/lib/utils/subscription");
+    const accessCheck = await checkWorkspaceAccess(data.workspace_id);
+    
+    if (!accessCheck.allowed) {
+      return {
+        success: false,
+        error: accessCheck.reason || "Seu trial expirou. Escolha um plano para continuar criando tarefas.",
+      };
+    }
+  }
+
   // Garantir que subtasks seja um JSON válido
   const subtasks = data.subtasks ? JSON.parse(JSON.stringify(data.subtasks)) : [];
 

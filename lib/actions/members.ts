@@ -256,6 +256,40 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       throw new Error("Permissão negada. Apenas admins podem convidar.");
     }
 
+    // 1.5. Verificar limites de membros do plano
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from("workspaces")
+      .select("plan, subscription_status, name")
+      .eq("id", workspaceId)
+      .single();
+
+    if (workspaceError || !workspaceData) {
+      throw new Error("Erro ao buscar informações do workspace.");
+    }
+
+    // Contar membros atuais
+    const { count: currentMembersCount, error: countError } = await supabase
+      .from("workspace_members")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId);
+
+    if (countError) {
+      throw new Error("Erro ao contar membros do workspace.");
+    }
+
+    // Obter limite do plano
+    const { getPlanLimits, getPlanName } = await import("@/lib/utils/subscription-helpers");
+    const planLimit = getPlanLimits(workspaceData.plan, workspaceData.subscription_status);
+    const planName = getPlanName(workspaceData.plan);
+
+    // Verificar se atingiu o limite
+    if (currentMembersCount !== null && currentMembersCount >= planLimit) {
+      throw new Error(
+        `Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` +
+        `Upgrade necessário para adicionar mais membros. Acesse /billing para ver os planos disponíveis.`
+      );
+    }
+
     // 2. Normalizar email e verificar se usuário já existe
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -380,21 +414,8 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       }
     }
 
-    // 5. Buscar informações do workspace e do usuário que está convidando
-    const { data: workspaceData, error: workspaceError } = await supabase
-      .from("workspaces")
-      .select("name")
-      .eq("id", workspaceId)
-      .maybeSingle();
-
-    if (workspaceError && workspaceError.code !== 'PGRST116') {
-      console.error("Erro ao buscar dados do workspace:", workspaceError);
-      throw new Error("Erro ao buscar informações do workspace.");
-    }
-
-    if (!workspaceData) {
-      throw new Error("Workspace não encontrado.");
-    }
+    // 5. Buscar informações do usuário que está convidando
+    // (workspaceData já foi buscado acima)
 
     const { data: inviterProfile, error: inviterError } = await supabase
       .from("profiles")

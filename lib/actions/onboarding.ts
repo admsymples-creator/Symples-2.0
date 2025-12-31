@@ -37,7 +37,9 @@ export async function createWorkspace(formData: FormData) {
     + '-' + randomCode // Sufixo para unicidade
 
   // 4. Insert (Supabase)
-  // Inserir Workspace
+  // Inserir Workspace com Reverse Trial
+  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(); // 14 dias no futuro
+  
   const { data: workspace, error: workspaceError } = await supabase
     .from('workspaces')
     .insert({
@@ -45,6 +47,10 @@ export async function createWorkspace(formData: FormData) {
       owner_id: user.id,
       magic_code: magicCode,
       slug,
+      plan: 'business', // Reverse Trial: começa com Business
+      subscription_status: 'trialing', // Status de trial
+      trial_ends_at: trialEndsAt, // 14 dias no futuro
+      member_limit: 15, // Limite do Business durante trial
       // segment: segment 
     })
     .select()

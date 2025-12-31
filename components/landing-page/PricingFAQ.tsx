@@ -4,29 +4,52 @@ import React from "react";
 const pricingPlans = [
     {
         name: "Starter",
-        price: "Grátis",
-        period: "/sempre",
-        description: "Para quem está começando a organizar a casa.",
-        features: ["Até 1 usuário", "Gestão de Tarefas Básica", "IA Limitada (10 msg/dia)"],
+        price: "R$ 49",
+        period: "/mês",
+        description: "Para solopreneurs e freelancers.",
+        features: [
+            "1 membro (você)",
+            "Input via WhatsApp",
+            "Tarefas com IA (50/mês)",
+            "Financeiro Básico",
+            "500 MB de armazenamento",
+            "Suporte por Email"
+        ],
         cta: "Começar Agora",
         highlight: false
     },
     {
         name: "Pro",
-        price: "R$ 97",
+        price: "R$ 69",
         period: "/mês",
-        description: "Para quem quer sair do operacional.",
-        features: ["IA Ilimitada", "Conexão WhatsApp Oficial", "Dashboard Financeiro", "Automação de Tarefas", "Suporte Prioritário"],
+        originalPrice: "R$ 149",
+        description: "Para pequenos times e sócios.",
+        features: [
+            "Até 5 membros",
+            "Input via WhatsApp",
+            "Tarefas com IA Ilimitadas",
+            "Financeiro Completo",
+            "5 GB de armazenamento",
+            "Suporte Email Rápido"
+        ],
         cta: "Assinar Pro",
         highlight: true
     },
     {
-        name: "Enterprise",
-        price: "Sob Consulta",
-        period: "",
-        description: "Para operações complexas e times grandes.",
-        features: ["Múltiplos WhatsApps", "API Dedicada", "Onboarding Assistido", "SLA Garantido"],
-        cta: "Falar com Vendas",
+        name: "Business",
+        price: "R$ 129",
+        period: "/mês",
+        description: "Para agências consolidadas.",
+        features: [
+            "Até 15 membros",
+            "Input via WhatsApp",
+            "Tarefas com IA Ilimitadas",
+            "Financeiro Completo + Exportação",
+            "20 GB de armazenamento",
+            "Permissões Avançadas",
+            "Suporte WhatsApp VIP"
+        ],
+        cta: "Assinar Business",
         highlight: false
     }
 ];
@@ -62,9 +85,19 @@ export function PricingFAQ() {
 
                             <div className="mb-6">
                                 <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
-                                <div className="mt-4 flex items-baseline gap-1">
-                                    <span className="text-4xl font-extrabold text-slate-900 tracking-tight">{plan.price}</span>
-                                    <span className="text-slate-500 text-sm font-medium">{plan.period}</span>
+                                <div className="mt-4">
+                                    {plan.originalPrice && (
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-sm text-slate-400 line-through">{plan.originalPrice}</span>
+                                            <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">
+                                                OFERTA DE LANÇAMENTO
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className="flex items-baseline gap-1">
+                                        <span className="text-4xl font-extrabold text-slate-900 tracking-tight">{plan.price}</span>
+                                        <span className="text-slate-500 text-sm font-medium">{plan.period}</span>
+                                    </div>
                                 </div>
                                 <p className="mt-4 text-sm text-slate-600 font-medium">{plan.description}</p>
                             </div>

@@ -4,6 +4,7 @@ import React from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { SidebarProvider, useSidebar } from "@/components/providers/SidebarProvider";
+import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { WorkspaceUrlSync } from "@/components/layout/WorkspaceUrlSync";
 import { WorkspaceSyncAfterInvite } from "@/components/providers/WorkspaceSyncAfterInvite";
 import { GlobalAssistantSheet } from "@/components/assistant/GlobalAssistantSheet";
@@ -44,9 +45,11 @@ function LayoutContent({ children, user, workspaces }: AppShellProps) {
 export function AppShell(props: AppShellProps) {
     return (
         <SidebarProvider>
-            <TooltipProvider delayDuration={0}>
-                <LayoutContent {...props} />
-            </TooltipProvider>
+            <UIScaleProvider>
+                <TooltipProvider delayDuration={0}>
+                    <LayoutContent {...props} />
+                </TooltipProvider>
+            </UIScaleProvider>
         </SidebarProvider>
     );
 }

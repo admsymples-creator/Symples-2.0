@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-12-31T08:16:53.703804",
+  "total_issues": 3,
+  "issues": [
+    {
+      "severity": "INFO",
+      "component": "Login",
+      "description": "Login não testado - necessário para testar página completa",
+      "details": "",
+      "timestamp": "2025-12-31T08:16:49.255286"
+    },
+    {
+      "severity": "CRITICAL",
+      "component": "Estrutura",
+      "description": "Erro ao testar estrutura da página: Page.goto: Navigation to \"http://localhost:3000/finance\" is interrupted by another navigation to \"http://localhost:3000/home\"\nCall log:\n  - navigating to \"http://localhost:3000/finance\", waiting until \"networkidle\"\n",
+      "details": "",
+      "timestamp": "2025-12-31T08:16:53.700662"
+    },
+    {
+      "severity": "HIGH",
+      "component": "Geral",
+      "description": "Página Financeiro não acessível - pode requerer autenticação",
+      "details": "",
+      "timestamp": "2025-12-31T08:16:53.701220"
+    }
+  ],
+  "summary": {
+    "CRITICAL": 1,
+    "HIGH": 1,
+    "MEDIUM": 0,
+    "LOW": 0,
+    "INFO": 1
+  }
+}
