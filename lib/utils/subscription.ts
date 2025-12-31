@@ -46,8 +46,8 @@ export async function checkWorkspaceAccess(
       const trialEndDate = new Date(trial_ends_at);
       const now = new Date();
 
-      // Se trial expirou E não está ativo, bloquear
-      if (trialEndDate < now && subscription_status !== "active") {
+      // Se trial expirou, bloquear (já sabemos que não está 'active' por causa do check anterior)
+      if (trialEndDate < now) {
         return {
           allowed: false,
           reason: "Seu trial expirou. Escolha um plano para continuar.",
