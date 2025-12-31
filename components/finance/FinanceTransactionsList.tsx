@@ -14,7 +14,8 @@ type TransactionStatus = "paid" | "pending" | "overdue" | "scheduled" | "cancell
 
 interface Transaction {
   id: string;
-  due_date: string;
+  due_date: string; // Data de vencimento
+  created_at?: string; // Data de criação
   description: string;
   amount: number;
   status: TransactionStatus;
@@ -90,10 +91,11 @@ export function FinanceTransactionsList({
     router.refresh();
   };
 
-  const processedTransactions = transactions.map(t => ({
-    ...t,
-    date: format(parseISO(t.due_date), "dd/MM"),
-  }));
+          const processedTransactions = transactions.map(t => ({
+            ...t,
+            dueDate: format(parseISO(t.due_date), "dd/MM"),
+            createdDate: t.created_at ? format(parseISO(t.created_at), "dd/MM/yyyy") : undefined,
+          }));
 
   return (
     <>
@@ -125,7 +127,12 @@ export function FinanceTransactionsList({
                   className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors group"
                 >
                   <div className="flex flex-col gap-0.5 flex-1">
-                    <span className="text-xs text-gray-400 font-mono">{item.date}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 font-mono">Venc: {item.dueDate}</span>
+                      {item.createdDate && (
+                        <span className="text-xs text-gray-300 font-mono">• Criado: {item.createdDate}</span>
+                      )}
+                    </div>
                     <span className="font-medium text-sm text-gray-900">{item.description}</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -155,7 +162,7 @@ export function FinanceTransactionsList({
         <EditTransactionModal
           open={isEditModalOpen}
           onOpenChange={setIsEditModalOpen}
-          transaction={editingTransaction}
+          transaction={editingTransaction as any}
           onSuccess={handleEditSuccess}
         />
       )}

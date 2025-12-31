@@ -41,7 +41,8 @@ interface Transaction {
   type: "income" | "expense";
   description: string;
   category: string;
-  due_date: string;
+  due_date: string; // Data de vencimento
+  created_at?: string; // Data de criação
   status: "paid" | "pending" | "scheduled" | "cancelled";
   is_recurring: boolean;
 }
@@ -62,6 +63,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [dueDate, setDueDate] = useState<Date | undefined>(new Date());
   const [status, setStatus] = useState<"paid" | "pending" | "scheduled" | "cancelled">("paid");
   const [isRecurring, setIsRecurring] = useState(false);
 
@@ -81,12 +83,18 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
       }).format(Number(transaction.amount));
       setAmount(formattedAmount);
 
-      // Parse da data
+      // Parse das datas
       try {
-        const parsedDate = transaction.due_date ? parseISO(transaction.due_date) : new Date();
+        // Data da transação (created_at)
+        const parsedDate = transaction.created_at ? parseISO(transaction.created_at) : new Date();
         setDate(parsedDate);
+        
+        // Data de vencimento (due_date)
+        const parsedDueDate = transaction.due_date ? parseISO(transaction.due_date) : new Date();
+        setDueDate(parsedDueDate);
       } catch {
         setDate(new Date());
+        setDueDate(new Date());
       }
     }
   }, [open, transaction]);
@@ -130,6 +138,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
         description,
         category: category || (type === "income" ? "Outros" : "Geral"),
         date: date || new Date(),
+        due_date: dueDate || new Date(),
         status,
         is_recurring: isRecurring,
       });
@@ -239,7 +248,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
               </Select>
             </div>
 
-            {/* Data */}
+            {/* Data da Transação */}
             <div className="grid grid-cols-[100px_1fr] items-center gap-3 border-b border-gray-200 pb-3 last:border-0 last:pb-0">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-3.5 h-3.5 text-gray-400" />
@@ -259,6 +268,31 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
                     )}
                   >
                     {date ? format(date, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecione</span>}
+                  </Button>
+                }
+              />
+            </div>
+
+            {/* Data de Vencimento */}
+            <div className="grid grid-cols-[100px_1fr] items-center gap-3 border-b border-gray-200 pb-3 last:border-0 last:pb-0">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-3.5 h-3.5 text-gray-400" />
+                <Label className="text-xs font-medium text-gray-400">Vencimento</Label>
+              </div>
+              <TaskDatePicker
+                date={dueDate || null}
+                onSelect={(d) => setDueDate(d || undefined)}
+                align="start"
+                side="bottom"
+                trigger={
+                  <Button
+                    variant={"ghost"}
+                    className={cn(
+                      "w-full justify-start text-left font-medium bg-transparent border-0 p-0 h-auto text-sm text-gray-900 hover:bg-transparent",
+                      !dueDate && "text-gray-400"
+                    )}
+                  >
+                    {dueDate ? format(dueDate, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecione</span>}
                   </Button>
                 }
               />

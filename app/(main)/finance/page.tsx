@@ -18,11 +18,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { getFinanceMetrics, getTransactions } from "@/lib/actions/finance";
+import { getFinanceMetrics, getTransactions, getProjections, getCashFlowForecast } from "@/lib/actions/finance";
 import { startOfMonth, endOfMonth } from "date-fns";
 import { NewTransactionButton, MonthSelector } from "@/components/finance/FinanceClientComponents";
 import { FinanceTransactionsList } from "@/components/finance/FinanceTransactionsList";
 import { getUserWorkspaces } from "@/lib/actions/user";
+import { PlanningBudgetCard } from "@/components/finance/PlanningBudgetCard";
+import { PlanningProjectionsCard } from "@/components/finance/PlanningProjectionsCard";
+import { PlanningGoalsCard } from "@/components/finance/PlanningGoalsCard";
+import { PlanningCashFlowCard } from "@/components/finance/PlanningCashFlowCard";
 
 // --- TYPES ---
 
@@ -134,62 +138,84 @@ export default async function FinancePage(props: {
   // Fetch Metrics
   const metrics = await getFinanceMetrics(monthParam, yearParam, workspaceId);
 
-  // Fetch Transactions for the period
+  // Fetch Transactions for the period (Visão Geral)
   const dateForRange = new Date(yearParam, monthParam - 1, 1);
   const startDate = startOfMonth(dateForRange).toISOString();
   const endDate = endOfMonth(dateForRange).toISOString();
   
   const rawTransactions = await getTransactions({ startDate, endDate, workspaceId });
 
+  // Fetch ALL Recurring Transactions (para aba Recorrentes - não filtrar por mês)
+  const allRecurringTransactions = await getTransactions({ 
+    isRecurring: true, 
+    workspaceId 
+  });
+
   // Process Transactions for UI (using due_date instead of date)
   const incomeTransactions = rawTransactions
     .filter(t => t.type === 'income')
-    .map(t => ({
-      id: t.id,
-      due_date: t.due_date || new Date().toISOString(),
-      description: t.description,
-      amount: Number(t.amount),
-      status: (t.status || 'pending') as TransactionStatus,
-      category: t.category || 'Geral',
-      type: t.type as 'income' | 'expense',
-      is_recurring: t.is_recurring || false,
-    }));
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || 'pending') as TransactionStatus,
+        category: tx.category || 'Geral',
+        type: tx.type as 'income' | 'expense',
+        is_recurring: tx.is_recurring || false,
+      };
+    });
 
   const expenseTransactions = rawTransactions
     .filter(t => t.type === 'expense')
-    .map(t => ({
-      id: t.id,
-      due_date: t.due_date || new Date().toISOString(),
-      description: t.description,
-      amount: Number(t.amount),
-      status: (t.status || 'pending') as TransactionStatus,
-      category: t.category || 'Geral',
-      type: t.type as 'income' | 'expense',
-      is_recurring: t.is_recurring || false,
-    }));
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || 'pending') as TransactionStatus,
+        category: tx.category || 'Geral',
+        type: tx.type as 'income' | 'expense',
+        is_recurring: tx.is_recurring || false,
+      };
+    });
 
-  // Process Recurring Transactions
-  const recurringTransactions = rawTransactions
-    .filter(t => t.is_recurring === true)
-    .map(t => ({
-      id: t.id,
-      due_date: t.due_date || new Date().toISOString(),
-      description: t.description,
-      amount: Number(t.amount),
-      status: (t.status || 'pending') as TransactionStatus,
-      category: t.category || 'Geral',
-      type: t.type as 'income' | 'expense',
-      is_recurring: true,
-    }));
+  // Process Recurring Transactions (TODAS, não apenas do mês)
+  const recurringTransactions = allRecurringTransactions
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || 'pending') as TransactionStatus,
+        category: tx.category || 'Geral',
+        type: tx.type as 'income' | 'expense',
+        is_recurring: true,
+      };
+    });
 
-  // Process Categories
+  // Process Categories (garantir conversão numérica)
   const categoryTotals = rawTransactions
     .filter(t => t.type === 'expense')
     .reduce((acc, curr) => {
       const cat = curr.category || 'Outros';
-      acc[cat] = (acc[cat] || 0) + curr.amount;
+      const amount = Number(curr.amount) || 0;
+      acc[cat] = (acc[cat] || 0) + amount;
       return acc;
     }, {} as Record<string, number>);
+
+  // Fetch Planning Data
+  const projections = await getProjections(6, workspaceId);
+  const cashFlowForecast = await getCashFlowForecast(6, workspaceId);
 
   const totalExpensesVal = metrics.totalExpense || 1; // Avoid division by zero
   const categories = Object.entries(categoryTotals)
@@ -212,12 +238,11 @@ export default async function FinancePage(props: {
     <div className="min-h-screen bg-gray-50/50 pb-20">
       {/* HEADER AREA - LINE 1 */}
       <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
-        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
             <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
           </div>
-          <NewTransactionButton />
         </div>
       </div>
 
@@ -237,6 +262,7 @@ export default async function FinancePage(props: {
               <Button variant="outline" size="icon">
                  <MoreHorizontal className="w-4 h-4" />
               </Button>
+              <NewTransactionButton />
             </div>
           </div>
 
@@ -325,7 +351,7 @@ export default async function FinancePage(props: {
                           <Calendar className="w-8 h-8 text-gray-400" />
                         </div>
                         <p className="text-gray-500 max-w-sm text-sm">
-                          Nenhuma transação recorrente encontrada neste mês.
+                          Nenhuma transação recorrente encontrada.
                         </p>
                      </div>
                   ) : (
@@ -356,24 +382,32 @@ export default async function FinancePage(props: {
           </TabsContent>
 
           <TabsContent value="planning" className="space-y-8 mt-0">
-            <Card className="border-none shadow-sm ring-1 ring-gray-200">
-              <CardHeader>
-                <CardTitle className="text-base font-semibold">Planejamento</CardTitle>
-                <CardDescription>
-                  Em breve: ferramentas de planejamento financeiro e projeções.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="bg-gray-50 p-4 rounded-full mb-4">
-                    <Calendar className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-gray-500 max-w-sm text-sm">
-                    Esta funcionalidade estará disponível em breve.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Orçamento por Categoria */}
+              <PlanningBudgetCard
+                month={monthParam}
+                year={yearParam}
+                workspaceId={workspaceId}
+                categoryExpenses={categoryTotals}
+              />
+
+              {/* Metas Financeiras */}
+              <PlanningGoalsCard
+                workspaceId={workspaceId}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Projeções Futuras */}
+              <PlanningProjectionsCard
+                projections={projections as any}
+              />
+
+              {/* Previsão de Fluxo de Caixa */}
+              <PlanningCashFlowCard
+                forecast={cashFlowForecast as any}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

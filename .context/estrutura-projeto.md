@@ -113,10 +113,16 @@ symples-v2/
 │   │   └── minify-workspace-sync.tsx
 │   │
 │   ├── 📁 finance/
-│   │   ├── CreateTransactionModal.tsx (✅ Modal para criar transações)
+│   │   ├── BudgetModal.tsx (✅ Modal para criar/editar orçamentos por categoria)
+│   │   ├── CreateTransactionModal.tsx (✅ Modal para criar transações com data e vencimento)
 │   │   ├── EditTransactionModal.tsx (✅ Modal para editar transações)
 │   │   ├── FinanceClientComponents.tsx (✅ Componentes client: NewTransactionButton, MonthSelector)
 │   │   ├── FinanceTransactionsList.tsx (✅ Componente client para listar transações com ações)
+│   │   ├── GoalModal.tsx (✅ Modal para criar/editar metas financeiras)
+│   │   ├── PlanningBudgetCard.tsx (✅ Card de orçamento por categoria com barras de progresso)
+│   │   ├── PlanningCashFlowCard.tsx (✅ Card de previsão de fluxo de caixa)
+│   │   ├── PlanningGoalsCard.tsx (✅ Card de metas financeiras com progresso)
+│   │   ├── PlanningProjectionsCard.tsx (✅ Card de projeções futuras)
 │   │   └── TransactionActionsMenu.tsx (✅ Menu de ações: editar/deletar transações)
 │   │
 │   ├── 📁 home/
@@ -239,7 +245,7 @@ symples-v2/
 │   │   ├── attachments.ts
 │   │   ├── auth.ts (✅ Atualizado: suporte a token de convite no signup)
 │   │   ├── dashboard.ts
-│   │   ├── finance.ts
+│   │   ├── finance.ts (✅ Completo: transações, orçamentos, metas, projeções, fluxo de caixa)
 │   │   ├── members.ts (✅ Sistema completo: convites, permissões, gestão de membros)
 │   │   ├── onboarding.ts
 │   │   ├── task-details.ts
