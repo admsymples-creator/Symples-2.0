@@ -29,8 +29,14 @@ interface FinanceTransactionsListProps {
   title: string;
   icon: React.ReactNode;
   totalAmount: number;
-  formatCurrency: (value: number) => string;
 }
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+};
 
 const StatusBadge = ({ status }: { status: string }) => {
   const styles: Record<string, string> = {

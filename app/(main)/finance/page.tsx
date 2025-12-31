@@ -343,7 +343,6 @@ export default async function FinancePage(props: {
                           title="Recorrentes - Entradas"
                           icon={<div className="p-1.5 bg-green-100 rounded-full"><ArrowUpCircle className="w-4 h-4 text-green-600" /></div>}
                           totalAmount={recurringTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0)}
-                          formatCurrency={formatCurrency}
                         />
                       )}
                       {recurringTransactions.filter(t => t.type === 'expense').length > 0 && (
@@ -353,7 +352,6 @@ export default async function FinancePage(props: {
                           title="Recorrentes - Saídas"
                           icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
                           totalAmount={recurringTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0)}
-                          formatCurrency={formatCurrency}
                         />
                       )}
                     </div>
