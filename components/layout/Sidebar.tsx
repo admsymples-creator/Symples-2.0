@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
@@ -90,12 +90,55 @@ const NavItemView = React.memo(({ item, isActive, isCollapsed }: { item: NavItem
 });
 NavItemView.displayName = 'NavItemView';
 
+interface WorkspaceSubscription {
+    id: string;
+    plan: 'starter' | 'pro' | 'business' | null;
+    subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null;
+    trial_ends_at: string | null;
+}
+
 function SidebarContent({ workspaces = [] }: SidebarProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const router = useRouter();
     const { isCollapsed, toggleSidebar } = useSidebar();
     const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+    const [subscriptionData, setSubscriptionData] = useState<WorkspaceSubscription | null>(null);
+
+    // Buscar dados de subscription do workspace ativo
+    useEffect(() => {
+        if (!activeWorkspaceId) {
+            setSubscriptionData(null);
+            return;
+        }
+
+        const fetchSubscription = async () => {
+            try {
+                const response = await fetch(`/api/workspace/subscription?workspaceId=${activeWorkspaceId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setSubscriptionData(data);
+                }
+            } catch (error) {
+                console.error("Erro ao buscar dados de subscription:", error);
+                setSubscriptionData(null);
+            }
+        };
+
+        fetchSubscription();
+    }, [activeWorkspaceId]);
+
+    // Calcular dias restantes do trial
+    const getTrialDaysRemaining = () => {
+        if (!subscriptionData?.trial_ends_at) return null;
+        const trialEndsAt = new Date(subscriptionData.trial_ends_at);
+        const now = new Date();
+        const daysRemaining = Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        return daysRemaining > 0 ? daysRemaining : 0;
+    };
+
+    const isTrialing = subscriptionData?.subscription_status === 'trialing';
+    const trialDaysRemaining = isTrialing ? getTrialDaysRemaining() : null;
 
     const isActive = (href: string) => {
         if (href.includes('?')) {
@@ -232,12 +275,23 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                                     <span className="font-semibold text-sm text-gray-900 truncate">
                                                         {currentWorkspace?.name || "Selecione"}
                                                     </span>
-                                                    <Badge variant="secondary" className="text-[10px] px-1.5 h-4 bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200 flex-shrink-0">
-                                                        14 dias
-                                                    </Badge>
+                                                    {isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
+                                                        <Link 
+                                                            href="/billing"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="flex-shrink-0"
+                                                        >
+                                                            <Badge 
+                                                                variant="secondary" 
+                                                                className="text-[10px] px-1.5 h-4 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200 cursor-pointer transition-colors"
+                                                            >
+                                                                {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia' : 'dias'}
+                                                            </Badge>
+                                                        </Link>
+                                                    )}
                                                 </div>
                                                 <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors">
-                                                    Plano Trial
+                                                    {isTrialing ? 'Plano Trial' : subscriptionData?.plan ? `Plano ${subscriptionData.plan.charAt(0).toUpperCase() + subscriptionData.plan.slice(1)}` : 'Workspace'}
                                                 </span>
                                             </div>
 
@@ -331,14 +385,20 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
 
             {/* Footer */}
             <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
-                {/* Trial Upgrade Callout - Hide when collapsed */}
-                {!isCollapsed && (
+                {/* Trial Upgrade Callout - Hide when collapsed and only show if trialing */}
+                {!isCollapsed && isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
                     <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-                        <h4 className="font-semibold text-green-800 text-xs mb-1">Trial - 14 dias restantes</h4>
+                        <h4 className="font-semibold text-green-800 text-xs mb-1">
+                            Trial - {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}
+                        </h4>
                         <p className="text-[10px] text-green-700 mb-2 leading-snug">
                             Aproveite todos os recursos Pro do Symples.
                         </p>
-                        <Button size="sm" className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none">
+                        <Button 
+                            size="sm" 
+                            className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none"
+                            onClick={() => router.push('/billing')}
+                        >
                             Assinar Agora
                         </Button>
                     </div>

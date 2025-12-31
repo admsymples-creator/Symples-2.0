@@ -45,13 +45,8 @@ import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
-
-// Mock Data for Billing History
-const BILLING_HISTORY = [
-  { date: "01 Nov 2025", amount: "R$ 97,00", status: "Pago" },
-  { date: "01 Out 2025", amount: "R$ 97,00", status: "Pago" },
-  { date: "01 Set 2025", amount: "R$ 97,00", status: "Pago" },
-];
+import { getCurrentSubscription } from "@/lib/actions/billing";
+import { getPlanName } from "@/lib/utils/subscription";
 
 interface SettingsPageClientProps {
   user: Profile | null;
@@ -65,6 +60,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const router = useRouter();
   const activeTab = searchParams.get("tab") || "general";
   const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const [subscriptionData, setSubscriptionData] = useState<any>(null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
 
   // Workspace state - agora dinâmico baseado no contexto
   const [workspace, setWorkspace] = useState<Workspace | null>(initialWorkspace);
@@ -126,6 +123,28 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
     loadActiveWorkspace();
   }, [activeWorkspaceId, isLoaded]);
+
+  // Carregar dados de subscription quando workspace mudar ou tab billing for aberta
+  useEffect(() => {
+    if (!activeWorkspaceId || activeTab !== 'billing') {
+      return;
+    }
+
+    const loadSubscription = async () => {
+      setIsLoadingSubscription(true);
+      try {
+        const subscription = await getCurrentSubscription(activeWorkspaceId);
+        setSubscriptionData(subscription);
+      } catch (error) {
+        console.error("Erro ao carregar subscription:", error);
+        setSubscriptionData(null);
+      } finally {
+        setIsLoadingSubscription(false);
+      }
+    };
+
+    loadSubscription();
+  }, [activeWorkspaceId, activeTab]);
 
   // Prevent hydration mismatch - mount Tabs only on client
   useEffect(() => {
@@ -747,36 +766,72 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Plano Atual</CardTitle>
-                  <Badge className="bg-green-600 hover:bg-green-700">Plano Pro</Badge>
+                  {isLoadingSubscription ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                  ) : subscriptionData?.plan ? (
+                    <Badge className="bg-green-600 hover:bg-green-700">
+                      {getPlanName(subscriptionData.plan)}
+                    </Badge>
+                  ) : subscriptionData?.subscription_status === 'trialing' ? (
+                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 border-yellow-200">
+                      Trial
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Nenhum plano</Badge>
+                  )}
                 </div>
                 <CardDescription>
-                  Ciclo de faturamento mensal. Próxima cobrança em 01 Dez 2025.
+                  {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at
+                    ? `Trial ativo. Expira em ${new Date(subscriptionData.trial_ends_at).toLocaleDateString('pt-BR')}.`
+                    : subscriptionData?.subscription_status === 'active'
+                    ? 'Ciclo de faturamento mensal.'
+                    : 'Escolha um plano para começar.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-end gap-2">
-                  <span className="text-4xl font-bold">R$ 97</span>
-                  <span className="text-muted-foreground mb-1">/mês</span>
-                </div>
-
-                {/* Barra de Progresso Customizada */}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium">Uso de Tarefas</span>
-                    <span className="text-muted-foreground">450 / ilimitado</span>
+                {isLoadingSubscription ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
-                  <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary w-[25%] rounded-full"></div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Você está usando 25% da capacidade visual do dashboard (exemplo).
-                  </p>
-                </div>
+                ) : subscriptionData ? (
+                  <>
+                    <div className="flex items-end gap-2">
+                      <span className="text-4xl font-bold">
+                        {subscriptionData.plan === 'starter' ? 'R$ 49' :
+                         subscriptionData.plan === 'pro' ? 'R$ 69' :
+                         subscriptionData.plan === 'business' ? 'R$ 129' :
+                         subscriptionData.subscription_status === 'trialing' ? 'Grátis' : 'R$ 0'}
+                      </span>
+                      <span className="text-muted-foreground mb-1">
+                        {subscriptionData.subscription_status === 'trialing' ? ' (trial)' : '/mês'}
+                      </span>
+                    </div>
 
-                <div className="flex gap-3 pt-2">
-                   <Button variant="outline">Gerenciar Assinatura</Button>
-                   <Button variant="ghost">Ver Planos</Button>
-                </div>
+                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p className="text-sm text-yellow-800">
+                          <strong>Trial ativo:</strong> Você está testando o plano Business por 14 dias.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3 pt-2">
+                      <Button variant="outline" onClick={() => router.push('/billing')}>
+                        Gerenciar Assinatura
+                      </Button>
+                      <Button variant="ghost" onClick={() => router.push('/billing')}>
+                        Ver Planos
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground mb-4">Nenhum plano encontrado.</p>
+                    <Button onClick={() => router.push('/billing')}>
+                      Escolher Plano
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -788,26 +843,12 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </CardHeader>
             <CardContent>
               <div className="space-y-1">
-                {BILLING_HISTORY.map((invoice, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-md transition-colors border-b last:border-0 border-gray-100">
-                    <div className="flex items-center gap-4">
-                      <div className="p-2 bg-gray-100 rounded-full text-gray-500">
-                        <CreditCard className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-sm">{invoice.date}</span>
-                        <span className="text-xs text-muted-foreground">Cartão final 4242</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-medium text-sm">{invoice.amount}</span>
-                      <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 gap-1">
-                        <CheckCircle2 className="h-3 w-3" />
-                        {invoice.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                {/* TODO: Implementar busca de faturas do Asaas */}
+                <div className="text-center py-8 text-muted-foreground">
+                  <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Histórico de faturas em breve</p>
+                  <p className="text-xs mt-1">As faturas serão exibidas aqui após a primeira cobrança.</p>
+                </div>
               </div>
             </CardContent>
           </Card>
