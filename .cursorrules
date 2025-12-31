@@ -1,13 +1,72 @@
 # Cursor Rules
 
 # Project Context
-This is a Next.js 14+ project using App Router, TypeScript, Tailwind CSS, and Supabase.
+This is a Next.js 15+ project using App Router, TypeScript, Tailwind CSS, and Supabase.
 
 # Code Style
 - Use functional components.
 - Use TypeScript interfaces for props.
 - Use `lucide-react` for icons.
 - Use `shadcn/ui` for components (if applicable).
+
+# Server Actions and Client Components
+- **CRITICAL**: Files with `"use server"` can ONLY export async functions
+- **CRITICAL**: Never export types/interfaces from `"use server"` files - use `lib/types/` instead
+- **CRITICAL**: Never export class instances from `"use server"` files
+- Pure utility functions (synchronous) should be in separate files (e.g., `subscription-helpers.ts`)
+- Server Actions that use `next/headers` (like `cookies()`) must use `await cookies()` in Next.js 15+
+- Client Components should import pure functions from helper files, not from Server Action files
+- Never call Server Actions inside `setState` callbacks or during render - move them outside
+
+# Providers Architecture
+- `AppShell` wraps all authenticated routes with:
+  - `SidebarProvider` - Sidebar state management
+  - `UIScaleProvider` - UI scale/zoom functionality (required for `useUI()` hook)
+  - `TooltipProvider` - Tooltip functionality
+- All Client Components that use `useUI()` must be within `UIScaleProvider`
+
+# Subscription and Billing System
+
+## Database Schema
+- `workspaces` table has subscription fields:
+  - `plan`: 'starter' | 'pro' | 'business' (default: 'business' for trial)
+  - `subscription_status`: 'trialing' | 'active' | 'past_due' | 'canceled' (default: 'trialing')
+  - `trial_ends_at`: Date when trial expires (14 days from creation)
+  - `member_limit`: Integer based on plan (1, 5, or 15)
+  - `subscription_id`: Asaas subscription ID
+
+## Reverse Trial Flow
+- New workspaces start with `plan: 'business'` and `subscription_status: 'trialing'`
+- Trial lasts 14 days from workspace creation
+- After trial expires, workspace is blocked from creating new items (soft lock)
+- Old workspaces (>30 days) are automatically set to `subscription_status: 'active'`
+
+## Plan Limits
+- **Starter**: 1 member, 50 AI tasks/month, 500 MB storage
+- **Pro**: 5 members, unlimited AI tasks, 5 GB storage
+- **Business**: 15 members, unlimited AI tasks, 20 GB storage
+- During trial: All workspaces get Business limits (15 members)
+
+## Access Control (Gatekeeper)
+- `checkWorkspaceAccess()` Server Action verifies workspace access
+- Applied to: `createTask`, `createTransaction`, AI chat endpoints, audio processing
+- Returns `{ allowed: boolean, reason?: string, upgradeRequired?: boolean }`
+- Blocks creation if trial expired and status is not 'active'
+
+## Asaas Integration
+- Payment gateway integration in `lib/integrations/asaas/`
+- `AsaasClient` class handles API communication (NOT a Server Action)
+- Supports: Credit Card, PIX, Boleto payment methods
+- Webhook endpoint: `/api/webhooks/asaas` updates subscription status
+
+## Type Definitions
+- Subscription types in `lib/types/subscription.ts`:
+  - `SubscriptionData` interface for subscription data
+- Pure utility functions in `lib/utils/subscription-helpers.ts`:
+  - `getPlanLimits(plan, status)` - Returns member limit for plan
+  - `getPlanName(plan)` - Returns formatted plan name
+- Server Actions in `lib/utils/subscription.ts`:
+  - `checkWorkspaceAccess(workspaceId)` - Verifies workspace access
 
 # Task Components Architecture
 
@@ -29,3 +88,16 @@ This is a Next.js 14+ project using App Router, TypeScript, Tailwind CSS, and Su
 - Call `onTaskUpdatedOptimistic` callback with updates
 - Rollback on error by calling `onTaskUpdatedOptimistic` with previous values
 - Ensure immutability in state updates (create new array/object references)
+
+# Common Patterns
+
+## State Updates During Render
+- **NEVER** call Server Actions inside `setState` callbacks
+- **NEVER** call Server Actions during render
+- Move Server Action calls outside of `setMessages`, `setState`, etc.
+- Use `startTransition` for non-urgent state updates after async operations
+
+## Error Handling
+- Always wrap Server Actions in try-catch
+- Return structured error objects: `{ success: boolean, error?: string }`
+- Use `toast` from `sonner` for user-facing error messages
