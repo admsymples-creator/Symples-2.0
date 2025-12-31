@@ -113,8 +113,11 @@ symples-v2/
 │   │   └── minify-workspace-sync.tsx
 │   │
 │   ├── 📁 finance/
-│   │   ├── CreateTransactionModal.tsx
-│   │   └── FinanceClientComponents.tsx
+│   │   ├── CreateTransactionModal.tsx (✅ Modal para criar transações)
+│   │   ├── EditTransactionModal.tsx (✅ Modal para editar transações)
+│   │   ├── FinanceClientComponents.tsx (✅ Componentes client: NewTransactionButton, MonthSelector)
+│   │   ├── FinanceTransactionsList.tsx (✅ Componente client para listar transações com ações)
+│   │   └── TransactionActionsMenu.tsx (✅ Menu de ações: editar/deletar transações)
 │   │
 │   ├── 📁 home/
 │   │   ├── DayColumn.tsx
