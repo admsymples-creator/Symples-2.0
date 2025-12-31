@@ -748,13 +748,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       
       // Salvar mensagens do assistente no banco APÓS atualizar o estado
       if (activeWorkspaceId && assistantMessage) {
+        const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
         if (confirmationCardMessage) {
           // Caso de criação de tarefa com confirmação
           Promise.all([
             saveAssistantMessage({
               workspace_id: activeWorkspaceId,
               role: "assistant",
-              content: assistantMessage.content,
+              content: messageToSave.content,
               type: "text",
             }),
             saveAssistantMessage({
@@ -770,14 +771,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                 let updated = [...prev];
                 if (results[0].success && results[0].messageId) {
                   updated = updated.map((msg) =>
-                    msg.id === assistantMessage!.id
+                    msg.id === messageToSave.id
                       ? { ...msg, id: `db-${results[0].messageId}` }
                       : msg
                   );
                 }
                 if (results[1].success && results[1].messageId) {
                   updated = updated.map((msg) =>
-                    msg.id === confirmationCardMessage!.id
+                    msg.id === confirmationCardMessage.id
                       ? { ...msg, id: `db-${results[1].messageId}` }
                       : msg
                   );
@@ -793,14 +794,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
           saveAssistantMessage({
             workspace_id: activeWorkspaceId,
             role: "assistant",
-            content: assistantMessage.content,
+            content: messageToSave.content,
             type: "text",
           }).then((result) => {
             if (result.success && result.messageId) {
               startTransition(() => {
                 setMessages((prev) =>
                   prev.map((msg) =>
-                    msg.id === assistantMessage!.id
+                    msg.id === messageToSave.id
                       ? { ...msg, id: `db-${result.messageId}` }
                       : msg
                   )
@@ -930,17 +931,18 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
       
       // Salvar no banco APÓS atualizar o estado
       if (activeWorkspaceId && assistantMessage) {
+        const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
         saveAssistantMessage({
           workspace_id: activeWorkspaceId,
           role: "assistant",
-          content: assistantMessage.content,
+          content: messageToSave.content,
           type: "text",
         }).then((result) => {
           if (result.success && result.messageId) {
             startTransition(() => {
               setMessages((prev) =>
                 prev.map((msg) =>
-                  msg.id === assistantMessage!.id
+                  msg.id === messageToSave.id
                     ? { ...msg, id: `db-${result.messageId}` }
                     : msg
                 )
@@ -1144,11 +1146,12 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               
               // Salvar no banco APÓS atualizar o estado
               if (activeWorkspaceId && assistantMessage && memeMessage) {
+                const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
                 Promise.all([
                   saveAssistantMessage({
                     workspace_id: activeWorkspaceId,
                     role: "assistant",
-                    content: assistantMessage.content,
+                    content: messageToSave.content,
                     type: "text",
                   }),
                   saveAssistantMessage({
@@ -1164,14 +1167,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                       let updated = [...prev];
                       if (results[0].success && results[0].messageId) {
                         updated = updated.map((msg) =>
-                          msg.id === assistantMessage!.id
+                          msg.id === messageToSave.id
                             ? { ...msg, id: `db-${results[0].messageId}` }
                             : msg
                         );
                       }
                       if (results[1].success && results[1].messageId) {
                         updated = updated.map((msg) =>
-                          msg.id === memeMessage!.id
+                          msg.id === memeMessage.id
                             ? { ...msg, id: `db-${results[1].messageId}` }
                             : msg
                         );
@@ -1279,13 +1282,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
               
               // Salvar no banco APÓS atualizar o estado
               if (activeWorkspaceId && assistantMessage) {
+                const messageToSave = assistantMessage; // Garantir que TypeScript entenda que não é null
                 if (confirmationCardMessage) {
                   // Caso de criação de tarefa com confirmação
                   Promise.all([
                     saveAssistantMessage({
                       workspace_id: activeWorkspaceId,
                       role: "assistant",
-                      content: assistantMessage.content,
+                      content: messageToSave.content,
                       type: "text",
                     }),
                     saveAssistantMessage({
@@ -1301,14 +1305,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                         let updated = [...prev];
                         if (results[0].success && results[0].messageId) {
                           updated = updated.map((msg) =>
-                            msg.id === assistantMessage!.id
+                            msg.id === messageToSave.id
                               ? { ...msg, id: `db-${results[0].messageId}` }
                               : msg
                           );
                         }
                         if (results[1].success && results[1].messageId) {
                           updated = updated.map((msg) =>
-                            msg.id === confirmationCardMessage!.id
+                            msg.id === confirmationCardMessage.id
                               ? { ...msg, id: `db-${results[1].messageId}` }
                               : msg
                           );
@@ -1324,14 +1328,14 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
                   saveAssistantMessage({
                     workspace_id: activeWorkspaceId,
                     role: "assistant",
-                    content: assistantMessage.content,
+                    content: messageToSave.content,
                     type: "text",
                   }).then((result) => {
                     if (result.success && result.messageId) {
                       startTransition(() => {
                         setMessages((prev) =>
                           prev.map((msg) =>
-                            msg.id === assistantMessage!.id
+                            msg.id === messageToSave.id
                               ? { ...msg, id: `db-${result.messageId}` }
                               : msg
                           )
