@@ -210,22 +210,18 @@ export default async function FinancePage(props: {
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20">
-      {/* HEADER AREA */}
+      {/* HEADER AREA - LINE 1 */}
       <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto">
-          {/* Título Principal e Botão de Ação */}
-          <div className="flex items-center justify-between mb-1">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
-              <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
-            </div>
-            
-            <NewTransactionButton />
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
+            <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
           </div>
+          <NewTransactionButton />
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
         
         {/* NAVIGATION & CONTROLS */}
         <Tabs defaultValue="overview" className="w-full">
