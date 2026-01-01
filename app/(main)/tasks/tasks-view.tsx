@@ -254,7 +254,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
         // Ordenar colunas baseado no tipo de agrupamento
         let sortedColumns;
         if (groupBy === "status") {
-            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Correção", "Concluido"];
+            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Bloqueado", "Concluido"];
             sortedColumns = columns.sort((a, b) => {
                 const aIndex = statusOrder.indexOf(a.title);
                 const bIndex = statusOrder.indexOf(b.title);
@@ -427,7 +427,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             if (groupBy === "status") {
                 // Mapear label da UI para status do banco
-                const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived" | "review" | "correction"> = {
+                const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived" | "review" | "correction" | "blocked"> = {
                     "Backlog": "todo",
                     "Não iniciado": "todo",
                     "Não iniciada": "todo",
@@ -436,6 +436,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     "Em progresso": "in_progress",
                     "Revisão": "review",
                     "Correção": "correction",
+                    "Bloqueado": "blocked",
                     "Concluido": "done",
                     "Finalizado": "done",
                     "Arquivado": "archived",

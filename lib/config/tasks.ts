@@ -12,6 +12,7 @@ export const TASK_STATUS = {
   IN_PROGRESS: 'in_progress',
   REVIEW: 'review',
   CORRECTION: 'correction',
+  BLOCKED: 'blocked',
   DONE: 'done',
   ARCHIVED: 'archived',
 } as const;
@@ -46,6 +47,11 @@ export const TASK_CONFIG: Record<string, TaskStatusConfig> = {
     color: 'fill-orange-500',
     lightColor: 'bg-orange-100 text-orange-700',
   },
+  [TASK_STATUS.BLOCKED]: { 
+    label: 'Bloqueado',
+    color: 'fill-red-500',
+    lightColor: 'bg-red-100 text-red-700',
+  },
   [TASK_STATUS.DONE]: { 
     label: 'Concluido',
     color: 'fill-green-500',
@@ -63,7 +69,7 @@ export const ORDERED_STATUSES: TaskStatus[] = [
   TASK_STATUS.TODO,
   TASK_STATUS.IN_PROGRESS,
   TASK_STATUS.REVIEW,
-  TASK_STATUS.CORRECTION,
+  TASK_STATUS.BLOCKED,
   TASK_STATUS.DONE,
 ];
 
@@ -73,6 +79,7 @@ export const LABEL_TO_STATUS: Record<string, TaskStatus> = {
   'Em progresso': TASK_STATUS.IN_PROGRESS,
   'Revisão': TASK_STATUS.REVIEW,
   'Correção': TASK_STATUS.CORRECTION,
+  'Bloqueado': TASK_STATUS.BLOCKED,
   'Concluido': TASK_STATUS.DONE,
   'Arquivado': TASK_STATUS.ARCHIVED,
   // Aliases para compatibilidade
@@ -88,6 +95,7 @@ export const STATUS_TO_LABEL: Record<TaskStatus, string> = {
   [TASK_STATUS.IN_PROGRESS]: 'Em progresso',
   [TASK_STATUS.REVIEW]: 'Revisão',
   [TASK_STATUS.CORRECTION]: 'Correção',
+  [TASK_STATUS.BLOCKED]: 'Bloqueado',
   [TASK_STATUS.DONE]: 'Concluido',
   [TASK_STATUS.ARCHIVED]: 'Arquivado',
 };

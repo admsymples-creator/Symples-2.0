@@ -752,6 +752,7 @@ export async function updateTaskField(
           "in_progress": "Em progresso",
           "review": "Em revisão",
           "correction": "Correção",
+          "blocked": "Bloqueado",
           "done": "Concluída",
           "archived": "Arquivada"
         };
