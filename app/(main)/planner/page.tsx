@@ -1,4 +1,5 @@
-import { getWeekTasks, getUserWorkspaces } from "@/lib/actions/dashboard";
+import { getWeekTasks } from "@/lib/actions/dashboard";
+import { getUserWorkspaces } from "@/lib/actions/user";
 import { PlannerContent } from "@/components/planner/PlannerContent";
 import { Database } from "@/types/database.types";
 import { Suspense } from "react";
