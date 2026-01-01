@@ -243,41 +243,7 @@ export async function getWorkspacesWeeklyStats(
   }
 }
 
-/**
- * Busca lista simples de workspaces do usuário
- */
-export async function getUserWorkspaces() {
-  try {
-    const supabase = await createServerActionClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) return [];
-
-    const { data: members, error } = await supabase
-      .from("workspace_members")
-      .select(`
-        workspace_id,
-        workspaces (
-          id,
-          name,
-          slug
-        )
-      `)
-      .eq("user_id", user.id);
-
-    if (error || !members) {
-      console.error("Erro ao buscar workspaces do usuário:", error);
-      return [];
-    }
-
-    return members
-      .map((m: any) => m.workspaces)
-      .filter((w) => w !== null) as { id: string; name: string; slug?: string | null }[];
-  } catch (error) {
-    console.error("Erro inesperado ao buscar workspaces:", error);
-    return [];
-  }
-}
+// getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 
 /**
  * Busca tarefas de um dia específico

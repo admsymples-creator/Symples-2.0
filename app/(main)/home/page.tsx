@@ -1,4 +1,5 @@
-import { getWorkspacesWeeklyStats, getUserWorkspaces } from "@/lib/actions/dashboard";
+import { getWorkspacesWeeklyStats } from "@/lib/actions/dashboard";
+import { getUserWorkspaces } from "@/lib/actions/user";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { TrialBanner } from "@/components/home/TrialBanner";
 import { HomeTasksSection } from "@/components/home/HomeTasksSection";
