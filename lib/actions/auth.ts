@@ -15,6 +15,84 @@ function isValidEmail(email: string): boolean {
 }
 
 /**
+ * Faz login com email e senha
+ * @param formData - FormData contendo 'email', 'password' e opcionalmente 'inviteToken'
+ * @returns Objeto com success e message
+ */
+export async function loginWithPassword(formData: FormData) {
+  try {
+    const email = formData.get('email')?.toString().trim()
+    const password = formData.get('password')?.toString()
+    const inviteToken = formData.get('inviteToken')?.toString()
+
+    if (!email) {
+      return {
+        success: false,
+        message: 'Email é obrigatório',
+      }
+    }
+
+    if (!password) {
+      return {
+        success: false,
+        message: 'Senha é obrigatória',
+      }
+    }
+
+    if (!isValidEmail(email)) {
+      return {
+        success: false,
+        message: 'Email inválido. Por favor, insira um email válido.',
+      }
+    }
+
+    const supabase = await createServerClient()
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    let redirectTo = `${baseUrl}/auth/callback`
+    if (inviteToken) {
+      redirectTo += `?invite=${inviteToken}`
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      console.error('Erro ao fazer login:', error)
+      return {
+        success: false,
+        message: error.message || 'Email ou senha incorretos',
+      }
+    }
+
+    if (data.user) {
+      // Redirecionar após login bem-sucedido
+      redirect(redirectTo)
+    }
+
+    return {
+      success: true,
+      message: 'Login realizado com sucesso!',
+    }
+  } catch (error) {
+    // O redirect lança um erro "NEXT_REDIRECT" que não deve ser capturado
+    if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+      throw error
+    }
+    if (typeof error === 'object' && error !== null && 'digest' in error && (error as any).digest?.startsWith('NEXT_REDIRECT')) {
+      throw error
+    }
+
+    console.error('Erro inesperado ao fazer login:', error)
+    return {
+      success: false,
+      message: 'Erro inesperado ao processar login',
+    }
+  }
+}
+
+/**
  * Inicia o fluxo de login com Magic Link (email) a partir de FormData
  * @param formData - FormData contendo o campo 'email'
  * @returns Objeto com success e message
@@ -115,6 +193,163 @@ export async function signInWithEmail(email: string) {
     return {
       success: false,
       message: 'Erro inesperado ao processar login',
+    }
+  }
+}
+
+/**
+ * Cria conta com email e senha
+ * @param formData - FormData contendo 'email', 'password', 'fullName' (opcional) e opcionalmente 'inviteToken'
+ * @returns Objeto com success e message
+ */
+export async function signupWithPassword(formData: FormData) {
+  try {
+    const email = formData.get('email')?.toString().trim()
+    const password = formData.get('password')?.toString()
+    const fullName = formData.get('fullName')?.toString().trim()
+    const inviteToken = formData.get('inviteToken')?.toString()
+
+    if (!email) {
+      return {
+        success: false,
+        message: 'Email é obrigatório',
+      }
+    }
+
+    if (!password) {
+      return {
+        success: false,
+        message: 'Senha é obrigatória',
+      }
+    }
+
+    if (password.length < 6) {
+      return {
+        success: false,
+        message: 'A senha deve ter pelo menos 6 caracteres',
+      }
+    }
+
+    if (!isValidEmail(email)) {
+      return {
+        success: false,
+        message: 'Email inválido. Por favor, insira um email válido.',
+      }
+    }
+
+    const supabase = await createServerClient()
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    
+    let emailRedirectTo = `${baseUrl}/auth/callback`
+    if (inviteToken) {
+      emailRedirectTo += `?invite=${inviteToken}`
+    }
+
+    // Preparar metadata com nome se fornecido
+    const metadata: Record<string, string> = {}
+    if (fullName) {
+      metadata.full_name = fullName
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo,
+        data: metadata,
+      },
+    })
+
+    if (error) {
+      console.error('Erro ao criar conta:', error)
+      return {
+        success: false,
+        message: error.message || 'Erro ao criar conta',
+      }
+    }
+
+    // Se o email precisa ser confirmado, mostrar mensagem
+    if (data.user && !data.session) {
+      return {
+        success: true,
+        message: 'Conta criada! Verifique seu email para confirmar sua conta.',
+      }
+    }
+
+    // Se já tem sessão, redirecionar
+    if (data.session) {
+      redirect(emailRedirectTo)
+    }
+
+    return {
+      success: true,
+      message: 'Conta criada com sucesso!',
+    }
+  } catch (error) {
+    // O redirect lança um erro "NEXT_REDIRECT" que não deve ser capturado
+    if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+      throw error
+    }
+    if (typeof error === 'object' && error !== null && 'digest' in error && (error as any).digest?.startsWith('NEXT_REDIRECT')) {
+      throw error
+    }
+
+    console.error('Erro inesperado ao criar conta:', error)
+    return {
+      success: false,
+      message: 'Erro inesperado ao processar criação de conta',
+    }
+  }
+}
+
+/**
+ * Envia email de reset de senha
+ * @param formData - FormData contendo o campo 'email'
+ * @returns Objeto com success e message
+ */
+export async function resetPassword(formData: FormData) {
+  try {
+    const email = formData.get('email')?.toString().trim()
+
+    if (!email) {
+      return {
+        success: false,
+        message: 'Email é obrigatório',
+      }
+    }
+
+    if (!isValidEmail(email)) {
+      return {
+        success: false,
+        message: 'Email inválido. Por favor, insira um email válido.',
+      }
+    }
+
+    const supabase = await createServerClient()
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const redirectTo = `${baseUrl}/auth/callback?type=recovery`
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    })
+
+    if (error) {
+      console.error('Erro ao enviar email de reset:', error)
+      return {
+        success: false,
+        message: error.message || 'Erro ao enviar email de reset de senha',
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Email de reset de senha enviado! Verifique sua caixa de entrada.',
+    }
+  } catch (error) {
+    console.error('Erro inesperado ao resetar senha:', error)
+    return {
+      success: false,
+      message: 'Erro inesperado ao processar reset de senha',
     }
   }
 }

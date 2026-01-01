@@ -6,6 +6,108 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2025-01-31 - Refatoração Completa de Login e Signup com Autenticação por Senha
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Refatoração do Sistema de Autenticação
+- **Objetivo**: Implementar login tradicional com email e senha, mantendo magic link apenas para login
+- **Mudanças Principais**:
+  - Login agora suporta 3 modos: senha, magic link e recuperação de senha
+  - Signup agora exige senha obrigatória (magic link removido do signup)
+  - Campo de nome completo adicionado no signup (opcional)
+  - Layout reorganizado: botões sociais no topo, seguidos de separador e formulário
+
+#### 🔐 Novas Server Actions (`lib/actions/auth.ts`)
+- **`loginWithPassword()`**: Autenticação tradicional com email e senha
+  - Suporta `inviteToken` para processar convites após login
+  - Validação de email e senha
+  - Redirect automático após login bem-sucedido
+- **`signupWithPassword()`**: Criação de conta com email, senha e nome
+  - Aceita `fullName` opcional (passado no metadata do Supabase)
+  - Validação de senha (mínimo 6 caracteres)
+  - Suporta `inviteToken` para aceitar convites automaticamente
+- **`resetPassword()`**: Envio de email de recuperação de senha
+  - Usa `supabase.auth.resetPasswordForEmail()`
+  - Redirect para `/auth/callback?type=recovery`
+
+#### 🎨 LoginForm Refatorado (`components/landing/LoginForm.tsx`)
+- **Três Modos de Login**:
+  - `password`: Login tradicional com email e senha (padrão)
+  - `magic-link`: Login via magic link (alternativa)
+  - `forgot-password`: Recuperação de senha
+- **Layout Reorganizado**:
+  1. Botão "Continuar com o Google" (topo)
+  2. Botão "Entrar com magic link" (apenas no modo password)
+  3. Separador "ou"
+  4. Formulário (email + senha quando em modo password)
+  5. Botão "Entre" (verde `bg-green-600`)
+  6. Link "Esqueceu a senha?" (apenas no modo password)
+  7. Link "Não tem uma conta? Criar uma conta"
+- **Funcionalidades**:
+  - Campo de senha com toggle mostrar/ocultar (ícone Eye/EyeOff)
+  - Validação de email e senha
+  - Estados de loading apropriados
+  - Mensagens de erro claras
+  - Suporte a `inviteToken` da URL
+  - Acessibilidade: `aria-label` nos botões de mostrar/ocultar senha
+
+#### 📝 SignupForm Refatorado (`components/landing/SignupForm.tsx`)
+- **Mudanças Principais**:
+  - Senha agora é **obrigatória** (removida opção de magic link)
+  - Campo de nome completo adicionado (opcional)
+  - Campo "Confirmar senha" sempre visível
+  - Layout reorganizado: botão Google no topo, seguido de separador e formulário
+- **Validações**:
+  - Senha obrigatória
+  - Senha mínimo 6 caracteres
+  - Confirmação de senha deve coincidir
+  - Validação de email
+- **Funcionalidades**:
+  - Campos de senha com toggle mostrar/ocultar
+  - Mensagem de sucesso diferenciada (com/sem convite)
+  - Suporte a `inviteToken` para aceitar convites automaticamente
+  - Acessibilidade: `aria-label` nos botões de mostrar/ocultar senha
+
+#### 🎯 Melhorias de UX e Acessibilidade
+- **Consistência Visual**: Login e Signup agora seguem o mesmo padrão de layout
+- **Acessibilidade**: 
+  - `aria-label` adicionado em todos os botões de toggle de senha
+  - Labels descritivos para leitores de tela
+- **Feedback Visual**:
+  - Mensagens de erro claras e específicas
+  - Estados de loading apropriados para cada ação
+  - Mensagens de sucesso diferenciadas por contexto
+
+#### 🔧 Correções e Melhorias Técnicas
+- **InviteToken no Login**: `loginWithPassword` agora aceita e passa `inviteToken` corretamente
+- **Mensagens de Sucesso**: Melhoradas para indicar confirmação de email quando necessário
+- **Tratamento de Erros**: Melhorado em todos os fluxos de autenticação
+- **Validações**: Validação de email e senha tanto no cliente quanto no servidor
+
+#### 📁 Arquivos Modificados
+- `lib/actions/auth.ts`: 
+  - Adicionadas `loginWithPassword()`, `signupWithPassword()`, `resetPassword()`
+  - `loginWithPassword()` atualizado para suportar `inviteToken`
+  - `signupWithPassword()` atualizado para aceitar `fullName` no metadata
+- `components/landing/LoginForm.tsx`: 
+  - Refatorado completamente com 3 modos de login
+  - Layout reorganizado seguindo padrão da imagem de referência
+  - Suporte a `inviteToken` da URL
+- `components/landing/SignupForm.tsx`: 
+  - Senha obrigatória, magic link removido
+  - Campo de nome completo adicionado
+  - Layout reorganizado para consistência com LoginForm
+
+### 2. Trabalho em andamento
+- Nenhum trabalho pendente relacionado a esta feature
+
+### 3. Próximos passos imediatos
+- Testes de integração em produção
+- Validação de fluxos de convite com novo sistema de autenticação
+
+---
+
 ## 2025-01-XX - Edição/Exclusão de Comentários, Links Clicáveis e Reordenação de Grupos
 
 ### 1. Melhorias, bugs e features implementadas em preview

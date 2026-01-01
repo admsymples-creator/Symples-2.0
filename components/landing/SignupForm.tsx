@@ -1,55 +1,74 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signupWithEmail, signInWithGoogle } from "@/lib/actions/auth";
-import { Loader2, Mail, AlertCircle, Building2 } from "lucide-react";
-import { getInviteDetails } from "@/lib/actions/members";
+import { signupWithPassword, signInWithGoogle } from "@/lib/actions/auth";
+import { Loader2, Mail, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 interface SignupFormProps {
   inviteToken?: string;
 }
 
 export function SignupForm({ inviteToken }: SignupFormProps) {
+    const [fullName, setFullName] = useState("");
     const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-    const [inviteInfo, setInviteInfo] = useState<{ workspaceName?: string; email?: string } | null>(null);
-
-    // ✅ CORREÇÃO: Token agora é salvo em cookie na página /invite/[token]
-    // Não precisamos mais usar localStorage aqui - o cookie é mais confiável
-    // e funciona em todos os cenários (OAuth, Magic Link, etc)
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
 
+        // Validação de senha obrigatória
+        if (!password) {
+            setError("A senha é obrigatória.");
+            setIsLoading(false);
+            return;
+        }
+
+        if (password.length < 6) {
+            setError("A senha deve ter pelo menos 6 caracteres.");
+            setIsLoading(false);
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setError("As senhas não coincidem.");
+            setIsLoading(false);
+            return;
+        }
+
         try {
             const formData = new FormData();
             formData.append("email", email);
+            formData.append("password", password);
+            if (fullName) {
+                formData.append("fullName", fullName);
+            }
             if (inviteToken) {
                 formData.append("inviteToken", inviteToken);
             }
 
-            const result = await signupWithEmail(formData);
-
-            if (result.success) {
-                setIsSuccess(true);
-            } else {
+            const result = await signupWithPassword(formData);
+            if (!result.success) {
                 setError(result.message || "Ocorreu um erro ao criar sua conta.");
+                setIsLoading(false);
+            } else {
+                setIsSuccess(true);
             }
         } catch (err) {
             setError("Erro inesperado. Tente novamente.");
-        } finally {
-            if (!isSuccess) {
-                setIsLoading(false);
-            }
+            setIsLoading(false);
         }
     };
 
@@ -103,18 +122,10 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
                     {/* Header */}
                     <div className="space-y-2 text-left">
                         <h1 className="text-3xl font-semibold text-gray-900">
-                            {inviteInfo?.workspaceName ? (
-                                <>Você foi convidado!</>
-                            ) : (
-                                <>Criar conta</>
-                            )}
+                            Criar conta
                         </h1>
                         <p className="text-gray-500">
-                            {inviteInfo?.workspaceName ? (
-                                <>Crie sua conta para se juntar ao workspace <strong>{inviteInfo.workspaceName}</strong></>
-                            ) : (
-                                <>Crie sua conta com seu e-mail corporativo.</>
-                            )}
+                            Crie sua conta com seu e-mail corporativo.
                         </p>
                     </div>
 
@@ -124,65 +135,17 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
                                 <Mail className="h-6 w-6 text-green-600" />
                             </div>
                             <div className="space-y-2">
-                                <h3 className="font-semibold text-green-900">Verifique seu e-mail</h3>
+                                <h3 className="font-semibold text-green-900">Conta criada com sucesso!</h3>
                                 <p className="text-sm text-green-700">
-                                    Enviamos um link mágico para <strong>{email}</strong>.
-                                    Clique nele para criar sua conta e aceitar o convite automaticamente.
+                                    {inviteToken 
+                                        ? "Sua conta foi criada! Você será redirecionado para aceitar o convite."
+                                        : "Sua conta foi criada! Verifique seu email para confirmar sua conta antes de fazer login."}
                                 </p>
                             </div>
                         </div>
                     ) : (
                         <>
-                            {/* Form */}
-                            <form onSubmit={handleSubmit} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="email" className="text-gray-700">
-                                        E-mail profissional
-                                    </Label>
-                                    <Input
-                                        id="email"
-                                        type="email"
-                                        placeholder="seu@email.com"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        required
-                                        disabled={isLoading || !!inviteInfo?.email}
-                                        className={`h-11 rounded-lg ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
-                                    />
-                                    {error && (
-                                        <div className="flex items-center gap-2 text-sm text-red-600 animate-in slide-in-from-top-1">
-                                            <AlertCircle className="h-4 w-4" />
-                                            <span>{error}</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <Button
-                                    type="submit"
-                                    disabled={isLoading}
-                                    className="w-full h-11 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Enviando...
-                                        </>
-                                    ) : (
-                                        "Criar Conta"
-                                    )}
-                                </Button>
-                            </form>
-
-                            {/* Social Login */}
-                            <div className="relative">
-                                <div className="absolute inset-0 flex items-center">
-                                    <span className="w-full border-t border-gray-200" />
-                                </div>
-                                <div className="relative flex justify-center text-xs uppercase">
-                                    <span className="bg-white px-2 text-gray-500">Ou continue com</span>
-                                </div>
-                            </div>
-
+                            {/* Social Login Button */}
                             <Button
                                 variant="outline"
                                 className="w-full h-11 rounded-lg border-gray-300 hover:bg-gray-50"
@@ -211,10 +174,141 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
                                                 fill="#EA4335"
                                             />
                                         </svg>
-                                        Criar conta com Google
+                                        Continuar com o Google
                                     </div>
                                 )}
                             </Button>
+
+                            {/* Separator */}
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t border-gray-200" />
+                                </div>
+                                <div className="relative flex justify-center text-xs">
+                                    <span className="bg-white px-2 text-gray-500">ou</span>
+                                </div>
+                            </div>
+
+                            {/* Form */}
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="fullName" className="text-gray-700">
+                                        Nome completo <span className="text-gray-400 text-xs">(opcional)</span>
+                                    </Label>
+                                    <Input
+                                        id="fullName"
+                                        type="text"
+                                        placeholder="Seu nome"
+                                        value={fullName}
+                                        onChange={(e) => setFullName(e.target.value)}
+                                        disabled={isLoading}
+                                        className={`h-11 rounded-lg ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="email" className="text-gray-700">
+                                        E-mail profissional
+                                    </Label>
+                                    <Input
+                                        id="email"
+                                        type="email"
+                                        placeholder="seu@email.com"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        required
+                                        disabled={isLoading}
+                                        className={`h-11 rounded-lg ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="password" className="text-gray-700">
+                                        Senha
+                                    </Label>
+                                    <div className="relative">
+                                        <Input
+                                            id="password"
+                                            type={showPassword ? "text" : "password"}
+                                            placeholder="••••••••"
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            required
+                                            disabled={isLoading}
+                                            className={`h-11 rounded-lg pr-10 ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                                            tabIndex={-1}
+                                            aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                                        >
+                                            {showPassword ? (
+                                                <EyeOff className="h-4 w-4" />
+                                            ) : (
+                                                <Eye className="h-4 w-4" />
+                                            )}
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        Mínimo de 6 caracteres
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="confirmPassword" className="text-gray-700">
+                                        Confirmar senha
+                                    </Label>
+                                    <div className="relative">
+                                        <Input
+                                            id="confirmPassword"
+                                            type={showConfirmPassword ? "text" : "password"}
+                                            placeholder="••••••••"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            required
+                                            disabled={isLoading}
+                                            className={`h-11 rounded-lg pr-10 ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                        />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                                                tabIndex={-1}
+                                                aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
+                                            >
+                                                {showConfirmPassword ? (
+                                                    <EyeOff className="h-4 w-4" />
+                                                ) : (
+                                                    <Eye className="h-4 w-4" />
+                                                )}
+                                            </button>
+                                    </div>
+                                </div>
+
+                                {error && (
+                                    <div className="flex items-center gap-2 text-sm text-red-600 animate-in slide-in-from-top-1">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <span>{error}</span>
+                                    </div>
+                                )}
+
+                                <Button
+                                    type="submit"
+                                    disabled={isLoading}
+                                    className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    {isLoading ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Criando conta...
+                                        </>
+                                    ) : (
+                                        "Criar Conta"
+                                    )}
+                                </Button>
+                            </form>
 
                             {/* Link para login se já tem conta */}
                             <div className="text-center text-sm text-gray-500">
