@@ -214,7 +214,7 @@ export async function getTasksForCalendar(
       error = result1.error;
     }
 
-    const allTasks = [...(result1.data || [])];
+    const allTasks = [...(result1.data || [])] as any[];
     const taskIdsSet = new Set(allTasks.map(task => task.id));
 
     // Adicionar tarefas de task_members que pertencem ao workspace e não estão já incluídas
