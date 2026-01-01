@@ -670,6 +670,7 @@ export async function updateTaskField(
     "priority",
     "due_date",
     "assignee_id",
+    "workspace_id",
     "tags",
     "subtasks"
   ];
@@ -849,6 +850,7 @@ export async function updateTaskFields(
     "priority",
     "due_date",
     "assignee_id",
+    "workspace_id",
     "tags",
     "subtasks"
   ];

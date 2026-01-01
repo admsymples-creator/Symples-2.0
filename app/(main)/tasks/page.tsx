@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Select,
     SelectContent,
@@ -23,7 +25,8 @@ import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { GhostGroup } from "@/components/tasks/GhostGroup";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save } from "lucide-react";
+import { CalendarViewMenu } from "@/components/calendar/CalendarViewMenu";
+import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
     DropdownMenu,
@@ -70,7 +73,7 @@ import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
 import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
 
-type ViewMode = "list" | "kanban";
+type ViewMode = "list" | "kanban" | "calendar";
 type GroupBy = "status" | "priority" | "assignee" | "date";
 type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
 
@@ -85,6 +88,7 @@ const DATE_COLOR_MAP: Record<string, string> = {
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
 import { SortMenu } from "@/components/tasks/SortMenu";
+import { PlannerCalendar } from "@/components/calendar/planner-calendar";
 
 interface Task {
     id: string;
@@ -148,6 +152,16 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [calendarControls, setCalendarControls] = useState<{
+        handlePrev: () => void;
+        handleNext: () => void;
+        handleToday: () => void;
+        handleViewChange: (view: string) => void;
+        monthYearTitle: string;
+        currentView: string;
+        reloadEvents?: () => void;
+    } | null>(null);
     
     // Ref para throttling do handleDragOver
     const dragOverThrottleRef = useRef<number | null>(null);
@@ -2480,7 +2494,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     return (
         <div className="min-h-screen bg-gray-50/50 pb-20" suppressHydrationWarning>
             {/* HEADER AREA - LINE 1 */}
-            <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
+            <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
                 <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
@@ -2489,95 +2503,175 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 </div>
             </div>
 
-            <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
-                {/* NAVIGATION & FILTERS - LINE 2 */}
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    {/* Lado Esquerdo: Modo de visualização */}
-                    <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
-                            <button
-                                onClick={() => setViewMode("list")}
-                                className={cn(
-                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
-                                    viewMode === "list"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-500 hover:text-gray-900"
-                                )}
-                                title="Lista"
-                            >
-                                <List className="w-4 h-4" />
-                                <span className="text-sm font-medium">Lista</span>
-                            </button>
-                            <button
-                                onClick={() => setViewMode("kanban")}
-                                className={cn(
-                                    "px-2 py-1.5 rounded-md transition-all flex items-center gap-1",
-                                    viewMode === "kanban"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-500 hover:text-gray-900"
-                                )}
-                                title="Kanban"
-                            >
-                                <LayoutGrid className="w-4 h-4" />
-                                <span className="text-sm font-medium">Quadro</span>
-                            </button>
-                        </div>
+            {/* Barra Superior: Modo de Visualização */}
+            <div className="border-b border-gray-200 bg-white px-6 py-3">
+                <div className="max-w-[1600px] mx-auto">
+                    <div className="flex items-center justify-between gap-4">
+                        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+                            <TabsList variant="default">
+                                <TabsTrigger value="list" variant="default" className="flex items-center gap-1">
+                                    <List className="w-4 h-4" />
+                                    <span className="text-sm font-medium">Lista</span>
+                                </TabsTrigger>
+                                <TabsTrigger value="kanban" variant="default" className="flex items-center gap-1">
+                                    <LayoutGrid className="w-4 h-4" />
+                                    <span className="text-sm font-medium">Quadro</span>
+                                </TabsTrigger>
+                                <TabsTrigger value="calendar" variant="default" className="flex items-center gap-1">
+                                    <Calendar className="w-4 h-4" />
+                                    <span className="text-sm font-medium">Calendário</span>
+                                </TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+
                     </div>
+                </div>
+            </div>
 
-                    {/* Lado Direito: Ferramentas */}
-                    <div className="flex flex-1 md:flex-none items-center gap-2 w-full md:w-auto flex-wrap justify-start md:justify-end">
-                        {/* Busca */}
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <Input
-                                placeholder="Buscar tarefas..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
-                            />
-                        </div>
-
-                        {/* Ordenar Por */}
-                        <SortMenu onPersistSortOrder={handlePersistSortOrder} />
-
-                        {/* Agrupar por */}
-                        <GroupingMenu />
-
-                        {/* Novo (menu) */}
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button className="bg-green-600 hover:bg-green-700 text-white">
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Novo
-                                    <ChevronDown className="w-3 h-3 ml-2" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem
+            {/* Barra Inferior: Filtros e Ações */}
+            <div className="border-b border-gray-200 bg-white px-6">
+                <div className={cn("max-w-[1600px] mx-auto py-3", viewMode === "calendar" && "w-full max-w-none")}>
+                    <div className="flex flex-1 items-center justify-between gap-2 flex-wrap">
+                        {/* Lado Esquerdo */}
+                        <div className="flex items-center gap-4">
+                            {/* Botão Novo */}
+                            <div className="flex items-center border border-green-600 rounded-lg overflow-hidden">
+                                <Button 
                                     onClick={() => {
                                         setSelectedTaskId(null);
                                         setTaskDetails(null);
                                         setIsModalOpen(true);
                                     }}
+                                    className="bg-green-600 hover:bg-green-700 text-white rounded-r-none border-r border-green-700"
                                 >
-                                    <CheckSquare className="w-4 h-4 mr-2" />
-                                    Nova Tarefa
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    onClick={() => {
-                                        setIsCreateGroupModalOpen(true);
-                                    }}
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Adicionar uma tarefa
+                                </Button>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button 
+                                            className="bg-green-600 hover:bg-green-700 text-white rounded-l-none px-2 border-0"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                        >
+                                            <ChevronDown className="w-4 h-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="start" className="w-48">
+                                        <DropdownMenuItem
+                                            onClick={() => {
+                                                setSelectedTaskId(null);
+                                                setTaskDetails(null);
+                                                setIsModalOpen(true);
+                                            }}
+                                        >
+                                            <CheckSquare className="w-4 h-4 mr-2" />
+                                            Tarefa
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => {
+                                                setIsCreateGroupModalOpen(true);
+                                            }}
+                                        >
+                                            <FolderPlus className="w-4 h-4 mr-2" />
+                                            Grupo
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
+
+                            {/* Controles do Calendário - apenas na view de calendário */}
+                            {viewMode === "calendar" && calendarControls && (
+                                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9 w-fit">
+                                    <button
+                                        onClick={calendarControls.handlePrev}
+                                        className="px-2 py-1.5 rounded-md transition-all flex items-center justify-center text-gray-500 hover:text-gray-900"
+                                        title="Anterior"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={calendarControls.handleToday}
+                                        className="px-2 py-1.5 rounded-md transition-all flex items-center text-sm font-medium text-gray-500 hover:text-gray-900"
+                                        title="Hoje"
+                                    >
+                                        Hoje
+                                    </button>
+                                    <button
+                                        onClick={calendarControls.handleNext}
+                                        className="px-2 py-1.5 rounded-md transition-all flex items-center justify-center text-gray-500 hover:text-gray-900"
+                                        title="Próximo"
+                                    >
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                    <div className="mx-2 h-4 w-[1px] bg-gray-300" />
+                                    <span className="px-2 text-sm font-medium text-gray-900 capitalize">
+                                        {calendarControls.monthYearTitle}
+                                    </span>
+                                </div>
+                            )}
+
+                        </div>
+
+                        {/* Lado Direito: Busca e Filtros */}
+                        <div className="flex items-center gap-2">
+                            {/* Filtros - apenas Lista e Quadro */}
+                            {(viewMode === "list" || viewMode === "kanban") && (
+                                <>
+                                    <SortMenu onPersistSortOrder={handlePersistSortOrder} />
+                                    <GroupingMenu />
+                                </>
+                            )}
+                            {/* Filtro de Visualização - apenas Calendário */}
+                            {viewMode === "calendar" && calendarControls && (
+                                <CalendarViewMenu 
+                                    currentView={calendarControls.currentView as "dayGridMonth" | "timeGridWeek" | "listDay"}
+                                    onViewChange={(view) => calendarControls.handleViewChange(view)}
+                                />
+                            )}
+
+                            {/* Separador */}
+                            {(viewMode === "list" || viewMode === "kanban") && (
+                                <div className="h-4 w-[1px] bg-gray-300" />
+                            )}
+                            
+                            {/* Busca - apenas ícone (sempre visível) */}
+                            {!isSearchOpen ? (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-9 w-9 text-gray-500 hover:text-gray-900"
+                                    onClick={() => setIsSearchOpen(true)}
                                 >
-                                    <FolderPlus className="w-4 h-4 mr-2" />
-                                    Novo Grupo
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                                    <Search className="w-4 h-4" />
+                                </Button>
+                            ) : (
+                                <div className="relative flex items-center">
+                                    <Search className="absolute left-3 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    <Input
+                                        placeholder="Buscar tarefas..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onBlur={() => {
+                                            if (!searchQuery) {
+                                                setIsSearchOpen(false);
+                                            }
+                                        }}
+                                        autoFocus
+                                        className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200"
+                                    />
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                {/* ConteÃºdo Principal */}
-                <div className="relative h-full w-full">
+            {/* Conteúdo Principal */}
+            <div className="w-full bg-white px-6">
+                <div className={cn("mx-auto", viewMode === "calendar" ? "w-full max-w-none" : "max-w-[1600px]")}>
+                    <div className={cn("relative h-full w-full", viewMode === "calendar" ? "" : "py-3")}>
                     {/* Overlay de carregamento ao trocar de workspace / filtros */}
                     {isLoadingTasks && (
                         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
@@ -2744,6 +2838,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     </DragOverlay>
                                 </DndContext>
                             </div>
+                        ) : viewMode === "calendar" ? (
+                            <div className="h-[calc(100vh-300px)] -mx-6" key={`calendar-${effectiveWorkspaceId}`}>
+                                <PlannerCalendar 
+                                    workspaceId={effectiveWorkspaceId} 
+                                    hideHeader={true}
+                                    onControlsReady={setCalendarControls}
+                                />
+                            </div>
                         ) : (
                             <div className="h-full" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
                                 {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
@@ -2797,7 +2899,16 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 }}
                 task={taskDetails}
                 mode={selectedTaskId ? "edit" : "create"}
-                onTaskCreated={reloadTasks}
+                onTaskCreated={async () => {
+                    await reloadTasks();
+                    // Recarregar calendário se estiver na view de calendário
+                    // Usar setTimeout para garantir que o reloadTasks terminou
+                    setTimeout(() => {
+                        if (viewMode === "calendar" && calendarControls?.reloadEvents) {
+                            calendarControls.reloadEvents();
+                        }
+                    }, 300);
+                }}
                 onTaskUpdated={handleTaskUpdated}
                 onTaskUpdatedOptimistic={handleOptimisticUpdate}
             />
@@ -2881,7 +2992,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+                </div>
+            </div>
         </div>
     );
 }

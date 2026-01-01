@@ -10,10 +10,9 @@ export function formatDateDisplay(dateString: string | Date | null | undefined):
 
   const date = new Date(dateString)
 
-  // Força leitura em UTC para evitar deslocamentos locais (ex.: GMT-3)
+  // Usar timezone local (padrão) para exibir datas corretamente
   return new Intl.DateTimeFormat("pt-BR", {
     day: "numeric",
     month: "short",
-    timeZone: "UTC",
   }).format(date)
 }

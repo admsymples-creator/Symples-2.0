@@ -191,16 +191,18 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
               onValueChange={(v) => setType(v as TransactionType)}
               className="w-fit"
             >
-              <TabsList className="grid grid-cols-2 h-9 bg-gray-100 p-1 rounded-lg w-[200px]">
+              <TabsList variant="pill" className="grid grid-cols-2 w-[200px]">
                 <TabsTrigger 
                   value="income"
-                  className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-green-600 data-[state=active]:shadow-sm transition-all"
+                  variant="pill"
+                  className="data-[state=active]:text-green-600 transition-all"
                 >
                   Entrada
                 </TabsTrigger>
                 <TabsTrigger 
                   value="expense"
-                  className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-red-600 data-[state=active]:shadow-sm transition-all"
+                  variant="pill"
+                  className="data-[state=active]:text-red-600 transition-all"
                 >
                   Saída
                 </TabsTrigger>

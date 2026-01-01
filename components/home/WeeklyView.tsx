@@ -12,9 +12,10 @@ interface WeeklyViewProps {
   tasks: Task[];
   workspaces: { id: string; name: string }[];
   highlightInput?: boolean;
+  onTaskUpdate?: () => void; // Callback para notificar atualizações
 }
 
-export function WeeklyView({ tasks, workspaces, highlightInput = false }: WeeklyViewProps) {
+export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate }: WeeklyViewProps) {
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
 
@@ -39,10 +40,31 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
     tasks.forEach((task) => {
       if (!task.due_date) return;
       const taskDate = new Date(task.due_date);
-      const dateKey = taskDate.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-      });
+      
+      // CORREÇÃO: Para tarefas pessoais com hora específica, usar a data local para agrupamento
+      // Para tarefas de workspace, usar UTC
+      // Isso evita que uma tarefa de 22h local (01:00 UTC do dia seguinte) seja agrupada no dia errado
+      const isPersonal = task.is_personal || !task.workspace_id;
+      let dateKey: string;
+      
+      if (isPersonal) {
+        // Para tarefas pessoais: usar data local para agrupamento (mais intuitivo)
+        // Uma tarefa de 22h de hoje deve aparecer em "hoje", não em "amanhã"
+        dateKey = taskDate.toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+        });
+      } else {
+        // Para tarefas de workspace: usar UTC (como estava antes)
+        const utcDay = String(taskDate.getUTCDate()).padStart(2, '0');
+        const utcMonth = String(taskDate.getUTCMonth() + 1).padStart(2, '0');
+        dateKey = `${utcDay}/${utcMonth}`;
+      }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/WeeklyView.tsx:42',message:'BUG-WEEKLY-HOUR: Task date grouping',data:{taskId:task.id,isPersonal,dueDate:task.due_date,taskDateISO:taskDate.toISOString(),taskDateLocal:taskDate.toString(),dateKey},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-weekly-hour',hypothesisId:'bug-weekly-hour'})}).catch(()=>{});
+      // #endregion
+      
       if (!grouped[dateKey]) grouped[dateKey] = [];
       grouped[dateKey].push(task);
     });
@@ -96,12 +118,14 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
         <h2 className="text-lg font-semibold text-gray-900">
           Visão Semanal
         </h2>
-        <Tabs value={daysToShow.toString()} onValueChange={handleViewChange}>
-          <TabsList className="bg-white border">
-            <TabsTrigger value="3" className="text-sm px-4 transition-all duration-300">3 Dias</TabsTrigger>
-            <TabsTrigger value="5" className="text-sm px-4 transition-all duration-300">Semana</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-3">
+          <Tabs value={daysToShow.toString()} onValueChange={handleViewChange}>
+            <TabsList variant="default">
+              <TabsTrigger value="3" variant="default" className="transition-all duration-300">3 Dias</TabsTrigger>
+              <TabsTrigger value="5" variant="default" className="transition-all duration-300">Semana</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       <motion.div
@@ -126,6 +150,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
                 isToday={day.isToday}
                 workspaces={workspaces}
                 highlightInput={highlightInput && day.isToday}
+                onTaskUpdate={onTaskUpdate}
               />
             </motion.div>
           ))}

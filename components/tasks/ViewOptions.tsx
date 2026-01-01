@@ -61,13 +61,13 @@ export function GroupingMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button 
-            variant="outline" 
+            variant="ghost" 
             size="sm" 
             className={cn(
-              "h-9 px-3 border-dashed transition-all",
+              "h-9 px-3 transition-all flex items-center justify-center",
               isGrouped 
-                ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" 
-                : "text-gray-600 border-gray-300 hover:bg-gray-50"
+                ? "text-green-700 hover:text-green-800 hover:bg-green-50" 
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             )}
           >
             <LayoutGrid className={cn("mr-2 h-4 w-4", isGrouped ? "text-green-600" : "text-gray-500")} />

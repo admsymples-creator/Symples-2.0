@@ -464,25 +464,16 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="w-full rounded-none border-b border-gray-100 bg-transparent h-auto p-0 justify-start pl-4">
-            <TabsTrigger 
-              value="all" 
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent"
-            >
+          <TabsList variant="underline" className="w-full justify-start pl-4">
+            <TabsTrigger value="all" variant="underline">
               Todas
             </TabsTrigger>
             {isAdmin && (
-              <TabsTrigger 
-                value="admin"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent"
-              >
+              <TabsTrigger value="admin" variant="underline">
                 Admin
               </TabsTrigger>
             )}
-            <TabsTrigger 
-              value="unread"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent"
-            >
+            <TabsTrigger value="unread" variant="underline">
               Não Lidas
               {unreadCount > 0 && (
                 <span className="ml-1 bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">

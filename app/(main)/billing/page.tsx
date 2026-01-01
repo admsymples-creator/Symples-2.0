@@ -27,8 +27,10 @@ export default async function BillingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 pb-20">
-      <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="min-h-screen bg-white pb-20">
+      <div className="w-full bg-white">
+        <div className="max-w-[1600px] mx-auto px-6">
+          <div className="py-3">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Escolha seu Plano
@@ -52,6 +54,8 @@ export default async function BillingPage() {
         </div>
 
         <PricingTable currentPlan={currentPlan} />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -21,7 +21,8 @@ import {
     updateAudioTranscription,
     generateTaskShareLink
 } from "@/lib/actions/task-details";
-import { getWorkspaceMembers } from "@/lib/actions/tasks";
+import { getWorkspaceMembers, createTask } from "@/lib/actions/tasks";
+import { getUserWorkspaces } from "@/lib/actions/user";
 import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
@@ -436,6 +437,8 @@ export function TaskDetailModal({
     const [editingCommentText, setEditingCommentText] = useState<string>("");
     const [isUpdatingComment, setIsUpdatingComment] = useState(false);
     const [isDeletingComment, setIsDeletingComment] = useState<string | null>(null);
+    const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+    const [availableWorkspaces, setAvailableWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
     // Usuário atual para padronizar exibição de comentários
     useEffect(() => {
         const supabase = createBrowserClient();
@@ -451,6 +454,41 @@ export function TaskDetailModal({
             }
         });
     }, []);
+
+    // Buscar workspaces disponíveis
+    useEffect(() => {
+        if (open) {
+            const loadWorkspaces = async () => {
+                try {
+                    const workspaces = await getUserWorkspaces();
+                    setAvailableWorkspaces(workspaces.map((ws: any) => ({
+                        id: ws.id,
+                        name: ws.name,
+                    })));
+                } catch (error) {
+                    console.error("Erro ao carregar workspaces:", error);
+                }
+            };
+            loadWorkspaces();
+        }
+    }, [open]);
+
+    // Inicializar workspaceId quando task mudar ou modal abrir
+    useEffect(() => {
+        if (open) {
+            if (isCreateMode) {
+                // Em modo create, usar o primeiro workspace disponível ou null
+                setWorkspaceId(null);
+            } else if (task?.workspaceId) {
+                setWorkspaceId(task.workspaceId);
+            } else if (task?.id) {
+                // Se tem task.id mas não tem workspaceId, buscar do backend
+                // Isso será feito no loadBasicData
+            } else {
+                setWorkspaceId(null);
+            }
+        }
+    }, [open, task, isCreateMode]);
 
     const mapCommentToActivity = useCallback(
         (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
@@ -673,6 +711,102 @@ export function TaskDetailModal({
         });
     }, [activitiesLength, open]);
 
+    // Handler para fechar modal com salvamento automático
+    const handleClose = useCallback(async (newOpen: boolean) => {
+        if (!newOpen && open) {
+            // Modal está sendo fechado - salvar automaticamente
+            
+            if (isCreateMode) {
+                // Modo create: criar tarefa se houver título
+                if (title.trim() && !currentTaskId) {
+                    try {
+                        // Mapear status para o tipo aceito por createTask (não aceita "review")
+                        const dbStatus = status === "review" ? "in_progress" : status;
+                        const result = await createTask({
+                            title: title.trim(),
+                            description: description || "",
+                            status: dbStatus as "todo" | "in_progress" | "done" | "archived",
+                            due_date: dueDate || null,
+                            workspace_id: workspaceId || null,
+                            assignee_id: localMembers[0]?.id || null,
+                            subtasks: subTasks.map(st => ({
+                                title: st.title,
+                                assignee_id: st.assignee_id || null,
+                            })),
+                        });
+
+                        if (result.success && result.data) {
+                            setCurrentTaskId(result.data.id);
+                            onTaskCreated?.();
+                            toast.success("Tarefa criada com sucesso!");
+                        } else {
+                            toast.error(result.error || "Erro ao criar tarefa");
+                        }
+                    } catch (error) {
+                        console.error("Erro ao criar tarefa:", error);
+                        toast.error("Erro ao criar tarefa");
+                    }
+                } else if (currentTaskId) {
+                    // Tarefa já foi criada
+                    toast.success("Tarefa salva com sucesso!");
+                }
+            } else if (currentTaskId) {
+                // Modo edit: salvar alterações pendentes
+                const updates: any = {};
+                let hasUpdates = false;
+
+                // Verificar se há alterações pendentes
+                if (title.trim() && title !== task?.title) {
+                    updates.title = title.trim();
+                    hasUpdates = true;
+                }
+                if (description !== task?.description) {
+                    updates.description = description;
+                    hasUpdates = true;
+                }
+                if (status !== task?.status) {
+                    updates.status = status;
+                    hasUpdates = true;
+                }
+                if (dueDate !== (task?.dueDate || "")) {
+                    updates.due_date = dueDate || null;
+                    hasUpdates = true;
+                }
+
+                // Verificar alterações em assignees
+                // Como o task não tem assignee.id, vamos verificar se há mudança baseado no nome
+                // Se houver membros selecionados e não havia assignee antes, ou vice-versa, há mudança
+                const hasCurrentAssignee = localMembers.length > 0;
+                const hadTaskAssignee = !!task?.assignee;
+                if (hasCurrentAssignee !== hadTaskAssignee) {
+                    updates.assignee_id = localMembers[0]?.id || null;
+                    hasUpdates = true;
+                } else if (hasCurrentAssignee && hadTaskAssignee) {
+                    // Ambos têm assignee, mas pode ter mudado - vamos salvar para garantir
+                    // (não podemos comparar IDs porque task.assignee não tem id)
+                    updates.assignee_id = localMembers[0]?.id || null;
+                    hasUpdates = true;
+                }
+
+                // Salvar alterações se houver
+                if (hasUpdates) {
+                    try {
+                        await updateTaskFields(currentTaskId, updates);
+                        onTaskUpdated?.();
+                    } catch (error) {
+                        console.error("Erro ao salvar tarefa:", error);
+                        toast.error("Erro ao salvar tarefa");
+                        return; // Não fechar modal se houver erro
+                    }
+                }
+                
+                // Sempre mostrar toast de confirmação
+                toast.success("Tarefa salva com sucesso!");
+            }
+        }
+        onOpenChange(newOpen);
+    }, [open, isCreateMode, currentTaskId, title, description, status, dueDate, task, localMembers, subTasks, onTaskCreated, onTaskUpdated, onOpenChange]);
+
     // Limpar estados quando task.id mudar ou modal fechar
     // Este useEffect deve rodar ANTES de qualquer renderização do formulário
     useEffect(() => {
@@ -746,6 +880,7 @@ export function TaskDetailModal({
                         setDescription(cachedBasic.description || "");
                         setStatus(cachedBasic.status || "todo");
                         setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
+                        setWorkspaceId(cachedBasic.workspace_id || null);
 
                         // Usar assignees do cache (já inclui task_members)
                         if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
@@ -2275,7 +2410,7 @@ export function TaskDetailModal({
 
     return (
         <>
-            <Dialog open={open} onOpenChange={onOpenChange}>
+            <Dialog open={open} onOpenChange={handleClose}>
                 <DialogPortal>
                     <DialogOverlay className="bg-black/50" />
                     <DialogPrimitive.Content
@@ -2333,7 +2468,7 @@ export function TaskDetailModal({
                                         variant="ghost"
                                         size="icon"
                                         className="h-8 w-8"
-                                        onClick={() => onOpenChange(false)}
+                                        onClick={() => handleClose(false)}
                                     >
                                         <X className="h-4 w-4" />
                                     </Button>
@@ -2397,6 +2532,7 @@ export function TaskDetailModal({
                                                 <h1 className="text-4xl font-bold">{title}</h1>
                                             ) : (
                                                 <Input
+                                                    placeholder="Digite o título da tarefa..."
                                                     value={title}
                                                     onChange={(e) => {
                                                         const newTitle = e.target.value;
@@ -2461,7 +2597,7 @@ export function TaskDetailModal({
                                                     memberIds={localMembers.map(m => m.id)}
                                                     onChange={handleMembersChange}
                                                     members={availableUsers}
-                                                    workspaceId={task?.workspaceId || undefined}
+                                                    workspaceId={workspaceId || undefined}
                                                 />
                                             </div>
 
@@ -2475,6 +2611,64 @@ export function TaskDetailModal({
                                                     isCompleted={status === TASK_STATUS.DONE}
                                                 />
                                             </div>
+                                        </div>
+
+                                        {/* Workspace Selector */}
+                                        <div className="mb-8">
+                                            <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-2 block">Workspace</label>
+                                            <Select
+                                                value={workspaceId || ""}
+                                                onValueChange={async (value) => {
+                                                    const newWorkspaceId = value || null;
+                                                    setWorkspaceId(newWorkspaceId);
+                                                    
+                                                    // Se estiver editando uma tarefa existente, atualizar no backend
+                                                    if (currentTaskId && !isCreateMode) {
+                                                        try {
+                                                            const result = await updateTaskField(currentTaskId, "workspace_id", newWorkspaceId);
+                                                            if (result.success) {
+                                                                invalidateCacheAndNotify(currentTaskId);
+                                                                toast.success("Workspace atualizado");
+                                                            } else {
+                                                                // Reverter em caso de erro
+                                                                setWorkspaceId(workspaceId);
+                                                                toast.error(result.error || "Erro ao atualizar workspace");
+                                                            }
+                                                        } catch (error) {
+                                                            console.error("Erro ao atualizar workspace:", error);
+                                                            setWorkspaceId(workspaceId);
+                                                            toast.error("Erro ao atualizar workspace");
+                                                        }
+                                                    }
+                                                    
+                                                    // Atualizar membros disponíveis quando workspace mudar
+                                                    if (newWorkspaceId) {
+                                                        try {
+                                                            const members = await getWorkspaceMembers(newWorkspaceId);
+                                                            setAvailableUsers(
+                                                                members.map((m: any) => ({
+                                                                    id: m.id,
+                                                                    name: m.full_name || m.email || "Sem nome",
+                                                                    avatar: m.avatar_url || undefined,
+                                                                }))
+                                                            );
+                                                        } catch (error) {
+                                                            console.error("Erro ao carregar membros do workspace:", error);
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder="Selecione um workspace" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {availableWorkspaces.map((ws) => (
+                                                        <SelectItem key={ws.id} value={ws.id}>
+                                                            {ws.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
                                         </div>
 
                                         {/* Description */}

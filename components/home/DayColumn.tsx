@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useOptimistic, startTransition } from "react";
-import { FolderOpen, Plus, Calendar as CalendarIcon } from "lucide-react";
+import { FolderOpen, Calendar as CalendarIcon } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
-import { createTask, deleteTask, updateTask } from "@/lib/actions/tasks";
+import { createTask, deleteTask, updateTask, getTaskRecurrenceInfo } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ConfirmModal } from "@/components/modals/confirm-modal";
+import { DeleteRecurringTaskModal } from "@/components/modals/delete-recurring-task-modal";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -25,6 +27,7 @@ interface DayColumnProps {
   isToday?: boolean;
   workspaces?: { id: string; name: string }[];
   highlightInput?: boolean;
+  onTaskUpdate?: () => void; // Callback para notificar atualizações
 }
 
 export function DayColumn({
@@ -35,13 +38,19 @@ export function DayColumn({
   isToday,
   workspaces = [],
   highlightInput = false,
+  onTaskUpdate,
 }: DayColumnProps) {
   const router = useRouter();
   const [quickAddValue, setQuickAddValue] = useState("");
   const [isQuickAddFocused, setIsQuickAddFocused] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedDateTime, setSelectedDateTime] = useState<Date | null>(null);
+  const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(null);
   const [showTutorialHint, setShowTutorialHint] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [optimisticTasks, addOptimisticTask] = useOptimistic(
@@ -96,26 +105,39 @@ export function DayColumn({
   };
 
   const sortedTasks = useMemo(() => {
-    const hasSpecificTime = (task: Task) => {
-      if (!task.due_date) return false;
-      const d = new Date(task.due_date);
-      return d.getHours() !== 0 || d.getMinutes() !== 0;
-    };
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:107',message:'BUG-SORT: Sorting tasks',data:{taskCount:optimisticTasks.length,sampleTasks:optimisticTasks.slice(0,3).map(t=>({id:t.id,title:t.title,due_date:t.due_date,is_personal:t.is_personal}))},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-sort',hypothesisId:'bug-sort'})}).catch(()=>{});
+    // #endregion
 
     return [...optimisticTasks].sort((a, b) => {
       const aIsPersonal = a.is_personal || !a.workspace_id;
       const bIsPersonal = b.is_personal || !b.workspace_id;
-      const aHasTime = hasSpecificTime(a);
-      const bHasTime = hasSpecificTime(b);
 
-      if (aIsPersonal && aHasTime && !(bIsPersonal && bHasTime)) return -1;
-      if (bIsPersonal && bHasTime && !(aIsPersonal && aHasTime)) return 1;
-      if (aIsPersonal && !aHasTime && !bIsPersonal) return -1;
-      if (bIsPersonal && !bHasTime && !aIsPersonal) return 1;
+      // CORREÇÃO: Ordenar tarefas pessoais cronologicamente (por due_date/hora)
+      if (aIsPersonal && bIsPersonal) {
+        // Ambas são pessoais: ordenar por data/hora
+        if (a.due_date && b.due_date) {
+          const timeA = new Date(a.due_date).getTime();
+          const timeB = new Date(b.due_date).getTime();
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:122',message:'BUG-SORT: Comparing personal tasks',data:{aId:a.id,aDueDate:a.due_date,aTime:timeA,aDate:new Date(a.due_date).toString(),bId:b.id,bDueDate:b.due_date,bTime:timeB,bDate:new Date(b.due_date).toString(),result:timeA-timeB},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-sort',hypothesisId:'bug-sort'})}).catch(()=>{});
+          // #endregion
+          return timeA - timeB;
+        }
+        if (a.due_date) return -1; // a tem data, b não -> a primeiro
+        if (b.due_date) return 1; // b tem data, a não -> b primeiro
+        // Nenhuma tem data: manter ordem original (ou por criação)
+        if (a.created_at && b.created_at) {
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }
+        return 0;
+      }
 
+      // Separar pessoais de workspace: pessoais primeiro
+      if (aIsPersonal && !bIsPersonal) return -1;
+      if (!aIsPersonal && bIsPersonal) return 1;
 
-      // Se empatar nos critérios acima (ex: ambos pessoais sem hora),
-      // ordena por data de criação (mais antigo primeiro -> mais novo no final)
+      // Ambas são workspace: manter ordem original (ou por criação)
       if (a.created_at && b.created_at) {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       }
@@ -144,8 +166,10 @@ export function DayColumn({
     if (selectedDateTime) {
       dueDateISO = selectedDateTime.toISOString();
     } else if (dateObj) {
+      // Usar meio-dia (12:00) para evitar problemas de timezone
+      // Meio-dia em qualquer timezone mantém o mesmo dia ao converter para UTC
       const d = new Date(dateObj);
-      d.setHours(0, 0, 0, 0);
+      d.setHours(12, 0, 0, 0);
       dueDateISO = d.toISOString();
     }
 
@@ -174,6 +198,10 @@ export function DayColumn({
     });
 
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:187',message:'BUG-RECURRENCE: Creating task with recurrence',data:{recurrenceType,selectedDateTime:selectedDateTime?.toISOString(),dueDateISO,tasksToCreateCount:tasksToCreate.length},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-recurrence',hypothesisId:'bug-recurrence-create'})}).catch(()=>{});
+      // #endregion
+
       const createPromises = tasksToCreate.map((title) =>
         createTask({
           title,
@@ -181,13 +209,16 @@ export function DayColumn({
           workspace_id: null,
           status: "todo",
           is_personal: true,
+          recurrence_type: recurrenceType || undefined,
         })
       );
 
       setSelectedDateTime(null);
+      setRecurrenceType(null);
       const results = await Promise.all(createPromises);
 
       if (results.some((r) => r.success)) {
+        onTaskUpdate?.(); // Notificar atualização
         startTransition(() => {
           router.refresh();
         });
@@ -212,6 +243,7 @@ export function DayColumn({
       });
 
       await updateTask({ id, status: checked ? "done" : "todo" });
+      onTaskUpdate?.(); // Notificar atualização
       router.refresh();
     } catch (error) {
       console.error("Erro ao atualizar status:", error);
@@ -221,18 +253,50 @@ export function DayColumn({
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Excluir?")) {
-      try {
-        startTransition(() => {
-          addOptimisticTask({ type: 'delete', id });
-        });
-        await deleteTask(id);
+    const task = optimisticTasks.find(t => t.id === id);
+    if (!task) return;
+    
+    setTaskToDelete({ id, title: task.title || "Tarefa" });
+    
+    // Verificar se a tarefa é recorrente
+    const recurrenceInfo = await getTaskRecurrenceInfo(id);
+    
+    if (recurrenceInfo.isRecurring && recurrenceInfo.relatedTasksCount > 1) {
+      setShowRecurringModal(true);
+    } else {
+      setShowDeleteModal(true);
+    }
+  };
+
+  const confirmDelete = async (deleteAll: boolean = false) => {
+    if (!taskToDelete) return;
+    
+    setIsDeleting(true);
+    
+    try {
+      startTransition(() => {
+        addOptimisticTask({ type: 'delete', id: taskToDelete.id });
+      });
+      
+      const result = await deleteTask(taskToDelete.id, deleteAll);
+      
+      if (result.success) {
+        toast.success(deleteAll ? "Tarefas excluídas com sucesso" : "Tarefa excluída com sucesso");
+        onTaskUpdate?.(); // Notificar atualização
         router.refresh();
-      } catch (error) {
-        console.error("Erro ao excluir:", error);
-        toast.error("Erro ao excluir tarefa");
+      } else {
+        toast.error(result.error || "Erro ao excluir tarefa");
         router.refresh();
       }
+    } catch (error) {
+      console.error("Erro ao excluir:", error);
+      toast.error("Erro ao excluir tarefa");
+      router.refresh();
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteModal(false);
+      setShowRecurringModal(false);
+      setTaskToDelete(null);
     }
   };
 
@@ -245,6 +309,7 @@ export function DayColumn({
         });
       });
       await updateTask({ id, title });
+      onTaskUpdate?.(); // Notificar atualização
       router.refresh();
     } catch (error) {
       console.error("Erro ao editar:", error);
@@ -262,6 +327,7 @@ export function DayColumn({
         });
       });
       await updateTask({ id, workspace_id: wid, is_personal: false });
+      onTaskUpdate?.(); // Notificar atualização
       router.refresh();
     } catch (error) {
       console.error("Erro ao mover:", error);
@@ -331,7 +397,10 @@ export function DayColumn({
                   onDelete={handleDelete}
                   onEdit={handleEdit}
                   onMoveToWorkspace={handleMove}
-                  onDateUpdate={() => router.refresh()}
+                  onDateUpdate={() => {
+                    onTaskUpdate?.();
+                    router.refresh();
+                  }}
                 />
               ))}
             </div>
@@ -378,15 +447,7 @@ export function DayColumn({
               />
             )}
 
-            <div className="flex items-start gap-2 p-2 relative z-10">
-              <div className="mt-1.5 ml-1">
-                {isQuickAddFocused ? (
-                  <div className="w-2 h-2 bg-gray-900 rounded-full animate-pulse" />
-                ) : (
-                  <Plus className={cn("w-4 h-4 transition-colors", highlightInput && isToday ? "text-green-600" : "text-gray-400")} />
-                )}
-              </div>
-
+            <div className="flex items-start gap-2 px-3 py-2 relative z-10">
               <textarea
                 ref={inputRef}
                 placeholder="Nova tarefa..."
@@ -406,34 +467,63 @@ export function DayColumn({
               />
             </div>
 
-            {(isQuickAddFocused || quickAddValue) && (
-              <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50 relative z-10">
-                <div className="flex items-center gap-1">
-                  <TaskDateTimePicker
-                    date={selectedDateTime}
-                    onSelect={setSelectedDateTime}
-                    align="start"
-                    side="top"
-                    trigger={
-                      <button type="button" className={cn(
-                        "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
-                        selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
-                      )}>
-                        <CalendarIcon className="w-3.5 h-3.5" />
-                        {selectedDateTime ? "Data definida" : "Agendar"}
-                      </button>
-                    }
-                  />
-                </div>
-
-                <div className="text-[10px] text-gray-400 font-medium">
-                  ENTER para salvar
-                </div>
+            <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50 relative z-10">
+              <div className="flex items-center gap-1">
+                <TaskDateTimePicker
+                  date={selectedDateTime}
+                  onSelect={setSelectedDateTime}
+                  recurrenceType={recurrenceType}
+                  onRecurrenceChange={setRecurrenceType}
+                  align="start"
+                  side="top"
+                  trigger={
+                    <button type="button" className={cn(
+                      "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
+                      selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
+                    )}>
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                      {selectedDateTime ? "Data definida" : "Agendar"}
+                    </button>
+                  }
+                />
               </div>
-            )}
+
+              {(isQuickAddFocused || quickAddValue) && (
+                <button
+                  type="submit"
+                  disabled={isCreating || !quickAddValue.trim()}
+                  className={cn(
+                    "text-[10px] font-medium px-2 py-1 rounded hover:bg-gray-200 transition-colors",
+                    isCreating || !quickAddValue.trim()
+                      ? "text-gray-400 cursor-not-allowed"
+                      : "text-gray-600 hover:text-gray-900"
+                  )}
+                >
+                  Salvar
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
+
+      {/* Modais de confirmação de exclusão */}
+      <ConfirmModal
+        open={showDeleteModal}
+        onOpenChange={setShowDeleteModal}
+        title="Excluir Tarefa?"
+        description="Esta ação não pode ser desfeita."
+        confirmText="Excluir Tarefa"
+        isLoading={isDeleting}
+        onConfirm={() => confirmDelete(false)}
+      />
+      <DeleteRecurringTaskModal
+        open={showRecurringModal}
+        onOpenChange={setShowRecurringModal}
+        taskTitle={taskToDelete?.title || "Tarefa"}
+        onConfirm={confirmDelete}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

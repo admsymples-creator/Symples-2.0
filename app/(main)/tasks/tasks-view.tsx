@@ -889,14 +889,14 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
         <div className="flex items-center gap-4">
                     {/* Tabs de Contexto */}
                     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ContextTab)}>
-                        <TabsList className="bg-white border rounded-lg h-9">
-                            <TabsTrigger value="minhas" className="h-7 rounded-md text-sm px-3">
+                        <TabsList variant="default">
+                            <TabsTrigger value="minhas" variant="default">
                                 Minhas
                             </TabsTrigger>
-                            <TabsTrigger value="time" className="h-7 rounded-md text-sm px-3">
+                            <TabsTrigger value="time" variant="default">
                                 Time
                             </TabsTrigger>
-                            <TabsTrigger value="todas" className="h-7 rounded-md text-sm px-3">
+                            <TabsTrigger value="todas" variant="default">
                                 Todas
                             </TabsTrigger>
                         </TabsList>
@@ -944,32 +944,16 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     )}
 
                     {/* View Switcher */}
-                    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
-             <button 
-                            onClick={() => setViewMode("list")}
-                            className={cn(
-                                "p-1.5 rounded-md transition-all h-7",
-                                viewMode === "list"
-                                    ? "bg-white text-gray-900 shadow-sm"
-                                    : "text-gray-500 hover:text-gray-900"
-                            )}
-                            title="Lista"
-             >
-                            <List className="w-4 h-4" />
-             </button>
-             <button 
-                            onClick={() => setViewMode("kanban")}
-                            className={cn(
-                                "p-1.5 rounded-md transition-all h-7",
-                                viewMode === "kanban"
-                                    ? "bg-white text-gray-900 shadow-sm"
-                                    : "text-gray-500 hover:text-gray-900"
-                            )}
-                            title="Kanban"
-             >
-                            <LayoutGrid className="w-4 h-4" />
-             </button>
-          </div>
+                    <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+                        <TabsList variant="default">
+                            <TabsTrigger value="list" variant="default">
+                                <List className="w-4 h-4" />
+                            </TabsTrigger>
+                            <TabsTrigger value="kanban" variant="default">
+                                <LayoutGrid className="w-4 h-4" />
+                            </TabsTrigger>
+                        </TabsList>
+                    </Tabs>
         </div>
       </div>
 

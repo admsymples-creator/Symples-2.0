@@ -3,7 +3,7 @@
 import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2 } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/command";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
-import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, TASK_STATUS } from "@/lib/config/tasks";
+import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, TASK_STATUS, type TaskStatus } from "@/lib/config/tasks";
 import { Avatar } from "./Avatar";
 import {
   Tooltip,
@@ -52,6 +52,8 @@ interface TaskRowMinifyProps {
     commentCount?: number;
     commentsCount?: number;
     isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
+    recurrence_type?: string | null;
+    recurrence_parent_id?: string | null;
   };
   containerId?: string;
   isOverlay?: boolean;
@@ -65,6 +67,8 @@ interface TaskRowMinifyProps {
   onTaskDeletedOptimistic?: (taskId: string) => void;
   onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
+  showWorkspaceBadge?: boolean;
+  workspaceName?: string;
 }
 
 // Função auxiliar para verificar se é hoje
@@ -105,7 +109,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -207,7 +211,10 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   const isHexColor = groupColor?.startsWith("#");
 
   // Configuração Visual do Status
-  const dbStatus = mapLabelToStatus(task.status || "Não iniciado");
+  // task.status pode vir do banco como "todo", "in_progress", etc. ou como label "Não iniciado", etc.
+  // Se já for um status do banco, usar diretamente; caso contrário, mapear do label
+  const rawStatus = task.status || "todo";
+  const dbStatus = (rawStatus in TASK_CONFIG) ? rawStatus as TaskStatus : mapLabelToStatus(rawStatus);
   const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
   
   // Verificar se a tarefa está concluída
@@ -508,6 +515,19 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           {task.isPending && (
             <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
           )}
+          {/* Ícone de recorrência */}
+          {(task.recurrence_type || task.recurrence_parent_id) && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <RefreshCw className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Tarefa recorrente {task.recurrence_type ? `(${task.recurrence_type === 'daily' ? 'Diária' : task.recurrence_type === 'weekly' ? 'Semanal' : task.recurrence_type === 'monthly' ? 'Mensal' : 'Personalizada'})` : ''}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           <div className="flex-1 min-w-0 overflow-hidden">
             <InlineTextEdit
               value={task.title}
@@ -522,6 +542,12 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               maxLength={100} // ✅ Limite de caracteres (padrão UX)
             />
           </div>
+          {/* Badge de Workspace - apenas na home */}
+          {showWorkspaceBadge && workspaceName && (
+            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+              {workspaceName}
+            </Badge>
+          )}
         </div>
         
         {/* Comentários - aparece apenas no hover */}

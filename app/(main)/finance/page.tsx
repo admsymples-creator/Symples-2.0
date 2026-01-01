@@ -235,10 +235,10 @@ export default async function FinancePage(props: {
   const topCategory = categories.length > 0 ? categories[0] : { name: "-", value: 0 };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 pb-20">
+    <div className="min-h-screen bg-white pb-20">
       {/* HEADER AREA - LINE 1 */}
-      <div className="bg-white border-b px-6 py-5 sticky top-0 z-10">
-        <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
             <p className="text-sm text-gray-500">Gestão inteligente do seu fluxo de caixa</p>
@@ -246,27 +246,46 @@ export default async function FinancePage(props: {
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
-        
-        {/* NAVIGATION & CONTROLS */}
-        <Tabs defaultValue="overview" className="w-full">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-            <TabsList className="bg-white border">
-              <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-              <TabsTrigger value="recurring">Recorrentes (Fixos)</TabsTrigger>
-              <TabsTrigger value="planning">Planejamento</TabsTrigger>
+      <Tabs defaultValue="overview" className="w-full">
+        {/* Barra Superior: Modo de Visualização */}
+        <div className="border-b border-gray-200 bg-white px-6">
+          <div className="max-w-[1600px] mx-auto py-3">
+            <TabsList variant="default">
+              <TabsTrigger value="overview" variant="default">
+                Visão Geral
+              </TabsTrigger>
+              <TabsTrigger value="recurring" variant="default">
+                Recorrentes (Fixos)
+              </TabsTrigger>
+              <TabsTrigger value="planning" variant="default">
+                Planejamento
+              </TabsTrigger>
             </TabsList>
+          </div>
+        </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <MonthSelector />
-              <Button variant="outline" size="icon">
-                 <MoreHorizontal className="w-4 h-4" />
-              </Button>
-              <NewTransactionButton />
+        {/* Barra Inferior: Filtros e Ações */}
+        <div className="border-b border-gray-200 bg-white px-6">
+          <div className="max-w-[1600px] mx-auto py-3">
+            <div className="flex flex-1 items-center justify-between gap-2 flex-wrap">
+              {/* Lado Esquerdo: Botão Novo */}
+              <div className="flex items-center gap-4">
+                <NewTransactionButton />
+              </div>
+
+              {/* Lado Direito: Filtros */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <MonthSelector />
+              </div>
             </div>
           </div>
+        </div>
 
-          <TabsContent value="overview" className="space-y-8 mt-0">
+        {/* Conteúdo Principal */}
+        <div className="w-full bg-white px-6">
+          <div className="max-w-[1600px] mx-auto">
+            <div className="py-3 space-y-8">
+              <TabsContent value="overview" className="space-y-8 mt-0">
             
             {/* DIAGNOSTIC SECTION */}
             <FinancialHealthCard data={metrics} />
@@ -409,8 +428,10 @@ export default async function FinancePage(props: {
               />
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
+            </div>
+          </div>
+        </div>
+      </Tabs>
     </div>
   );
 }

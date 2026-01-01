@@ -88,7 +88,9 @@ export async function getTasks(filters?: {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) return [];
+  if (!user) {
+    return [];
+  }
 
   // ✅ SEGURANÇA E LÓGICA: Fail-safe
   // Exceção: Se assigneeId === "current" (aba "Minhas"), permitir buscar sem workspaceId
@@ -178,7 +180,56 @@ export async function getTasks(filters?: {
       query = query.lte("due_date", filters.dueDateEnd);
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  
+  // Se estamos na aba "Minhas" e há tarefas em task_members, buscar também essas tarefas
+  if (filters?.assigneeId === "current" && isMinhasTab) {
+      const { data: taskMemberTasks } = await supabase
+        .from("task_members")
+        .select(`
+          task_id,
+          tasks:task_id (
+            *,
+            assignee:assignee_id (
+              full_name,
+              email,
+              avatar_url
+            ),
+            creator:created_by (
+              full_name
+            ),
+            group:group_id (
+              id,
+              name,
+              color,
+              workspace_id
+            ),
+            task_members (
+              user:user_id (
+                id,
+                full_name,
+                email,
+                avatar_url
+              )
+            )
+          )
+        `)
+        .eq("user_id", user.id);
+      
+      if (taskMemberTasks && taskMemberTasks.length > 0) {
+          const tasksFromMembers = taskMemberTasks
+            .map((tm: any) => tm.tasks)
+            .filter((task: any) => task && task.status !== "archived" && task.assignee_id !== user.id);
+          
+          // Combinar tarefas de assignee_id com tarefas de task_members
+          const existingTaskIds = new Set((data || []).map((t: any) => t.id));
+          const additionalTasks = tasksFromMembers.filter((t: any) => !existingTaskIds.has(t.id));
+          
+          // As tarefas de task_members já vêm com a estrutura correta da query (incluindo relacionamentos),
+          // então serão transformadas junto com as outras tarefas no final através de transformTaskWithMembers
+          data = [...(data || []), ...additionalTasks];
+      }
+  }
 
   if (error) {
     console.error("Erro ao buscar tarefas:", error);
@@ -191,9 +242,10 @@ export async function getTasks(filters?: {
 
   // ✅ Filtro 2: Buscar grupos válidos do workspace (backend)
   // Isso garante que só retornamos tarefas de grupos que existem e pertencem ao workspace
+  // IMPORTANTE: Quando assigneeId === "current" (aba "Minhas"), não filtrar por workspace
   let validGroupIds: Set<string> | null = null;
   
-  if (filters?.workspaceId !== undefined) {
+  if (filters?.workspaceId !== undefined && !isMinhasTab) {
     try {
       // Usar cast para evitar erro de tipo (task_groups pode não estar nos tipos ainda)
       let groupsQuery = (supabase as any)
@@ -229,6 +281,12 @@ export async function getTasks(filters?: {
       // Se o grupo não existe (group é null), excluir tarefa
       if (!task.group || !task.group.id) {
         return false;
+      }
+
+      // Se estamos na aba "Minhas" (assigneeId === "current"), não filtrar por workspace do grupo
+      if (isMinhasTab) {
+        // Apenas verificar se o grupo existe, sem filtrar por workspace
+        return true;
       }
 
       // Se temos lista de grupos válidos, verificar se o grupo está nela
@@ -274,13 +332,17 @@ export async function getTasks(filters?: {
   }
 
   // Adicionar contagem de comentários e transformar membros
-  return filteredData.map((task) => {
+  // IMPORTANTE: As tarefas de task_members já foram adicionadas ao `data` antes do filtro,
+  // então elas também passam pela transformação aqui
+  const result = filteredData.map((task) => {
     const transformed = transformTaskWithMembers({
       ...task,
       comment_count: commentCountMap[task.id] || 0,
     });
     return transformed;
   }) as unknown as TaskWithDetails[];
+  
+  return result;
 }
 
 /**
@@ -385,6 +447,10 @@ export async function createTask(data: {
   group_id?: string | null;
   tags?: string[];
   subtasks?: any[];
+  recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null;
+  recurrence_interval?: number | null;
+  recurrence_end_date?: string | null;
+  recurrence_count?: number | null;
 }) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -410,6 +476,10 @@ export async function createTask(data: {
   // Garantir que subtasks seja um JSON válido
   const subtasks = data.subtasks ? JSON.parse(JSON.stringify(data.subtasks)) : [];
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/tasks.ts:479',message:'BUG-RECURRENCE: createTask insert data',data:{title:data.title,recurrence_type:data.recurrence_type,recurrence_interval:data.recurrence_interval,is_personal},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-recurrence',hypothesisId:'bug-recurrence-create'})}).catch(()=>{});
+  // #endregion
+
   const { data: newTask, error } = await supabase.from("tasks").insert({
     title: data.title,
     description: data.description || null,
@@ -424,6 +494,10 @@ export async function createTask(data: {
     group_id: data.group_id || null,
     tags: data.tags || [],
     subtasks: subtasks,
+    recurrence_type: data.recurrence_type || null,
+    recurrence_interval: data.recurrence_interval || null,
+    recurrence_end_date: data.recurrence_end_date || null,
+    recurrence_count: data.recurrence_count || null,
     // position será auto-gerado ou podemos calcular aqui se necessário
   }).select().single();
 
@@ -794,9 +868,92 @@ export async function updateTaskPositionSimple(
 /**
  * Deleta uma tarefa
  */
-export async function deleteTask(id: string) {
+/**
+ * Busca informações sobre recorrência de uma tarefa
+ */
+export async function getTaskRecurrenceInfo(taskId: string): Promise<{
+  isRecurring: boolean;
+  parentId: string | null;
+  recurrenceType: string | null;
+  relatedTasksCount: number;
+}> {
   const supabase = await createServerActionClient();
 
+  // Buscar a tarefa
+  const { data: task, error: taskError } = await supabase
+    .from("tasks")
+    .select("recurrence_type, recurrence_parent_id, id")
+    .eq("id", taskId)
+    .single();
+
+  if (taskError || !task) {
+    return {
+      isRecurring: false,
+      parentId: null,
+      recurrenceType: null,
+      relatedTasksCount: 0,
+    };
+  }
+
+  const taskAny = task as any;
+  const isRecurring = !!taskAny.recurrence_type || !!taskAny.recurrence_parent_id;
+  const parentId = taskAny.recurrence_parent_id || (taskAny.recurrence_type ? taskAny.id : null);
+
+  if (!parentId) {
+    return {
+      isRecurring: false,
+      parentId: null,
+      recurrenceType: null,
+      relatedTasksCount: 0,
+    };
+  }
+
+  // Contar tarefas relacionadas (filhas do mesmo parent ou o parent + filhas)
+  // Se a tarefa atual é o parent, contar ela + todas as filhas
+  // Se a tarefa atual é filha, contar o parent + todas as filhas (incluindo ela mesma)
+  const { count, error: countError } = await supabase
+    .from("tasks")
+    .select("*", { count: "exact", head: true })
+    .or(`recurrence_parent_id.eq.${parentId},id.eq.${parentId}`);
+
+  const relatedTasksCount = countError ? 0 : (count || 0);
+
+  return {
+    isRecurring,
+    parentId,
+    recurrenceType: taskAny.recurrence_type || null,
+    relatedTasksCount,
+  };
+}
+
+export async function deleteTask(id: string, deleteAll: boolean = false) {
+  const supabase = await createServerActionClient();
+
+  // Se deleteAll, buscar todas as tarefas relacionadas
+  if (deleteAll) {
+    // Buscar informações de recorrência
+    const recurrenceInfo = await getTaskRecurrenceInfo(id);
+    
+    if (recurrenceInfo.isRecurring && recurrenceInfo.parentId) {
+      // Excluir todas as tarefas da série (parent + todas as filhas)
+      // Usar .or() para excluir tanto o parent quanto todas as filhas em uma única query
+      const { error } = await supabase
+        .from("tasks")
+        .delete()
+        .or(`recurrence_parent_id.eq.${recurrenceInfo.parentId},id.eq.${recurrenceInfo.parentId}`);
+
+      if (error) {
+        console.error("Erro ao deletar tarefas recorrentes:", error);
+        return { success: false, error: error.message };
+      }
+
+      revalidatePath("/tasks");
+      revalidatePath("/home");
+      return { success: true };
+    }
+  }
+
+  // Excluir apenas a tarefa específica
   const { error } = await supabase
     .from("tasks")
     .delete()

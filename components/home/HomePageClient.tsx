@@ -1,50 +1,54 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
-import { WeeklyViewWrapper } from "@/components/home/WeeklyViewWrapper";
-// import { OnboardingModal, useShouldShowOnboarding } from "@/components/home/OnboardingModal"; // Componente desativado
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { Database } from "@/types/database.types";
+import { Plus } from "lucide-react";
+import { HomeTasksSection } from "./HomeTasksSection";
 
-type Task = Database["public"]["Tables"]["tasks"]["Row"];
-
-interface HomePageClientProps {
-  tasks: Task[];
-  workspaces: { id: string; name: string }[];
-}
-
-// const WELCOME_SEEN_KEY = 'symples-welcome-seen'; // Desativado
-
-export function HomePageClient({ tasks, workspaces }: HomePageClientProps) {
-  const searchParams = useSearchParams();
+export function HomePageClient() {
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-
-  const hasTasks = tasks && tasks.length > 0;
-  const inviteAccepted = searchParams.get('invite_accepted') === 'true';
-
-  // ✅ Simplificação: Tutorial removido conforme solicitação. Sempre considera como visto.
-  // Isso garante que o Zero State (EmptyWeekState) apareça imediatamente se não houver tarefas.
-  const welcomeSeen = true;
+  const [period, setPeriod] = useState<"week" | "month">("week");
 
   const handleTaskCreated = () => {
     setIsCreateTaskModalOpen(false);
+    // Recarregar a página para atualizar os dados
     setTimeout(() => window.location.reload(), 500);
   };
 
   const handleTaskUpdated = () => {
+    // Recarregar a página para atualizar os dados
     setTimeout(() => window.location.reload(), 500);
   };
 
   return (
     <>
-      <WeeklyViewWrapper
-        tasks={tasks}
-        workspaces={workspaces}
-        welcomeSeen={welcomeSeen}
-      />
+      {/* Barra de ações */}
+      <div className="flex items-center justify-between gap-4 pb-4">
+        {/* Botão criar tarefa à esquerda */}
+        <Button
+          onClick={() => setIsCreateTaskModalOpen(true)}
+          className="bg-green-600 hover:bg-green-700 text-white"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Criar tarefa
+        </Button>
 
-      {/* Modal de Criação de Tarefa (aberto a partir do onboarding) */}
+        {/* Tabs de período à direita */}
+        <Tabs value={period} onValueChange={(v) => setPeriod(v as "week" | "month")}>
+          <TabsList variant="default">
+            <TabsTrigger value="week" variant="default">
+              Minha semana
+            </TabsTrigger>
+            <TabsTrigger value="month" variant="default">
+              Meu mês
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Modal de criação de tarefa */}
       <TaskDetailModal
         open={isCreateTaskModalOpen}
         onOpenChange={setIsCreateTaskModalOpen}

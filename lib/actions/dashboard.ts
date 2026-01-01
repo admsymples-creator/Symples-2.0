@@ -71,7 +71,7 @@ export async function getWeekTasks(
       .lte("due_date", endISO);
 
     // Buscar tarefas de workspace (workspace_id IS NOT NULL)
-    // Aparecem APENAS se o usuário está atribuído (assignee_id = user.id)
+    // Aparecem se o usuário está atribuído (assignee_id = user.id) OU está em task_members
     const { data: workspaceTasks, error: workspaceError } = await supabase
       .from("tasks")
       .select(`
@@ -80,18 +80,60 @@ export async function getWeekTasks(
         assignee:profiles!tasks_assignee_id_fkey(full_name)
       `)
       .not("workspace_id", "is", null)
-      .eq("assignee_id", user.id) // APENAS tarefas atribuídas ao usuário
+      .eq("assignee_id", user.id) // Tarefas atribuídas via assignee_id
       .gte("due_date", startISO)
       .lte("due_date", endISO);
 
-    if (personalError || workspaceError) {
-      console.error("Erro ao buscar tarefas:", personalError || workspaceError);
+    // Buscar tarefas de workspace via task_members
+    const { data: taskMemberTasks, error: taskMemberError } = await supabase
+      .from("task_members")
+      .select(`
+        task_id,
+        tasks:task_id (
+          *,
+          workspaces(name),
+          assignee:profiles!tasks_assignee_id_fkey(full_name)
+        )
+      `)
+      .eq("user_id", user.id);
+
+    if (personalError || workspaceError || taskMemberError) {
+      console.error("Erro ao buscar tarefas:", personalError || workspaceError || taskMemberError);
       // Retornar array vazio em caso de erro (não quebrar a UI)
       return [];
     }
 
     // Combinar resultados
     const allTasks = [...(personalTasks || []), ...(workspaceTasks || [])];
+    const taskIdsSet = new Set(allTasks.map(task => task.id));
+
+    // Adicionar tarefas de task_members que não estão já incluídas
+    if (taskMemberTasks) {
+      taskMemberTasks.forEach((tm: any) => {
+        const task = tm.tasks;
+        if (
+          task &&
+          !taskIdsSet.has(task.id) &&
+          task.workspace_id !== null && // Apenas tarefas de workspace
+          task.status !== "archived" &&
+          task.due_date
+        ) {
+          const taskDate = new Date(task.due_date);
+          const startDateObj = new Date(startISO);
+          const endDateObj = new Date(endISO);
+          
+          // Filtrar por range de datas e garantir que não está em assignee_id já
+          if (
+            taskDate >= startDateObj &&
+            taskDate <= endDateObj &&
+            task.assignee_id !== user.id // Evitar duplicatas (já incluídas na query acima)
+          ) {
+            allTasks.push(task);
+            taskIdsSet.add(task.id);
+          }
+        }
+      });
+    }
 
     // Ordenar por data e depois por data de criação
     const sortedTasks = allTasks.sort((a, b) => {
@@ -243,41 +285,7 @@ export async function getWorkspacesWeeklyStats(
   }
 }
 
-/**
- * Busca lista simples de workspaces do usuário
- */
-export async function getUserWorkspaces() {
-  try {
-    const supabase = await createServerActionClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) return [];
-
-    const { data: members, error } = await supabase
-      .from("workspace_members")
-      .select(`
-        workspace_id,
-        workspaces (
-          id,
-          name,
-          slug
-        )
-      `)
-      .eq("user_id", user.id);
-
-    if (error || !members) {
-      console.error("Erro ao buscar workspaces do usuário:", error);
-      return [];
-    }
-
-    return members
-      .map((m: any) => m.workspaces)
-      .filter((w) => w !== null) as { id: string; name: string; slug?: string | null }[];
-  } catch (error) {
-    console.error("Erro inesperado ao buscar workspaces:", error);
-    return [];
-  }
-}
+// getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 
 /**
  * Busca tarefas de um dia específico
@@ -300,13 +308,14 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
     }
 
     // Criar range do dia (00:00:00 até 23:59:59)
+    // Usar meio-dia para start para garantir que o dia correto seja mantido ao converter para UTC
     const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
+    startOfDay.setHours(12, 0, 0, 0);
+    const startDateOnly = startOfDay.toISOString().split('T')[0];
+    const startISO = startDateOnly + 'T00:00:00.000Z';
     
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
-
-    const startISO = startOfDay.toISOString();
     const endISO = endOfDay.toISOString();
 
     // Buscar tarefas pessoais (workspace_id IS NULL)
@@ -324,7 +333,7 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
       .lte("due_date", endISO);
 
     // Buscar tarefas de workspace (workspace_id IS NOT NULL)
-    // Aparecem APENAS se o usuário está atribuído (assignee_id = user.id)
+    // Aparecem se o usuário está atribuído (assignee_id = user.id) OU está em task_members
     const { data: workspaceTasks, error: workspaceError } = await supabase
       .from("tasks")
       .select(`
@@ -333,17 +342,59 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
         assignee:profiles!tasks_assignee_id_fkey(full_name)
       `)
       .not("workspace_id", "is", null)
-      .eq("assignee_id", user.id) // APENAS tarefas atribuídas ao usuário
+      .eq("assignee_id", user.id) // Tarefas atribuídas via assignee_id
       .gte("due_date", startISO)
       .lte("due_date", endISO);
 
-    if (personalError || workspaceError) {
-      console.error("Erro ao buscar tarefas do dia:", personalError || workspaceError);
+    // Buscar tarefas de workspace via task_members
+    const { data: taskMemberTasks, error: taskMemberError } = await supabase
+      .from("task_members")
+      .select(`
+        task_id,
+        tasks:task_id (
+          *,
+          workspaces(name),
+          assignee:profiles!tasks_assignee_id_fkey(full_name)
+        )
+      `)
+      .eq("user_id", user.id);
+
+    if (personalError || workspaceError || taskMemberError) {
+      console.error("Erro ao buscar tarefas do dia:", personalError || workspaceError || taskMemberError);
       return [];
     }
 
     // Combinar resultados
     const allTasks = [...(personalTasks || []), ...(workspaceTasks || [])];
+    const taskIdsSet = new Set(allTasks.map(task => task.id));
+
+    // Adicionar tarefas de task_members que não estão já incluídas
+    if (taskMemberTasks) {
+      taskMemberTasks.forEach((tm: any) => {
+        const task = tm.tasks;
+        if (
+          task &&
+          !taskIdsSet.has(task.id) &&
+          task.workspace_id !== null && // Apenas tarefas de workspace
+          task.status !== "archived" &&
+          task.due_date
+        ) {
+          const taskDate = new Date(task.due_date);
+          const startDateObj = new Date(startISO);
+          const endDateObj = new Date(endISO);
+          
+          // Filtrar por range de datas e garantir que não está em assignee_id já
+          if (
+            taskDate >= startDateObj &&
+            taskDate <= endDateObj &&
+            task.assignee_id !== user.id // Evitar duplicatas (já incluídas na query acima)
+          ) {
+            allTasks.push(task);
+            taskIdsSet.add(task.id);
+          }
+        }
+      });
+    }
 
     // Ordenar por data e depois por data de criação
     const sortedTasks = allTasks.sort((a, b) => {

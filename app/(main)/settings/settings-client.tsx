@@ -358,22 +358,28 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   // Renderizar apenas após montagem no cliente para evitar erro de hidratação
   if (!isMounted) {
     return (
-      <div className="container max-w-5xl py-10 mx-auto">
-        <div className="flex flex-col gap-2 mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
-          <p className="text-muted-foreground">
-            Gerencie as preferências gerais, membros da equipe e faturamento.
-          </p>
-        </div>
-        <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">Carregando...</div>
+      <div className="w-full bg-white">
+        <div className="max-w-[1600px] mx-auto px-6">
+          <div className="py-3">
+            <div className="flex flex-col gap-2 mb-8">
+              <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
+              <p className="text-muted-foreground">
+                Gerencie as preferências gerais, membros da equipe e faturamento.
+              </p>
+            </div>
+            <div className="flex items-center justify-center py-12">
+              <div className="text-muted-foreground">Carregando...</div>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container max-w-5xl py-10 mx-auto">
+    <div className="w-full bg-white">
+      <div className="max-w-[1600px] mx-auto px-6">
+        <div className="py-3">
       <div className="flex flex-col gap-2 mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
         <p className="text-muted-foreground">
@@ -387,11 +393,11 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         className="w-full space-y-6"
       >
         {/* Navigation Tabs */}
-        <TabsList className="grid w-full grid-cols-4 md:w-[500px]">
-          <TabsTrigger value="general">Geral</TabsTrigger>
-          <TabsTrigger value="members">Membros</TabsTrigger>
-          <TabsTrigger value="billing">Faturamento</TabsTrigger>
-          <TabsTrigger value="profile">Perfil</TabsTrigger>
+        <TabsList variant="grid" className="grid w-full grid-cols-4 md:w-[500px]">
+          <TabsTrigger value="general" variant="grid">Geral</TabsTrigger>
+          <TabsTrigger value="members" variant="grid">Membros</TabsTrigger>
+          <TabsTrigger value="billing" variant="grid">Faturamento</TabsTrigger>
+          <TabsTrigger value="profile" variant="grid">Perfil</TabsTrigger>
         </TabsList>
 
         {/* A. ABA GERAL (WORKSPACE) */}
@@ -964,6 +970,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         onConfirm={confirmRemoveMember}
         isLoading={isRemovingMember}
       />
+        </div>
+      </div>
     </div>
   );
 }

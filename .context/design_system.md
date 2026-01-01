@@ -50,6 +50,14 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 \*Referência: Lado esquerdo de todas as imagens.\*  
 \- \*\*Largura:\*\* Fixa (\~240-260px).  
 \- \*\*Cor:\*\* Branca (\`bg-white\`) com borda direita (\`border-r\`).  
+\- \*\*Títulos de Seção:\*\*  
+  \- "PESSOAL" (uppercase) antes dos itens pessoais (Home, Planner)  
+  \- "ESPAÇOS DE TRABALHO" (uppercase) antes do seletor de workspace  
+  \- Estilo: \`text-xs font-semibold text-gray-500 uppercase tracking-wider\`  
+  \- Visíveis apenas quando sidebar expandida  
+\- \*\*Seletor de Workspace:\*\*  
+  \- Borda leve: \`border border-gray-200 rounded-lg\`  
+  \- Dropdown com lista de workspaces e opção de criar novo  
 \- \*\*Estados:\*\*  
     \- \*Inativo:\* Texto cinza escuro, ícone cinza.  
     \- \*Ativo:\* Fundo roxo/azul bem claro (\`bg-indigo-50\`), texto roxo/azul escuro, barra lateral ou peso maior na fonte.  
@@ -67,6 +75,17 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 \* \*\*Primary:\*\* Fundo Verde (\`bg-green-500\`), Texto Branco. Radius \`rounded-md\`. Ex: Botão "+ Novo".  
 \* \*\*Ghost/Text:\*\* Fundo transparente, hover cinza claro. Ex: Ações da tabela ("...").  
 \* \*\*FAB (Floating Action Button):\*\* Círculo verde flutuante no canto inferior direito com ícone de chat.
+
+**\#\#\# 4.1.1. Tabs (\`Tabs\` - Padronizado)**  
+\* \*\*Variante Default (Padrão):\*\* Usar \`variant="default"\` em todas as tabs principais do sistema.  
+  \- Container: \`bg-[#f9fafb] border border-gray-200 h-10 p-1\`  
+  \- Tabs Ativas: \`bg-white text-gray-900 shadow-sm\`  
+  \- Tabs Inativas: \`text-gray-500\`  
+  \- Uso: Home (Minha semana/Meu mês), Tarefas (Minhas/Time/Todas), Financeiro (Visão Geral/Recorrentes/Planejamento), Settings (Geral/Membros/Faturamento/Perfil), Visualização (Lista/Quadro/Calendário)  
+\* \*\*Variante Pill:\*\* \`variant="pill"\` - Fundo cinza claro (\`bg-gray-100\`), usado apenas em modais financeiros (Entrada/Saída)  
+\* \*\*Variante Underline:\*\* \`variant="underline"\` - Estilo underline com borda azul quando ativo, usado apenas em notificações  
+\* \*\*Variante Grid:\*\* \`variant="grid"\` - Distribuição igual de colunas, usado apenas em casos específicos  
+\* \*\*Regra:\*\* Todas as tabs principais devem usar \`variant="default"\` para manter consistência visual
 
 **\#\#\# 4.2. Cards de KPI (Financeiro)**  
 \*Referência: image\_20e3f2.png\*  
@@ -818,7 +837,64 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - `handleTaskCreated()`: Fecha modal e atualiza página via `router.refresh()`
   - `handleTaskUpdated()`: Atualiza página após edição
 
-## 15. Journal Visual de Preview
+## 15. Home Page Redesign (v2.4)
+
+### 15.1. Estrutura da Home Page
+- **Header:** Título "Bom dia, Usuário 👋" com subtítulo
+- **Barra de Ações:**
+  - Botão "Criar tarefa" à esquerda (verde `bg-green-600`)
+  - Tabs de período à direita: "Minha semana" / "Meu mês" (variant="default")
+- **Cards Informativos (Grid 2 colunas):**
+  - **Card "Minhas tarefas" (esquerda):**
+    - Título "Minhas tarefas" com tabs internos alinhados à direita na mesma linha
+    - Tabs: "Próximas" (padrão), "Atrasadas", "Concluídas" (variant="default")
+    - Lista de tarefas usando `TaskRowMinify` em ordem cronológica
+    - Altura fixa `h-[600px]` com scroll interno usando `ScrollArea`
+    - Filtros: Próximas (não completadas, data >= hoje), Atrasadas (não completadas, data < hoje), Concluídas (status = done)
+  - **Card "Caixa de entrada" (direita):**
+    - Título "Caixa de entrada"
+    - Lista de notificações usando `NotificationItem`
+    - Altura fixa `h-[600px]` com scroll interno usando `ScrollArea`
+    - Marca notificações como lidas ao clicar
+- **Visão por Workspace:** Mantida abaixo dos cards
+
+### 15.2. Componentes Criados
+- **HomeActionBar (`components/home/HomeActionBar.tsx`):** Barra com botão criar tarefa e tabs de período
+- **HomeActionBarWrapper (`components/home/HomeActionBarWrapper.tsx`):** Wrapper com Context API para compartilhar estado de período entre barra e cards
+- **HomeTasksSection (`components/home/HomeTasksSection.tsx`):** Card de tarefas com tabs internos e filtros
+- **HomeInboxSection (`components/home/HomeInboxSection.tsx`):** Card de notificações
+
+## 16. Padronização de Tabs (v2.4)
+
+### 16.1. Sistema de Variantes
+- **Componente Base:** `components/ui/tabs.tsx` usando CVA (class-variance-authority)
+- **Variantes Disponíveis:**
+  - `default`: Padrão para todas as tabs principais (bg-[#f9fafb], border border-gray-200, tabs ativas com bg-white)
+  - `pill`: Fundo cinza claro (bg-gray-100), usado apenas em modais financeiros
+  - `underline`: Estilo underline com borda azul quando ativo, usado apenas em notificações
+  - `grid`: Distribuição igual de colunas, usado em casos específicos
+
+### 16.2. Regra de Uso
+- **Todas as tabs principais devem usar `variant="default"`** para manter consistência visual
+- Tabs padronizadas em: Home (Minha semana/Meu mês), Tarefas (Minhas/Time/Todas, Lista/Quadro/Calendário), Financeiro (Visão Geral/Recorrentes/Planejamento), Settings (Geral/Membros/Faturamento/Perfil)
+- Background padrão: `#f9fafb` (cinza muito claro)
+- Tabs ativas: `bg-white` com sombra suave (`shadow-sm`)
+- Tabs inativas: `text-gray-500`
+
+## 17. Sidebar Refinamentos (v2.4)
+
+### 17.1. Títulos de Seção
+- **"PESSOAL"** (uppercase) antes dos itens pessoais (Home, Planner)
+- **"ESPAÇOS DE TRABALHO"** (uppercase) antes do seletor de workspace
+- Estilo: `text-xs font-semibold text-gray-500 uppercase tracking-wider`
+- Visíveis apenas quando sidebar expandida (`!isCollapsed`)
+
+### 17.2. Seletor de Workspace
+- Borda leve: `border border-gray-200 rounded-lg`
+- Dropdown com lista de workspaces e opção de criar novo
+- Exibe badge de trial quando aplicável
+
+## 18. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  

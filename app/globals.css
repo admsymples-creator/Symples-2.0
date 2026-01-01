@@ -50,7 +50,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: #050815;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -168,5 +168,150 @@
   .scroll-smooth {
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch; /* iOS smooth scroll */
+  }
+}
+
+/* FullCalendar Custom Styling */
+@layer components {
+  /* Container do calendário */
+  .calendar-container {
+    @apply bg-white rounded-lg border border-gray-200 p-4 md:p-6;
+  }
+
+  /* Sobrescrever estilos padrão do FullCalendar */
+  .fc {
+    @apply font-sans;
+  }
+
+  /* Header do calendário */
+  .fc-header-toolbar {
+    @apply mb-4 flex-wrap gap-2;
+  }
+
+  .fc-toolbar-title {
+    @apply text-lg font-semibold text-gray-900;
+  }
+
+  /* Botões de navegação */
+  .fc-button {
+    @apply bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md text-sm font-medium;
+    @apply hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500;
+    @apply transition-colors;
+  }
+
+  .fc-button:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .fc-button-active {
+    @apply text-white;
+    background-color: #22C55E;
+    border-color: #22C55E;
+  }
+
+  /* Botões de view */
+  .fc-button-group .fc-button {
+    @apply border-r-0;
+  }
+
+  .fc-button-group .fc-button:first-child {
+    @apply rounded-l-md;
+  }
+
+  .fc-button-group .fc-button:last-child {
+    @apply rounded-r-md border-r;
+  }
+
+  /* Células do calendário */
+  .fc-daygrid-day {
+    @apply border-gray-200;
+  }
+
+  .fc-daygrid-day-top {
+    @apply text-gray-600 text-sm font-medium;
+  }
+
+  .fc-day-today {
+    @apply bg-gray-50;
+  }
+
+  .fc-day-today .fc-daygrid-day-number {
+    @apply font-semibold;
+    color: #22C55E;
+  }
+
+  /* Eventos (tarefas) */
+  .fc-event {
+    @apply border-0 rounded-md px-2 py-1 text-sm font-medium cursor-pointer;
+    @apply transition-all hover:opacity-90;
+  }
+
+  .fc-event-title {
+    @apply font-medium;
+  }
+
+  /* Tarefas concluídas */
+  .fc-event.task-completed {
+    @apply opacity-60;
+  }
+
+  .fc-event.task-completed .fc-event-title {
+    @apply line-through;
+  }
+
+  /* Hover em eventos */
+  .fc-event:hover {
+    @apply shadow-md;
+  }
+
+  /* Lista de eventos (view listDay) */
+  .fc-list-event {
+    @apply hover:bg-gray-50;
+  }
+
+  .fc-list-event-title {
+    @apply font-medium;
+  }
+
+  /* Bordas e divisores */
+  .fc-col-header-cell {
+    @apply border-gray-200 bg-gray-50;
+  }
+
+  .fc-col-header-cell-cushion {
+    @apply text-gray-700 text-xs font-semibold uppercase tracking-wider py-2;
+  }
+
+  /* Time grid (semana) */
+  .fc-timegrid-slot {
+    @apply border-gray-100;
+  }
+
+  .fc-timegrid-now-indicator-line {
+    border-color: #22C55E;
+  }
+
+  /* Scrollbar no calendário */
+  .fc-scroller {
+    scrollbar-width: thin;
+    scrollbar-color: #E5E7EB transparent;
+  }
+
+  .fc-scroller::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .fc-scroller::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .fc-scroller::-webkit-scrollbar-thumb {
+    background-color: #E5E7EB;
+    border-radius: 9999px;
+  }
+
+  .fc-scroller::-webkit-scrollbar-thumb:hover {
+    background-color: #D1D5DB;
   }
 }
