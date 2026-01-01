@@ -95,12 +95,13 @@ export async function getNotifications(
   }
 
   // Combinar notificações com dados dos usuários
-  return notifications.map((notification) => ({
+  const result = notifications.map((notification) => ({
     ...notification,
     triggering_user: notification.triggering_user_id
       ? usersData[notification.triggering_user_id] || null
       : null,
   })) as NotificationWithActor[];
+  return result;
 }
 
 /**

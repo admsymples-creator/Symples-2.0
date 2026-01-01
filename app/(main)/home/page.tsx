@@ -1,7 +1,8 @@
 import { getWorkspacesWeeklyStats, getUserWorkspaces } from "@/lib/actions/dashboard";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { TrialBanner } from "@/components/home/TrialBanner";
-import { HomeActionBarWrapper, HomeTasksAndInboxCards } from "@/components/home/HomeActionBarWrapper";
+import { HomeTasksSection } from "@/components/home/HomeTasksSection";
+import { HomeInboxSection } from "@/components/home/HomeInboxSection";
 import { FolderOpen } from "lucide-react";
 
 // ✅ Componente Server-Side limpo (sem lógica de params propensos a erro/crash)
@@ -43,11 +44,11 @@ export default async function HomePage() {
             {/* Trial Banner */}
             <TrialBanner />
 
-            {/* Barra de ações com botão criar tarefa e tabs + Cards */}
-            <HomeActionBarWrapper>
-              {/* Cards: Minhas tarefas e Caixa de entrada */}
-              <HomeTasksAndInboxCards />
-            </HomeActionBarWrapper>
+            {/* Cards: Minhas tarefas e Caixa de entrada */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <HomeTasksSection period="week" />
+              <HomeInboxSection />
+            </div>
 
             {/* Workspaces Overview */}
             <div>

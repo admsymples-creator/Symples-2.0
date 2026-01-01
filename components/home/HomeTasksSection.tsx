@@ -2,13 +2,12 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { TaskRowMinify } from "@/components/tasks/TaskRowMinify";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { getTasks, TaskWithDetails } from "@/lib/actions/tasks";
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckSquare, Clock, AlertCircle } from "lucide-react";
 
 interface HomeTasksSectionProps {
   period: "week" | "month";
@@ -24,7 +23,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [members, setMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
 
-  // Calcular range de datas baseado no período
+  // Calcular range de datas baseado no período (apenas para "Próximas")
   const dateRange = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -53,15 +52,14 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     }
   }, [period]);
 
-  // Buscar tarefas
+  // Buscar tarefas - buscar todas as tarefas do usuário (sem filtro de data inicial)
   useEffect(() => {
     const loadTasks = async () => {
       setLoading(true);
       try {
+        // Buscar todas as tarefas atribuídas ao usuário atual
         const fetchedTasks = await getTasks({
           assigneeId: "current",
-          dueDateStart: dateRange.start,
-          dueDateEnd: dateRange.end,
         });
         setTasks(fetchedTasks || []);
       } catch (error) {
@@ -73,9 +71,9 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     };
 
     loadTasks();
-  }, [dateRange.start, dateRange.end]);
+  }, [period]); // Recarregar quando o período mudar
 
-  // Buscar membros (para o TaskRowMinify)
+  // Buscar membros (para o TaskRowMinify) - buscar de todos os workspaces únicos
   useEffect(() => {
     const loadMembers = async () => {
       try {
@@ -85,14 +83,27 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
         );
 
         if (workspaceIds.length > 0) {
-          // Buscar membros do primeiro workspace (simplificado)
-          const workspaceMembers = await getWorkspaceMembers(workspaceIds[0]);
-          const mappedMembers = workspaceMembers.map((m: any) => ({
-            id: m.id,
-            name: m.full_name || m.email || "Usuário",
-            avatar: m.avatar_url || undefined,
-          }));
-          setMembers(mappedMembers);
+          // Buscar membros de todos os workspaces e combinar
+          const allMembersMap = new Map<string, { id: string; name: string; avatar?: string }>();
+          
+          for (const workspaceId of workspaceIds) {
+            try {
+              const workspaceMembers = await getWorkspaceMembers(workspaceId);
+              workspaceMembers.forEach((m: any) => {
+                if (m.id && !allMembersMap.has(m.id)) {
+                  allMembersMap.set(m.id, {
+                    id: m.id,
+                    name: m.full_name || m.email || "Usuário",
+                    avatar: m.avatar_url || undefined,
+                  });
+                }
+              });
+            } catch (error) {
+              console.error(`Erro ao buscar membros do workspace ${workspaceId}:`, error);
+            }
+          }
+          
+          setMembers(Array.from(allMembersMap.values()));
         } else {
           // Se não há workspace, buscar membros pessoais
           const personalMembers = await getWorkspaceMembers(null);
@@ -110,15 +121,17 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
 
     if (tasks.length > 0) {
       loadMembers();
+    } else {
+      setMembers([]);
     }
   }, [tasks]);
 
-  // Filtrar tarefas baseado no status
+  // Filtrar tarefas baseado no status e período
   const filteredTasks = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return tasks.filter((task) => {
+    const filtered = tasks.filter((task) => {
       const isCompleted = task.status === "done";
       const dueDate = task.due_date ? new Date(task.due_date) : null;
       
@@ -132,15 +145,34 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
       const isOverdue = taskDate && taskDate < today && !isCompleted;
 
       if (statusFilter === "completed") {
+        // Concluídas: todas as tarefas completadas (sem limite de período)
         return isCompleted;
       } else if (statusFilter === "overdue") {
+        // Atrasadas: não completadas e data < hoje (sem limite de período)
         return isOverdue;
       } else {
-        // Próximas: não completadas e (sem data ou data >= hoje)
-        return !isCompleted && (!taskDate || taskDate >= today);
+        // Próximas: não completadas e dentro do período (week/month) ou sem data
+        if (isCompleted) {
+          return false;
+        }
+        
+        // Se não tem data, mostrar em "Próximas" (tarefas sem prazo também são próximas)
+        if (!taskDate) {
+          return true;
+        }
+        
+        // Verificar se está dentro do período
+        const periodStart = new Date(dateRange.start);
+        const periodEnd = new Date(dateRange.end);
+        periodStart.setHours(0, 0, 0, 0);
+        periodEnd.setHours(23, 59, 59, 999);
+        
+        return taskDate >= periodStart && taskDate <= periodEnd;
       }
     });
-  }, [tasks, statusFilter]);
+    
+    return filtered;
+  }, [tasks, statusFilter, dateRange]);
 
   // Ordenar tarefas cronologicamente
   const sortedTasks = useMemo(() => {
@@ -166,15 +198,16 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     setIsModalOpen(false);
     // Recarregar tarefas
     const loadTasks = async () => {
+      setLoading(true);
       try {
         const fetchedTasks = await getTasks({
           assigneeId: "current",
-          dueDateStart: dateRange.start,
-          dueDateEnd: dateRange.end,
         });
         setTasks(fetchedTasks || []);
       } catch (error) {
         console.error("Erro ao recarregar tarefas:", error);
+      } finally {
+        setLoading(false);
       }
     };
     loadTasks();
@@ -183,27 +216,36 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   const handleTaskUpdated = () => {
     // Recarregar tarefas
     const loadTasks = async () => {
+      setLoading(true);
       try {
         const fetchedTasks = await getTasks({
           assigneeId: "current",
-          dueDateStart: dateRange.start,
-          dueDateEnd: dateRange.end,
         });
         setTasks(fetchedTasks || []);
       } catch (error) {
         console.error("Erro ao recarregar tarefas:", error);
+      } finally {
+        setLoading(false);
       }
     };
     loadTasks();
   };
 
+  
   return (
     <>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[600px] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between gap-4">
-            <h3 className="text-lg font-semibold text-gray-900">Minhas tarefas</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Minhas tarefas
+              {process.env.NODE_ENV === 'development' && (
+                <span className="ml-2 text-xs text-gray-400">
+                  ({tasks.length} total, {sortedTasks.length} filtradas)
+                </span>
+              )}
+            </h3>
             
             {/* Tabs internos */}
             <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as TaskStatusFilter)}>
@@ -217,50 +259,77 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
         </div>
 
         {/* Content com scroll */}
-        <ScrollArea className="flex-1">
-          <div className="px-2">
-            {loading ? (
-              <div className="flex items-center justify-center h-32">
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-              </div>
-            ) : sortedTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                <p className="text-sm">Nenhuma tarefa encontrada</p>
-              </div>
-            ) : (
-              <div className="py-2">
-                {sortedTasks.map((task: any) => {
-                  // getTasks já retorna assignees através de transformTaskWithMembers
-                  const assignees = task.assignees || [];
-                  const commentCount = task.comment_count || 0;
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : sortedTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 px-4">
+              {statusFilter === "upcoming" ? (
+                <>
+                  <div className="bg-gray-50 p-3 rounded-full mb-3">
+                    <Clock className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa próxima</p>
+                  <p className="text-xs text-gray-500 text-center">
+                    Você não tem tarefas para este período
+                  </p>
+                </>
+              ) : statusFilter === "overdue" ? (
+                <>
+                  <div className="bg-red-50 p-3 rounded-full mb-3">
+                    <AlertCircle className="w-6 h-6 text-red-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa atrasada</p>
+                  <p className="text-xs text-gray-500 text-center">
+                    Ótimo! Você está em dia com suas tarefas
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="bg-green-50 p-3 rounded-full mb-3">
+                    <CheckSquare className="w-6 h-6 text-green-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa concluída</p>
+                  <p className="text-xs text-gray-500 text-center">
+                    Tarefas concluídas aparecerão aqui
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="px-2 py-2">
+              {sortedTasks.map((task: any) => {
+                // getTasks já retorna assignees através de transformTaskWithMembers
+                const assignees = task.assignees || [];
+                const commentCount = task.comment_count || 0;
 
-                  return (
-                    <TaskRowMinify
-                      key={task.id}
-                      task={{
-                        id: task.id,
-                        title: task.title,
-                        status: task.status || "todo",
-                        dueDate: task.due_date || undefined,
-                        completed: task.status === "done",
-                        priority: task.priority as "low" | "medium" | "high" | "urgent" | undefined,
-                        assignees: assignees,
-                        workspace_id: task.workspace_id || null,
-                        commentCount: commentCount,
-                      }}
-                      groupColor={task.group?.color || undefined}
-                      onClick={handleTaskClick}
-                      onTaskUpdated={handleTaskUpdated}
-                      members={members}
-                      disabled={true}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <ScrollBar />
-        </ScrollArea>
+                return (
+                  <TaskRowMinify
+                    key={task.id}
+                    task={{
+                      id: task.id,
+                      title: task.title,
+                      status: task.status || "todo",
+                      dueDate: task.due_date || undefined,
+                      completed: task.status === "done",
+                      priority: task.priority as "low" | "medium" | "high" | "urgent" | undefined,
+                      assignees: assignees,
+                      workspace_id: task.workspace_id || null,
+                      commentCount: commentCount,
+                    }}
+                    groupColor={task.group?.color || undefined}
+                    onClick={handleTaskClick}
+                    onTaskUpdated={handleTaskUpdated}
+                    members={members}
+                    disabled={true}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Modal de detalhes da tarefa */}

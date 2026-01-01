@@ -88,7 +88,9 @@ export async function getTasks(filters?: {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) return [];
+  if (!user) {
+    return [];
+  }
 
   // ✅ SEGURANÇA E LÓGICA: Fail-safe
   // Exceção: Se assigneeId === "current" (aba "Minhas"), permitir buscar sem workspaceId
@@ -274,13 +276,14 @@ export async function getTasks(filters?: {
   }
 
   // Adicionar contagem de comentários e transformar membros
-  return filteredData.map((task) => {
+  const result = filteredData.map((task) => {
     const transformed = transformTaskWithMembers({
       ...task,
       comment_count: commentCountMap[task.id] || 0,
     });
     return transformed;
   }) as unknown as TaskWithDetails[];
+  return result;
 }
 
 /**

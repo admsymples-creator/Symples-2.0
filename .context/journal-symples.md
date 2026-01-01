@@ -6,6 +6,55 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-01 - Simplificação da Home Page e Correção de Visualização de Cards
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Simplificação da Home Page
+- **Objetivo**: Remover barra de ações desnecessária e simplificar o layout
+- **Mudanças Principais**:
+  - Removida barra de ações (`HomeActionBar`) contendo botão "Criar tarefa" e tabs de período
+  - Cards de tarefas e inbox agora aparecem diretamente abaixo do Trial Banner
+  - Período das tarefas fixado em "week" (semana) por padrão
+  - Layout mais limpo e focado no conteúdo principal
+
+#### 🔧 Correção de Visualização de Cards
+- **Problema**: Notificações e tarefas não apareciam nos cards apesar de serem renderizadas corretamente
+- **Causa Raiz**: `ScrollArea` do Radix UI não funcionava corretamente dentro de containers flex com altura definida
+- **Solução**: Substituído `ScrollArea` por `overflow-y-auto` diretamente nos containers
+- **Resultado**: Notificações e tarefas agora aparecem corretamente com scroll funcional
+
+#### 🧹 Limpeza de Instrumentação de Debug
+- **Removido**: Todos os logs de debug adicionados durante investigação
+  - Logs `fetch` para servidor de debug
+  - `console.log` de debug em componentes
+  - Regiões `#region agent log` e `#endregion`
+- **Mantido**: Apenas `console.error` para erros em produção
+- **Arquivos limpos**:
+  - `components/home/HomeTasksSection.tsx`
+  - `components/home/HomeInboxSection.tsx`
+  - `lib/actions/tasks.ts`
+  - `lib/actions/notifications.ts`
+
+- **Arquivos modificados**:
+  - `app/(main)/home/page.tsx`: Removido `HomeActionBarWrapper`, uso direto de `HomeTasksSection` e `HomeInboxSection`
+  - `components/home/HomeTasksSection.tsx`: Substituído ScrollArea por overflow-y-auto, removidos logs de debug
+  - `components/home/HomeInboxSection.tsx`: Substituído ScrollArea por overflow-y-auto, removidos logs de debug
+  - `lib/actions/tasks.ts`: Removidos logs de debug
+  - `lib/actions/notifications.ts`: Removidos logs de debug
+
+### 2. O que está sendo trabalhado no momento
+
+- Nenhum trabalho em andamento no momento
+
+### 3. Próximos passos
+
+- **Melhorias futuras**:
+  - Considerar adicionar filtros de período de volta se necessário
+  - Avaliar necessidade de botão criar tarefa na home ou manter apenas na página de tarefas
+
+---
+
 ## 2025-01-31 - Refatoração Completa de Login e Signup com Autenticação por Senha
 
 ### 1. Melhorias, bugs e features implementadas em preview
