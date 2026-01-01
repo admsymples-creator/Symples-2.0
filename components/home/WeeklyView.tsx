@@ -40,10 +40,31 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
     tasks.forEach((task) => {
       if (!task.due_date) return;
       const taskDate = new Date(task.due_date);
-      const dateKey = taskDate.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-      });
+      
+      // CORREÇÃO: Para tarefas pessoais com hora específica, usar a data local para agrupamento
+      // Para tarefas de workspace, usar UTC
+      // Isso evita que uma tarefa de 22h local (01:00 UTC do dia seguinte) seja agrupada no dia errado
+      const isPersonal = task.is_personal || !task.workspace_id;
+      let dateKey: string;
+      
+      if (isPersonal) {
+        // Para tarefas pessoais: usar data local para agrupamento (mais intuitivo)
+        // Uma tarefa de 22h de hoje deve aparecer em "hoje", não em "amanhã"
+        dateKey = taskDate.toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+        });
+      } else {
+        // Para tarefas de workspace: usar UTC (como estava antes)
+        const utcDay = String(taskDate.getUTCDate()).padStart(2, '0');
+        const utcMonth = String(taskDate.getUTCMonth() + 1).padStart(2, '0');
+        dateKey = `${utcDay}/${utcMonth}`;
+      }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/WeeklyView.tsx:42',message:'BUG-WEEKLY-HOUR: Task date grouping',data:{taskId:task.id,isPersonal,dueDate:task.due_date,taskDateISO:taskDate.toISOString(),taskDateLocal:taskDate.toString(),dateKey},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-weekly-hour',hypothesisId:'bug-weekly-hour'})}).catch(()=>{});
+      // #endregion
+      
       if (!grouped[dateKey]) grouped[dateKey] = [];
       grouped[dateKey].push(task);
     });

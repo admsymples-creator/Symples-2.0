@@ -447,6 +447,10 @@ export async function createTask(data: {
   group_id?: string | null;
   tags?: string[];
   subtasks?: any[];
+  recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null;
+  recurrence_interval?: number | null;
+  recurrence_end_date?: string | null;
+  recurrence_count?: number | null;
 }) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -472,6 +476,10 @@ export async function createTask(data: {
   // Garantir que subtasks seja um JSON válido
   const subtasks = data.subtasks ? JSON.parse(JSON.stringify(data.subtasks)) : [];
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/tasks.ts:479',message:'BUG-RECURRENCE: createTask insert data',data:{title:data.title,recurrence_type:data.recurrence_type,recurrence_interval:data.recurrence_interval,is_personal},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-recurrence',hypothesisId:'bug-recurrence-create'})}).catch(()=>{});
+  // #endregion
+
   const { data: newTask, error } = await supabase.from("tasks").insert({
     title: data.title,
     description: data.description || null,
@@ -486,6 +494,10 @@ export async function createTask(data: {
     group_id: data.group_id || null,
     tags: data.tags || [],
     subtasks: subtasks,
+    recurrence_type: data.recurrence_type || null,
+    recurrence_interval: data.recurrence_interval || null,
+    recurrence_end_date: data.recurrence_end_date || null,
+    recurrence_count: data.recurrence_count || null,
     // position será auto-gerado ou podemos calcular aqui se necessário
   }).select().single();
 
@@ -856,9 +868,91 @@ export async function updateTaskPositionSimple(
 /**
  * Deleta uma tarefa
  */
-export async function deleteTask(id: string) {
+/**
+ * Busca informações sobre recorrência de uma tarefa
+ */
+export async function getTaskRecurrenceInfo(taskId: string): Promise<{
+  isRecurring: boolean;
+  parentId: string | null;
+  recurrenceType: string | null;
+  relatedTasksCount: number;
+}> {
   const supabase = await createServerActionClient();
 
+  // Buscar a tarefa
+  const { data: task, error: taskError } = await supabase
+    .from("tasks")
+    .select("recurrence_type, recurrence_parent_id, id")
+    .eq("id", taskId)
+    .single();
+
+  if (taskError || !task) {
+    return {
+      isRecurring: false,
+      parentId: null,
+      recurrenceType: null,
+      relatedTasksCount: 0,
+    };
+  }
+
+  const isRecurring = !!task.recurrence_type || !!task.recurrence_parent_id;
+  const parentId = task.recurrence_parent_id || (task.recurrence_type ? task.id : null);
+
+  if (!parentId) {
+    return {
+      isRecurring: false,
+      parentId: null,
+      recurrenceType: null,
+      relatedTasksCount: 0,
+    };
+  }
+
+  // Contar tarefas relacionadas (filhas do mesmo parent ou o parent + filhas)
+  // Se a tarefa atual é o parent, contar ela + todas as filhas
+  // Se a tarefa atual é filha, contar o parent + todas as filhas (incluindo ela mesma)
+  const { count, error: countError } = await supabase
+    .from("tasks")
+    .select("*", { count: "exact", head: true })
+    .or(`recurrence_parent_id.eq.${parentId},id.eq.${parentId}`);
+
+  const relatedTasksCount = countError ? 0 : (count || 0);
+
+  return {
+    isRecurring,
+    parentId,
+    recurrenceType: task.recurrence_type || null,
+    relatedTasksCount,
+  };
+}
+
+export async function deleteTask(id: string, deleteAll: boolean = false) {
+  const supabase = await createServerActionClient();
+
+  // Se deleteAll, buscar todas as tarefas relacionadas
+  if (deleteAll) {
+    // Buscar informações de recorrência
+    const recurrenceInfo = await getTaskRecurrenceInfo(id);
+    
+    if (recurrenceInfo.isRecurring && recurrenceInfo.parentId) {
+      // Excluir todas as tarefas da série (parent + todas as filhas)
+      // Usar .or() para excluir tanto o parent quanto todas as filhas em uma única query
+      const { error } = await supabase
+        .from("tasks")
+        .delete()
+        .or(`recurrence_parent_id.eq.${recurrenceInfo.parentId},id.eq.${recurrenceInfo.parentId}`);
+
+      if (error) {
+        console.error("Erro ao deletar tarefas recorrentes:", error);
+        return { success: false, error: error.message };
+      }
+
+      revalidatePath("/tasks");
+      revalidatePath("/home");
+      return { success: true };
+    }
+  }
+
+  // Excluir apenas a tarefa específica
   const { error } = await supabase
     .from("tasks")
     .delete()

@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar as CalendarIcon, Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -15,6 +17,8 @@ interface TaskDateTimePickerProps {
     trigger?: React.ReactElement;
     align?: "start" | "center" | "end";
     side?: "top" | "bottom" | "left" | "right";
+    recurrenceType?: 'daily' | 'weekly' | 'monthly' | 'custom' | null;
+    onRecurrenceChange?: (type: 'daily' | 'weekly' | 'monthly' | 'custom' | null) => void;
 }
 
 // Funções utilitárias para atalhos
@@ -44,12 +48,16 @@ export function TaskDateTimePicker({
     trigger,
     align = "end",
     side = "left",
+    recurrenceType: initialRecurrenceType,
+    onRecurrenceChange,
 }: TaskDateTimePickerProps) {
     const [isMounted, setIsMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date | null>(date);
     const [hour, setHour] = useState<number>(date ? date.getHours() : 9);
     const [minute, setMinute] = useState<number>(date ? date.getMinutes() : 0);
+    const [recurrenceEnabled, setRecurrenceEnabled] = useState<boolean>(initialRecurrenceType !== null && initialRecurrenceType !== undefined);
+    const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(initialRecurrenceType || null);
 
     // Garantir que renderiza apenas no cliente para evitar problemas de hidratação
     useEffect(() => {
@@ -128,8 +136,38 @@ export function TaskDateTimePicker({
         setSelectedDate(null);
         setHour(9);
         setMinute(0);
+        setRecurrenceEnabled(false);
+        setRecurrenceType(null);
         onSelect(null);
+        if (onRecurrenceChange) {
+            onRecurrenceChange(null);
+        }
         setIsOpen(false);
+    };
+
+    const handleRecurrenceToggle = (checked: boolean) => {
+        setRecurrenceEnabled(checked);
+        if (!checked) {
+            setRecurrenceType(null);
+            if (onRecurrenceChange) {
+                onRecurrenceChange(null);
+            }
+        } else {
+            // Definir padrão como 'daily' quando ativar
+            const defaultType = 'daily';
+            setRecurrenceType(defaultType);
+            if (onRecurrenceChange) {
+                onRecurrenceChange(defaultType);
+            }
+        }
+    };
+
+    const handleRecurrenceTypeChange = (value: string) => {
+        const newType = value as 'daily' | 'weekly' | 'monthly' | 'custom';
+        setRecurrenceType(newType);
+        if (onRecurrenceChange) {
+            onRecurrenceChange(newType);
+        }
     };
 
     // Gerar opções de hora (0-23)
@@ -169,57 +207,46 @@ export function TaskDateTimePicker({
                 {triggerElement}
             </PopoverTrigger>
             <PopoverContent className="p-0 w-auto rounded-xl" align={align} side={side}>
-                <div className="p-4 space-y-3">
-                    {/* Atalhos Rápidos */}
-                    <div className="flex gap-2 px-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 flex-1"
-                            onClick={() => handleQuickSelect(getToday())}
-                        >
-                            Hoje
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 flex-1"
-                            onClick={() => handleQuickSelect(getTomorrow())}
-                        >
-                            Amanhã
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 flex-1"
-                            onClick={() => handleQuickSelect(getNextWeek())}
-                        >
-                            Próxima Semana
-                        </Button>
-                    </div>
-                    <div className="border-t border-gray-200" />
-                    
-                    {/* Calendar */}
-                    <Calendar
-                        mode="single"
-                        selected={selectedDate || undefined}
-                        onSelect={handleDateSelect}
-                        locale={ptBR}
-                        className="rounded-md border-0"
-                    />
-                    
-                    {/* Time Picker */}
-                    <div className="border-t border-gray-200 pt-3">
-                        <div className="text-xs font-medium text-gray-700 mb-2 px-2">Hora</div>
-                        <div className="flex gap-2 px-2">
-                            {/* Hour Selector */}
-                            <div className="flex-1">
-                                <div className="text-[10px] text-gray-500 mb-1">Hora</div>
-                                <div className="flex gap-1">
+                <div className="flex">
+                    {/* Coluna 1: Atalhos, Hora, Recorrência, Botões */}
+                    <div className="flex flex-col gap-4 w-[220px] p-4 justify-between">
+                        <div className="flex flex-col gap-4">
+                            {/* Atalhos Rápidos */}
+                            <div className="flex flex-col gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7 justify-start"
+                                    onClick={() => handleQuickSelect(getToday())}
+                                >
+                                    Hoje
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7 justify-start"
+                                    onClick={() => handleQuickSelect(getTomorrow())}
+                                >
+                                    Amanhã
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7 justify-start"
+                                    onClick={() => handleQuickSelect(getNextWeek())}
+                                >
+                                    Próxima Semana
+                                </Button>
+                            </div>
+
+                            {/* Hora */}
+                            <div className="space-y-2">
+                                <div className="text-xs font-medium text-gray-700">Hora</div>
+                                <div className="flex items-center gap-1.5">
                                     <select
                                         value={hour}
                                         onChange={(e) => handleTimeChange(parseInt(e.target.value), minute)}
-                                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
                                     >
                                         {hours.map((h) => (
                                             <option key={h} value={h}>
@@ -227,17 +254,11 @@ export function TaskDateTimePicker({
                                             </option>
                                         ))}
                                     </select>
-                                </div>
-                            </div>
-                            
-                            {/* Minute Selector */}
-                            <div className="flex-1">
-                                <div className="text-[10px] text-gray-500 mb-1">Minuto</div>
-                                <div className="flex gap-1">
+                                    <span className="text-gray-400 text-sm">:</span>
                                     <select
                                         value={minute}
                                         onChange={(e) => handleTimeChange(hour, parseInt(e.target.value))}
-                                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
                                     >
                                         {minutes.map((m) => (
                                             <option key={m} value={m}>
@@ -247,30 +268,77 @@ export function TaskDateTimePicker({
                                     </select>
                                 </div>
                             </div>
+
+                            {/* Recorrência */}
+                            {onRecurrenceChange && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id="recurrence-toggle"
+                                            checked={recurrenceEnabled}
+                                            onCheckedChange={handleRecurrenceToggle}
+                                        />
+                                        <label
+                                            htmlFor="recurrence-toggle"
+                                            className="text-xs font-medium text-gray-700 cursor-pointer"
+                                        >
+                                            Recorrência
+                                        </label>
+                                    </div>
+                                    {recurrenceEnabled && (
+                                        <Select
+                                            value={recurrenceType || 'daily'}
+                                            onValueChange={handleRecurrenceTypeChange}
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="daily">Diária</SelectItem>
+                                                <SelectItem value="weekly">Semanal</SelectItem>
+                                                <SelectItem value="monthly">Mensal</SelectItem>
+                                                <SelectItem value="custom" disabled>Personalizada</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Botões de ação - alinhados inferiormente */}
+                        <div className="flex flex-col gap-2">
+                            {selectedDate && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7 w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    onClick={handleClear}
+                                >
+                                    <X className="size-3 mr-1" />
+                                    Remover
+                                </Button>
+                            )}
+                            <Button
+                                variant="default"
+                                size="sm"
+                                className="text-xs h-7 w-full bg-green-600 hover:bg-green-700"
+                                onClick={handleConfirm}
+                            >
+                                Confirmar
+                            </Button>
                         </div>
                     </div>
-                    
-                    {/* Botões de ação */}
-                    <div className="border-t border-gray-200 pt-2 flex gap-2">
-                        {selectedDate && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-xs h-7 flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={handleClear}
-                            >
-                                <X className="size-3 mr-1" />
-                                Remover
-                            </Button>
-                        )}
-                        <Button
-                            variant="default"
-                            size="sm"
-                            className="text-xs h-7 flex-1 bg-green-600 hover:bg-green-700"
-                            onClick={handleConfirm}
-                        >
-                            Confirmar
-                        </Button>
+
+                    {/* Coluna 2: Calendário */}
+                    <div className="relative p-4">
+                        <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-200"></div>
+                        <Calendar
+                            mode="single"
+                            selected={selectedDate || undefined}
+                            onSelect={handleDateSelect}
+                            locale={ptBR}
+                            className="rounded-md border-0"
+                        />
                     </div>
                 </div>
             </PopoverContent>

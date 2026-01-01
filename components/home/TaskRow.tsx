@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Edit2, Trash2, Building2, ArrowRight, CornerUpRight, Clock, Calendar as CalendarIcon } from "lucide-react";
+import { Edit2, Trash2, Building2, ArrowRight, CornerUpRight, Clock, Calendar as CalendarIcon, RefreshCw } from "lucide-react";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { updateTask } from "@/lib/actions/tasks";
 import { useRouter } from "next/navigation";
@@ -257,12 +257,40 @@ export function TaskRow({
                 </TooltipProvider>
                 {/* Indicador de Horário para Tarefas Pessoais - Logo após o título */}
                 {isPersonal && hasSpecificTime && task.due_date && (
-                    <span
-                        className="flex-shrink-0 text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100"
-                        title={`Horário: ${formatTime(task.due_date)}`}
-                    >
-                        {formatTime(task.due_date)}
-                    </span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Ícone de recorrência à esquerda do horário */}
+                        {((task as any).recurrence_type || (task as any).recurrence_parent_id) && (
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <RefreshCw className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Tarefa recorrente {(task as any).recurrence_type ? `(${(task as any).recurrence_type === 'daily' ? 'Diária' : (task as any).recurrence_type === 'weekly' ? 'Semanal' : (task as any).recurrence_type === 'monthly' ? 'Mensal' : 'Personalizada'})` : ''}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        )}
+                        <span
+                            className="text-[10px] font-medium text-gray-600 px-1.5 py-0.5 rounded bg-gray-100"
+                            title={`Horário: ${formatTime(task.due_date)}`}
+                        >
+                            {formatTime(task.due_date)}
+                        </span>
+                    </div>
+                )}
+                {/* Ícone de recorrência para tarefas sem horário específico */}
+                {isPersonal && (!hasSpecificTime || !task.due_date) && ((task as any).recurrence_type || (task as any).recurrence_parent_id) && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <RefreshCw className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Tarefa recorrente {(task as any).recurrence_type ? `(${(task as any).recurrence_type === 'daily' ? 'Diária' : (task as any).recurrence_type === 'weekly' ? 'Semanal' : (task as any).recurrence_type === 'monthly' ? 'Mensal' : 'Personalizada'})` : ''}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
                 )}
                 {/* Badge do Workspace */}
                 {workspace && !isPersonal && (

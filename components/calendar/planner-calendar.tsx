@@ -9,7 +9,9 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import listPlugin from "@fullcalendar/list";
-import type { EventDropArg, EventClickArg, DateClickArg, EventApi, ViewApi } from "@fullcalendar/core";
+import type { EventDropArg, EventClickArg, EventApi, ViewApi } from "@fullcalendar/core";
+import type { DateClickArg } from "@fullcalendar/interaction";
+import ptBrLocale from "@fullcalendar/core/locales/pt-br";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { getTasksForCalendar, updateTaskDate, type CalendarEvent } from "@/lib/actions/calendar";
 import { getTaskDetails } from "@/lib/actions/task-details";
@@ -127,13 +129,19 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         effectiveWorkspaceId
       );
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:125',message:'HYP-A: Events received from getTasksForCalendar',data:{eventCount:calendarEvents.length,sampleEvent:calendarEvents[0]?{id:calendarEvents[0].id,start:calendarEvents[0].start}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       // Salvar no cache
       eventsCacheRef.current.set(cacheKey, calendarEvents);
       
       // Limitar tamanho do cache (manter apenas últimos 10 ranges)
       if (eventsCacheRef.current.size > 10) {
         const firstKey = eventsCacheRef.current.keys().next().value;
-        eventsCacheRef.current.delete(firstKey);
+        if (firstKey !== undefined) {
+          eventsCacheRef.current.delete(firstKey);
+        }
       }
       
       setEvents(calendarEvents);
@@ -164,6 +172,10 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
   const handleEventDrop = useCallback(async (info: EventDropArg) => {
     const event = info.event;
     const newDate = event.start;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:171',message:'BUG-2: handleEventDrop called',data:{eventId:event.id,newDate:newDate?.toString(),newDateISO:newDate?.toISOString(),eventAllDay:event.allDay},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-2'})}).catch(()=>{});
+    // #endregion
     
     if (!newDate) {
       info.revert();
@@ -272,6 +284,10 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
   // Handler para atualização de tarefa com optimistic UI
   const handleTaskUpdated = useCallback(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:285',message:'BUG-2: handleTaskUpdated called',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-2'})}).catch(()=>{});
+    // #endregion
+    
     // Recarregar eventos após atualização
     // Invalidar cache para forçar recarga
     eventsCacheRef.current.clear();
@@ -448,7 +464,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           datesSet={handleDatesSet}
           firstDay={1} // Segunda-feira
           headerToolbar={false}
-          dayMaxEvents={true}
           buttonText={{
             today: "Hoje",
             month: "Mês",
@@ -460,29 +475,48 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           dayHeaderContent={(arg) => {
             // Formatar dias da semana em português
             const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-            return days[arg.date.getDay()];
+            
+            // CORREÇÃO: Usar getUTCDay() porque o FullCalendar passa datas em UTC para os cabeçalhos
+            // Quando convertemos de UTC para local (UTC-3), getDay() retorna o dia anterior
+            // Exemplo: 2026-01-02T00:00:00.000Z (quinta UTC) vira 2025-12-31T21:00:00-03:00 (quarta local)
+            // Usando getUTCDay() mantemos o dia correto baseado em UTC
+            return days[arg.date.getUTCDay()];
           }}
-          monthNames={["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]}
-          monthNamesShort={["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]}
-          dayNames={["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"]}
-          dayNamesShort={["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]}
           viewDidMount={(view) => {
             // Sincronizar view atual com estado
-            if (view.type !== currentView && !isMobile) {
-              setCurrentView(view.type as ViewType);
+            const viewType = view.view.type as ViewType;
+            if (viewType !== currentView && !isMobile) {
+              setCurrentView(viewType);
             }
-            setCurrentDate(view.currentStart);
+            setCurrentDate(view.view.currentStart);
           }}
           eventDisplay="block"
-          dayMaxEvents={3}
           moreLinkClick="popover"
+          moreLinkText="mais"
           eventClassNames="calendar-event"
+          dayMaxEvents={3}
+          locale={ptBrLocale}
           eventContent={(eventInfo) => {
             const isCompleted = eventInfo.event.extendedProps.status === "done";
+            const recurrenceType = eventInfo.event.extendedProps.recurrence_type;
+            const recurrenceParentId = eventInfo.event.extendedProps.recurrence_parent_id;
+            const isRecurring = !!recurrenceType || !!recurrenceParentId;
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:488',message:'BUG-1: FullCalendar event rendering',data:{eventId:eventInfo.event.id,eventStart:eventInfo.event.start,eventStartStr:eventInfo.event.startStr,eventAllDay:eventInfo.event.allDay,timeText:eventInfo.timeText,dateObj:eventInfo.event.start?.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-1'})}).catch(()=>{});
+            // #endregion
+            
+            // Ícone SVG de recorrência (RefreshCw)
+            const recurrenceIcon = isRecurring ? `
+              <svg class="fc-recurrence-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; margin-left: 4px; color: #3b82f6;">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+            ` : '';
+            
             return {
               html: `
                 <div class="fc-event-main-frame">
-                  <div class="fc-event-time">${eventInfo.timeText || ""}</div>
+                  <div class="fc-event-time">${eventInfo.timeText || ""}${recurrenceIcon}</div>
                   <div class="fc-event-title-container">
                     <div class="fc-event-title ${isCompleted ? "line-through" : ""}">${eventInfo.event.title}</div>
                   </div>

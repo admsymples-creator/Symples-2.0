@@ -18,12 +18,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { deleteTask, duplicateTask } from "@/lib/actions/tasks";
+import { deleteTask, duplicateTask, getTaskRecurrenceInfo } from "@/lib/actions/tasks";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
+import { DeleteRecurringTaskModal } from "@/components/modals/delete-recurring-task-modal";
 
 interface Task {
     id: string;
     title: string;
+    recurrence_type?: string | null;
+    recurrence_parent_id?: string | null;
     [key: string]: any;
 }
 
@@ -57,6 +60,8 @@ export function TaskActionsMenu({
     
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isRecurringDeleteModalOpen, setIsRecurringDeleteModalOpen] = useState(false);
+    const [isRecurring, setIsRecurring] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
 
     // Duplicar
@@ -103,24 +108,26 @@ export function TaskActionsMenu({
     };
 
     // Excluir
-    const confirmDelete = async () => {
+    const confirmDelete = async (deleteAll: boolean = false) => {
         setIsDeleting(true);
-        console.log("🔴 [TaskActionsMenu] confirmDelete chamado para task:", task.id);
+        console.log("🔴 [TaskActionsMenu] confirmDelete chamado para task:", task.id, "deleteAll:", deleteAll);
         
-        // ✅ Optimistic UI: Remover tarefa instantaneamente ANTES de chamar o backend
+        // ✅ Optimistic UI: Remover tarefa(s) instantaneamente ANTES de chamar o backend
         console.log("🔴 [TaskActionsMenu] onTaskDeletedOptimistic existe?", !!onTaskDeletedOptimistic);
         if (onTaskDeletedOptimistic) {
             console.log("🔴 [TaskActionsMenu] Chamando onTaskDeletedOptimistic com taskId:", task.id);
             onTaskDeletedOptimistic(task.id);
+            // Se deleteAll, precisaríamos remover todas as relacionadas também, mas isso é complexo
+            // Por enquanto, removemos apenas a atual e deixamos o refresh lidar com o resto
         } else {
             console.warn("🟡 [TaskActionsMenu] onTaskDeletedOptimistic não disponível");
         }
         
         try {
-            const result = await deleteTask(task.id);
+            const result = await deleteTask(task.id, deleteAll);
             console.log("🔴 [TaskActionsMenu] deleteTask result:", result);
             if (result.success) {
-                toast.success("Tarefa excluída com sucesso");
+                toast.success(deleteAll ? "Tarefas excluídas com sucesso" : "Tarefa excluída com sucesso");
                 onTaskDeleted?.();
             } else {
                 // ❌ Rollback: Recarregar para restaurar estado em caso de erro
@@ -136,11 +143,21 @@ export function TaskActionsMenu({
         } finally {
             setIsDeleting(false);
             setIsDeleteModalOpen(false);
+            setIsRecurringDeleteModalOpen(false);
         }
     };
 
-    const handleDeleteClick = () => {
-        setIsDeleteModalOpen(true);
+    const handleDeleteClick = async () => {
+        // Verificar se a tarefa é recorrente
+        const recurrenceInfo = await getTaskRecurrenceInfo(task.id);
+        
+        if (recurrenceInfo.isRecurring && recurrenceInfo.relatedTasksCount > 1) {
+            setIsRecurring(true);
+            setIsRecurringDeleteModalOpen(true);
+        } else {
+            setIsRecurring(false);
+            setIsDeleteModalOpen(true);
+        }
     };
 
     return (
@@ -234,7 +251,14 @@ export function TaskActionsMenu({
                 description="Esta ação não pode ser desfeita."
                 confirmText="Excluir Tarefa"
                 isLoading={isDeleting}
+                onConfirm={() => confirmDelete(false)}
+            />
+            <DeleteRecurringTaskModal
+                open={isRecurringDeleteModalOpen}
+                onOpenChange={setIsRecurringDeleteModalOpen}
+                taskTitle={task.title}
                 onConfirm={confirmDelete}
+                isLoading={isDeleting}
             />
         </>
     );

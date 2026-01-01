@@ -3,7 +3,7 @@
 import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2 } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -52,6 +52,8 @@ interface TaskRowMinifyProps {
     commentCount?: number;
     commentsCount?: number;
     isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
+    recurrence_type?: string | null;
+    recurrence_parent_id?: string | null;
   };
   containerId?: string;
   isOverlay?: boolean;
@@ -512,6 +514,19 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
         <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
           {task.isPending && (
             <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
+          )}
+          {/* Ícone de recorrência */}
+          {(task.recurrence_type || task.recurrence_parent_id) && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <RefreshCw className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Tarefa recorrente {task.recurrence_type ? `(${task.recurrence_type === 'daily' ? 'Diária' : task.recurrence_type === 'weekly' ? 'Semanal' : task.recurrence_type === 'monthly' ? 'Mensal' : 'Personalizada'})` : ''}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           <div className="flex-1 min-w-0 overflow-hidden">
             <InlineTextEdit
