@@ -895,8 +895,8 @@ export async function getTaskRecurrenceInfo(taskId: string): Promise<{
     };
   }
 
-  const isRecurring = !!task.recurrence_type || !!task.recurrence_parent_id;
-  const parentId = task.recurrence_parent_id || (task.recurrence_type ? task.id : null);
+  const isRecurring = !!(task as any).recurrence_type || !!(task as any).recurrence_parent_id;
+  const parentId = (task as any).recurrence_parent_id || ((task as any).recurrence_type ? task.id : null);
 
   if (!parentId) {
     return {
