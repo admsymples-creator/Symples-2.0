@@ -1,5 +1,5 @@
 # Cursor Rules
-
+- Sempre que for criar um novo componente ou algo novo, verificar se ja existe componente ou codigo reutilizavel com a mesma identidade ou no sistema.
 # Project Context
 This is a Next.js 15+ project using App Router, TypeScript, Tailwind CSS, and Supabase.
 
@@ -101,3 +101,65 @@ This is a Next.js 15+ project using App Router, TypeScript, Tailwind CSS, and Su
 - Always wrap Server Actions in try-catch
 - Return structured error objects: `{ success: boolean, error?: string }`
 - Use `toast` from `sonner` for user-facing error messages
+
+# Calendar and Date Handling
+
+## FullCalendar Integration
+- **Locale**: Uses `ptBrLocale` from `@fullcalendar/core/locales/pt-br` for Portuguese localization
+- **Translation**: `moreLinkText="mais"` translates "more" link to Portuguese
+- **Timezone**: FullCalendar uses local timezone by default (no `timeZone` prop needed in v6)
+- **Event Display**: Personal tasks always show time (not allDay) to display hours in calendar
+- **Recurrence Icon**: SVG icon displayed next to time for recurring tasks
+
+## Date Conversion Strategy
+- **Noon Strategy**: For tasks without specific time, use noon (12:00) local time before converting to ISO to prevent timezone shifts
+- **UTC Handling**: Calendar headers use `getUTCDay()` because FullCalendar passes UTC dates to header renderer
+- **WeeklyView Grouping**: Personal tasks use local date for grouping, workspace tasks use UTC date
+- **AllDay Events**: Only workspace tasks can be allDay (00:00:00 UTC). Personal tasks always display time.
+
+## Calendar Event Structure
+- `extendedProps` includes: `status`, `priority`, `workspace_id`, `is_personal`, `workspace_name`, `recurrence_type`, `recurrence_parent_id`
+- Background colors: Personal tasks = gray (#f3f4f6), Workspace tasks = workspace color
+- Text colors: Personal tasks = black, Workspace tasks = white
+
+# Recurring Tasks
+
+## Database Schema
+- `recurrence_type`: 'daily' | 'weekly' | 'monthly' | 'custom' | null
+- `recurrence_interval`: number (for custom type, interval in days)
+- `recurrence_end_date`: timestamp (when recurrence ends)
+- `recurrence_count`: number (max occurrences)
+- `recurrence_parent_id`: uuid (reference to parent task, null for parent)
+- `recurrence_next_date`: timestamp (next occurrence generation date)
+- **Constraint**: Only personal tasks can have recurrence (enforced by database trigger)
+
+## Visual Indicators
+- **Icon**: `RefreshCw` icon in blue appears next to time for recurring tasks
+- **Location**: Icon positioned to the left of the time badge in TaskRow
+- **Calendar**: SVG recurrence icon appears next to time text in FullCalendar events
+- **Tooltip**: Shows recurrence type (Diária, Semanal, Mensal, Personalizada)
+
+## Deletion
+- **Modal**: `DeleteRecurringTaskModal` asks user to delete single occurrence or all occurrences
+- **Query**: Uses `.or()` to delete parent + all children in single query: `recurrence_parent_id.eq.{id},id.eq.{id}`
+
+## Creation
+- Recurrence fields must be passed to `createTask` Server Action
+- `DayColumn` passes `recurrenceType` state to `createTask`
+
+# DayColumn Component
+
+## Task Ordering
+- Personal tasks sorted chronologically by `due_date` (ascending)
+- Personal tasks appear before workspace tasks
+- Workspace tasks maintain original order or sort by creation date
+
+## Input Area
+- No icon (removed Plus icon and dot indicator)
+- Padding: `px-3 py-2` to match bottom controls alignment
+- Date picker always visible in footer area
+
+## Quick Add
+- Optimistic updates for instant feedback
+- Batch input support (multiple lines)
+- Recurrence support via TaskDateTimePicker
