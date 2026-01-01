@@ -127,7 +127,7 @@ export async function getTasksForCalendar(
     }
 
     // Combinar resultados das queries 1 e 2
-    const allTasks = [...(result1.data || []), ...(result2.data || [])];
+    const allTasks = [...(result1.data || []), ...(result2.data || [])] as any[];
     const taskIdsSet = new Set(allTasks.map(task => task.id));
 
     // Adicionar tarefas de task_members que não estão já incluídas e estão no range de datas
