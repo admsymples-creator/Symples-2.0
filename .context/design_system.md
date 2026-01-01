@@ -116,6 +116,15 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Layout:** Split-Screen Obrigatório.
 - **Lado Esquerdo (Branding):** Fundo `bg-slate-900`. Contém Logo e Elementos de Navegação/Status (ex: Stepper).
 - **Lado Direito (Ação):** Fundo `bg-white`. Formulários alinhados à esquerda (não centralizados).
+- **Ordem de Elementos (Login e Signup):**
+  1. Botões sociais (Google, Magic Link) no topo
+  2. Separador "ou" (linha com texto centralizado)
+  3. Formulário (campos de entrada)
+  4. Botão primário (verde `bg-green-600`)
+  5. Links de ajuda (Esqueceu senha?, Criar conta, etc.)
+- **Login:** Suporta 3 modos - senha (padrão), magic link, recuperação de senha
+- **Signup:** Senha obrigatória, campo de nome opcional, magic link removido
+- **Acessibilidade:** Todos os botões de toggle de senha devem ter `aria-label`
 
 ### 6.2. Ajustes de Cores (A11y)
 - **Botões Primários:** Usar `bg-green-600` (e não 500) para passar nos testes de contraste WCAG com texto branco.
