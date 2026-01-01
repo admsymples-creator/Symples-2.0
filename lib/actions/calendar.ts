@@ -388,9 +388,6 @@ export async function updateTaskDate(
   const dateOnly = new Date(Date.UTC(newDate.getFullYear(), newDate.getMonth(), newDate.getDate()));
   const dateISO = dateOnly.toISOString(); // Sempre usar meia-noite UTC para manter consistência
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/calendar.ts:372',message:'BUG-2: updateTaskDate date conversion',data:{taskId,isAllDay,dateISO,originalDate:newDate.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-2'})}).catch(()=>{});
-  // #endregion
 
   const result = await updateTask({
     id: taskId,
