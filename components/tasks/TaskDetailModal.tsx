@@ -22,6 +22,7 @@ import {
     generateTaskShareLink
 } from "@/lib/actions/task-details";
 import { getWorkspaceMembers, createTask } from "@/lib/actions/tasks";
+import { getUserWorkspaces } from "@/lib/actions/user";
 import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
@@ -436,6 +437,8 @@ export function TaskDetailModal({
     const [editingCommentText, setEditingCommentText] = useState<string>("");
     const [isUpdatingComment, setIsUpdatingComment] = useState(false);
     const [isDeletingComment, setIsDeletingComment] = useState<string | null>(null);
+    const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+    const [availableWorkspaces, setAvailableWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
     // Usuário atual para padronizar exibição de comentários
     useEffect(() => {
         const supabase = createBrowserClient();
@@ -451,6 +454,41 @@ export function TaskDetailModal({
             }
         });
     }, []);
+
+    // Buscar workspaces disponíveis
+    useEffect(() => {
+        if (open) {
+            const loadWorkspaces = async () => {
+                try {
+                    const workspaces = await getUserWorkspaces();
+                    setAvailableWorkspaces(workspaces.map((ws: any) => ({
+                        id: ws.id,
+                        name: ws.name,
+                    })));
+                } catch (error) {
+                    console.error("Erro ao carregar workspaces:", error);
+                }
+            };
+            loadWorkspaces();
+        }
+    }, [open]);
+
+    // Inicializar workspaceId quando task mudar ou modal abrir
+    useEffect(() => {
+        if (open) {
+            if (isCreateMode) {
+                // Em modo create, usar o primeiro workspace disponível ou null
+                setWorkspaceId(null);
+            } else if (task?.workspaceId) {
+                setWorkspaceId(task.workspaceId);
+            } else if (task?.id) {
+                // Se tem task.id mas não tem workspaceId, buscar do backend
+                // Isso será feito no loadBasicData
+            } else {
+                setWorkspaceId(null);
+            }
+        }
+    }, [open, task, isCreateMode]);
 
     const mapCommentToActivity = useCallback(
         (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
@@ -687,7 +725,7 @@ export function TaskDetailModal({
                             description: description || "",
                             status: status,
                             due_date: dueDate || null,
-                            workspace_id: task?.workspaceId || null,
+                            workspace_id: workspaceId || null,
                             assignee_id: localMembers[0]?.id || null,
                             subtasks: subTasks.map(st => ({
                                 title: st.title,
@@ -840,6 +878,7 @@ export function TaskDetailModal({
                         setDescription(cachedBasic.description || "");
                         setStatus(cachedBasic.status || "todo");
                         setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
+                        setWorkspaceId(cachedBasic.workspace_id || null);
 
                         // Usar assignees do cache (já inclui task_members)
                         if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
@@ -2556,7 +2595,7 @@ export function TaskDetailModal({
                                                     memberIds={localMembers.map(m => m.id)}
                                                     onChange={handleMembersChange}
                                                     members={availableUsers}
-                                                    workspaceId={task?.workspaceId || undefined}
+                                                    workspaceId={workspaceId || undefined}
                                                 />
                                             </div>
 
@@ -2570,6 +2609,64 @@ export function TaskDetailModal({
                                                     isCompleted={status === TASK_STATUS.DONE}
                                                 />
                                             </div>
+                                        </div>
+
+                                        {/* Workspace Selector */}
+                                        <div className="mb-8">
+                                            <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-2 block">Workspace</label>
+                                            <Select
+                                                value={workspaceId || ""}
+                                                onValueChange={async (value) => {
+                                                    const newWorkspaceId = value || null;
+                                                    setWorkspaceId(newWorkspaceId);
+                                                    
+                                                    // Se estiver editando uma tarefa existente, atualizar no backend
+                                                    if (currentTaskId && !isCreateMode) {
+                                                        try {
+                                                            const result = await updateTaskField(currentTaskId, "workspace_id", newWorkspaceId);
+                                                            if (result.success) {
+                                                                invalidateCacheAndNotify(currentTaskId);
+                                                                toast.success("Workspace atualizado");
+                                                            } else {
+                                                                // Reverter em caso de erro
+                                                                setWorkspaceId(workspaceId);
+                                                                toast.error(result.error || "Erro ao atualizar workspace");
+                                                            }
+                                                        } catch (error) {
+                                                            console.error("Erro ao atualizar workspace:", error);
+                                                            setWorkspaceId(workspaceId);
+                                                            toast.error("Erro ao atualizar workspace");
+                                                        }
+                                                    }
+                                                    
+                                                    // Atualizar membros disponíveis quando workspace mudar
+                                                    if (newWorkspaceId) {
+                                                        try {
+                                                            const members = await getWorkspaceMembers(newWorkspaceId);
+                                                            setAvailableUsers(
+                                                                members.map((m: any) => ({
+                                                                    id: m.id,
+                                                                    name: m.full_name || m.email || "Sem nome",
+                                                                    avatar: m.avatar_url || undefined,
+                                                                }))
+                                                            );
+                                                        } catch (error) {
+                                                            console.error("Erro ao carregar membros do workspace:", error);
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder="Selecione um workspace" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {availableWorkspaces.map((ws) => (
+                                                        <SelectItem key={ws.id} value={ws.id}>
+                                                            {ws.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
                                         </div>
 
                                         {/* Description */}

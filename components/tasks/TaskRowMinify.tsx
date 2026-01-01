@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/command";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
-import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, TASK_STATUS } from "@/lib/config/tasks";
+import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, TASK_STATUS, type TaskStatus } from "@/lib/config/tasks";
 import { Avatar } from "./Avatar";
 import {
   Tooltip,
@@ -65,6 +65,8 @@ interface TaskRowMinifyProps {
   onTaskDeletedOptimistic?: (taskId: string) => void;
   onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
+  showWorkspaceBadge?: boolean;
+  workspaceName?: string;
 }
 
 // Função auxiliar para verificar se é hoje
@@ -105,7 +107,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -207,7 +209,10 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   const isHexColor = groupColor?.startsWith("#");
 
   // Configuração Visual do Status
-  const dbStatus = mapLabelToStatus(task.status || "Não iniciado");
+  // task.status pode vir do banco como "todo", "in_progress", etc. ou como label "Não iniciado", etc.
+  // Se já for um status do banco, usar diretamente; caso contrário, mapear do label
+  const rawStatus = task.status || "todo";
+  const dbStatus = (rawStatus in TASK_CONFIG) ? rawStatus as TaskStatus : mapLabelToStatus(rawStatus);
   const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
   
   // Verificar se a tarefa está concluída
@@ -522,6 +527,12 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               maxLength={100} // ✅ Limite de caracteres (padrão UX)
             />
           </div>
+          {/* Badge de Workspace - apenas na home */}
+          {showWorkspaceBadge && workspaceName && (
+            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+              {workspaceName}
+            </Badge>
+          )}
         </div>
         
         {/* Comentários - aparece apenas no hover */}

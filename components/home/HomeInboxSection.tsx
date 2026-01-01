@@ -3,18 +3,21 @@
 import React, { useState, useEffect } from "react";
 import { NotificationItem } from "@/components/notifications/notification-item";
 import { getNotifications, markAsRead, NotificationWithActor } from "@/lib/actions/notifications";
-import { Loader2, Inbox } from "lucide-react";
+import { Loader2, Inbox, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function HomeInboxSection() {
   const [notifications, setNotifications] = useState<NotificationWithActor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [displayLimit, setDisplayLimit] = useState(5);
 
   // Buscar notificações
   useEffect(() => {
     const loadNotifications = async () => {
       setLoading(true);
       try {
-        const fetchedNotifications = await getNotifications({ limit: 50 });
+        // Buscar mais notificações do que o limite de exibição para ter buffer
+        const fetchedNotifications = await getNotifications({ limit: 100 });
         setNotifications(fetchedNotifications || []);
       } catch (error) {
         console.error("Erro ao carregar notificações:", error);
@@ -26,6 +29,13 @@ export function HomeInboxSection() {
 
     loadNotifications();
   }, []);
+
+  const displayedNotifications = notifications.slice(0, displayLimit);
+  const hasMore = notifications.length > displayLimit;
+
+  const handleLoadMore = () => {
+    setDisplayLimit(prev => prev + 5);
+  };
 
   const handleMarkAsRead = async (id: string) => {
     // Optimistic UI: atualizar estado local primeiro
@@ -50,7 +60,7 @@ export function HomeInboxSection() {
 
   
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[600px] flex flex-col">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[400px] flex flex-col">
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900">
@@ -80,15 +90,30 @@ export function HomeInboxSection() {
             </p>
           </div>
         ) : (
-          <div>
-            {notifications.map((notification) => (
-              <NotificationItem
-                key={notification.id}
-                notification={notification}
-                onMarkAsRead={handleMarkAsRead}
-              />
-            ))}
-          </div>
+          <>
+            <div>
+              {displayedNotifications.map((notification) => (
+                <NotificationItem
+                  key={notification.id}
+                  notification={notification}
+                  onMarkAsRead={handleMarkAsRead}
+                />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="px-6 py-3 border-t border-gray-200">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLoadMore}
+                  className="w-full text-sm text-gray-600 hover:text-gray-900"
+                >
+                  Carregar mais ({notifications.length - displayLimit} restantes)
+                  <ChevronDown className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

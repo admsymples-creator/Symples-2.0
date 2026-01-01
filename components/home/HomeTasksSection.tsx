@@ -6,8 +6,12 @@ import { TaskRowMinify } from "@/components/tasks/TaskRowMinify";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { getTasks, TaskWithDetails } from "@/lib/actions/tasks";
 import { getWorkspaceMembers } from "@/lib/actions/tasks";
+import { getUserWorkspaces } from "@/lib/actions/user";
+import { createTask } from "@/lib/actions/tasks";
 import { cn } from "@/lib/utils";
-import { Loader2, CheckSquare, Clock, AlertCircle } from "lucide-react";
+import { Loader2, CheckSquare, Clock, AlertCircle, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { QuickTaskAdd } from "@/components/tasks/QuickTaskAdd";
 
 interface HomeTasksSectionProps {
   period: "week" | "month";
@@ -22,6 +26,8 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [members, setMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+  const [workspaceMap, setWorkspaceMap] = useState<Map<string, string>>(new Map());
+  const [displayLimit, setDisplayLimit] = useState(10); // Limite inicial de 10 itens
 
   // Calcular range de datas baseado no período (apenas para "Próximas")
   const dateRange = useMemo(() => {
@@ -61,6 +67,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
         const fetchedTasks = await getTasks({
           assigneeId: "current",
         });
+        
         setTasks(fetchedTasks || []);
       } catch (error) {
         console.error("Erro ao carregar tarefas:", error);
@@ -72,6 +79,25 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
 
     loadTasks();
   }, [period]); // Recarregar quando o período mudar
+
+  // Buscar workspaces para criar mapa workspace_id -> name
+  useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        const workspaces = await getUserWorkspaces();
+        const map = new Map<string, string>();
+        workspaces.forEach((ws: any) => {
+          if (ws.id && ws.name) {
+            map.set(ws.id, ws.name);
+          }
+        });
+        setWorkspaceMap(map);
+      } catch (error) {
+        console.error("Erro ao carregar workspaces:", error);
+      }
+    };
+    loadWorkspaces();
+  }, []);
 
   // Buscar membros (para o TaskRowMinify) - buscar de todos os workspaces únicos
   useEffect(() => {
@@ -151,23 +177,10 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
         // Atrasadas: não completadas e data < hoje (sem limite de período)
         return isOverdue;
       } else {
-        // Próximas: não completadas e dentro do período (week/month) ou sem data
-        if (isCompleted) {
-          return false;
-        }
-        
-        // Se não tem data, mostrar em "Próximas" (tarefas sem prazo também são próximas)
-        if (!taskDate) {
-          return true;
-        }
-        
-        // Verificar se está dentro do período
-        const periodStart = new Date(dateRange.start);
-        const periodEnd = new Date(dateRange.end);
-        periodStart.setHours(0, 0, 0, 0);
-        periodEnd.setHours(23, 59, 59, 999);
-        
-        return taskDate >= periodStart && taskDate <= periodEnd;
+        // Próximas: todas as tarefas não completadas (qualquer status que não seja "done")
+        // Inclui: todo, in_progress, review, correction
+        // Mostra todas as não concluídas, independente de data ou período
+        return !isCompleted;
       }
     });
     
@@ -188,6 +201,13 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
       return dateA - dateB;
     });
   }, [filteredTasks]);
+
+  // Tarefas a serem exibidas (com limite de paginação)
+  const displayedTasks = useMemo(() => {
+    return sortedTasks.slice(0, displayLimit);
+  }, [sortedTasks, displayLimit]);
+
+  const hasMore = sortedTasks.length > displayLimit;
 
   const handleTaskClick = (taskId: string | number) => {
     setSelectedTaskId(String(taskId));
@@ -234,7 +254,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[600px] flex flex-col">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[400px] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between gap-4">
@@ -300,10 +320,44 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
             </div>
           ) : (
             <div className="px-2 py-2">
-              {sortedTasks.map((task: any) => {
+              {/* Ghost TaskRow para criação rápida */}
+              <div className="px-2">
+                <QuickTaskAdd
+                  placeholder="Adicionar tarefa aqui..."
+                  variant="ghost"
+                  members={members}
+                  onSubmit={async (title, dueDate, assigneeId) => {
+                    try {
+                      const result = await createTask({
+                        title,
+                        description: "",
+                        status: "todo",
+                        due_date: dueDate ? dueDate.toISOString() : null,
+                        assignee_id: assigneeId || null,
+                        workspace_id: null,
+                      });
+                      
+                      if (result.success) {
+                        // Recarregar tarefas
+                        const fetchedTasks = await getTasks({
+                          assigneeId: "current",
+                        });
+                        setTasks(fetchedTasks || []);
+                      } else {
+                        console.error("Erro ao criar tarefa:", result.error);
+                      }
+                    } catch (error) {
+                      console.error("Erro ao criar tarefa:", error);
+                    }
+                  }}
+                />
+              </div>
+
+              {displayedTasks.map((task: any) => {
                 // getTasks já retorna assignees através de transformTaskWithMembers
                 const assignees = task.assignees || [];
                 const commentCount = task.comment_count || 0;
+                const workspaceName = task.workspace_id ? workspaceMap.get(task.workspace_id) : undefined;
 
                 return (
                   <TaskRowMinify
@@ -324,9 +378,25 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
                     onTaskUpdated={handleTaskUpdated}
                     members={members}
                     disabled={true}
+                    showWorkspaceBadge={true}
+                    workspaceName={workspaceName}
                   />
                 );
               })}
+              
+              {hasMore && (
+                <div className="px-6 py-3 border-t border-gray-200">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDisplayLimit(prev => prev + 10)}
+                    className="w-full text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    Carregar mais ({sortedTasks.length - displayLimit} restantes)
+                    <ChevronDown className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -342,6 +412,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
           onTaskUpdated={handleTaskUpdated}
         />
       )}
+
     </>
   );
 }

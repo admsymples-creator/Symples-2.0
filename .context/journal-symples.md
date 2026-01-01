@@ -6,42 +6,56 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
-## 2026-01-01 - Simplificação da Home Page e Correção de Visualização de Cards
+## 2026-01-01 - Correção de Filtragem de Tarefas e Status no Card "Minhas Tarefas"
 
 ### 1. Melhorias, bugs e features implementadas em preview
 
-#### ✅ Simplificação da Home Page
-- **Objetivo**: Remover barra de ações desnecessária e simplificar o layout
-- **Mudanças Principais**:
-  - Removida barra de ações (`HomeActionBar`) contendo botão "Criar tarefa" e tabs de período
-  - Cards de tarefas e inbox agora aparecem diretamente abaixo do Trial Banner
-  - Período das tarefas fixado em "week" (semana) por padrão
-  - Layout mais limpo e focado no conteúdo principal
+#### ✅ Correção de Filtragem de Tarefas no Card "Minhas Tarefas"
+- **Problema**: O card "Minhas tarefas" na home page mostrava apenas tarefas de um workspace específico ("Brandify") e apenas com status "Não iniciado" e "Concluído"
+- **Causa Raiz**: 
+  - A função `getTasks` não buscava tarefas de `task_members`, apenas de `assignee_id`
+  - O filtro de grupos estava removendo tarefas de outros workspaces mesmo na aba "Minhas"
+- **Solução**:
+  - Modificada `getTasks` para buscar também tarefas onde o usuário está em `task_members` (mas não é o `assignee_id`)
+  - Ajustado filtro de grupos para não filtrar por workspace quando `assigneeId === "current"` (aba "Minhas")
+  - Ajustado filtro de "Próximas" para incluir todas as tarefas não concluídas (todo, in_progress, review, correction)
+- **Resultado**: O card agora mostra tarefas de todos os workspaces e com todos os status corretos
 
-#### 🔧 Correção de Visualização de Cards
-- **Problema**: Notificações e tarefas não apareciam nos cards apesar de serem renderizadas corretamente
-- **Causa Raiz**: `ScrollArea` do Radix UI não funcionava corretamente dentro de containers flex com altura definida
-- **Solução**: Substituído `ScrollArea` por `overflow-y-auto` diretamente nos containers
-- **Resultado**: Notificações e tarefas agora aparecem corretamente com scroll funcional
+#### 🔧 Correção de Indicador de Status no TaskRowMinify
+- **Problema**: O indicador de status no `TaskRowMinify` mostrava sempre "Não iniciado" para todas as tarefas
+- **Causa Raiz**: A função `mapLabelToStatus` espera labels em português (como "Não iniciado"), mas `task.status` vem do banco como valores do banco (como "todo", "in_progress", "review", "done")
+- **Solução**: Modificada lógica para verificar se `task.status` já é um status do banco válido (está em `TASK_CONFIG`) e usar diretamente; caso contrário, mapear do label
+- **Resultado**: O indicador de status agora mostra corretamente "Em progresso", "Revisão", "Concluído", etc.
+
+#### 📄 Implementação de Paginação no Card "Minhas Tarefas"
+- **Objetivo**: Limitar exibição inicial e permitir carregar mais itens
+- **Mudanças**:
+  - Limite inicial de 10 tarefas exibidas
+  - Botão "Carregar mais" igual ao da caixa de entrada (com ícone ChevronDown)
+  - Incremento de 10 tarefas por clique
+- **Arquivos modificados**:
+  - `components/home/HomeTasksSection.tsx`: Adicionado estado `displayLimit` e lógica de paginação
 
 #### 🧹 Limpeza de Instrumentação de Debug
 - **Removido**: Todos os logs de debug adicionados durante investigação
   - Logs `fetch` para servidor de debug
-  - `console.log` de debug em componentes
   - Regiões `#region agent log` e `#endregion`
 - **Mantido**: Apenas `console.error` para erros em produção
 - **Arquivos limpos**:
-  - `components/home/HomeTasksSection.tsx`
-  - `components/home/HomeInboxSection.tsx`
-  - `lib/actions/tasks.ts`
-  - `lib/actions/notifications.ts`
+  - `lib/actions/tasks.ts`: Removidos todos os logs de debug
+  - `components/home/HomeTasksSection.tsx`: Removidos todos os logs de debug
 
 - **Arquivos modificados**:
-  - `app/(main)/home/page.tsx`: Removido `HomeActionBarWrapper`, uso direto de `HomeTasksSection` e `HomeInboxSection`
-  - `components/home/HomeTasksSection.tsx`: Substituído ScrollArea por overflow-y-auto, removidos logs de debug
-  - `components/home/HomeInboxSection.tsx`: Substituído ScrollArea por overflow-y-auto, removidos logs de debug
-  - `lib/actions/tasks.ts`: Removidos logs de debug
-  - `lib/actions/notifications.ts`: Removidos logs de debug
+  - `lib/actions/tasks.ts`: 
+    - Adicionada busca de tarefas de `task_members` quando `assigneeId === "current"`
+    - Ajustado filtro de grupos para não filtrar por workspace na aba "Minhas"
+    - Removidos logs de debug
+  - `components/home/HomeTasksSection.tsx`: 
+    - Ajustado filtro de "Próximas" para incluir todas as tarefas não concluídas
+    - Adicionada paginação (limite de 10 itens com botão "Carregar mais")
+    - Removidos logs de debug
+  - `components/tasks/TaskRowMinify.tsx`: 
+    - Corrigida lógica de mapeamento de status para aceitar valores do banco diretamente
 
 ### 2. O que está sendo trabalhado no momento
 
@@ -50,8 +64,8 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 ### 3. Próximos passos
 
 - **Melhorias futuras**:
-  - Considerar adicionar filtros de período de volta se necessário
-  - Avaliar necessidade de botão criar tarefa na home ou manter apenas na página de tarefas
+  - Considerar otimizações de performance para busca de tarefas de múltiplos workspaces
+  - Avaliar necessidade de cache para workspaces e membros
 
 ---
 
