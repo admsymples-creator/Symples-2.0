@@ -102,6 +102,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 \- \*\*Status Badge:\*\*  
     \- \*Finalizado:\* Dot Verde \+ Texto "Finalizado".  
     \- \*Em progresso:\* Dot Amarelo \+ Texto.  
+    \- \*Bloqueado:\* Dot Vermelho \+ Texto "Bloqueado".  
     \- \*Não iniciado:\* Dot Cinza \+ Texto.  
 \- \*\*Avatares:\*\* Círculos pequenos, sobrepostos se houver mais de um.
 

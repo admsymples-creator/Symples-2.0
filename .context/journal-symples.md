@@ -6,6 +6,35 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-01 - Adição de Status "Bloqueado" e Desativação de "Correção" na UI
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### ✅ Novo Status "Bloqueado" com Cor Vermelha
+- **Mudança**: Adicionado novo status "Bloqueado" (`blocked`) no sistema de tarefas
+- **Cor Visual**: Status "Bloqueado" exibe cor vermelha (`fill-red-500`, `bg-red-100 text-red-700`)
+- **Status "Correção" Desativado**: O status "Correção" (`correction`) foi removido do `ORDERED_STATUSES`, deixando de aparecer como opção selecionável na UI
+- **Compatibilidade**: O status `correction` permanece no banco de dados e código para compatibilidade com tarefas antigas existentes
+
+#### 🔧 Mudanças Técnicas
+- **Migração SQL**: Criada migração `20260101185639_add_blocked_status_to_tasks.sql` para adicionar `blocked` ao CHECK constraint
+- **Configuração Centralizada** (`lib/config/tasks.ts`):
+  - Adicionado `TASK_STATUS.BLOCKED: 'blocked'`
+  - Configurado `TASK_CONFIG[BLOCKED]` com label "Bloqueado" e cores vermelhas
+  - Removido `CORRECTION` do `ORDERED_STATUSES` (mantido apenas em `TASK_CONFIG` e mapeamentos para compatibilidade)
+  - Atualizados mapeamentos `LABEL_TO_STATUS` e `STATUS_TO_LABEL`
+- **Arquivos Atualizados**:
+  - `app/(main)/tasks/tasks-view.tsx`: Array `statusOrder` atualizado para usar "Bloqueado"
+  - `app/(main)/tasks/page.tsx`: Adicionado "Bloqueado": "blocked" ao `statusMap`
+  - `lib/actions/task-details.ts`: Adicionado "blocked": "Bloqueado" ao `statusLabels`
+
+#### 📋 Resultado
+- Status "Bloqueado" aparece na UI como opção selecionável com cor vermelha
+- Status "Correção" não aparece mais como opção na UI (mas tarefas antigas com esse status continuam funcionando)
+- Todos os componentes que usam `ORDERED_STATUSES` automaticamente exibem "Bloqueado" em vez de "Correção"
+
+---
+
 ## 2026-01-01 - Correção de Filtragem de Tarefas e Status no Card "Minhas Tarefas"
 
 ### 1. Melhorias, bugs e features implementadas em preview
@@ -18,7 +47,7 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 - **Solução**:
   - Modificada `getTasks` para buscar também tarefas onde o usuário está em `task_members` (mas não é o `assignee_id`)
   - Ajustado filtro de grupos para não filtrar por workspace quando `assigneeId === "current"` (aba "Minhas")
-  - Ajustado filtro de "Próximas" para incluir todas as tarefas não concluídas (todo, in_progress, review, correction)
+  - Ajustado filtro de "Próximas" para incluir todas as tarefas não concluídas (todo, in_progress, review, blocked)
 - **Resultado**: O card agora mostra tarefas de todos os workspaces e com todos os status corretos
 
 #### 🔧 Correção de Indicador de Status no TaskRowMinify

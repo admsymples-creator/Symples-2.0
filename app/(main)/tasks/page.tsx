@@ -629,11 +629,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const previousTasks = [...localTasksRef.current];
 
         // Mapear status/priority baseado no viewOption e groupId (columnId)
-        const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "done"> = {
+        const statusMap: Record<string, "todo" | "in_progress" | "review" | "correction" | "blocked" | "done"> = {
             "Não iniciada": "todo",
             "Em progresso": "in_progress",
             "Revisão": "review",
             "Correção": "correction",
+            "Bloqueado": "blocked",
             "Finalizado": "done",
             // Aliases para compatibilidade
             "Backlog": "todo",
@@ -641,7 +642,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             "Execução": "in_progress",
         };
 
-        let dbStatus: "todo" | "in_progress" | "review" | "correction" | "done" | undefined = "todo";
+        let dbStatus: "todo" | "in_progress" | "review" | "correction" | "blocked" | "done" | undefined = "todo";
         let priority: "low" | "medium" | "high" | "urgent" | undefined;
         let finalGroupId: string | null | undefined = null;
         let statusLabel: string = STATUS_TO_LABEL.todo;
