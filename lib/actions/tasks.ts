@@ -921,7 +921,7 @@ export async function getTaskRecurrenceInfo(taskId: string): Promise<{
   return {
     isRecurring,
     parentId,
-    recurrenceType: task.recurrence_type || null,
+    recurrenceType: taskAny.recurrence_type || null,
     relatedTasksCount,
   };
 }
