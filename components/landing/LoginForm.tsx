@@ -102,7 +102,7 @@ export function LoginForm() {
     return (
         <div className="h-screen w-full grid lg:grid-cols-2">
             {/* Left Side - Brand (Desktop Only) */}
-            <div className="hidden lg:flex bg-slate-900 flex-col items-center justify-center p-12 relative">
+            <div className="hidden lg:flex bg-[#050815] flex-col items-center justify-center p-12 relative">
                 <div className="flex flex-col items-center justify-center flex-1">
                     <Image
                         src="/logo.avif"

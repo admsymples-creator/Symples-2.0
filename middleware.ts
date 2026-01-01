@@ -64,7 +64,7 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
 
   // Rotas protegidas (dentro de (main))
-  const protectedRoutes = ['/home', '/tasks', '/finance', '/team', '/settings', '/billing']
+  const protectedRoutes = ['/home', '/tasks', '/finance', '/team', '/settings', '/billing', '/planner']
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
   // Se tentar acessar rota protegida sem sessão -> Redirect para /login

@@ -21,7 +21,7 @@ import {
     updateAudioTranscription,
     generateTaskShareLink
 } from "@/lib/actions/task-details";
-import { getWorkspaceMembers } from "@/lib/actions/tasks";
+import { getWorkspaceMembers, createTask } from "@/lib/actions/tasks";
 import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import {
     Dialog,
@@ -672,6 +672,100 @@ export function TaskDetailModal({
             }
         });
     }, [activitiesLength, open]);
+
+    // Handler para fechar modal com salvamento automático
+    const handleClose = useCallback(async (newOpen: boolean) => {
+        if (!newOpen && open) {
+            // Modal está sendo fechado - salvar automaticamente
+            
+            if (isCreateMode) {
+                // Modo create: criar tarefa se houver título
+                if (title.trim() && !currentTaskId) {
+                    try {
+                        const result = await createTask({
+                            title: title.trim(),
+                            description: description || "",
+                            status: status,
+                            due_date: dueDate || null,
+                            workspace_id: task?.workspaceId || null,
+                            assignee_id: localMembers[0]?.id || null,
+                            subtasks: subTasks.map(st => ({
+                                title: st.title,
+                                assignee_id: st.assignee_id || null,
+                            })),
+                        });
+
+                        if (result.success && result.data) {
+                            setCurrentTaskId(result.data.id);
+                            onTaskCreated?.();
+                            toast.success("Tarefa criada com sucesso!");
+                        } else {
+                            toast.error(result.error || "Erro ao criar tarefa");
+                        }
+                    } catch (error) {
+                        console.error("Erro ao criar tarefa:", error);
+                        toast.error("Erro ao criar tarefa");
+                    }
+                } else if (currentTaskId) {
+                    // Tarefa já foi criada
+                    toast.success("Tarefa salva com sucesso!");
+                }
+            } else if (currentTaskId) {
+                // Modo edit: salvar alterações pendentes
+                const updates: any = {};
+                let hasUpdates = false;
+
+                // Verificar se há alterações pendentes
+                if (title.trim() && title !== task?.title) {
+                    updates.title = title.trim();
+                    hasUpdates = true;
+                }
+                if (description !== task?.description) {
+                    updates.description = description;
+                    hasUpdates = true;
+                }
+                if (status !== task?.status) {
+                    updates.status = status;
+                    hasUpdates = true;
+                }
+                if (dueDate !== (task?.dueDate || "")) {
+                    updates.due_date = dueDate || null;
+                    hasUpdates = true;
+                }
+
+                // Verificar alterações em assignees
+                // Como o task não tem assignee.id, vamos verificar se há mudança baseado no nome
+                // Se houver membros selecionados e não havia assignee antes, ou vice-versa, há mudança
+                const hasCurrentAssignee = localMembers.length > 0;
+                const hadTaskAssignee = !!task?.assignee;
+                if (hasCurrentAssignee !== hadTaskAssignee) {
+                    updates.assignee_id = localMembers[0]?.id || null;
+                    hasUpdates = true;
+                } else if (hasCurrentAssignee && hadTaskAssignee) {
+                    // Ambos têm assignee, mas pode ter mudado - vamos salvar para garantir
+                    // (não podemos comparar IDs porque task.assignee não tem id)
+                    updates.assignee_id = localMembers[0]?.id || null;
+                    hasUpdates = true;
+                }
+
+                // Salvar alterações se houver
+                if (hasUpdates) {
+                    try {
+                        await updateTaskFields(currentTaskId, updates);
+                        onTaskUpdated?.();
+                    } catch (error) {
+                        console.error("Erro ao salvar tarefa:", error);
+                        toast.error("Erro ao salvar tarefa");
+                        return; // Não fechar modal se houver erro
+                    }
+                }
+                
+                // Sempre mostrar toast de confirmação
+                toast.success("Tarefa salva com sucesso!");
+            }
+        }
+        onOpenChange(newOpen);
+    }, [open, isCreateMode, currentTaskId, title, description, status, dueDate, task, localMembers, subTasks, onTaskCreated, onTaskUpdated, onOpenChange]);
 
     // Limpar estados quando task.id mudar ou modal fechar
     // Este useEffect deve rodar ANTES de qualquer renderização do formulário
@@ -2275,7 +2369,7 @@ export function TaskDetailModal({
 
     return (
         <>
-            <Dialog open={open} onOpenChange={onOpenChange}>
+            <Dialog open={open} onOpenChange={handleClose}>
                 <DialogPortal>
                     <DialogOverlay className="bg-black/50" />
                     <DialogPrimitive.Content
@@ -2333,7 +2427,7 @@ export function TaskDetailModal({
                                         variant="ghost"
                                         size="icon"
                                         className="h-8 w-8"
-                                        onClick={() => onOpenChange(false)}
+                                        onClick={() => handleClose(false)}
                                     >
                                         <X className="h-4 w-4" />
                                     </Button>
@@ -2397,6 +2491,7 @@ export function TaskDetailModal({
                                                 <h1 className="text-4xl font-bold">{title}</h1>
                                             ) : (
                                                 <Input
+                                                    placeholder="Digite o título da tarefa..."
                                                     value={title}
                                                     onChange={(e) => {
                                                         const newTitle = e.target.value;

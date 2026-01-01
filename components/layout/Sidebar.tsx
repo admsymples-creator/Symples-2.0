@@ -4,7 +4,7 @@ import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,8 @@ interface NavItem {
 }
 
 const personalItems: NavItem[] = [
-    { label: "Minha Semana", href: "/home", icon: Home },
+    { label: "Home", href: "/home", icon: Home },
+    { label: "Planner", href: "/planner", icon: Calendar },
     // Assistente IA agora acessível via FAB (GlobalAssistantSheet)
     // { label: "Assistente IA", href: "/assistant", icon: Sparkles },
 ];
@@ -41,24 +42,24 @@ interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
 }
 
-const NavItemView = React.memo(({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) => {
+const NavItemView = ({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) => {
     const Icon = item.icon;
 
-    const content = (
+    const linkElement = (
         <Link
             href={item.href}
             className={cn(
                 "flex items-center gap-3 rounded-lg transition-colors relative group whitespace-nowrap",
                 isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm w-full",
                 isActive
-                    ? "bg-green-50 text-green-700 font-semibold"
+                    ? "bg-gray-50 text-[#050815] font-semibold"
                     : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
             )}
         >
             <Icon className={cn(
                 "flex-shrink-0",
                 isCollapsed ? "w-5 h-5" : "w-5 h-5",
-                isActive ? "text-green-700" : "text-gray-500"
+                isActive ? "text-[#050815]" : "text-gray-500"
             )} />
             <span className={cn(
                 "transition-all duration-300 overflow-hidden",
@@ -73,7 +74,7 @@ const NavItemView = React.memo(({ item, isActive, isCollapsed }: { item: NavItem
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
-                    {content}
+                    {linkElement}
                 </TooltipTrigger>
                 <TooltipContent side="right">
                     {item.label}
@@ -82,13 +83,8 @@ const NavItemView = React.memo(({ item, isActive, isCollapsed }: { item: NavItem
         );
     }
 
-    return content;
-}, (prevProps, nextProps) => {
-    // Only re-render if these props actually change
-    return prevProps.isActive === nextProps.isActive &&
-        prevProps.isCollapsed === nextProps.isCollapsed &&
-        prevProps.item.href === nextProps.item.href;
-});
+    return linkElement;
+};
 NavItemView.displayName = 'NavItemView';
 
 type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'>;
@@ -228,8 +224,13 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
 
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto p-4 overflow-x-hidden">
-                {/* Top: Minha Semana (Global) */}
+                {/* Top: Pessoal */}
                 <div className="mb-6">
+                    {!isCollapsed && (
+                        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
+                            PESSOAL
+                        </h2>
+                    )}
                     <ul className="space-y-1">
                         {personalItems.map((item) => (
                             <li key={item.href}>
@@ -242,17 +243,22 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
 
                 {/* Workspace Selector */}
                 <div className="mb-6 relative">
+                    {!isCollapsed && (
+                        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
+                            ESPAÇOS DE TRABALHO
+                        </h2>
+                    )}
                     {hasWorkspaces ? (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     variant="ghost"
                                     className={cn(
-                                        "w-full h-12 gap-3 hover:bg-gray-100/80 transition-all group p-0",
+                                        "w-full h-12 gap-3 hover:bg-gray-100/80 transition-all group p-0 border border-gray-200 rounded-lg",
                                         isCollapsed ? "justify-center px-0" : "justify-start px-3"
                                     )}
                                 >
-                                    <div className="w-8 h-8 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow overflow-hidden">
+                                    <div className="w-8 h-8 rounded-md bg-[#050815] flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow overflow-hidden">
                                         {currentWorkspace?.logo_url ? (
                                             <img
                                                 src={currentWorkspace.logo_url}
@@ -332,12 +338,12 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                         </div>
                                         <span className="flex-1 truncate">{workspace.name}</span>
                                         {workspace.id === activeWorkspaceId && (
-                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                            <div className="w-1.5 h-1.5 rounded-full bg-[#050815]" />
                                         )}
                                     </DropdownMenuItem>
                                 ))}
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild className="cursor-pointer gap-2 text-green-600 focus:text-green-700 focus:bg-green-50">
+                                <DropdownMenuItem asChild className="cursor-pointer gap-2 text-[#050815] focus:text-[#050815] focus:bg-gray-50">
                                     <Link href="/onboarding">
                                         <Plus className="w-4 h-4" />
                                         Criar Novo Workspace
@@ -349,7 +355,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                         <Link
                             href="/onboarding"
                             className={cn(
-                                "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-green-600 hover:border-green-500 hover:bg-green-50 transition-all",
+                                "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-[#050815] hover:border-[#050815] hover:bg-gray-50 transition-all",
                                 isCollapsed ? "px-0" : ""
                             )}
                         >
@@ -383,16 +389,16 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
             <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
                 {/* Trial Upgrade Callout - Hide when collapsed and only show if trialing */}
                 {!isCollapsed && isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
-                    <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-                        <h4 className="font-semibold text-green-800 text-xs mb-1">
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <h4 className="font-semibold text-[#050815] text-xs mb-1">
                             Trial - {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}
                         </h4>
-                        <p className="text-[10px] text-green-700 mb-2 leading-snug">
+                        <p className="text-[10px] text-[#050815] mb-2 leading-snug">
                             Aproveite todos os recursos Pro do Symples.
                         </p>
                         <Button 
                             size="sm" 
-                            className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none"
+                            className="w-full h-7 text-xs bg-[#050815] hover:bg-[#0a0f1f] text-white shadow-none"
                             onClick={() => router.push('/billing')}
                         >
                             Assinar Agora

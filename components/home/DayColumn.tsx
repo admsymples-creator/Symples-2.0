@@ -25,6 +25,7 @@ interface DayColumnProps {
   isToday?: boolean;
   workspaces?: { id: string; name: string }[];
   highlightInput?: boolean;
+  onTaskUpdate?: () => void; // Callback para notificar atualizações
 }
 
 export function DayColumn({
@@ -35,6 +36,7 @@ export function DayColumn({
   isToday,
   workspaces = [],
   highlightInput = false,
+  onTaskUpdate,
 }: DayColumnProps) {
   const router = useRouter();
   const [quickAddValue, setQuickAddValue] = useState("");
@@ -188,6 +190,7 @@ export function DayColumn({
       const results = await Promise.all(createPromises);
 
       if (results.some((r) => r.success)) {
+        onTaskUpdate?.(); // Notificar atualização
         startTransition(() => {
           router.refresh();
         });
@@ -212,6 +215,7 @@ export function DayColumn({
       });
 
       await updateTask({ id, status: checked ? "done" : "todo" });
+      onTaskUpdate?.(); // Notificar atualização
       router.refresh();
     } catch (error) {
       console.error("Erro ao atualizar status:", error);
@@ -227,6 +231,7 @@ export function DayColumn({
           addOptimisticTask({ type: 'delete', id });
         });
         await deleteTask(id);
+        onTaskUpdate?.(); // Notificar atualização
         router.refresh();
       } catch (error) {
         console.error("Erro ao excluir:", error);
@@ -245,6 +250,7 @@ export function DayColumn({
         });
       });
       await updateTask({ id, title });
+      onTaskUpdate?.(); // Notificar atualização
       router.refresh();
     } catch (error) {
       console.error("Erro ao editar:", error);
@@ -262,6 +268,7 @@ export function DayColumn({
         });
       });
       await updateTask({ id, workspace_id: wid, is_personal: false });
+      onTaskUpdate?.(); // Notificar atualização
       router.refresh();
     } catch (error) {
       console.error("Erro ao mover:", error);
@@ -331,7 +338,10 @@ export function DayColumn({
                   onDelete={handleDelete}
                   onEdit={handleEdit}
                   onMoveToWorkspace={handleMove}
-                  onDateUpdate={() => router.refresh()}
+                  onDateUpdate={() => {
+                    onTaskUpdate?.();
+                    router.refresh();
+                  }}
                 />
               ))}
             </div>

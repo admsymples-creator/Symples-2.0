@@ -5,11 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { Plus } from "lucide-react";
-import { HomeTasksSection } from "./HomeTasksSection";
 
-export function HomePageClient() {
+interface HomeActionBarProps {
+  period: "week" | "month";
+  onPeriodChange: (period: "week" | "month") => void;
+}
+
+export function HomeActionBar({ period, onPeriodChange }: HomeActionBarProps) {
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-  const [period, setPeriod] = useState<"week" | "month">("week");
 
   const handleTaskCreated = () => {
     setIsCreateTaskModalOpen(false);
@@ -36,7 +39,7 @@ export function HomePageClient() {
         </Button>
 
         {/* Tabs de período à direita */}
-        <Tabs value={period} onValueChange={(v) => setPeriod(v as "week" | "month")}>
+        <Tabs value={period} onValueChange={(v) => onPeriodChange(v as "week" | "month")}>
           <TabsList variant="default">
             <TabsTrigger value="week" variant="default">
               Minha semana
@@ -59,3 +62,4 @@ export function HomePageClient() {
     </>
   );
 }
+

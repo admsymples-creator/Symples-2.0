@@ -181,9 +181,9 @@ export function GoalModal({
             <div className="space-y-2">
               <Label>Tipo de Meta</Label>
               <Tabs value={type} onValueChange={(v) => setType(v as "savings" | "spending_limit")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="savings">Economia</TabsTrigger>
-                  <TabsTrigger value="spending_limit">Limite de Gasto</TabsTrigger>
+                <TabsList variant="grid" className="grid w-full grid-cols-2">
+                  <TabsTrigger value="savings" variant="grid">Economia</TabsTrigger>
+                  <TabsTrigger value="spending_limit" variant="grid">Limite de Gasto</TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>

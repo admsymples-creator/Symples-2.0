@@ -1,0 +1,281 @@
+/* FullCalendar Custom Styling - Symples Theme */
+
+/* Remover estilos padrão azuis do FullCalendar */
+.fc {
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  color: var(--foreground);
+}
+
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-color: var(--border);
+}
+
+.fc-theme-standard .fc-scrollgrid {
+  border-color: var(--border);
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+/* Remover bordas que se sobrepõem quando em tela cheia */
+.fc-theme-standard .fc-scrollgrid-section-header,
+.fc-theme-standard .fc-scrollgrid-section-body {
+  border-top: none !important;
+}
+
+.fc-theme-standard .fc-scrollgrid-section > table {
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.fc-theme-standard .fc-scrollgrid-sync-table {
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.fc-theme-standard .fc-col-header-cell {
+  border-left: none !important;
+}
+
+.fc-theme-standard .fc-col-header-cell:first-child {
+  border-left: 1px solid var(--border) !important;
+}
+
+.fc-theme-standard .fc-daygrid-day {
+  border-left: none !important;
+}
+
+.fc-theme-standard .fc-daygrid-day:first-child {
+  border-left: 1px solid var(--border) !important;
+}
+
+/* Header do calendário (oculto, usando header customizado) */
+.fc-header-toolbar {
+  display: none;
+}
+
+/* Eventos do calendário */
+.fc-event {
+  border: none;
+  border-radius: calc(var(--radius) - 4px);
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-event:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.fc-event-main-frame {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fc-event-time {
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.9;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-event-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-event-title.line-through {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* Tarefas concluídas */
+.task-completed {
+  opacity: 0.6;
+}
+
+/* Células do calendário */
+.fc-daygrid-day {
+  background-color: var(--surface, #ffffff);
+  cursor: pointer;
+}
+
+.fc-daygrid-day:hover {
+  background-color: var(--muted, #f9fafb);
+}
+
+/* Garantir que as células sejam clicáveis */
+.fc-daygrid-day-frame {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.fc-day {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.fc-day-today {
+  background-color: var(--accent, #f9fafb) !important;
+}
+
+.fc-daygrid-day-number {
+  color: var(--foreground);
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 4px;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-daygrid-day-top {
+  flex-direction: row;
+}
+
+/* Labels de dias da semana */
+.fc-col-header-cell {
+  background-color: var(--muted, #f9fafb);
+  border-color: var(--border);
+  padding: 8px 4px;
+}
+
+.fc-col-header-cell-cushion {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+/* Lista de eventos (view listDay) */
+.fc-list-event {
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: calc(var(--radius) - 2px);
+  margin-bottom: 4px;
+  transition: all 0.2s;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-list-event:hover {
+  background-color: var(--muted, #f9fafb);
+}
+
+.fc-list-event-time {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-list-event-title {
+  color: var(--foreground);
+  font-weight: 500;
+  font-size: 0.875rem;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+/* TimeGrid (semana) */
+.fc-timegrid-slot {
+  border-color: var(--border);
+}
+
+.fc-timegrid-col {
+  border-color: var(--border);
+}
+
+.fc-timegrid-axis {
+  border-color: var(--border);
+}
+
+.fc-timegrid-axis-cushion {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-timegrid-event {
+  border: none;
+  border-radius: calc(var(--radius) - 4px);
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-timegrid-event-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+/* Scrollbar customizado */
+.fc-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.fc-scroller::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.fc-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fc-scroller::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 3px;
+}
+
+.fc-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+
+/* Popover de "mais eventos" */
+.fc-more-popover {
+  background-color: var(--surface, #ffffff);
+  border-color: var(--border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  border-radius: var(--radius);
+}
+
+.fc-popover-header {
+  background-color: var(--muted, #f9fafb);
+  border-color: var(--border);
+  color: var(--foreground);
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-popover-body {
+  padding: 8px;
+}
+
+/* Título do calendário (quando visível) */
+.fc-toolbar-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--foreground);
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .fc-toolbar {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .fc-toolbar-title {
+    font-size: 1rem;
+  }
+}

@@ -12,9 +12,10 @@ interface WeeklyViewProps {
   tasks: Task[];
   workspaces: { id: string; name: string }[];
   highlightInput?: boolean;
+  onTaskUpdate?: () => void; // Callback para notificar atualizações
 }
 
-export function WeeklyView({ tasks, workspaces, highlightInput = false }: WeeklyViewProps) {
+export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate }: WeeklyViewProps) {
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
 
@@ -96,12 +97,14 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
         <h2 className="text-lg font-semibold text-gray-900">
           Visão Semanal
         </h2>
-        <Tabs value={daysToShow.toString()} onValueChange={handleViewChange}>
-          <TabsList className="bg-white border">
-            <TabsTrigger value="3" className="text-sm px-4 transition-all duration-300">3 Dias</TabsTrigger>
-            <TabsTrigger value="5" className="text-sm px-4 transition-all duration-300">Semana</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-3">
+          <Tabs value={daysToShow.toString()} onValueChange={handleViewChange}>
+            <TabsList variant="default">
+              <TabsTrigger value="3" variant="default" className="transition-all duration-300">3 Dias</TabsTrigger>
+              <TabsTrigger value="5" variant="default" className="transition-all duration-300">Semana</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       <motion.div
@@ -126,6 +129,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false }: Weekly
                 isToday={day.isToday}
                 workspaces={workspaces}
                 highlightInput={highlightInput && day.isToday}
+                onTaskUpdate={onTaskUpdate}
               />
             </motion.div>
           ))}
