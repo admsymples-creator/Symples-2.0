@@ -720,10 +720,12 @@ export function TaskDetailModal({
                 // Modo create: criar tarefa se houver título
                 if (title.trim() && !currentTaskId) {
                     try {
+                        // Mapear status para o tipo aceito por createTask (não aceita "review")
+                        const dbStatus = status === "review" ? "in_progress" : status;
                         const result = await createTask({
                             title: title.trim(),
                             description: description || "",
-                            status: status,
+                            status: dbStatus as "todo" | "in_progress" | "done" | "archived",
                             due_date: dueDate || null,
                             workspace_id: workspaceId || null,
                             assignee_id: localMembers[0]?.id || null,
