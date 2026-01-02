@@ -1,9 +1,9 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { useState, useMemo, useCallback, startTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -40,16 +40,26 @@ const workspaceItems: NavItem[] = [
 
 interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
+    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'> | null;
 }
 
-const NavItemView = ({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) => {
+function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
     const Icon = item.icon;
+
+    const handleClick = () => {
+        const clickTime = performance.now();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar.tsx:49',message:'Link clicked',data:{href:item.href,clickTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+    };
 
     const linkElement = (
         <Link
             href={item.href}
+            prefetch={true}
+            onClick={handleClick}
             className={cn(
-                "flex items-center gap-3 rounded-lg transition-colors relative group whitespace-nowrap",
+                "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap",
                 isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm w-full",
                 isActive
                     ? "bg-gray-50 text-[#050815] font-semibold"
@@ -62,7 +72,7 @@ const NavItemView = ({ item, isActive, isCollapsed }: { item: NavItem, isActive:
                 isActive ? "text-[#050815]" : "text-gray-500"
             )} />
             <span className={cn(
-                "transition-all duration-300 overflow-hidden",
+                "transition-all duration-150 overflow-hidden",
                 isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"
             )}>
                 {item.label}
@@ -76,7 +86,7 @@ const NavItemView = ({ item, isActive, isCollapsed }: { item: NavItem, isActive:
                 <TooltipTrigger asChild>
                     {linkElement}
                 </TooltipTrigger>
-                <TooltipContent side="right">
+                <TooltipContent side="right" className="z-[100]">
                     {item.label}
                 </TooltipContent>
             </Tooltip>
@@ -84,73 +94,25 @@ const NavItemView = ({ item, isActive, isCollapsed }: { item: NavItem, isActive:
     }
 
     return linkElement;
-};
-NavItemView.displayName = 'NavItemView';
+}
 
-type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'>;
-
-function SidebarContent({ workspaces = [] }: SidebarProps) {
+function SidebarContent({ workspaces = [], initialSubscription = null }: SidebarProps) {
     const pathname = usePathname();
-    const searchParams = useSearchParams();
     const router = useRouter();
     const { isCollapsed, toggleSidebar } = useSidebar();
     const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
-    const [subscriptionData, setSubscriptionData] = useState<WorkspaceSubscription | null>(null);
+    const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
-    // Buscar dados de subscription do workspace ativo
-    useEffect(() => {
-        if (!activeWorkspaceId) {
-            setSubscriptionData(null);
-            return;
-        }
-
-        const fetchSubscription = async () => {
-            try {
-                const response = await fetch(`/api/workspace/subscription?workspaceId=${activeWorkspaceId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setSubscriptionData(data);
-                }
-            } catch (error) {
-                console.error("Erro ao buscar dados de subscription:", error);
-                setSubscriptionData(null);
-            }
-        };
-
-        fetchSubscription();
-    }, [activeWorkspaceId]);
-
-    // Calcular dias restantes do trial
-    const getTrialDaysRemaining = () => {
-        if (!subscriptionData?.trial_ends_at) return null;
-        const trialEndsAt = new Date(subscriptionData.trial_ends_at);
+    // Calcular dias restantes do trial (memoizado) - apenas lógica visual baseada em props
+    const trialDaysRemaining = useMemo(() => {
+        if (!initialSubscription?.trial_ends_at) return null;
+        const trialEndsAt = new Date(initialSubscription.trial_ends_at);
         const now = new Date();
         const daysRemaining = Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         return daysRemaining > 0 ? daysRemaining : 0;
-    };
+    }, [initialSubscription?.trial_ends_at]);
 
-    const isTrialing = subscriptionData?.subscription_status === 'trialing';
-    const trialDaysRemaining = isTrialing ? getTrialDaysRemaining() : null;
-
-    const isActive = (href: string) => {
-        if (href.includes('?')) {
-            const [path, query] = href.split('?');
-            const params = new URLSearchParams(query);
-            const targetTab = params.get('tab');
-            const currentTab = searchParams.get('tab');
-
-            return pathname === path && currentTab === targetTab;
-        }
-
-        if (href === "/settings") {
-            return pathname === "/settings" && (!searchParams.get('tab') || searchParams.get('tab') === 'general');
-        }
-
-        if (href === "/home") {
-            return pathname === "/home";
-        }
-        return pathname?.startsWith(href);
-    };
+    const isTrialing = initialSubscription?.subscription_status === 'trialing';
 
     const hasWorkspaces = React.useMemo(() => workspaces.length > 0, [workspaces.length]);
 
@@ -173,6 +135,54 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
         };
     }, [workspaces, activeWorkspaceId]);
 
+    // Memoizar pathname para evitar recálculos - usar useMemo para estabilizar referência
+    const stablePathname = useMemo(() => pathname, [pathname]);
+    
+    // Memoizar resultados de isActive para cada href - evita recálculos durante render
+    // Usar apenas pathname (sem searchParams) para evitar re-renders em cascata
+    const activeStates = useMemo(() => {
+        const states: Record<string, boolean> = {};
+        // Calcular todos os estados ativos de uma vez (sem searchParams para evitar cascata)
+        const checkActive = (href: string) => {
+            // Fast path 1: comparação exata (mais comum)
+            if (stablePathname === href) return true;
+            
+            // Fast path 2: startsWith para rotas workspace (segundo mais comum)
+            if (stablePathname?.startsWith(href)) {
+                // Rotas exatas não devem ativar com subpaths
+                if (href === "/home" || href === "/settings") {
+                    return false; // já verificamos === acima
+                }
+                // Para rotas workspace, verificar se é exatamente o prefixo ou subpath válido
+                const remaining = stablePathname.slice(href.length);
+                return remaining === "" || remaining.startsWith("/");
+            }
+
+            return false;
+        };
+
+        // Calcular estados para todos os itens pessoais
+        personalItems.forEach(item => {
+            states[item.href] = checkActive(item.href);
+        });
+
+        // Calcular estados para todos os itens workspace
+        workspaceItems.forEach(item => {
+            const href = item.href === "/finance" ? "/finance" : workspacePrefix + item.href;
+            states[href] = checkActive(href);
+        });
+
+        // Settings (verificação simples sem tab)
+        states["/settings"] = stablePathname === "/settings";
+
+        return states;
+    }, [stablePathname, workspacePrefix]);
+
+    // Função isActive simplificada - apenas retorna valor memoizado
+    const isActive = useCallback((href: string) => {
+        return activeStates[href] ?? false;
+    }, [activeStates]);
+
     return (
         <aside
             className={cn(
@@ -185,7 +195,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                 "h-16 flex items-center border-b border-gray-200 transition-all duration-300 relative",
                 isCollapsed ? "justify-center px-0" : "px-4 justify-between"
             )}>
-                <Link href="/home" className={cn("block", isCollapsed ? "mx-auto" : "")}>
+                <Link href="/home" prefetch={true} className={cn("block", isCollapsed ? "mx-auto" : "")}>
                     {isCollapsed ? (
                         <Image
                             src="/logo-dock.png"
@@ -293,7 +303,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                                     )}
                                                 </div>
                                                 <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors">
-                                                    {isTrialing ? 'Plano Trial' : subscriptionData?.plan ? `Plano ${subscriptionData.plan.charAt(0).toUpperCase() + subscriptionData.plan.slice(1)}` : 'Workspace'}
+                                                    {isTrialing ? 'Plano Trial' : initialSubscription?.plan ? `Plano ${initialSubscription.plan.charAt(0).toUpperCase() + initialSubscription.plan.slice(1)}` : 'Workspace'}
                                                 </span>
                                             </div>
 
@@ -310,20 +320,36 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                     <DropdownMenuItem
                                         key={workspace.id}
                                         onMouseEnter={() => {
-                                            // Prefetch route on hover for faster navigation
+                                            // Prefetch route and subscription on hover for faster navigation
                                             const base = workspace.slug || workspace.id;
                                             if (base) {
                                                 router.prefetch(`/${base}/tasks`);
+                                                // Prefetch subscription data
+                                                fetch(`/api/workspace/subscription?workspaceId=${workspace.id}`).catch(() => {});
                                             }
                                         }}
                                         onClick={() => {
+                                            if (workspace.id === activeWorkspaceId) return;
+                                            
+                                            setIsSwitchingWorkspace(true);
                                             setActiveWorkspaceId(workspace.id);
+                                            
                                             const base = workspace.slug || workspace.id;
                                             if (base) {
-                                                router.push(`/${base}/tasks`);
+                                                startTransition(() => {
+                                                    router.push(`/${base}/tasks`);
+                                                    // Reset loading state after navigation
+                                                    setTimeout(() => setIsSwitchingWorkspace(false), 500);
+                                                });
+                                            } else {
+                                                setIsSwitchingWorkspace(false);
                                             }
                                         }}
-                                        className="gap-2 cursor-pointer"
+                                        className={cn(
+                                            "gap-2 cursor-pointer",
+                                            isSwitchingWorkspace && workspace.id !== activeWorkspaceId && "opacity-50"
+                                        )}
+                                        disabled={isSwitchingWorkspace}
                                     >
                                         <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
                                             {workspace.logo_url ? (
@@ -344,7 +370,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                                 ))}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem asChild className="cursor-pointer gap-2 text-[#050815] focus:text-[#050815] focus:bg-gray-50">
-                                    <Link href="/onboarding">
+                                    <Link href="/onboarding" prefetch={true}>
                                         <Plus className="w-4 h-4" />
                                         Criar Novo Workspace
                                     </Link>
@@ -354,6 +380,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                     ) : (
                         <Link
                             href="/onboarding"
+                            prefetch={true}
                             className={cn(
                                 "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-[#050815] hover:border-[#050815] hover:bg-gray-50 transition-all",
                                 isCollapsed ? "px-0" : ""
@@ -369,7 +396,7 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                 <div>
                     <ul className="space-y-1">
                         {workspaceItems.map((item) => {
-                            const href = workspacePrefix + item.href;
+                            const href = item.href === "/finance" ? "/finance" : workspacePrefix + item.href;
                             const resolvedItem = { ...item, href };
                             return (
                                 <li key={item.href}>
@@ -407,7 +434,6 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
                 )}
 
                 <div className={cn("flex items-center", isCollapsed ? "justify-center flex-col gap-4" : "justify-between")}>
-                    {/* Settings Link */}
                     <NavItemView
                         item={{ label: "Configurações", href: "/settings", icon: Settings }}
                         isActive={isActive("/settings")}
@@ -417,25 +443,9 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
             </div>
         </aside>
     );
+    
 }
 
 export function Sidebar(props: SidebarProps) {
-    return (
-        <Suspense fallback={
-            <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50">
-                <div className="p-4 border-b border-gray-200">
-                    <div className="h-8 w-32 bg-gray-200 animate-pulse rounded" />
-                </div>
-                <nav className="flex-1 overflow-y-auto p-4">
-                    <div className="space-y-2">
-                        {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
-                        ))}
-                    </div>
-                </nav>
-            </aside>
-        }>
-            <SidebarContent {...props} />
-        </Suspense>
-    );
+    return <SidebarContent {...props} />;
 }

@@ -11,20 +11,23 @@ import { GlobalAssistantSheet } from "@/components/assistant/GlobalAssistantShee
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import type { SubscriptionData } from "@/lib/types/subscription";
+
 interface AppShellProps {
     children: React.ReactNode;
     user: any;
     workspaces: any[];
+    initialSubscription?: SubscriptionData | null;
 }
 
-function LayoutContent({ children, user, workspaces }: AppShellProps) {
+function LayoutContent({ children, user, workspaces, initialSubscription }: AppShellProps) {
     const { isCollapsed } = useSidebar();
 
     return (
         <div className="min-h-screen bg-gray-50">
             <WorkspaceUrlSync workspaces={workspaces} />
             <WorkspaceSyncAfterInvite />
-            <Sidebar workspaces={workspaces} />
+            <Sidebar workspaces={workspaces} initialSubscription={initialSubscription} />
             <div 
                 className={cn(
                     "flex flex-col min-h-screen transition-all duration-300 ease-in-out",
@@ -53,4 +56,3 @@ export function AppShell(props: AppShellProps) {
         </SidebarProvider>
     );
 }
-

@@ -3,11 +3,12 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { Database } from "@/types/database.types";
 import { revalidatePath } from "next/cache";
+import { cache } from "react";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & { logo_url?: string | null };
 
-export async function getUserProfile() {
+export const getUserProfile = cache(async () => {
   const supabase = await createServerActionClient();
   const {
     data: { user },
@@ -22,9 +23,9 @@ export async function getUserProfile() {
     .single();
 
   return profile;
-}
+});
 
-export async function getUserWorkspaces() {
+export const getUserWorkspaces = cache(async () => {
   const supabase = await createServerActionClient();
   const {
     data: { user },
@@ -44,6 +45,8 @@ export async function getUserWorkspaces() {
   console.log("🔍 [getUserWorkspaces] Buscando workspaces para usuário:", user.id);
 
   // Buscar workspaces onde o usuário é membro
+  // Nota: Não podemos usar unstable_cache aqui porque precisamos acessar cookies() para autenticação
+  // O Next.js não permite acessar dados dinâmicos (cookies) dentro de funções cacheadas
   const { data: memberWorkspaces, error } = await supabase
     .from("workspace_members")
     .select(`
@@ -83,7 +86,7 @@ export async function getUserWorkspaces() {
   console.log("✅ [getUserWorkspaces] Workspaces transformados:", workspaces.length);
 
   return workspaces;
-}
+});
 
 export async function getWorkspaceById(workspaceId: string): Promise<Workspace | null> {
   const supabase = await createServerActionClient();

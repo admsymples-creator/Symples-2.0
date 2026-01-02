@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import Link from "next/link";
@@ -23,8 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { GhostGroup } from "@/components/tasks/GhostGroup";
-import { TaskBoard } from "@/components/tasks/TaskBoard";
-import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
+import dynamic from "next/dynamic";
 import { CalendarViewMenu } from "@/components/calendar/CalendarViewMenu";
 import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -88,7 +87,15 @@ const DATE_COLOR_MAP: Record<string, string> = {
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
 import { SortMenu } from "@/components/tasks/SortMenu";
-import { PlannerCalendar } from "@/components/calendar/planner-calendar";
+const TaskBoard = dynamic(() => import("@/components/tasks/TaskBoard").then((mod) => mod.TaskBoard), {
+    loading: () => <div className="min-h-[200px]" />,
+});
+const TaskDetailModal = dynamic(() => import("@/components/tasks/TaskDetailModal").then((mod) => mod.TaskDetailModal), {
+    loading: () => null,
+});
+const PlannerCalendar = dynamic(() => import("@/components/calendar/planner-calendar").then((mod) => mod.PlannerCalendar), {
+    loading: () => <div className="min-h-[400px]" />,
+});
 
 interface Task {
     id: string;
@@ -2888,31 +2895,33 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 </div>
 
             {/* Modal de Detalhes */}
-            <TaskDetailModal
-                key={selectedTaskId}
-                open={isModalOpen}
-                onOpenChange={(open) => {
-                    setIsModalOpen(open);
-                    if (!open) {
-                        setTaskDetails(null);
-                        setSelectedTaskId(null);
-                    }
-                }}
-                task={taskDetails}
-                mode={selectedTaskId ? "edit" : "create"}
-                onTaskCreated={async () => {
-                    await reloadTasks();
-                    // Recarregar calendário se estiver na view de calendário
-                    // Usar setTimeout para garantir que o reloadTasks terminou
-                    setTimeout(() => {
-                        if (viewMode === "calendar" && calendarControls?.reloadEvents) {
-                            calendarControls.reloadEvents();
+            {isModalOpen && (
+                <TaskDetailModal
+                    key={selectedTaskId}
+                    open={isModalOpen}
+                    onOpenChange={(open) => {
+                        setIsModalOpen(open);
+                        if (!open) {
+                            setTaskDetails(null);
+                            setSelectedTaskId(null);
                         }
-                    }, 300);
-                }}
-                onTaskUpdated={handleTaskUpdated}
-                onTaskUpdatedOptimistic={handleOptimisticUpdate}
-            />
+                    }}
+                    task={taskDetails}
+                    mode={selectedTaskId ? "edit" : "create"}
+                    onTaskCreated={async () => {
+                        await reloadTasks();
+                        // Recarregar calend rio se estiver na view de calend rio
+                        // Usar setTimeout para garantir que o reloadTasks terminou
+                        setTimeout(() => {
+                            if (viewMode === "calendar" && calendarControls?.reloadEvents) {
+                                calendarControls.reloadEvents();
+                            }
+                        }, 300);
+                    }}
+                    onTaskUpdated={handleTaskUpdated}
+                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                />
+            )}
 
             {/* Modal de CriaÃ§Ã£o de Grupo */}
             <Dialog open={isCreateGroupModalOpen} onOpenChange={setIsCreateGroupModalOpen}>
@@ -2998,6 +3007,5 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         </div>
     );
 }
-
 
 

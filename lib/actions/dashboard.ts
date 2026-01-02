@@ -3,6 +3,7 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Database } from "@/types/database.types";
+import { cache } from "react";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -34,10 +35,10 @@ export interface WorkspaceStats {
  * @param end - Data de fim (fim da semana - Domingo)
  * @returns Array de tarefas da semana
  */
-export async function getWeekTasks(
+export const getWeekTasks = cache(async (
   start: Date,
   end: Date
-): Promise<WeekTask[]> {
+): Promise<WeekTask[]> => {
   try {
     const supabase = await createServerActionClient();
 
@@ -157,17 +158,17 @@ export async function getWeekTasks(
     console.error("Erro inesperado ao buscar tarefas:", error);
     return [];
   }
-}
+});
 
 /**
  * Busca estatísticas semanais dos workspaces do usuário
  * @param start - Data de início (início da semana)
  * @param end - Data de fim (fim da semana)
  */
-export async function getWorkspacesWeeklyStats(
+export const getWorkspacesWeeklyStats = cache(async (
   start: Date,
   end: Date
-): Promise<WorkspaceStats[]> {
+): Promise<WorkspaceStats[]> => {
   try {
     const supabase = await createServerActionClient();
 
@@ -283,7 +284,7 @@ export async function getWorkspacesWeeklyStats(
     console.error("Erro ao calcular estatísticas dos workspaces:", error);
     return [];
   }
-}
+});
 
 // getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 
@@ -292,7 +293,7 @@ export async function getWorkspacesWeeklyStats(
  * @param date - Data do dia
  * @returns Array de tarefas do dia
  */
-export async function getDayTasks(date: Date): Promise<WeekTask[]> {
+export const getDayTasks = cache(async (date: Date): Promise<WeekTask[]> => {
   try {
     const supabase = await createServerActionClient();
 
@@ -417,4 +418,4 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
     console.error("Erro inesperado ao buscar tarefas do dia:", error);
     return [];
   }
-}
+});
