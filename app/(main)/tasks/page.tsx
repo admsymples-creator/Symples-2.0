@@ -26,6 +26,7 @@ import { TaskGroup } from "@/components/tasks/TaskGroup";
 import { GhostGroup } from "@/components/tasks/GhostGroup";
 import dynamic from "next/dynamic";
 import { CalendarViewMenu } from "@/components/calendar/CalendarViewMenu";
+import { TasksPageSkeleton } from "@/components/tasks/TasksPageSkeleton";
 import { Search, Filter, Plus, List, LayoutGrid, ChevronDown, CheckSquare, FolderPlus, CircleDashed, Archive, ArrowUpDown, Loader2, Save, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -1734,6 +1735,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         return groups;
     }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ✅ Adicionar groupOrder para recalcular quando a ordem mudar
+
+    const shouldShowLoadingSkeleton = !initialTasks
+        && localTasks.length === 0
+        && (!isLoaded || !effectiveWorkspaceId || isLoadingTasks);
+
+    if (shouldShowLoadingSkeleton) {
+        return <TasksPageSkeleton />;
+    }
 
     // Atualizar ref quando listGroups mudar
     useEffect(() => {

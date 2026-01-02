@@ -41,7 +41,8 @@ export async function createServerClient() {
             // Isso pode ser ignorado se você tiver middleware que atualiza os cookies.
             // Log apenas em desenvolvimento
             if (process.env.NODE_ENV === 'development') {
-              console.warn('[Supabase] Cookie setAll ignorado (esperado em Server Components):', error)
+              const message = error instanceof Error ? error.message : String(error)
+              console.warn(`[Supabase] Cookie setAll ignorado (esperado em Server Components): ${message}`)
             }
           }
         },

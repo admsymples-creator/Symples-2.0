@@ -378,6 +378,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
                     onTaskUpdated={handleTaskUpdated}
                     members={members}
                     disabled={true}
+                    showDragHandle={false}
                     showWorkspaceBadge={true}
                     workspaceName={workspaceName}
                   />
@@ -416,4 +417,3 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     </>
   );
 }
-

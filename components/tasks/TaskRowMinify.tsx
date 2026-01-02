@@ -69,6 +69,7 @@ interface TaskRowMinifyProps {
   members?: Array<{ id: string; name: string; avatar?: string }>;
   showWorkspaceBadge?: boolean;
   workspaceName?: string;
+  showDragHandle?: boolean;
 }
 
 // Função auxiliar para verificar se é hoje
@@ -109,7 +110,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName, showDragHandle = true }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -179,6 +180,10 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
     zIndex: isDragging ? 50 : 1,
     position: "relative" as const,
   };
+
+  const gridColumnsClass = showDragHandle
+    ? "grid-cols-[40px_24px_1fr_auto_90px_130px_40px]"
+    : "grid-cols-[24px_1fr_auto_90px_130px_40px]";
 
   // Lógica de Data (mesma do KanbanCard)
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
@@ -449,7 +454,8 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       style={style}
       className={cn(
         "group grid items-center h-11 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1 relative",
-        "grid-cols-[40px_24px_1fr_auto_90px_130px_40px] gap-1",
+        gridColumnsClass,
+        "gap-1",
         // Drag | Checkbox | Título (com Focus, Urgente e Comentários) | Responsável (auto) | Data | Status | Menu
         (isDragging || isOverlay) && "ring-2 ring-primary/20 bg-gray-50 z-50 shadow-sm",
         disabled && "opacity-75",
@@ -482,19 +488,21 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
       )}
 
       {/* Drag Handle */}
-      <div
-        {...attributes}
-        {...(disabled ? {} : listeners)}
-        suppressHydrationWarning
-        className={cn(
-          "h-full flex items-center justify-center outline-none touch-none",
-          disabled 
-            ? "cursor-default text-gray-200 opacity-50" 
-            : "cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600"
-        )}
-      >
-        <GripVertical className="w-4 h-4" />
-      </div>
+      {showDragHandle && (
+        <div
+          {...attributes}
+          {...(disabled ? {} : listeners)}
+          suppressHydrationWarning
+          className={cn(
+            "h-full flex items-center justify-center outline-none touch-none",
+            disabled
+              ? "cursor-default text-gray-200 opacity-50"
+              : "cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600"
+          )}
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
 
       {/* Checkbox */}
       <div 
