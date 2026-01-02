@@ -296,7 +296,6 @@ export function DayColumn({
       toast.error("Erro ao verificar recorrencia");
       setShowDeleteModal(true);
     }
-    }
   };
 
   const confirmDelete = async (deleteAll: boolean = false) => {
