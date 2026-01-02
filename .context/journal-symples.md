@@ -49,6 +49,21 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 - Revalidar build e deploy
 
+## 2026-01-02 10:24 - Fix de build (WeeklyView transition)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Transition simplificada no WeeklyView
+- Removido `ease` do transition para compatibilidade com tipos de `framer-motion`
+
+### 2. O que esta sendo trabalhado no momento
+
+- Nenhum item ativo
+
+### 3. Proximos passos
+
+- Revalidar build e deploy
+
 ## 2026-01-02 - Refinamentos do Kanban (DnD, layout, quick add)
 
 ### 1. Melhorias, bugs e features implementadas em preview

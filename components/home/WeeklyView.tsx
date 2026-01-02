@@ -19,9 +19,6 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
   const shouldReduceMotion = useReducedMotion();
-  const transition = shouldReduceMotion
-    ? undefined
-    : { duration: 0.15, ease: [0.16, 1, 0.3, 1] };
 
   // Carregar preferência salva no mount
   useEffect(() => {
@@ -142,7 +139,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
               initial={shouldReduceMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
-              transition={transition}
+              transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
             >
               <DayColumn
                 dayName={day.name}
