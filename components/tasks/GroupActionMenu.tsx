@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2, MoreHorizontal, Palette, Eraser, ArrowUp, ArrowDown, ArrowUpToLine, ArrowDownToLine, ArrowUpDown, CheckCircle } from "lucide-react";
+import { Pencil, Trash2, MoreHorizontal, Palette, Eraser, ArrowUp, ArrowDown, ArrowUpToLine, ArrowDownToLine, ArrowUpDown, CheckCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -35,6 +35,7 @@ interface GroupActionMenuProps {
     onDelete?: (groupId: string) => void;
     onClear?: (groupId: string, type?: "all" | "completed") => void;
     onReorder?: (groupId: string, direction: "up" | "down" | "top" | "bottom") => void;
+    onAddTask?: () => void;
     canMoveUp?: boolean;
     canMoveDown?: boolean;
     canMoveToTop?: boolean;
@@ -68,6 +69,7 @@ export function GroupActionMenu({
     onDelete,
     onClear,
     onReorder,
+    onAddTask,
     canMoveUp = true,
     canMoveDown = true,
     canMoveToTop = false,
@@ -200,6 +202,24 @@ export function GroupActionMenu({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
+                    {/* Adicionar tarefa */}
+                    {onAddTask && (
+                        <DropdownMenuItem
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onAddTask();
+                            }}
+                            className="text-xs"
+                        >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Adicionar tarefa
+                        </DropdownMenuItem>
+                    )}
+
+                    {onAddTask && (onRename || onColorChange || onReorder || onClear || onDelete) && (
+                        <DropdownMenuSeparator />
+                    )}
+
                     {/* Renomear */}
                     {onRename && (
                         <DropdownMenuItem

@@ -22,7 +22,6 @@ import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES } from "@/lib/config/ta
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 import {
@@ -137,31 +136,10 @@ function KanbanCardComponent({
   disabled = false,
 }: KanbanCardProps) {
   const { preloadTask, cancelPreload } = useTaskPreload();
-  
-  // Estado para edição de título
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleValue, setTitleValue] = useState(title);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
   // Estados para controlar abertura dos Popovers
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
-
-  // Sincronizar titleValue com prop title quando não estiver editando
-  useEffect(() => {
-    if (!isEditingTitle) {
-      setTitleValue(title);
-    }
-  }, [title, isEditingTitle]);
-
-  // Auto-focus no input de título
-  useEffect(() => {
-    if (isEditingTitle && titleInputRef.current) {
-      titleInputRef.current.focus();
-      titleInputRef.current.select();
-    }
-  }, [isEditingTitle]);
   
   // Memoizar cálculos de data (evitar recalcular a cada render)
   const dateCalculations = useMemo(() => {
@@ -217,8 +195,8 @@ function KanbanCardComponent({
   // Memoizar estilo de drag (evitar recriar objeto a cada render)
   const dragStyle = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
-    transition: isDragging ? 'none' : transition, // Sem transição durante drag para resposta instantânea
-    opacity: isDragging ? 0.3 : disabled ? 0.75 : 1, // Opacidade menor no original quando arrasta (padrão Trello)
+    transition: isDragging ? 'none' : transition,
+    opacity: disabled ? 0.75 : 1,
     willChange: 'transform' as const,
   }), [transform, transition, isDragging, disabled]);
 
@@ -270,44 +248,6 @@ function KanbanCardComponent({
       toast.error("Erro ao atualizar responsável");
     }
   }, [id, assignees, members, onTaskUpdatedOptimistic, onTaskUpdated]);
-
-  const handleTitleSave = useCallback(async (newTitle: string) => {
-    if (newTitle.trim() === title) {
-      setIsEditingTitle(false);
-      return;
-    }
-
-    if (!newTitle.trim()) {
-      toast.error("O título não pode estar vazio");
-      setTitleValue(title);
-      setIsEditingTitle(false);
-      return;
-    }
-
-    const trimmedTitle = newTitle.trim();
-    const previousTitle = title;
-    
-    onTaskUpdatedOptimistic?.(id, { title: trimmedTitle });
-    setTitleValue(trimmedTitle);
-    setIsEditingTitle(false);
-
-    try {
-      const result = await updateTask({ id, title: trimmedTitle });
-      
-      if (!result.success) {
-        onTaskUpdatedOptimistic?.(id, { title: previousTitle });
-        setTitleValue(previousTitle);
-        toast.error("Erro ao atualizar título");
-      } else {
-        toast.success("Título atualizado");
-        onTaskUpdated?.();
-      }
-    } catch (error) {
-      onTaskUpdatedOptimistic?.(id, { title: previousTitle });
-      setTitleValue(previousTitle);
-      toast.error("Erro ao atualizar título");
-    }
-  }, [id, title, onTaskUpdatedOptimistic, onTaskUpdated]);
 
   const handleStatusUpdate = useCallback(async (newStatus: string) => {
     setIsStatusOpen(false); // Fechar Popover imediatamente
@@ -464,12 +404,13 @@ function KanbanCardComponent({
       {...attributes}
       {...(disabled ? {} : listeners)} // Listeners de drag na raiz
       className={cn(
-        "group bg-white rounded-xl p-3 border border-gray-200 w-full relative",
-        "flex flex-col min-h-[112px]",
-        // Remover transições durante drag para resposta instantânea
+        "group rounded-xl p-2.5 border w-full relative touch-none select-none hover:border-[#050815] hover:ring-[2px] hover:ring-inset hover:ring-[#050815]",
+        "flex flex-col",
         !isDragging && "transition-all duration-200",
         disabled ? "opacity-75 cursor-default" : isDragging ? "cursor-grabbing" : "cursor-pointer",
-        isDragging && "rotate-2 z-50 ring-2 ring-blue-500/20"
+        isDragging
+          ? "bg-gray-100 border-dashed border-gray-300 shadow-none [&_*]:opacity-0"
+          : "bg-white border-gray-200"
       )}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
@@ -493,13 +434,13 @@ function KanbanCardComponent({
       {/* Indicador de Grupo */}
       {(groupColorClass || isHexColor) && (
         <div 
-          className={cn("w-[30px] h-[5px] rounded-full mb-3", groupColorClass)}
+          className={cn("w-[30px] h-[5px] rounded-full mb-2", groupColorClass)}
           style={isHexColor ? { backgroundColor: groupColor } : undefined}
         />
       )}
 
       {/* Header: Status com edição rápida */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-1.5">
         <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
           <PopoverTrigger asChild>
             <Badge
@@ -546,7 +487,7 @@ function KanbanCardComponent({
       </div>
 
       {/* Body: Checkbox & Título */}
-      <div className="mb-3 flex-1 flex flex-col min-h-0 relative z-20">
+      <div className="mb-2 flex-1 flex flex-col min-h-0 relative z-20">
         <div className="flex gap-2">
           <div 
             className="pt-0.5 flex-shrink-0"
@@ -561,47 +502,14 @@ function KanbanCardComponent({
           </div>
           
           <div className="flex-1 min-w-0">
-            {isEditingTitle ? (
-              <Input
-                ref={titleInputRef}
-                value={titleValue}
-                onChange={(e) => setTitleValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleTitleSave(titleValue);
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    setTitleValue(title);
-                    setIsEditingTitle(false);
-                  }
-                }}
-                onBlur={() => handleTitleSave(titleValue)}
-                onClick={stopProp}
-                onPointerDown={stopProp} // Protege Input de Drag
-                className={cn(
-                  "font-semibold text-gray-800 text-sm mb-2 leading-snug",
-                  "border border-gray-300 focus-visible:ring-2 focus-visible:ring-gray-200",
-                  "px-2 py-1 rounded",
-                  completed && "line-through text-gray-500"
-                )}
-              />
-            ) : (
-              <h4 
-                className={cn(
-                  "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
-                  "cursor-text hover:bg-gray-50 rounded px-1 -mx-1",
-                  completed && "line-through text-gray-500"
-                )}
-                onClick={(e) => {
-                  e.stopPropagation(); // Impede abrir modal ao clicar para editar
-                  setIsEditingTitle(true);
-                }}
-                // NOTA: Não colocamos stopProp no pointerDown aqui para permitir arrastar pelo título se não for edição
-              >
-                {title}
-              </h4>
-            )}
+            <h4
+              className={cn(
+                "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
+                completed && "line-through text-gray-500"
+              )}
+            >
+              {title}
+            </h4>
           </div>
         </div>
         
@@ -624,7 +532,7 @@ function KanbanCardComponent({
       </div>
 
       {/* Footer: Meta & Ações */}
-      <div className="mt-auto pt-3 border-t border-gray-50 flex justify-between items-center relative z-20">
+      <div className="mt-auto pt-2 border-t border-gray-50 flex justify-between items-center relative z-20">
         
         {/* Lado Esquerdo: Data & Smart Triggers */}
         <div className="flex items-center gap-2">
