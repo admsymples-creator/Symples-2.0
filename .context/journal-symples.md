@@ -6,6 +6,64 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-02 10:16 - Ajustes de skeleton loading e consistencia visual
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Skeletons por tela mais consistentes
+- Home, Planner, Tarefas, Financeiro e Configuracoes com loading simplificado e alinhado ao layout real
+- Topo de Tarefas e Financeiro padronizado (tabs + barra de acoes) para evitar salto vertical
+- Planner com altura de calendario igual ao layout real
+- Rota `/{workspaceSlug}/tasks` passou a ter loading dedicado
+
+#### - Loading global mais neutro
+- Layout-level loading voltou a ser generico para evitar "cara" de uma tela especifica
+
+#### - Home: TaskRow sem drag handle
+- Removido o icone de drag apenas no card "Minhas tarefas" (Home)
+
+#### - Log de Supabase ajustado
+- Log de `setAll` agora evita erro de source map no console em dev
+
+### 2. O que esta sendo trabalhado no momento
+
+- Nenhum item ativo
+
+### 3. Proximos passos
+
+- Revisar visualmente o preenchimento do skeleton de Tarefas e ajustar altura/quantidade de linhas se necessario
+- Avaliar se o loading global pode ser desativado em navegacoes curtas (para reduzir dupla transicao)
+
+## 2026-01-02 10:18 - Fix de build (WeeklyView motion)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Ajuste de easing no WeeklyView
+- Troca de `ease: "easeOut"` por cubic-bezier para compatibilidade com types do Framer Motion
+
+### 2. O que esta sendo trabalhado no momento
+
+- Nenhum item ativo
+
+### 3. Proximos passos
+
+- Revalidar build e deploy
+
+## 2026-01-02 10:24 - Fix de build (WeeklyView transition)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Transition simplificada no WeeklyView
+- Removido `ease` do transition para compatibilidade com tipos de `framer-motion`
+
+### 2. O que esta sendo trabalhado no momento
+
+- Nenhum item ativo
+
+### 3. Proximos passos
+
+- Revalidar build e deploy
+
 ## 2026-01-02 - Refinamentos do Kanban (DnD, layout, quick add)
 
 ### 1. Melhorias, bugs e features implementadas em preview

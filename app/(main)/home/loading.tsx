@@ -13,22 +13,17 @@ export default function HomePageLoading() {
 
             <div className="w-full bg-white px-6">
                 <div className="max-w-[1600px] mx-auto py-3">
-                    <div className="space-y-8">
-                        {/* Trial Banner Skeleton */}
-                        <div className="h-20 bg-gray-100 animate-pulse rounded-lg" />
-
-                        {/* Cards Skeleton */}
+                    <div className="space-y-6">
+                        <div className="h-16 bg-gray-100 animate-pulse rounded-lg" />
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <div className="h-64 bg-gray-100 animate-pulse rounded-lg" />
-                            <div className="h-64 bg-gray-100 animate-pulse rounded-lg" />
+                            <div className="h-48 bg-gray-100 animate-pulse rounded-lg" />
+                            <div className="h-48 bg-gray-100 animate-pulse rounded-lg" />
                         </div>
-
-                        {/* Workspaces Overview Skeleton */}
-                        <div>
-                            <div className="h-6 w-48 bg-gray-200 animate-pulse rounded mb-4" />
+                        <div className="space-y-3">
+                            <div className="h-5 w-48 bg-gray-200 animate-pulse rounded" />
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 {[1, 2, 3, 4].map((i) => (
-                                    <div key={i} className="h-32 bg-gray-100 animate-pulse rounded-lg" />
+                                    <div key={i} className="h-24 bg-gray-100 animate-pulse rounded-lg" />
                                 ))}
                             </div>
                         </div>

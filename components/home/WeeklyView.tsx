@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { DayColumn } from "@/components/home/DayColumn";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Database } from "@/types/database.types";
@@ -18,6 +18,7 @@ interface WeeklyViewProps {
 export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate }: WeeklyViewProps) {
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
+  const shouldReduceMotion = useReducedMotion();
 
   // Carregar preferência salva no mount
   useEffect(() => {
@@ -129,18 +130,16 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
       </div>
 
       <motion.div
-        layout
         className={`grid gap-4 ${daysToShow === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-5'}`}
       >
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence>
           {weekDays.map((day) => (
             <motion.div
-              layout
               key={day.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
+              initial={shouldReduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
+              transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
             >
               <DayColumn
                 dayName={day.name}
