@@ -104,6 +104,7 @@ export function DayColumn({
 
     if (showTutorialHint && e.target.value.trim().length > 0) {
       setShowTutorialHint(false);
+    }
   };
 
   const processBatchInput = (text: string): string[] => {
