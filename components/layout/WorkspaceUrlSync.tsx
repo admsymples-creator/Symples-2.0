@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, startTransition } from "react";
 import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 
@@ -25,30 +25,41 @@ export function WorkspaceUrlSync({ workspaces }: WorkspaceUrlSyncProps) {
     const pathname = usePathname();
     const { activeWorkspaceId, setActiveWorkspaceId, isLoaded } = useWorkspace();
 
-    useEffect(() => {
-        // Esperar o estado inicial carregar
-        if (!isLoaded) return;
+    // Memoizar cálculo do workspace da URL para evitar recálculos desnecessários
+    const urlWorkspace = useMemo(() => {
+        if (!isLoaded) return null;
 
         // Extrair o primeiro segmento da URL (workspaceSlug)
         const segments = pathname.split("/").filter(Boolean);
         
         // Se não há segmentos ou estamos em rotas sem workspace (/home, /settings)
         if (segments.length === 0 || segments[0] === "home" || segments[0] === "settings" || segments[0] === "assistant") {
-            return;
+            return null;
         }
 
         const urlWorkspaceSlug = segments[0];
 
         // Encontrar o workspace correspondente ao slug da URL
-        const urlWorkspace = workspaces.find(
+        return workspaces.find(
             (w) => w.slug === urlWorkspaceSlug || w.id === urlWorkspaceSlug
-        );
+        ) || null;
+    }, [pathname, workspaces, isLoaded]);
 
-        // Se encontrou um workspace na URL e é diferente do ativo, sincronizar
-        if (urlWorkspace && urlWorkspace.id !== activeWorkspaceId) {
-            setActiveWorkspaceId(urlWorkspace.id);
+    useEffect(() => {
+        // Guard: evitar atualização se workspace já está correto ou não há workspace na URL
+        if (!isLoaded || !urlWorkspace || urlWorkspace.id === activeWorkspaceId) {
+            return;
         }
-    }, [pathname, workspaces, activeWorkspaceId, setActiveWorkspaceId, isLoaded]);
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorkspaceUrlSync.tsx:48',message:'WorkspaceUrlSync updating activeWorkspaceId',data:{from:activeWorkspaceId,to:urlWorkspace.id,pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+
+        // Usar startTransition para tornar atualização não-bloqueante e evitar re-renders em cascata
+        startTransition(() => {
+            setActiveWorkspaceId(urlWorkspace.id);
+        });
+    }, [urlWorkspace, activeWorkspaceId, setActiveWorkspaceId, isLoaded, pathname]);
 
     return null;
 }

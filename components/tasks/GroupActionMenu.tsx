@@ -178,7 +178,6 @@ export function GroupActionMenu({
 
     // Debug: verificar se onReorder está definido
     if (process.env.NODE_ENV === 'development' && onReorder) {
-        console.log('[GroupActionMenu] onReorder está definido para grupo:', groupId, { canMoveUp, canMoveDown });
     }
 
     return (

@@ -1,9 +1,9 @@
-import React from "react";
-import { 
-  TrendingUp, 
-  AlertTriangle, 
-  AlertOctagon, 
-  ArrowUpCircle, 
+﻿import React, { Suspense } from "react";
+import {
+  TrendingUp,
+  AlertTriangle,
+  AlertOctagon,
+  ArrowUpCircle,
   ArrowDownCircle,
   Wallet,
   MoreHorizontal,
@@ -93,7 +93,7 @@ const FinancialHealthCard = ({ data }: { data: any }) => {
           <h2 className={`text-3xl font-bold ${theme.text}`}>{formatCurrency(data.balance)}</h2>
         </div>
       </div>
-      
+
       <div className="mt-4 flex gap-4 border-t border-black/5 pt-4">
         <div>
           <p className="text-xs uppercase tracking-wider opacity-60 font-semibold text-gray-600">Burn Rate (Fixo)</p>
@@ -111,8 +111,8 @@ const CategoryProgressBar = ({ category }: { category: any }) => (
       <span className="text-gray-500">{category.percent}%</span>
     </div>
     <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-      <div 
-        className={`h-full rounded-full ${category.color}`} 
+      <div
+        className={`h-full rounded-full ${category.color}`}
         style={{ width: `${category.percent}%` }}
       />
     </div>
@@ -120,73 +120,9 @@ const CategoryProgressBar = ({ category }: { category: any }) => (
   </div>
 );
 
-// --- MAIN PAGE COMPONENT ---
+async function RecurringTransactionsSection({ workspaceId }: { workspaceId?: string }) {
+  const allRecurringTransactions = await getTransactions({ isRecurring: true, workspaceId });
 
-export default async function FinancePage(props: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
-  const searchParams = await props.searchParams;
-  // Parse Date Params
-  const currentDate = new Date();
-  const monthParam = typeof searchParams.month === 'string' ? parseInt(searchParams.month) : currentDate.getMonth() + 1;
-  const yearParam = typeof searchParams.year === 'string' ? parseInt(searchParams.year) : currentDate.getFullYear();
-  
-  // Get workspace (use first workspace as default)
-  const workspaces = await getUserWorkspaces();
-  const workspaceId = workspaces.length > 0 ? workspaces[0].id : undefined;
-  
-  // Fetch Metrics
-  const metrics = await getFinanceMetrics(monthParam, yearParam, workspaceId);
-
-  // Fetch Transactions for the period (Visão Geral)
-  const dateForRange = new Date(yearParam, monthParam - 1, 1);
-  const startDate = startOfMonth(dateForRange).toISOString();
-  const endDate = endOfMonth(dateForRange).toISOString();
-  
-  const rawTransactions = await getTransactions({ startDate, endDate, workspaceId });
-
-  // Fetch ALL Recurring Transactions (para aba Recorrentes - não filtrar por mês)
-  const allRecurringTransactions = await getTransactions({ 
-    isRecurring: true, 
-    workspaceId 
-  });
-
-  // Process Transactions for UI (using due_date instead of date)
-  const incomeTransactions = rawTransactions
-    .filter(t => t.type === 'income')
-    .map(t => {
-      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
-      return {
-        id: tx.id,
-        due_date: tx.due_date || new Date().toISOString(),
-        created_at: tx.created_at || new Date().toISOString(),
-        description: tx.description,
-        amount: Number(tx.amount) || 0,
-        status: (tx.status || 'pending') as TransactionStatus,
-        category: tx.category || 'Geral',
-        type: tx.type as 'income' | 'expense',
-        is_recurring: tx.is_recurring || false,
-      };
-    });
-
-  const expenseTransactions = rawTransactions
-    .filter(t => t.type === 'expense')
-    .map(t => {
-      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
-      return {
-        id: tx.id,
-        due_date: tx.due_date || new Date().toISOString(),
-        created_at: tx.created_at || new Date().toISOString(),
-        description: tx.description,
-        amount: Number(tx.amount) || 0,
-        status: (tx.status || 'pending') as TransactionStatus,
-        category: tx.category || 'Geral',
-        type: tx.type as 'income' | 'expense',
-        is_recurring: tx.is_recurring || false,
-      };
-    });
-
-  // Process Recurring Transactions (TODAS, não apenas do mês)
   const recurringTransactions = allRecurringTransactions
     .map(t => {
       const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
@@ -196,26 +132,131 @@ export default async function FinancePage(props: {
         created_at: tx.created_at || new Date().toISOString(),
         description: tx.description,
         amount: Number(tx.amount) || 0,
-        status: (tx.status || 'pending') as TransactionStatus,
-        category: tx.category || 'Geral',
-        type: tx.type as 'income' | 'expense',
+        status: (tx.status || "pending") as TransactionStatus,
+        category: tx.category || "Geral",
+        type: tx.type as "income" | "expense",
         is_recurring: true,
       };
     });
 
+  return (
+    <div className="space-y-1">
+      {recurringTransactions.length === 0 ? (
+         <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="bg-gray-50 p-4 rounded-full mb-4">
+              <Calendar className="w-8 h-8 text-gray-400" />
+            </div>
+            <p className="text-gray-500 max-w-sm text-sm">
+              Nenhuma transação recorrente encontrada.
+            </p>
+         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
+          {recurringTransactions.filter(t => t.type === "income").length > 0 && (
+            <FinanceTransactionsList
+              transactions={recurringTransactions.filter(t => t.type === "income")}
+              type="income"
+              title="Recorrentes - Entradas"
+              icon={<div className="p-1.5 bg-green-100 rounded-full"><ArrowUpCircle className="w-4 h-4 text-green-600" /></div>}
+              totalAmount={recurringTransactions.filter(t => t.type === "income").reduce((acc, t) => acc + t.amount, 0)}
+            />
+          )}
+          {recurringTransactions.filter(t => t.type === "expense").length > 0 && (
+            <FinanceTransactionsList
+              transactions={recurringTransactions.filter(t => t.type === "expense")}
+              type="expense"
+              title="Recorrentes - Saídas"
+              icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
+              totalAmount={recurringTransactions.filter(t => t.type === "expense").reduce((acc, t) => acc + t.amount, 0)}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function PlanningForecastSection({ workspaceId }: { workspaceId?: string }) {
+  const [projections, cashFlowForecast] = await Promise.all([
+    getProjections(6, workspaceId),
+    getCashFlowForecast(6, workspaceId),
+  ]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <PlanningProjectionsCard projections={projections} />
+      <PlanningCashFlowCard forecast={cashFlowForecast} />
+    </div>
+  );
+}
+// --- MAIN PAGE COMPONENT ---
+
+export default async function FinancePage(props: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const searchParams = await props.searchParams;
+  // Parse Date Params
+  const currentDate = new Date();
+  const monthParam = typeof searchParams.month === "string" ? parseInt(searchParams.month) : currentDate.getMonth() + 1;
+  const yearParam = typeof searchParams.year === "string" ? parseInt(searchParams.year) : currentDate.getFullYear();
+
+  // Get workspace (use first workspace as default)
+  const workspaces = await getUserWorkspaces();
+  const workspaceId = workspaces.length > 0 ? workspaces[0].id : undefined;
+
+  // Fetch Transactions for the period (Visão Geral)
+  const dateForRange = new Date(yearParam, monthParam - 1, 1);
+  const startDate = startOfMonth(dateForRange).toISOString();
+  const endDate = endOfMonth(dateForRange).toISOString();
+
+  const [metrics, rawTransactions] = await Promise.all([
+    getFinanceMetrics(monthParam, yearParam, workspaceId),
+    getTransactions({ startDate, endDate, workspaceId, limit: 200 }),
+  ]);
+
+  // Process Transactions for UI (using due_date instead of date)
+  const incomeTransactions = rawTransactions
+    .filter(t => t.type === "income")
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || "pending") as TransactionStatus,
+        category: tx.category || "Geral",
+        type: tx.type as "income" | "expense",
+        is_recurring: tx.is_recurring || false,
+      };
+    });
+
+  const expenseTransactions = rawTransactions
+    .filter(t => t.type === "expense")
+    .map(t => {
+      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
+      return {
+        id: tx.id,
+        due_date: tx.due_date || new Date().toISOString(),
+        created_at: tx.created_at || new Date().toISOString(),
+        description: tx.description,
+        amount: Number(tx.amount) || 0,
+        status: (tx.status || "pending") as TransactionStatus,
+        category: tx.category || "Geral",
+        type: tx.type as "income" | "expense",
+        is_recurring: tx.is_recurring || false,
+      };
+    });
   // Process Categories (garantir conversão numérica)
   const categoryTotals = rawTransactions
-    .filter(t => t.type === 'expense')
+    .filter(t => t.type === "expense")
     .reduce((acc, curr) => {
-      const cat = curr.category || 'Outros';
+      const cat = curr.category || "Outros";
       const amount = Number(curr.amount) || 0;
       acc[cat] = (acc[cat] || 0) + amount;
       return acc;
     }, {} as Record<string, number>);
-
-  // Fetch Planning Data
-  const projections = await getProjections(6, workspaceId);
-  const cashFlowForecast = await getCashFlowForecast(6, workspaceId);
 
   const totalExpensesVal = metrics.totalExpense || 1; // Avoid division by zero
   const categories = Object.entries(categoryTotals)
@@ -286,16 +327,16 @@ export default async function FinancePage(props: {
           <div className="max-w-[1600px] mx-auto">
             <div className="py-3 space-y-8">
               <TabsContent value="overview" className="space-y-8 mt-0">
-            
+
             {/* DIAGNOSTIC SECTION */}
             <FinancialHealthCard data={metrics} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
+
               {/* LEFT COLUMN: TABLES (SPAN 2) */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
+
                   {/* INCOME CARD */}
                   <FinanceTransactionsList
                     transactions={incomeTransactions}
@@ -335,9 +376,9 @@ export default async function FinancePage(props: {
                         <CategoryProgressBar key={cat.name} category={cat} />
                       ))
                     )}
-                    
+
                     <Separator className="my-4" />
-                    
+
                     <div className="rounded-lg bg-gray-50 p-4 text-center">
                       <p className="text-xs text-gray-500 mb-1">Maior gasto este mês</p>
                       <p className="font-semibold text-gray-900">{topCategory.name}</p>
@@ -363,39 +404,9 @@ export default async function FinancePage(props: {
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-0">
-                <div className="space-y-1">
-                  {recurringTransactions.length === 0 ? (
-                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className="bg-gray-50 p-4 rounded-full mb-4">
-                          <Calendar className="w-8 h-8 text-gray-400" />
-                        </div>
-                        <p className="text-gray-500 max-w-sm text-sm">
-                          Nenhuma transação recorrente encontrada.
-                        </p>
-                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
-                      {recurringTransactions.filter(t => t.type === 'income').length > 0 && (
-                        <FinanceTransactionsList
-                          transactions={recurringTransactions.filter(t => t.type === 'income')}
-                          type="income"
-                          title="Recorrentes - Entradas"
-                          icon={<div className="p-1.5 bg-green-100 rounded-full"><ArrowUpCircle className="w-4 h-4 text-green-600" /></div>}
-                          totalAmount={recurringTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0)}
-                        />
-                      )}
-                      {recurringTransactions.filter(t => t.type === 'expense').length > 0 && (
-                        <FinanceTransactionsList
-                          transactions={recurringTransactions.filter(t => t.type === 'expense')}
-                          type="expense"
-                          title="Recorrentes - Saídas"
-                          icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
-                          totalAmount={recurringTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0)}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
+                <Suspense fallback={<div className="p-6 min-h-[160px]" />}>
+                  <RecurringTransactionsSection workspaceId={workspaceId} />
+                </Suspense>
               </CardContent>
             </Card>
           </TabsContent>
@@ -416,17 +427,9 @@ export default async function FinancePage(props: {
               />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Projeções Futuras */}
-              <PlanningProjectionsCard
-                projections={projections}
-              />
-
-              {/* Previsão de Fluxo de Caixa */}
-              <PlanningCashFlowCard
-                forecast={cashFlowForecast}
-              />
-            </div>
+            <Suspense fallback={<div className="min-h-[200px]" />}>
+              <PlanningForecastSection workspaceId={workspaceId} />
+            </Suspense>
           </TabsContent>
             </div>
           </div>

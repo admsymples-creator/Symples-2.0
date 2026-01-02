@@ -4,6 +4,7 @@ import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { startOfMonth, endOfMonth, parseISO, format, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { cache } from "react";
 
 export interface TransactionData {
   amount: number;
@@ -100,7 +101,7 @@ export async function createTransaction(data: TransactionData) {
   }
 }
 
-export async function getFinanceMetrics(month: number, year: number, workspaceId?: string) {
+export const getFinanceMetrics = cache(async (month: number, year: number, workspaceId?: string) => {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -211,15 +212,15 @@ export async function getFinanceMetrics(month: number, year: number, workspaceId
     burnRate,
     healthStatus,
   };
-}
+});
 
-export async function getTransactions(filters?: { 
+export const getTransactions = cache(async (filters?: { 
   limit?: number; 
   startDate?: string; 
   endDate?: string;
   workspaceId?: string;
   isRecurring?: boolean;
-}) {
+}) => {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -286,7 +287,7 @@ export async function getTransactions(filters?: {
   }
 
   return data;
-}
+});
 
 export interface UpdateTransactionData {
   amount?: number;
@@ -560,7 +561,7 @@ export interface Projection {
   balance: number;
 }
 
-export async function getProjections(months: number = 6, workspaceId?: string): Promise<Projection[]> {
+export const getProjections = cache(async (months: number = 6, workspaceId?: string): Promise<Projection[]> => {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -658,7 +659,7 @@ export async function getProjections(months: number = 6, workspaceId?: string): 
   }
 
   return projections;
-}
+});
 
 export interface FinancialGoalData {
   title: string;
@@ -878,7 +879,7 @@ export interface CashFlowForecast {
   balance: number;
 }
 
-export async function getCashFlowForecast(months: number = 6, workspaceId?: string): Promise<CashFlowForecast[]> {
+export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?: string): Promise<CashFlowForecast[]> => {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -1000,5 +1001,4 @@ export async function getCashFlowForecast(months: number = 6, workspaceId?: stri
   }
 
   return forecast;
-}
-
+});
