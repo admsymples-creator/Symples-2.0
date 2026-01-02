@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,17 +39,18 @@ import {
     DndContext,
     closestCenter,
     pointerWithin,
-    KeyboardSensor,
+    MouseSensor,
     PointerSensor,
+    TouchSensor,
     useSensor,
     useSensors,
     DragEndEvent,
+    DragOverEvent,
     DragStartEvent,
     DragOverlay,
 } from "@dnd-kit/core";
 import {
     arrayMove,
-    sortableKeyboardCoordinates,
     SortableContext,
     verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -173,6 +175,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ref para throttling do handleDragOver
     const dragOverThrottleRef = useRef<number | null>(null);
     const lastDragOverStateRef = useRef<string>("");
+    const dragStartGroupKeyRef = useRef<string | null>(null);
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     
@@ -325,17 +328,43 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Sensores para drag & drop (otimizados para resposta mais rápida)
     // useSensors já memoiza internamente, então não precisamos de useMemo adicional
     const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8, // 8px de movimento antes de ativar drag (permite cliques)
-                delay: 100, // 100ms de delay para permitir que clique seja processado primeiro (balanceado para drag mais rápido)
-                tolerance: 5, // 5px de tolerância para movimento acidental
-            },
+        useSensor(MouseSensor, {
+            activationConstraint: { distance: 10 },
         }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
+        useSensor(TouchSensor, {
+            activationConstraint: { delay: 250, tolerance: 5 },
+        }),
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 10 },
         })
     );
+
+    const collisionDetectionStrategy = useCallback((args: Parameters<typeof pointerWithin>[0]) => {
+        const taskIds = new Set(localTasksRef.current.map((task) => String(task.id)));
+        const pointerCollisions = pointerWithin(args);
+        if (pointerCollisions.length > 0) {
+            const taskCollisions = pointerCollisions.filter((collision) => taskIds.has(String(collision.id)));
+            if (taskCollisions.length > 0) {
+                return taskCollisions;
+            }
+        }
+
+        const taskContainers = args.droppableContainers.filter((container) =>
+            taskIds.has(String(container.id))
+        );
+        if (taskContainers.length > 0) {
+            const taskRects = new Map(
+                Array.from(args.droppableRects.entries()).filter(([id]) => taskIds.has(String(id)))
+            );
+            return closestCenter({
+                ...args,
+                droppableContainers: taskContainers,
+                droppableRects: taskRects,
+            });
+        }
+
+        return closestCenter(args);
+    }, []);
 
 
     // Handler para criar grupo
@@ -1749,6 +1778,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     };
 
+    const findGroupKeyForId = useCallback((id: string): string | null => {
+        const currentGroupedData = groupedDataRef.current;
+        if (Object.keys(currentGroupedData).includes(id)) return id;
+        const entry = Object.entries(currentGroupedData).find(([_, tasks]) =>
+            tasks.some((t) => String(t.id) === id)
+        );
+        return entry ? entry[0] : null;
+    }, []);
+
     // Sincronizar sortBy quando URL mudar
     useEffect(() => {
         setSortBy(urlSort);
@@ -1944,6 +1982,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [effectiveWorkspaceId, activeTab, sortBy, viewOption]);
     // Handler para quando o drag comeca
+    const resetDragState = () => {
+        dragStartGroupKeyRef.current = null;
+        lastDragOverStateRef.current = "";
+        if (dragOverThrottleRef.current !== null) {
+            cancelAnimationFrame(dragOverThrottleRef.current);
+            dragOverThrottleRef.current = null;
+        }
+    };
+
     const handleDragStart = (event: DragStartEvent) => {
         // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
         // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
@@ -1968,7 +2015,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
             return;
         }
-        
+
+        dragStartGroupKeyRef.current = getTaskGroupKey(task);
+        lastDragOverStateRef.current = "";
+        if (dragOverThrottleRef.current !== null) {
+            cancelAnimationFrame(dragOverThrottleRef.current);
+            dragOverThrottleRef.current = null;
+        }
+
         setActiveTask(task);
     };
 
@@ -1976,13 +2030,140 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // O dnd-kit já fornece feedback visual nativo sem necessidade de atualizar estado durante o drag
     // A atualização de estado acontece apenas no handleDragEnd quando o usuário solta o card
 
+    const handleDragOver = useCallback((event: DragOverEvent) => {
+        if (!viewOption) {
+            return;
+        }
+
+        const isDragEnabled = viewOption === "status" || viewOption === "priority" || viewOption === "group";
+        if (!isDragEnabled) {
+            return;
+        }
+
+        const { active, over } = event;
+        if (!over || !active) return;
+
+        const activeIdStr = String(active.id);
+        const overIdStr = String(over.id);
+        if (activeIdStr === overIdStr) return;
+
+        const stateKey = `${activeIdStr}|${overIdStr}`;
+        if (lastDragOverStateRef.current === stateKey) return;
+        lastDragOverStateRef.current = stateKey;
+
+        if (dragOverThrottleRef.current !== null) {
+            cancelAnimationFrame(dragOverThrottleRef.current);
+        }
+
+        dragOverThrottleRef.current = requestAnimationFrame(() => {
+            dragOverThrottleRef.current = null;
+
+            const current = localTasksRef.current;
+            const activeIndex = current.findIndex((t) => String(t.id) === activeIdStr);
+            if (activeIndex === -1) return;
+
+            const currentGroupKey = findGroupKeyForId(activeIdStr) || dragStartGroupKeyRef.current;
+            const destinationGroupKey = findGroupKeyForId(overIdStr);
+            if (!currentGroupKey || !destinationGroupKey) return;
+
+            const moving = { ...current[activeIndex] };
+            const isSameGroup = currentGroupKey === destinationGroupKey;
+
+            if (!isSameGroup) {
+                if (viewOption === "status") {
+                    moving.status = destinationGroupKey;
+                } else if (viewOption === "priority") {
+                    const normalizedPriority = destinationGroupKey
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "");
+                    const priorityMap: Record<string, "low" | "medium" | "high" | "urgent"> = {
+                        urgente: "urgent",
+                        alta: "high",
+                        media: "medium",
+                        baixa: "low",
+                    };
+                    const mapped = priorityMap[normalizedPriority];
+                    if (mapped) moving.priority = mapped;
+                } else if (viewOption === "group") {
+                    if (destinationGroupKey === "inbox" || destinationGroupKey === "Inbox") {
+                        moving.group = undefined;
+                    } else {
+                        const groupFromDB = availableGroups.find((g) => g.id === destinationGroupKey);
+                        moving.group = {
+                            id: destinationGroupKey,
+                            name: groupFromDB?.name || moving.group?.name || "Grupo",
+                            color: groupFromDB?.color || moving.group?.color,
+                        };
+                    }
+                }
+            }
+
+            const groupsInOrder: string[] = [];
+            const groupMap = new Map<string, Task[]>();
+            current.forEach((task) => {
+                const key = getTaskGroupKey(task);
+                if (!groupMap.has(key)) {
+                    groupMap.set(key, []);
+                    groupsInOrder.push(key);
+                }
+                groupMap.get(key)?.push(task);
+            });
+
+            if (isSameGroup) {
+                const groupTasks = groupMap.get(destinationGroupKey) ?? [];
+                const activeIndexInGroup = groupTasks.findIndex((task) => String(task.id) === activeIdStr);
+                let overIndexInGroup = groupTasks.findIndex((task) => String(task.id) === overIdStr);
+
+                if (overIndexInGroup === -1) {
+                    overIndexInGroup = groupTasks.length - 1;
+                }
+
+                if (activeIndexInGroup === -1 || overIndexInGroup === -1 || activeIndexInGroup === overIndexInGroup) {
+                    return;
+                }
+
+                const reorderedGroupTasks = arrayMove(groupTasks, activeIndexInGroup, overIndexInGroup);
+                groupMap.set(destinationGroupKey, reorderedGroupTasks);
+
+                const next = groupsInOrder.flatMap((key) => groupMap.get(key) || []);
+                localTasksRef.current = next;
+                setLocalTasks(next);
+                return;
+            }
+
+            const sourceTasks = groupMap.get(currentGroupKey) ?? [];
+            const destTasks = groupMap.get(destinationGroupKey) ?? [];
+
+            const newSourceTasks = sourceTasks.filter((task) => String(task.id) !== activeIdStr);
+            const destWithoutActive = destTasks.filter((task) => String(task.id) !== activeIdStr);
+            const overIndexInDest = destWithoutActive.findIndex((task) => String(task.id) === overIdStr);
+            const insertIndex = overIndexInDest >= 0 ? overIndexInDest : destWithoutActive.length;
+
+            const newDestTasks = [...destWithoutActive];
+            newDestTasks.splice(insertIndex, 0, moving);
+
+            groupMap.set(currentGroupKey, newSourceTasks);
+            groupMap.set(destinationGroupKey, newDestTasks);
+
+            if (!groupsInOrder.includes(destinationGroupKey)) {
+                groupsInOrder.push(destinationGroupKey);
+            }
+
+            const next = groupsInOrder.flatMap((key) => groupMap.get(key) || []);
+            localTasksRef.current = next;
+            setLocalTasks(next);
+        });
+    }, [availableGroups, findGroupKeyForId, getTaskGroupKey, viewOption]);
+
     // Handler para quando o drag termina
-    const handleDragEnd = async (event: DragEndEvent) => {
+    const handleDragEnd = (event: DragEndEvent) => {
         // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
         // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
         if (!viewOption) {
             console.warn("⚠️ [handleDragEnd] viewOption está undefined. Bloqueando drag.");
             setActiveTask(null);
+            resetDragState();
             return;
         }
         
@@ -1990,6 +2171,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (!isDragEnabled) {
             toast.info('O arrastar e soltar está desabilitado nesta visualização. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
             setActiveTask(null);
+            resetDragState();
             return; // Bloqueia a ação lógica se estiver nas views apenas de leitura
         }
 
@@ -1999,12 +2181,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ✅ CORREÇÃO: Validar se over existe e tem ID válido
         if (!over) {
             console.log("ℹ️ [handleDragEnd] Drag cancelado: over é null/undefined");
+            resetDragState();
             return;
         }
         
         // ✅ CORREÇÃO: Validar se active existe
         if (!active) {
             console.warn("⚠️ [handleDragEnd] active é null/undefined");
+            resetDragState();
             return;
         }
 
@@ -2012,24 +2196,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const overIdStr = String(over.id);
         
 
-        const findGroupKeyForId = (id: string): string | null => {
-            // ✅ CORREÇÃO: Verificar se o ID é uma chave de grupo diretamente
-            if (Object.keys(groupedData).includes(id)) return id;
-            
-            // ✅ CORREÇÃO: Buscar em todas as tarefas agrupadas
-            const entry = Object.entries(groupedData).find(([_, tasks]) =>
-                tasks.some((t) => String(t.id) === id)
-            );
-            return entry ? entry[0] : null;
-        };
-
-        const sourceGroupKey = findGroupKeyForId(activeIdStr);
+        const sourceGroupKey = dragStartGroupKeyRef.current || findGroupKeyForId(activeIdStr);
         let destinationGroupKey = findGroupKeyForId(overIdStr);
         
         // ✅ CORREÇÃO: Validação melhorada com logs
         if (!sourceGroupKey) {
             console.error("❌ [handleDragEnd] Grupo de origem não encontrado para tarefa:", activeIdStr);
             toast.error("Erro: Tarefa de origem não encontrada. Recarregue a página.");
+            resetDragState();
             return;
         }
         
@@ -2051,6 +2225,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         
         if (!destinationGroupKey) {
             toast.error("Erro: Destino inválido. Tente arrastar para uma coluna válida.");
+            resetDragState();
             return;
         }
 
@@ -2121,12 +2296,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         // Reordenar lista local e recalcular posições por grupo
         let finalState: Task[] = [];
-        const prevLocal = localTasksRef.current;
+        const rollbackState = localTasksRef.current.map((t) => ({ ...t }));
         
         // ✅ Calcular posição ANTES de atualizar o estado (para usar fora do setState)
         const current = [...localTasksRef.current];
         const movingIndex = current.findIndex((t) => String(t.id) === activeIdStr);
-        if (movingIndex === -1) return;
+        if (movingIndex === -1) {
+            resetDragState();
+            return;
+        }
 
         const moving = { ...current[movingIndex] };
         const currentWithoutMoving = [...current];
@@ -2178,47 +2356,27 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const newDest = [...destList];
         newDest.splice(insertIndex, 0, moving);
 
-        // ✅ MIDPOINT CALCULATION: Calcular posição apenas para o item movido
-        // Identificar vizinhos na nova posição
+        // MIDPOINT CALCULATION: Calcular posi??o apenas para o item movido
         const prevTask = newDest[insertIndex - 1];
         const nextTask = newDest[insertIndex + 1];
 
-        // Calcular nova posição usando média entre vizinhos
-        const MIN_DELTA = 0.00001; // Precisão mínima antes de forçar re-index
         let calculatedPosition: number;
+        const BASE_POSITION = 10000;
 
         if (!prevTask && !nextTask) {
-            // Lista estava vazia ou é o único item
-            calculatedPosition = 1000;
+            calculatedPosition = BASE_POSITION;
         } else if (!prevTask) {
-            // Moveu para o TOPO (antes do primeiro)
             const nextPos = nextTask.position ?? 0;
-            calculatedPosition = nextPos > 0 ? nextPos / 2 : 500;
-            // Garantir que não seja zero ou negativo
-            if (calculatedPosition <= 0) calculatedPosition = 500;
+            calculatedPosition = nextPos > 0 ? nextPos / 2 : BASE_POSITION / 2;
+            if (calculatedPosition <= 0) calculatedPosition = BASE_POSITION / 2;
         } else if (!nextTask) {
-            // Moveu para o FINAL (depois do último)
             const prevPos = prevTask.position ?? 0;
-            calculatedPosition = prevPos > 0 ? prevPos + 1000 : 2000;
-            // Garantir que seja maior que a posição anterior
-            if (calculatedPosition <= prevPos) calculatedPosition = prevPos + 1000;
+            calculatedPosition = prevPos > 0 ? prevPos + BASE_POSITION : BASE_POSITION * 2;
+            if (calculatedPosition <= prevPos) calculatedPosition = prevPos + BASE_POSITION;
         } else {
-            // Moveu para o MEIO (entre A e B)
             const prevPos = prevTask.position ?? 0;
             const nextPos = nextTask.position ?? 0;
-            
-            // ✅ CORREÇÃO: Validar se há espaço suficiente entre prevPos e nextPos
-            if (nextPos <= prevPos) {
-                // Colisão detectada: usar posição baseada no índice
-                calculatedPosition = prevPos + 500;
-            } else {
-                calculatedPosition = (prevPos + nextPos) / 2;
-                // ✅ CORREÇÃO: Garantir que a posição calculada seja única
-                if (calculatedPosition <= prevPos || calculatedPosition >= nextPos) {
-                    // Se o cálculo resultou em colisão, usar posição intermediária segura
-                    calculatedPosition = prevPos + (nextPos - prevPos) / 2;
-                }
-            }
+            calculatedPosition = nextPos <= prevPos ? prevPos + 1 : (prevPos + nextPos) / 2;
         }
 
         const recomposed = [...otherList, ...newDest];
@@ -2242,136 +2400,70 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ✅ Obter posição calculada do item movido
         const movingFinal = finalState.find((t) => String(t.id) === activeIdStr);
 
-        // ✅ Identificar vizinhos para validação de colisão
-        const destListFinal = finalState.filter((t) => getTaskGroupKey(t) === destinationGroupKey);
-        const movingIndexInDest = destListFinal.findIndex((t) => String(t.id) === activeIdStr);
-        const prevTaskFinal = destListFinal[movingIndexInDest - 1];
-        const nextTaskFinal = destListFinal[movingIndexInDest + 1];
+        const finalGroupId = viewOption === "group"
+            ? (destinationGroupKey === "inbox" || destinationGroupKey === "Inbox" ? null : destinationGroupKey)
+            : (isSameGroup ? undefined : updateData.group_id);
 
-        // ✅ Validação de Colisão (Se o espaço ficou pequeno demais)
-        const gap = nextTaskFinal && prevTaskFinal ? (nextTaskFinal.position || 0) - (prevTaskFinal.position || 0) : 1000;
-        const needsRebalance = gap < MIN_DELTA;
+        const rollback = (message: string) => {
+            setLocalTasks(rollbackState);
+            localTasksRef.current = rollbackState;
+            toast.error(message);
+        };
 
-        try {
-            if (needsRebalance) {
-                // ✅ CASO RARO: O espaço acabou. Precisamos re-indexar tudo (Bulk Update).
-                const rebalancedUpdates = destListFinal.map((t, i) => ({
-                    id: String(t.id),
-                    position: (i + 1) * 1000
-                }));
+        console.log("?? [handleDragEnd] Enviando update para tarefa ativa:", {
+            taskId: activeIdStr,
+            calculatedPosition,
+            status: isSameGroup ? undefined : updateData.status,
+            priority: isSameGroup ? undefined : updateData.priority,
+            group_id: finalGroupId,
+            viewOption,
+            isSameGroup,
+            destinationGroupKey,
+            sourceGroupKey,
+        });
 
-                // Atualizar estado local com posições rebalanceadas
-                setLocalTasks((prev) => {
-                    return prev.map((t) => {
-                        const rebalanced = rebalancedUpdates.find(u => u.id === String(t.id));
-                        if (rebalanced) {
-                            return { ...t, position: rebalanced.position };
-                        }
-                        return t;
-                    });
-                });
+        const persistPromise = updateTaskPosition({
+            taskId: activeIdStr,
+            newPosition: calculatedPosition,
+            status: isSameGroup ? undefined : updateData.status,
+            priority: isSameGroup ? undefined : updateData.priority,
+            group_id: finalGroupId,
+            assignee_id: isSameGroup ? undefined : updateData.assignee_id,
+            workspace_id: movingFinal?.workspaceId ?? null,
+        });
 
-                // ✅ CORREÇÃO: Adicionar tratamento de erro mais robusto para server actions
-                let resBulk;
-                try {
-                    resBulk = await updateTaskPositionsBulk(rebalancedUpdates);
-                } catch (error: any) {
-                    console.error("❌ [handleDragEnd] Erro ao chamar updateTaskPositionsBulk:", error);
-                    toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
-                    await reloadTasks();
+        void persistPromise
+            .then((res) => {
+                if (!res?.success) {
+                    console.error("? [handleDragEnd] Falha ao salvar posi??o:", res?.error);
+                    rollback("Erro ao salvar a nova ordem. Tente novamente.");
                     return;
                 }
-                
-                if (!resBulk?.success) {
-                    console.error("❌ Erro fatal no Rebalanceamento:", resBulk?.error);
-                    toast.error("Erro ao sincronizar a nova ordem. Tente novamente.");
-                    await reloadTasks();
-                } else {
-                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
-                    if (sortBy !== "position") {
-                        setSortBy("position");
-                        const params = new URLSearchParams(searchParams.toString());
-                        params.delete("sort");
-                        const newUrl = params.toString()
-                            ? `${pathname}?${params.toString()}`
-                            : pathname;
-                        router.push(newUrl);
-                    }
-                }
-            } else {
-                // ✅ CASO PADRÃO (99% das vezes): Salva APENAS o item movido.
-                
-                // ✅ CORREÇÃO CRÍTICA: Sempre enviar group_id quando viewOption === "group" para garantir RLS
-                // Mesmo dentro do mesmo grupo, precisamos do group_id para validação de permissões
-                // Preparar group_id: se viewOption é "group", sempre enviar (mesmo se mesmo grupo)
-                const finalGroupId = viewOption === "group" 
-                    ? (destinationGroupKey === "inbox" || destinationGroupKey === "Inbox" 
-                        ? null 
-                        : destinationGroupKey)
-                    : (isSameGroup ? undefined : updateData.group_id);
-                
-                // Atualizar item arrastado (inclui status/priority/group quando muda de grupo)
-                console.log("📤 [handleDragEnd] Enviando update para tarefa ativa:", {
+
+                console.log("? [handleDragEnd] Tarefa ativa salva com sucesso:", {
                     taskId: activeIdStr,
                     calculatedPosition,
-                    status: isSameGroup ? undefined : updateData.status,
-                    priority: isSameGroup ? undefined : updateData.priority,
-                    group_id: finalGroupId,
-                    viewOption,
-                    isSameGroup,
-                    destinationGroupKey,
-                    sourceGroupKey
                 });
-                
-                // ✅ CORREÇÃO: Adicionar tratamento de erro mais robusto para server actions
-                let resMain;
-                try {
-                    resMain = await updateTaskPosition({
-                        taskId: activeIdStr,
-                        newPosition: calculatedPosition,
-                        status: isSameGroup ? undefined : updateData.status,
-                        priority: isSameGroup ? undefined : updateData.priority,
-                        group_id: finalGroupId,
-                        assignee_id: isSameGroup ? undefined : updateData.assignee_id,
-                        workspace_id: movingFinal?.workspaceId ?? null,
-                    });
-                } catch (error: any) {
-                    console.error("❌ [handleDragEnd] Erro ao chamar updateTaskPosition:", error);
-                    toast.error("Erro ao salvar a nova ordem. Tente novamente.");
-                    await reloadTasks();
-                    return;
+
+                if (sortBy !== "position") {
+                    setSortBy("position");
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.delete("sort");
+                    const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+                    router.push(newUrl);
                 }
-                
-                if (!resMain?.success) {
-                    console.error("❌ [handleDragEnd] Falha ao salvar posição (item ativo):", resMain?.error);
-                    toast.error("Erro ao salvar a nova ordem. Tente novamente.");
-                    await reloadTasks();
-                } else {
-                    console.log("✅ [handleDragEnd] Tarefa ativa salva com sucesso:", {
-                        taskId: activeIdStr,
-                        calculatedPosition
-                    });
-                    
-                    // ✅ Resetar filtro de ordenação após mover tarefa manualmente
-                    if (sortBy !== "position") {
-                        setSortBy("position");
-                        const params = new URLSearchParams(searchParams.toString());
-                        params.delete("sort");
-                        const newUrl = params.toString()
-                            ? `${pathname}?${params.toString()}`
-                            : pathname;
-                        router.push(newUrl);
-                    }
-                    }
-                }
-        } catch (error) {
-            console.error("Erro ao atualizar posição:", error);
-            await reloadTasks();
-        }
+            })
+            .catch((error) => {
+                console.error("? [handleDragEnd] Erro ao chamar updateTaskPosition:", error);
+                rollback("Erro ao salvar a nova ordem. Tente novamente.");
+            });
+
+        resetDragState();
     };
 
     const handleDragCancel = () => {
         setActiveTask(null);
+        resetDragState();
     };
 
     const handleTaskClick = async (taskId: string | number) => {
@@ -2500,7 +2592,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
 
     return (
-        <div className="min-h-screen bg-gray-50/50 pb-20" suppressHydrationWarning>
+        <div
+            className={cn(
+                "bg-gray-50/50",
+                viewMode === "kanban"
+                    ? "h-screen flex flex-col overflow-hidden"
+                    : "min-h-screen pb-20"
+            )}
+            suppressHydrationWarning
+        >
             {/* HEADER AREA - LINE 1 */}
             <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
                 <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2677,9 +2777,26 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             </div>
 
             {/* Conteúdo Principal */}
-            <div className="w-full bg-white px-6">
-                <div className={cn("mx-auto", viewMode === "calendar" ? "w-full max-w-none" : "max-w-[1600px]")}>
-                    <div className={cn("relative h-full w-full", viewMode === "calendar" ? "" : "py-3")}>
+            <div
+                className={cn(
+                    "w-full bg-white",
+                    viewMode === "kanban" ? "flex-1 min-h-0 px-2 overflow-hidden" : "px-6"
+                )}
+            >
+                <div
+                    className={cn(
+                        "mx-auto",
+                        viewMode === "kanban"
+                            ? "w-full max-w-none h-full"
+                            : viewMode === "calendar"
+                              ? "w-full max-w-none"
+                              : "max-w-[1600px]"
+                    )}
+                >
+                    <div className={cn(
+                        "relative h-full w-full",
+                        viewMode === "calendar" ? "" : viewMode === "kanban" ? "pt-2 pb-0" : "py-3"
+                    )}>
                     {/* Overlay de carregamento ao trocar de workspace / filtros */}
                     {isLoadingTasks && (
                         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
@@ -2697,8 +2814,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             <div className="h-full">
                                 <DndContext
                                     sensors={sensors}
-                                    collisionDetection={pointerWithin}
+                                    collisionDetection={collisionDetectionStrategy}
                                     onDragStart={handleDragStart}
+                                    onDragOver={handleDragOver}
                                     onDragEnd={handleDragEnd}
                                     onDragCancel={handleDragCancel}
                                 >
@@ -2837,13 +2955,21 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                         )}
                                     </div>
                                 )}
-                    <DragOverlay>
-                        {activeTask ? (
-                            <div className="bg-white rounded-lg border border-gray-200 p-3 rotate-2 opacity-90">
-                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
-                            </div>
-                        ) : null}
-                    </DragOverlay>
+                    {typeof document !== "undefined"
+                        ? createPortal(
+                              <DragOverlay
+                                  adjustScale={false}
+                                  dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.2, 1)" }}
+                              >
+                                  {activeTask ? (
+                                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-2xl rotate-2 scale-105 cursor-grabbing">
+                                          <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                                      </div>
+                                  ) : null}
+                              </DragOverlay>,
+                              document.body
+                          )
+                        : null}
                                 </DndContext>
                             </div>
                         ) : viewMode === "calendar" ? (
@@ -2855,12 +2981,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 />
                             </div>
                         ) : (
-                            <div className="h-full" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
+                            <div className="h-full min-h-0" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
                                 {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
                                 <DndContext
                                     sensors={sensors}
-                                    collisionDetection={pointerWithin}
+                                    collisionDetection={collisionDetectionStrategy}
                                     onDragStart={handleDragStart}
+                                    onDragOver={handleDragOver}
                                     onDragEnd={handleDragEnd}
                                     onDragCancel={handleDragCancel}
                                 >
@@ -2877,17 +3004,26 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                         onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
                                         showGroupActions={viewOption === "group"}
                                         viewOption={viewOption}
-                                    onAddTask={handleAddTaskToKanban}
-                                    members={workspaceMembers}
-                                    groupBy={viewOption}
+                                        onAddTask={handleAddTaskToKanban}
+                                        onCreateGroup={viewOption === "group" ? () => setIsCreateGroupModalOpen(true) : undefined}
+                                        members={workspaceMembers}
+                                        groupBy={viewOption}
                                 />
-                                    <DragOverlay>
-                                        {activeTask ? (
-                                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3 rotate-2 opacity-90">
-                                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
-                                            </div>
-                                        ) : null}
-                                    </DragOverlay>
+                                    {typeof document !== "undefined"
+                                        ? createPortal(
+                                              <DragOverlay
+                                                  adjustScale={false}
+                                                  dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.2, 1)" }}
+                                              >
+                                                  {activeTask ? (
+                                                      <div className="bg-white rounded-lg border border-gray-200 shadow-2xl p-3 rotate-2 scale-105 cursor-grabbing">
+                                                          <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                                                      </div>
+                                                  ) : null}
+                                              </DragOverlay>,
+                                              document.body
+                                          )
+                                        : null}
                                 </DndContext>
                             </div>
                         )}

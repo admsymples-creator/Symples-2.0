@@ -7,6 +7,7 @@ import { KanbanEmptyCard } from "./KanbanEmptyCard";
 import { TaskSectionHeader } from "./TaskSectionHeader";
 import { QuickTaskAdd } from "./QuickTaskAdd";
 import { GroupActionMenu } from "./GroupActionMenu";
+import { GhostGroup } from "./GhostGroup";
 import { MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
@@ -62,6 +63,7 @@ interface TaskBoardProps {
   onClearGroup?: (groupId: string) => void;
   showGroupActions?: boolean;
   viewOption?: string; // Para saber se é "group" ou outro tipo
+  onCreateGroup?: () => void;
 }
 
 // Componente de Coluna Droppable
@@ -153,7 +155,7 @@ const DroppableColumn = memo(function DroppableColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "bg-gray-50/50 rounded-xl w-[300px] flex-none flex flex-col transition-all duration-200 h-full max-h-full",
+        "bg-gray-50/50 rounded-xl w-[300px] flex-none flex flex-col transition-all duration-200 h-full min-h-0",
         // Feedback visual quando arrastar sobre a coluna (Estilo Clean)
         isOver ? "bg-slate-100/80 ring-2 ring-inset ring-slate-200/50" : "hover:bg-gray-50/80"
       )}
@@ -178,6 +180,7 @@ const DroppableColumn = memo(function DroppableColumn({
                 onColorChange={onColorChange}
                 onDelete={onDeleteGroup}
                 onClear={onClearGroup}
+                onAddTask={onAddTask ? handleSetAdding : undefined}
               />
             ) : (
               onAddTask ? (
@@ -210,12 +213,12 @@ const DroppableColumn = memo(function DroppableColumn({
       </div>
 
       {/* Corpo da Coluna (Scroll) */}
-      <div className="flex-1 min-h-0 flex flex-col px-1 pb-2">
+      <div className="flex-1 min-h-0 flex flex-col px-2 pt-1 pb-2">
         <SortableContext
           items={taskIds}
           strategy={verticalListSortingStrategy}
         >
-          <div className="flex-1 overflow-y-auto space-y-2 scrollbar-thin pr-1 min-h-[100px]">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 scrollbar-thin pr-1 min-h-[150px]">
             {tasks.length === 0 && !isAdding ? (
               <KanbanEmptyCard
                 columnTitle={column.title}
@@ -245,21 +248,21 @@ const DroppableColumn = memo(function DroppableColumn({
                 />
               ))
             )}
-
-            {/* Quick Add no final da lista */}
-            {(tasks.length > 0 || isAdding) && (
-              <div className="pt-1 pb-2">
-                <QuickTaskAdd
-                  placeholder="Adicionar tarefa aqui..."
-                  autoFocus={isAdding}
-                  onCancel={handleCancelAdd}
-                  onSubmit={handleSubmitAdd}
-                  members={members || []}
-                />
-              </div>
-            )}
           </div>
         </SortableContext>
+
+        {/* Quick Add fixo no final da coluna */}
+        {(tasks.length > 0 || isAdding) && (
+          <div className="pt-2 flex-shrink-0">
+            <QuickTaskAdd
+              placeholder="Adicionar tarefa aqui..."
+              autoFocus={isAdding}
+              onCancel={handleCancelAdd}
+              onSubmit={handleSubmitAdd}
+              members={members || []}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -307,11 +310,12 @@ function TaskBoardComponent({
   onClearGroup,
   showGroupActions = true,
   viewOption,
+  onCreateGroup,
 }: TaskBoardProps) {
   
   // 🔍 DEBUG: Verificar se callback está chegando no TaskBoardComponent
   return (
-    <div className="flex h-full overflow-x-auto gap-4 scrollbar-thin px-4 pb-4 items-start">
+    <div className="flex h-full overflow-x-auto overflow-y-hidden gap-4 scrollbar-thin px-2 pb-0 items-stretch">
       {columns.map((column) => (
         <DroppableColumn
           key={column.id}
@@ -333,6 +337,9 @@ function TaskBoardComponent({
           viewOption={viewOption}
         />
       ))}
+      {viewOption === "group" && onCreateGroup && (
+        <GhostGroup onClick={onCreateGroup} className="w-[300px] flex-none" />
+      )}
     </div>
   );
 }
@@ -362,7 +369,8 @@ export const TaskBoard = memo(TaskBoardComponent, (prev, next) => {
     prev.onDeleteGroup !== next.onDeleteGroup ||
     prev.onClearGroup !== next.onClearGroup ||
     prev.showGroupActions !== next.showGroupActions ||
-    prev.viewOption !== next.viewOption
+    prev.viewOption !== next.viewOption ||
+    prev.onCreateGroup !== next.onCreateGroup
   ) {
     return false; // Re-renderizar
   }

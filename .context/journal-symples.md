@@ -6,6 +6,39 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-02 - Refinamentos do Kanban (DnD, layout, quick add)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - DnD mais estavel e responsivo
+- Sensores ajustados (Mouse/Touch/Pointer) para reduzir drag acidental
+- Collision detection priorizando cards para melhorar drop dentro da mesma coluna
+- DragOverlay em portal com efeito de lift (shadow, rotate, scale)
+- Atualizacao otimista no drag end com rollback em caso de erro
+- Rework do handleDragOver para evitar sumico de cards em reordenacao
+
+#### - UX de cards e colunas
+- Removida edicao inline de titulo no card (melhor pega para arrastar)
+- Reducao de padding/altura do card com hover ring inset de 2px (#050815)
+- Quick add fixo no rodape da coluna; lista rola acima
+- Acoes de coluna alinhadas a direita com opcao "Adicionar tarefa" no menu
+- Botao ghost para novo grupo no fim do board (view group)
+
+#### - Layout responsivo do quadro
+- Kanban usando altura total da viewport, sem scroll vertical no conteudo principal
+- Colunas com altura dependente da tela e scroll apenas interno
+
+### 2. O que esta sendo trabalhado no momento
+
+- Validacao de comportamento do drag na build prod (colisoes e reordenacao longa)
+
+### 3. Proximos passos
+
+- Testar com colunas grandes e varios cards (stress test de DnD)
+- Ajustar drop placeholder se houver espacos visuais em colunas vazias
+
+---
+
 ## 2026-01-01 - Adição de Status "Bloqueado" e Desativação de "Correção" na UI
 
 ### 1. Melhorias, bugs e features implementadas em preview
