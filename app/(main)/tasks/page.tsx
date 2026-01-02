@@ -148,6 +148,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ler sortBy da URL, com fallback para "position"
     const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
     
+    // Ler tag da URL para filtro de projeto
+    const tagFilter = searchParams.get("tag");
+    
     // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
     
@@ -244,6 +247,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         workspaceId: effectiveWorkspaceId,
         tab: activeTab,
         enabled: isLoaded && shouldUseHook, // âœ… Desabilitar hook se initialTasks foi fornecido
+        tag: tagFilter || undefined,
     });
     
     // FunÃ§Ã£o para mapear dados do banco para interface local (mantida para compatibilidade com outras partes do cÃ³digo)
@@ -303,7 +307,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [localTasks, setLocalTasks] = useState<Task[]>(() => {
         // âœ… NOVO: Inicializar com initialTasks se fornecido
         if (initialTasks) {
-            return initialTasks.map(mapTaskFromDB);
+            const mapped = initialTasks.map(mapTaskFromDB);
+            // Filtrar por tag se houver tagFilter
+            if (tagFilter) {
+                return mapped.filter(task => task.tags?.includes(tagFilter));
+            }
+            return mapped;
         }
         return [];
     });
@@ -372,8 +381,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, []);
 
 
-    // Handler para criar grupo
+    // Handler para criar grupo - apenas dentro de projetos (quando há tag ativa)
     const handleCreateGroup = async () => {
+        // Verificar se há tag (projeto) ativo
+        if (!tagFilter) {
+            toast.error("Grupos personalizados só podem ser criados dentro de projetos. Selecione um projeto primeiro.");
+            setIsCreateGroupModalOpen(false);
+            return;
+        }
         if (!newGroupName.trim()) {
             toast.error("Digite o nome do grupo");
             return;
@@ -1740,20 +1755,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return groups;
     }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ? Adicionar groupOrder para recalcular quando a ordem mudar
 
-    const shouldShowLoadingSkeleton = !initialTasks
-        && localTasks.length === 0
-        && (!isLoaded || !effectiveWorkspaceId || isLoadingTasks);
-
-    if (shouldShowLoadingSkeleton) {
-        return <TasksPageSkeleton />;
-    }
-
     // Atualizar ref quando listGroups mudar
     useEffect(() => {
         listGroupsRef.current = listGroups;
     }, [listGroups]);
 
-    // Mapear status customizÃ¡veis para status do banco (usando config centralizado)
+    const shouldShowLoadingSkeleton = !initialTasks
+        && localTasks.length === 0
+        && (!isLoaded || !effectiveWorkspaceId || isLoadingTasks);
+// Mapear status customizÃ¡veis para status do banco (usando config centralizado)
     const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archived" => {
         return mapLabelToStatus(status) as "todo" | "in_progress" | "done" | "archived";
     };
@@ -2614,6 +2624,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         setViewMode(value as ViewMode);
     }, []);
 
+    if (shouldShowLoadingSkeleton) {
+        return <TasksPageSkeleton />;
+    }
+
     return (
         <div
             className={cn(
@@ -2722,8 +2736,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
                                             onClick={() => {
+                                                if (!tagFilter) {
+                                                    toast.error("Grupos personalizados só podem ser criados dentro de projetos. Selecione um projeto primeiro.");
+                                                    return;
+                                                }
                                                 setIsCreateGroupModalOpen(true);
                                             }}
+                                            disabled={!tagFilter}
                                         >
                                             <FolderPlus className="w-4 h-4 mr-2" />
                                             Grupo
@@ -2920,11 +2939,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                         canMoveToBottom={canMoveToBottom}
                                                         showGroupActions={viewOption === "group"}
                                                         onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                        showProjectTag={!!tagFilter}
                                                     />
                                                 );
                                             })}
-                                            {/* Ghost Group para criação rápida - apenas na visão de grupos */}
-                                            {viewOption === "group" && (
+                                            {/* Ghost Group para criação rápida - apenas na visão de grupos e dentro de projetos */}
+                                            {viewOption === "group" && tagFilter && (
                                                 <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
                                             )}
                                         </div>
@@ -2985,6 +3005,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     canMoveToBottom={canMoveToBottom}
                                                     showGroupActions={viewOption === "group"}
                                                     onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                    showProjectTag={!!tagFilter}
                                                 />
                                             );
                                         })}
@@ -3084,6 +3105,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     }}
                     task={taskDetails}
                     mode={selectedTaskId ? "edit" : "create"}
+                    initialTags={!selectedTaskId && tagFilter ? [tagFilter] : undefined}
                     onTaskCreated={async () => {
                         await reloadTasks();
                         // Recarregar calend rio se estiver na view de calend rio

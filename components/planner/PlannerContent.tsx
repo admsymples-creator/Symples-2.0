@@ -11,9 +11,11 @@ type Task = Database["public"]["Tables"]["tasks"]["Row"];
 interface PlannerContentProps {
   tasks: Task[];
   workspaces: { id: string; name: string }[];
+  workspaceId?: string | undefined;
+  isPersonal?: boolean;
 }
 
-export function PlannerContent({ tasks, workspaces }: PlannerContentProps) {
+export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = false }: PlannerContentProps) {
   const router = useRouter();
   const calendarReloadRef = useRef<(() => void) | null>(null);
 
@@ -61,6 +63,7 @@ export function PlannerContent({ tasks, workspaces }: PlannerContentProps) {
       <div className="relative h-full w-full">
         <div className="h-[calc(100vh-300px)]">
           <PlannerCalendar 
+            workspaceId={workspaceId}
             hideViewTabs={true}
             onControlsReady={handleCalendarControlsReady}
             onExternalTaskCreated={handleWeeklyViewUpdate}

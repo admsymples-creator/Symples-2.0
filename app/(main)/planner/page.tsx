@@ -1,40 +1,10 @@
-import { getWeekTasks } from "@/lib/actions/dashboard";
 import { getUserWorkspaces } from "@/lib/actions/user";
 import { PlannerContent } from "@/components/planner/PlannerContent";
-import { Database } from "@/types/database.types";
-import { Suspense } from "react";
-
-type Task = Database["public"]["Tables"]["tasks"]["Row"];
-
-// Funções auxiliares para manipulação de datas
-function getStartOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Ajustar para Segunda-feira
-  return new Date(d.setDate(diff));
-}
-
-function getEndOfWeek(date: Date): Date {
-  const start = getStartOfWeek(date);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6); // Adicionar 6 dias para chegar no Domingo
-  end.setHours(23, 59, 59, 999); // Fim do dia
-  return end;
-}
+import { PlannerClient } from "@/components/planner/PlannerClient";
 
 export default async function PlannerPage() {
-  // Calcular range da semana (Segunda a Domingo)
-  const today = new Date();
-  const startOfWeek = getStartOfWeek(today);
-  const endOfWeek = getEndOfWeek(today);
-
-  // Buscar dados em paralelo
-  const [tasks, userWorkspaces] = await Promise.all([
-    getWeekTasks(startOfWeek, endOfWeek),
-    getUserWorkspaces()
-  ]);
-
-  const typedTasks = tasks as unknown as Task[];
+  // Buscar workspaces
+  const userWorkspaces = await getUserWorkspaces();
 
   return (
     <div className="min-h-screen bg-white pb-20">
@@ -51,12 +21,9 @@ export default async function PlannerPage() {
       <div className="w-full bg-white px-6">
         <div className="max-w-[1600px] mx-auto">
           <div className="py-3 space-y-8">
-            <Suspense fallback={<div className="min-h-[400px]" />}>
-              <PlannerContent 
-                tasks={typedTasks} 
-                workspaces={userWorkspaces.map(w => ({ id: w.id, name: w.name }))}
-              />
-            </Suspense>
+            <PlannerClient 
+              workspaces={userWorkspaces.map(w => ({ id: w.id, name: w.name }))}
+            />
           </div>
         </div>
       </div>

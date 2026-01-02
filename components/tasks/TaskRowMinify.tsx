@@ -54,6 +54,7 @@ interface TaskRowMinifyProps {
     isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
     recurrence_type?: string | null;
     recurrence_parent_id?: string | null;
+    tags?: string[];
   };
   containerId?: string;
   isOverlay?: boolean;
@@ -69,6 +70,7 @@ interface TaskRowMinifyProps {
   members?: Array<{ id: string; name: string; avatar?: string }>;
   showWorkspaceBadge?: boolean;
   workspaceName?: string;
+  showProjectTag?: boolean; // ✅ Novo: mostrar tag de projeto ao invés de workspace
   showDragHandle?: boolean;
 }
 
@@ -110,7 +112,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName, showDragHandle = true }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName, showProjectTag = false, showDragHandle = true }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -550,12 +552,16 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               maxLength={100} // ✅ Limite de caracteres (padrão UX)
             />
           </div>
-          {/* Badge de Workspace - apenas na home */}
-          {showWorkspaceBadge && workspaceName && (
+          {/* Badge de Projeto (tag) ou Workspace */}
+          {showProjectTag && task.tags && task.tags.length > 0 ? (
+            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+              {task.tags[0]}
+            </Badge>
+          ) : showWorkspaceBadge && workspaceName ? (
             <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
               {workspaceName}
             </Badge>
-          )}
+          ) : null}
         </div>
         
         {/* Comentários - aparece apenas no hover */}

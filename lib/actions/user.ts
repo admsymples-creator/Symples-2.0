@@ -88,6 +88,94 @@ export const getUserWorkspaces = cache(async () => {
   return workspaces;
 });
 
+/**
+ * Garante que o usuário tenha um workspace pessoal
+ * Cria automaticamente se não existir
+ */
+export async function ensurePersonalWorkspace(): Promise<{ success: boolean; workspaceId?: string; error?: string }> {
+  const supabase = await createServerActionClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Verificar se já existe workspace pessoal
+  const { data: existingWorkspaces, error: fetchError } = await supabase
+    .from("workspace_members")
+    .select(`
+      workspace_id,
+      workspaces:workspace_id (
+        id,
+        name
+      )
+    `)
+    .eq("user_id", user.id);
+
+  if (fetchError) {
+    console.error("Erro ao buscar workspaces:", fetchError);
+    return { success: false, error: fetchError.message };
+  }
+
+  // Verificar se já existe workspace pessoal
+  const personalWorkspace = existingWorkspaces?.find((item: any) => {
+    const workspace = Array.isArray(item.workspaces) ? item.workspaces[0] : item.workspaces;
+    return workspace?.name?.toLowerCase().trim() === "pessoal";
+  });
+
+  if (personalWorkspace) {
+    const workspace = Array.isArray(personalWorkspace.workspaces) 
+      ? personalWorkspace.workspaces[0] 
+      : personalWorkspace.workspaces;
+    return { success: true, workspaceId: workspace?.id };
+  }
+
+  // Criar workspace pessoal
+  const slug = `pessoal-${user.id.slice(0, 8)}`;
+  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: newWorkspace, error: createError } = await supabase
+    .from("workspaces")
+    .insert({
+      name: "Pessoal",
+      owner_id: user.id,
+      slug,
+      plan: "business",
+      subscription_status: "trialing",
+      trial_ends_at: trialEndsAt,
+      member_limit: 15,
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error("Erro ao criar workspace pessoal:", createError);
+    return { success: false, error: createError.message };
+  }
+
+  // O trigger já adiciona o owner como membro, mas garantimos aqui também
+  const { error: memberError } = await supabase
+    .from("workspace_members")
+    .upsert(
+      {
+        workspace_id: newWorkspace.id,
+        user_id: user.id,
+        role: "owner",
+      },
+      { onConflict: "workspace_id, user_id", ignoreDuplicates: true }
+    );
+
+  if (memberError) {
+    console.error("Erro ao adicionar membro ao workspace pessoal:", memberError);
+    // Não retornamos erro aqui, pois o workspace foi criado
+  }
+
+  revalidatePath("/", "layout");
+  return { success: true, workspaceId: newWorkspace.id };
+}
+
 export async function getWorkspaceById(workspaceId: string): Promise<Workspace | null> {
   const supabase = await createServerActionClient();
   const {

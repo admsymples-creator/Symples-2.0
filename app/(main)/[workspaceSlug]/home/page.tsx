@@ -1,0 +1,71 @@
+import { getWorkspacesWeeklyStats } from "@/lib/actions/dashboard";
+import { getUserWorkspaces } from "@/lib/actions/user";
+import { TrialBanner } from "@/components/home/TrialBanner";
+import { HomeTasksSection } from "@/components/home/HomeTasksSection";
+import { HomeInboxSection } from "@/components/home/HomeInboxSection";
+import { HomeWorkspaceOverview } from "@/components/home/HomeWorkspaceOverview";
+
+interface PageProps {
+  params: Promise<{ workspaceSlug: string }>;
+}
+
+// ✅ Renderizar o mesmo conteúdo que /home, mas mantendo o slug na URL
+// Isso preserva o contexto do workspace em deep-links e refresh
+export default async function WorkspaceHomePage({ params }: PageProps) {
+  const { workspaceSlug } = await params;
+  
+  // Calcular range da semana (Segunda a Domingo) para stats
+  const today = new Date();
+  const day = today.getDay();
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+  const startOfWeek = new Date(today.setDate(diff));
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
+
+  // Buscar dados em paralelo
+  const [workspaceStats, userWorkspaces] = await Promise.all([
+    getWorkspacesWeeklyStats(startOfWeek, endOfWeek),
+    getUserWorkspaces()
+  ]);
+
+  return (
+    <div className="min-h-screen bg-white pb-20">
+      {/* HEADER AREA - LINE 1 */}
+      <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Bom dia, Usuário 👋
+            </h1>
+            <p className="text-sm text-gray-500">
+              Aqui está o panorama da sua semana.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full bg-white px-6">
+        <div className="max-w-[1600px] mx-auto py-3">
+          <div className="space-y-8">
+            {/* Trial Banner */}
+            <TrialBanner />
+
+            {/* Cards: Minhas tarefas e Caixa de entrada */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <HomeTasksSection period="week" />
+              <HomeInboxSection />
+            </div>
+
+            {/* Workspaces Overview - Mostra projetos (profissional) ou workspaces (pessoal) */}
+            <HomeWorkspaceOverview 
+              workspaceStats={workspaceStats} 
+              weekStart={startOfWeek}
+              weekEnd={endOfWeek}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

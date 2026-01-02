@@ -84,6 +84,7 @@ export async function getTasks(filters?: {
   assigneeId?: string | null | "current";
   dueDateStart?: string;
   dueDateEnd?: string;
+  tag?: string;
 }) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -178,6 +179,11 @@ export async function getTasks(filters?: {
   // Filtro de Data (Fim)
   if (filters?.dueDateEnd) {
       query = query.lte("due_date", filters.dueDateEnd);
+  }
+
+  // Filtro de Tag (Projeto)
+  if (filters?.tag) {
+    query = query.contains("tags", [filters.tag]);
   }
 
   let { data, error } = await query;
@@ -343,6 +349,64 @@ export async function getTasks(filters?: {
   }) as unknown as TaskWithDetails[];
   
   return result;
+}
+
+/**
+ * Busca todas as tags únicas de um workspace
+ * Retorna array de tags ordenadas alfabeticamente
+ */
+export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user || !workspaceId) return [];
+
+  // Verificar se usuário é membro do workspace
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) return [];
+
+  // Buscar todas as tags do workspace (de tarefas)
+  const { data: tasks, error } = await supabase
+    .from("tasks")
+    .select("tags")
+    .eq("workspace_id", workspaceId)
+    .neq("status", "archived");
+
+  // Extrair tags únicas de tarefas
+  const allTags = new Set<string>();
+  if (!error && tasks) {
+    tasks.forEach((task: any) => {
+      if (task.tags && Array.isArray(task.tags)) {
+        task.tags.forEach((tag: string) => {
+          if (tag && tag.trim()) {
+            allTags.add(tag.trim());
+          }
+        });
+      }
+    });
+  }
+
+  // Buscar tags que têm ícones salvos (projetos criados sem tarefas ainda)
+  const { data: projectIcons, error: iconsError } = await supabase
+    .from("project_icons")
+    .select("tag_name")
+    .eq("workspace_id", workspaceId);
+
+  if (!iconsError && projectIcons) {
+    projectIcons.forEach((icon: any) => {
+      if (icon.tag_name && icon.tag_name.trim()) {
+        allTags.add(icon.tag_name.trim());
+      }
+    });
+  }
+
+  return Array.from(allTags).sort();
 }
 
 /**

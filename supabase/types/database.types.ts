@@ -697,5 +697,6 @@ export type NotificationMetadata = {
   role?: string; // Role do usuário (para convites)
   task_title?: string; // Título da tarefa relacionada
   workspace_name?: string; // Nome do workspace relacionado
+  workspace_id?: string; // ID do workspace relacionado (para filtros robustos)
   days_overdue?: number; // Dias de atraso (para tarefas atrasadas)
 };

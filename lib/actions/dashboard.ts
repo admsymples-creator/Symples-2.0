@@ -286,6 +286,93 @@ export const getWorkspacesWeeklyStats = cache(async (
   }
 });
 
+/**
+ * Busca estatísticas semanais dos projetos (tags) de um workspace
+ * @param workspaceId - ID do workspace
+ * @param start - Data de início (início da semana)
+ * @param end - Data de fim (fim da semana)
+ */
+export const getProjectsWeeklyStats = cache(async (
+  workspaceId: string,
+  start: Date,
+  end: Date
+): Promise<Array<{
+  tag: string;
+  pendingCount: number;
+  totalCount: number;
+}>> => {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) return [];
+
+    // Verificar se usuário é membro do workspace
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership) return [];
+
+    // Buscar tarefas do workspace na semana que tenham tags
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
+
+    const { data: tasks, error: tasksError } = await supabase
+      .from("tasks")
+      .select("id, tags, status")
+      .eq("workspace_id", workspaceId)
+      .neq("status", "archived")
+      .gte("due_date", startISO)
+      .lte("due_date", endISO);
+
+    if (tasksError) {
+      console.error("Erro ao buscar tarefas dos projetos:", tasksError);
+      return [];
+    }
+
+    // Agrupar por tag
+    const statsMap = new Map<string, { pendingCount: number; totalCount: number }>();
+
+    tasks?.forEach((task: any) => {
+      if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
+        task.tags.forEach((tag: string) => {
+          if (tag && tag.trim()) {
+            const tagKey = tag.trim();
+            if (!statsMap.has(tagKey)) {
+              statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+            }
+            const stats = statsMap.get(tagKey)!;
+            stats.totalCount++;
+            if (task.status !== "done" && task.status !== "archived") {
+              stats.pendingCount++;
+            }
+          }
+        });
+      }
+    });
+
+    // Converter para array e ordenar por nome
+    return Array.from(statsMap.entries())
+      .map(([tag, stats]) => ({
+        tag,
+        ...stats,
+      }))
+      .sort((a, b) => a.tag.localeCompare(b.tag));
+
+  } catch (error) {
+    console.error("Erro ao calcular estatísticas dos projetos:", error);
+    return [];
+  }
+});
+
 // getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 
 /**

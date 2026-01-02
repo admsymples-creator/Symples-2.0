@@ -94,13 +94,46 @@ export async function getNotifications(
     }
   }
 
-  // Combinar notificações com dados dos usuários
-  const result = notifications.map((notification) => ({
-    ...notification,
-    triggering_user: notification.triggering_user_id
-      ? usersData[notification.triggering_user_id] || null
-      : null,
-  })) as NotificationWithActor[];
+  // Buscar workspace_id das tarefas relacionadas (quando resource_type === 'task')
+  const taskNotifications = notifications.filter(n => n.resource_type === 'task' && n.resource_id);
+  const taskIds = taskNotifications.map(n => n.resource_id).filter((id): id is string => id !== null);
+  
+  let taskWorkspaceMap: Record<string, string | null> = {};
+  
+  if (taskIds.length > 0) {
+    const { data: tasks } = await supabase
+      .from("tasks")
+      .select("id, workspace_id")
+      .in("id", taskIds);
+    
+    if (tasks) {
+      taskWorkspaceMap = tasks.reduce((acc, task) => {
+        acc[task.id] = task.workspace_id;
+        return acc;
+      }, {} as Record<string, string | null>);
+    }
+  }
+
+  // Combinar notificações com dados dos usuários e workspace_id
+  const result = notifications.map((notification) => {
+    const workspaceId = notification.resource_type === 'task' && notification.resource_id
+      ? taskWorkspaceMap[notification.resource_id] || null
+      : null;
+    
+    // Adicionar workspace_id ao metadata se disponível (criar novo objeto para não mutar)
+    const existingMetadata = (notification.metadata as any) || {};
+    const metadata = workspaceId && !existingMetadata.workspace_id
+      ? { ...existingMetadata, workspace_id: workspaceId }
+      : existingMetadata;
+    
+    return {
+      ...notification,
+      metadata,
+      triggering_user: notification.triggering_user_id
+        ? usersData[notification.triggering_user_id] || null
+        : null,
+    };
+  }) as NotificationWithActor[];
   return result;
 }
 

@@ -18,7 +18,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar } from "./Avatar";
-import { Calendar as CalendarIcon, User, X, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, User, X, Loader2, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -40,6 +40,9 @@ interface QuickTaskAddProps {
     className?: string;
     variant?: "default" | "ghost";
     autoFocus?: boolean;
+    groupColor?: string; // ✅ Cor do grupo para borda lateral
+    showProjectTag?: boolean; // ✅ Se deve ter padding left para alinhar com tags
+    showDragHandle?: boolean; // ✅ Se deve mostrar drag handle (para página de tarefas)
 }
 
 export function QuickTaskAdd({
@@ -52,6 +55,9 @@ export function QuickTaskAdd({
     className,
     variant = "default",
     autoFocus = false,
+    groupColor,
+    showProjectTag = false,
+    showDragHandle = false,
 }: QuickTaskAddProps) {
     const [isHydrated, setIsHydrated] = useState(false);
     const [value, setValue] = useState("");
@@ -284,32 +290,80 @@ export function QuickTaskAdd({
         }
     };
 
+    // Converter groupColor para classe ou estilo
+    const getGroupColorClass = (color?: string) => {
+        if (!color) return null;
+        if (color.startsWith("#")) return null; // Hex color
+        const colorMap: Record<string, string> = {
+            "red": "bg-red-500",
+            "blue": "bg-blue-500",
+            "green": "bg-green-500",
+            "yellow": "bg-yellow-500",
+            "purple": "bg-purple-500",
+            "pink": "bg-pink-500",
+            "orange": "bg-orange-500",
+            "slate": "bg-slate-500",
+            "cyan": "bg-cyan-500",
+            "indigo": "bg-indigo-500",
+        };
+        return colorMap[color] || null;
+    };
+
+    const groupColorClass = getGroupColorClass(groupColor);
+    const isHexColor = groupColor?.startsWith("#");
+
+    // Grid columns para alinhar com TaskRowMinify (com ou sem drag handle)
+    const gridColumnsClass = variant === "ghost" 
+        ? (showDragHandle 
+            ? "grid-cols-[40px_24px_1fr_auto_90px_130px_40px]" 
+            : "grid-cols-[24px_1fr_auto_90px_130px_40px]")
+        : "";
+
     return (
         <>
-            <div                 className={cn(
-                "flex items-center transition-all relative w-full",
-                variant === "default" && "bg-white border border-gray-200 rounded-xl px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
-                variant === "ghost" && "h-10 px-4 border-b border-transparent hover:bg-gray-50",
+            <div className={cn(
+                variant === "default" && "flex items-center transition-all relative w-full bg-white border border-gray-200 rounded-xl px-3 py-1 focus-within:ring-2 focus-within:ring-gray-100 focus-within:border-gray-300",
+                variant === "ghost" && "grid items-center h-11 border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors w-full px-1 relative gap-1",
+                variant === "ghost" && gridColumnsClass,
+                showProjectTag && variant === "ghost" && "pl-3", // ✅ Padding left quando mostrar tag de projeto
                 isCreatingBatch && "opacity-50 pointer-events-none", // ✅ Apenas batch bloqueia interação
                 className
             )}>
-                {/* Ghost Mode Elements */}
+                {/* Barra Lateral Colorida (linha contínua) - Ghost Mode */}
+                {variant === "ghost" && (
+                    <div 
+                        className={cn(
+                            "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
+                            groupColorClass || isHexColor 
+                                ? (groupColorClass || "") 
+                                : "bg-gray-200" // ✅ Borda cinza padrão quando não há groupColor
+                        )}
+                        style={isHexColor ? { backgroundColor: groupColor } : undefined}
+                    />
+                )}
+
+                {/* Ghost Mode Elements - usando grid para alinhar */}
                 {variant === "ghost" && (
                     <>
-                        {/* Ghost Drag Handle (Invisible placeholder) */}
-                        <div className="w-[26px] flex-shrink-0" />
-                        
-                        {/* Ghost Checkbox */}
-                        <div className="flex-shrink-0 mr-3">
+                        {/* Drag Handle - primeira coluna do grid (se showDragHandle) */}
+                        {showDragHandle && (
+                            <div className="h-full flex items-center justify-center outline-none touch-none cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600">
+                                <GripVertical className="w-4 h-4" />
+                            </div>
+                        )}
+                        {/* Ghost Checkbox - segunda coluna do grid (ou primeira se sem drag) */}
+                        <div className="flex items-center justify-center">
                             <div className="w-4 h-4 rounded border border-gray-200 bg-transparent" />
                         </div>
                     </>
                 )}
 
-                {/* ✅ Feedback visual durante criação (batch ou single) */}
-                {(isCreatingBatch || isCreatingSingle) && (
+                {/* ✅ Feedback visual durante criação (batch ou single) - apenas no modo default */}
+                {(isCreatingBatch || isCreatingSingle) && variant === "default" && (
                     <Loader2 className="size-4 text-gray-400 animate-spin mr-2 flex-shrink-0" />
                 )}
+                
+                {/* Input - segunda coluna do grid (ghost) ou flex-1 (default) */}
                 <Input
                     ref={inputRef}
                     autoFocus={autoFocus}
@@ -320,12 +374,201 @@ export function QuickTaskAdd({
                     placeholder={placeholder}
                     disabled={isCreatingBatch} // ✅ Apenas desabilitar durante batch (permite criação rápida)
                     className={cn(
-                        "flex-1 bg-transparent border-none focus-visible:ring-0 p-0 text-sm placeholder:text-gray-400",
-                        variant === "ghost" && "h-full"
+                        variant === "default" && "flex-1 bg-transparent border-none focus-visible:ring-0 p-0 text-sm placeholder:text-gray-400",
+                        variant === "ghost" && "bg-transparent border-none focus-visible:ring-0 p-0 text-sm placeholder:text-gray-400 min-w-0"
                     )}
                 />
 
-            {/* Área de Ações */}
+                {/* Placeholder para coluna de comentários (ghost mode) - aparece no hover no TaskRowMinify */}
+                {variant === "ghost" && <div />}
+
+            {/* Responsável - quarta coluna do grid (ghost) */}
+            {variant === "ghost" && (
+                <div className="flex items-center justify-center">
+                    {members.length > 0 && (
+                        <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
+                            <PopoverTrigger asChild>
+                                <button
+                                    type="button"
+                                    className={cn(
+                                        "p-1 rounded hover:bg-gray-100 transition-colors box-content",
+                                        selectedAssigneeId && "text-green-600"
+                                    )}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsAssigneePopoverOpen(!isAssigneePopoverOpen);
+                                    }}
+                                >
+                                    {selectedMember ? (
+                                        <Avatar
+                                            name={selectedMember.name}
+                                            avatar={selectedMember.avatar}
+                                            size="sm"
+                                            className="size-5"
+                                        />
+                                    ) : (
+                                        <User className="size-4 text-gray-400" />
+                                    )}
+                                </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="p-0 w-64 rounded-xl" align="start">
+                                <Command>
+                                    <CommandInput placeholder="Buscar membro..." />
+                                    <CommandList>
+                                        <CommandEmpty>Nenhum membro encontrado.</CommandEmpty>
+                                        <CommandGroup>
+                                            <CommandItem
+                                                onSelect={() => {
+                                                    setSelectedAssigneeId(null);
+                                                    setIsAssigneePopoverOpen(false);
+                                                }}
+                                                className={cn(
+                                                    "flex items-center gap-2",
+                                                    !selectedAssigneeId && "bg-green-50"
+                                                )}
+                                            >
+                                                <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center">
+                                                    <User className="size-3 text-gray-400" />
+                                                </div>
+                                                <span>Sem responsável</span>
+                                            </CommandItem>
+                                            {members.map((member) => (
+                                                <CommandItem
+                                                    key={member.id}
+                                                    onSelect={() => {
+                                                        setSelectedAssigneeId(
+                                                            selectedAssigneeId === member.id ? null : member.id
+                                                        );
+                                                        setIsAssigneePopoverOpen(false);
+                                                    }}
+                                                    className={cn(
+                                                        "flex items-center gap-2",
+                                                        selectedAssigneeId === member.id && "bg-green-50"
+                                                    )}
+                                                >
+                                                    <Avatar
+                                                        name={member.name}
+                                                        avatar={member.avatar}
+                                                        size="sm"
+                                                        className="size-6"
+                                                    />
+                                                    <span>{member.name}</span>
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                </div>
+            )}
+
+            {/* Data - quinta coluna do grid (ghost) */}
+            {variant === "ghost" && (
+                <div className="flex items-center justify-center">
+                    <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
+                    <PopoverTrigger asChild>
+                        <button
+                            type="button"
+                            className={cn(
+                                "p-1 rounded hover:bg-gray-100 transition-colors box-content",
+                                selectedDate && "text-green-600"
+                            )}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsDatePopoverOpen(!isDatePopoverOpen);
+                            }}
+                        >
+                            {selectedDate ? (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 text-green-600 border-green-200 bg-green-50">
+                                    {format(selectedDate, "d MMM", { locale: ptBR })}
+                                </Badge>
+                            ) : (
+                                <CalendarIcon className="size-4 text-gray-400" />
+                            )}
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-auto rounded-xl" align="start">
+                        <div className="p-2 space-y-2">
+                            {/* Atalhos */}
+                            <div className="flex gap-1 px-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={() => {
+                                        setSelectedDate(getToday());
+                                        setIsDatePopoverOpen(false);
+                                    }}
+                                >
+                                    Hoje
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={() => {
+                                        setSelectedDate(getTomorrow());
+                                        setIsDatePopoverOpen(false);
+                                    }}
+                                >
+                                    Amanhã
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={() => {
+                                        setSelectedDate(getNextWeekend());
+                                        setIsDatePopoverOpen(false);
+                                    }}
+                                >
+                                    Próximo Fim de Semana
+                                </Button>
+                            </div>
+                            <div className="border-t border-gray-200" />
+                            {/* Calendar */}
+                            <Calendar
+                                mode="single"
+                                selected={selectedDate || undefined}
+                                onSelect={(date) => {
+                                    setSelectedDate(date || null);
+                                    setIsDatePopoverOpen(false);
+                                }}
+                                className="rounded-md border-0"
+                            />
+                            {/* Botão para limpar */}
+                            {selectedDate && (
+                                <>
+                                    <div className="border-t border-gray-200" />
+                                    <div className="px-2 pb-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-xs h-7 w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            onClick={() => {
+                                                setSelectedDate(null);
+                                                setIsDatePopoverOpen(false);
+                                            }}
+                                        >
+                                            <X className="size-3 mr-1" />
+                                            Remover data
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </PopoverContent>
+                </Popover>
+                </div>
+            )}
+
+            {/* Placeholder para coluna de status + menu (ghost mode) */}
+            {variant === "ghost" && <div />}
+
+            {/* Área de Ações - modo default (flex) */}
+            {variant === "default" && (
             <div className="flex items-center gap-1 ml-2">
                 {/* Seletor de Data */}
                 <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
@@ -501,6 +744,7 @@ export function QuickTaskAdd({
                     </Popover>
                 )}
             </div>
+            )}
             </div>
 
             {/* Dialog de confirmação para batch grande */}

@@ -29,20 +29,48 @@ export function WorkspaceUrlSync({ workspaces }: WorkspaceUrlSyncProps) {
     const urlWorkspace = useMemo(() => {
         if (!isLoaded) return null;
 
-        // Extrair o primeiro segmento da URL (workspaceSlug)
+        // Extrair segmentos da URL
         const segments = pathname.split("/").filter(Boolean);
         
-        // Se não há segmentos ou estamos em rotas sem workspace (/home, /settings)
-        if (segments.length === 0 || segments[0] === "home" || segments[0] === "settings" || segments[0] === "assistant") {
+        // Se não há segmentos, não há workspace na URL
+        if (segments.length === 0) return null;
+        
+        // Rotas que não têm workspace no primeiro segmento
+        const nonWorkspaceRoutes = new Set(["settings", "assistant", "team", "planner", "finance", "tasks"]);
+        
+        // Caso especial: /home pode estar em /[workspaceSlug]/home ou apenas /home
+        if (segments[0] === "home") {
+            // Se há apenas "home", não há workspace na URL - usar contexto (retornar null para não sobrescrever)
+            if (segments.length === 1) return null;
+            // Se há mais segmentos, não deveria acontecer com /home
             return null;
         }
-
-        const urlWorkspaceSlug = segments[0];
-
-        // Encontrar o workspace correspondente ao slug da URL
-        return workspaces.find(
-            (w) => w.slug === urlWorkspaceSlug || w.id === urlWorkspaceSlug
-        ) || null;
+        
+        // Se há 2+ segmentos, verificar se o primeiro é workspace e o segundo é rota conhecida
+        // Ex: /[workspaceSlug]/home, /[workspaceSlug]/tasks
+        if (segments.length >= 2) {
+            const firstSegment = segments[0];
+            const secondSegment = segments[1];
+            
+            // Se o segundo segmento é uma rota conhecida, o primeiro é workspace slug
+            if (nonWorkspaceRoutes.has(secondSegment) || secondSegment === "home") {
+                const urlWorkspaceSlug = firstSegment;
+                return workspaces.find(
+                    (w) => w.slug === urlWorkspaceSlug || w.id === urlWorkspaceSlug
+                ) || null;
+            }
+        }
+        
+        // Se o primeiro segmento não é uma rota conhecida e não há segundo segmento,
+        // assumir que é workspace slug (ex: /[workspaceSlug])
+        if (!nonWorkspaceRoutes.has(segments[0])) {
+            const urlWorkspaceSlug = segments[0];
+            return workspaces.find(
+                (w) => w.slug === urlWorkspaceSlug || w.id === urlWorkspaceSlug
+            ) || null;
+        }
+        
+        return null;
     }, [pathname, workspaces, isLoaded]);
 
     useEffect(() => {

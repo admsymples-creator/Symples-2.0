@@ -27,6 +27,7 @@ interface UseTasksOptions {
     workspaceId: string | null;
     tab: ContextTab;
     enabled?: boolean;
+    tag?: string;
 }
 
 interface UseTasksReturn {
@@ -157,8 +158,9 @@ function mapTaskFromDB(task: TaskWithDetails): Task {
 }
 
 // Função para criar chave de cache
-function getCacheKey(workspaceId: string | null, tab: ContextTab): string {
-    return `${workspaceId || 'null'}-${tab}`;
+function getCacheKey(workspaceId: string | null, tab: ContextTab, tag?: string): string {
+    const tagPart = tag ? `-tag:${tag}` : '';
+    return `${workspaceId || 'null'}-${tab}${tagPart}`;
 }
 
 // Função para retry com backoff exponencial
@@ -185,7 +187,7 @@ async function retryWithBackoff<T>(
     throw lastError || new Error("Retry failed");
 }
 
-export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions): UseTasksReturn {
+export function useTasks({ workspaceId, tab, enabled = true, tag }: UseTasksOptions): UseTasksReturn {
     // ✅ OTIMIZAÇÃO: Usar useReducer para atualizar todos os estados em uma única operação
     // Isso elimina múltiplas renderizações em cascata (6-8x) causadas por setState sequenciais
     const [state, dispatch] = useReducer(tasksReducer, initialState);
@@ -208,7 +210,7 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
         }
 
         // Criar chave única para esta combinação
-        const loadKey = `${workspaceId || 'null'}-${tab}`;
+        const loadKey = `${workspaceId || 'null'}-${tab}${tag ? `-tag:${tag}` : ''}`;
         
         // Evitar múltiplas chamadas simultâneas para a mesma chave
         if (isLoadingRef.current && lastLoadKeyRef.current === loadKey && !isRefetch) {
@@ -222,7 +224,7 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
         isLoadingRef.current = true;
         lastLoadKeyRef.current = loadKey;
 
-        const cacheKey = getCacheKey(workspaceId, tab);
+        const cacheKey = getCacheKey(workspaceId, tab, tag);
         const cached = taskCache.get(cacheKey);
         const now = Date.now();
 
@@ -247,6 +249,7 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
                 assigneeId?: string | null | "current";
                 dueDateStart?: string;
                 dueDateEnd?: string;
+                tag?: string;
             } = {};
 
             // Aplicar filtro de workspace baseado na aba ativa
@@ -270,6 +273,11 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
                     filters.dueDateStart = today.toISOString();
                     filters.dueDateEnd = nextSunday.toISOString();
                 }
+            }
+
+            // Aplicar filtro de tag se fornecido
+            if (tag) {
+                filters.tag = tag;
             }
 
             // Carregar tarefas com retry
@@ -338,7 +346,7 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
     // Função para refetch manual
     const refetch = useCallback(async () => {
         // Invalidar cache antes de refetch
-        const cacheKey = getCacheKey(workspaceId, tab);
+        const cacheKey = getCacheKey(workspaceId, tab, tag);
         taskCache.delete(cacheKey);
         // Resetar flag de loading para permitir refetch
         isLoadingRef.current = false;
@@ -356,7 +364,7 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
         if (!loadTasksRef.current) return;
         
         // Criar chave única para esta combinação
-        const loadKey = `${workspaceId || 'null'}-${tab}`;
+        const loadKey = `${workspaceId || 'null'}-${tab}${tag ? `-tag:${tag}` : ''}`;
         
         // Evitar recarregar se já está carregando para a mesma chave
         if (isLoadingRef.current && lastLoadKeyRef.current === loadKey) {
@@ -365,7 +373,7 @@ export function useTasks({ workspaceId, tab, enabled = true }: UseTasksOptions):
         
         // Chamar loadTasks usando ref para evitar problemas com dependências
         loadTasksRef.current(false);
-    }, [workspaceId, tab, enabled]); // Dependências fixas - sempre o mesmo tamanho
+    }, [workspaceId, tab, enabled, tag]); // Dependências fixas - sempre o mesmo tamanho
 
     // Cleanup
     useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,16 +54,22 @@ interface SettingsPageClientProps {
   initialMembers: Member[];
   initialInvites: Invite[];
   initialSubscription?: SubscriptionData | null;
+  mode?: "settings" | "team";
 }
 
 type SettingsTab = "general" | "members" | "billing" | "profile";
 
-export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites, initialSubscription }: SettingsPageClientProps) {
+export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites, initialSubscription, mode }: SettingsPageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<SettingsTab>(
-    () => (searchParams.get("tab") as SettingsTab) || "general"
-  );
+  const effectiveMode = mode ?? "settings";
+  const initialTab = useMemo(() => {
+    if (effectiveMode === "team") return "members";
+    const tabParam = searchParams.get("tab") as SettingsTab | null;
+    if (tabParam === "members") return "general";
+    return tabParam || "general";
+  }, [effectiveMode, searchParams]);
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => initialTab);
   const { activeWorkspaceId, isLoaded } = useWorkspace();
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
@@ -163,6 +169,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   }, []);
 
   const handleTabChange = useCallback((value: string) => {
+    if (effectiveMode === "team") {
+      return;
+    }
     const nextTab = value as SettingsTab;
     setActiveTab(nextTab);
 
@@ -377,9 +386,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
           <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Configurações do Workspace</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{effectiveMode === "team" ? "Time" : "Configuracoes do Workspace"}</h1>
               <p className="text-sm text-gray-500">
-                Gerencie as preferências gerais, membros da equipe e faturamento.
+                {effectiveMode === "team" ? "Gerencie os membros e convites do workspace." : "Gerencie as preferencias gerais e faturamento."}
               </p>
             </div>
           </div>
@@ -403,10 +412,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Configurações do Workspace</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{effectiveMode === "team" ? "Time" : "Configuracoes do Workspace"}</h1>
             <p className="text-sm text-gray-500">
-              Gerencie as preferências gerais, membros da equipe e faturamento.
-            </p>
+                {effectiveMode === "team" ? "Gerencie os membros e convites do workspace." : "Gerencie as preferencias gerais e faturamento."}
+              </p>
           </div>
         </div>
       </div>
@@ -420,12 +429,13 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         className="w-full space-y-3"
       >
         {/* Navigation Tabs */}
-        <TabsList variant="grid" className="grid w-full grid-cols-4 md:w-[500px]">
-          <TabsTrigger value="general" variant="grid">Geral</TabsTrigger>
-          <TabsTrigger value="members" variant="grid">Membros</TabsTrigger>
-          <TabsTrigger value="billing" variant="grid">Faturamento</TabsTrigger>
-          <TabsTrigger value="profile" variant="grid">Perfil</TabsTrigger>
-        </TabsList>
+        {effectiveMode === "settings" && (
+          <TabsList variant="grid" className="grid w-full grid-cols-3 md:w-[420px]">
+            <TabsTrigger value="general" variant="grid">Geral</TabsTrigger>
+            <TabsTrigger value="billing" variant="grid">Faturamento</TabsTrigger>
+            <TabsTrigger value="profile" variant="grid">Perfil</TabsTrigger>
+          </TabsList>
+        )}
 
         {/* A. ABA GERAL (WORKSPACE) */}
         <TabsContent value="general" className="mt-0 space-y-6">

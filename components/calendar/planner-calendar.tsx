@@ -30,6 +30,9 @@ interface PlannerCalendarProps {
    * Workspace ID opcional. Se não fornecido, detecta automaticamente:
    * - Se estiver em /planner: usa undefined (calendário geral)
    * - Se estiver em /tasks: usa activeWorkspaceId (calendário do workspace)
+   * 
+   * IMPORTANTE: Se for workspace pessoal, deve ser undefined para buscar de todos os workspaces.
+   * Se for workspace profissional, deve ser o workspaceId específico.
    */
   workspaceId?: string | null | undefined;
   /**
