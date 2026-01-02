@@ -122,25 +122,24 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         <div className="flex items-center gap-3">
           <Tabs value={daysToShow.toString()} onValueChange={handleViewChange}>
             <TabsList variant="default">
-              <TabsTrigger value="3" variant="default" className="transition-all duration-300">3 Dias</TabsTrigger>
-              <TabsTrigger value="5" variant="default" className="transition-all duration-300">Semana</TabsTrigger>
+              <TabsTrigger value="3" variant="default">3 Dias</TabsTrigger>
+              <TabsTrigger value="5" variant="default">Semana</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
       </div>
 
-      <motion.div
-        className={`grid gap-4 ${daysToShow === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-5'}`}
-      >
-        <AnimatePresence>
+      <AnimatePresence mode="sync" initial={false}>
+        <motion.div
+          key={daysToShow}
+          initial={shouldReduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
+          transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
+          className={`grid gap-4 ${daysToShow === 3 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1 md:grid-cols-3 lg:grid-cols-5"}`}
+        >
           {weekDays.map((day) => (
-            <motion.div
-              key={day.id}
-              initial={shouldReduceMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
-              transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
-            >
+            <div key={day.id}>
               <DayColumn
                 dayName={day.name}
                 date={day.date}
@@ -151,10 +150,10 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
                 highlightInput={highlightInput && day.isToday}
                 onTaskUpdate={onTaskUpdate}
               />
-            </motion.div>
+            </div>
           ))}
-        </AnimatePresence>
-      </motion.div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

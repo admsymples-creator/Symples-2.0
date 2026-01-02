@@ -1,4 +1,4 @@
-﻿import React, { Suspense } from "react";
+import React, { Suspense } from "react";
 import {
   TrendingUp,
   AlertTriangle,
@@ -6,27 +6,22 @@ import {
   ArrowUpCircle,
   ArrowDownCircle,
   Wallet,
-  MoreHorizontal,
   Calendar
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { getFinanceMetrics, getTransactions, getProjections, getCashFlowForecast } from "@/lib/actions/finance";
 import { startOfMonth, endOfMonth } from "date-fns";
-import { NewTransactionButton, MonthSelector } from "@/components/finance/FinanceClientComponents";
 import { FinanceTransactionsList } from "@/components/finance/FinanceTransactionsList";
 import { getUserWorkspaces } from "@/lib/actions/user";
 import { PlanningBudgetCard } from "@/components/finance/PlanningBudgetCard";
 import { PlanningProjectionsCard } from "@/components/finance/PlanningProjectionsCard";
 import { PlanningGoalsCard } from "@/components/finance/PlanningGoalsCard";
 import { PlanningCashFlowCard } from "@/components/finance/PlanningCashFlowCard";
+import { FinanceTabsClient } from "@/components/finance/FinanceTabsClient";
 
 // --- TYPES ---
 
@@ -286,57 +281,16 @@ export default async function FinancePage(props: {
           </div>
         </div>
       </div>
-
-      <Tabs defaultValue="overview" className="w-full">
-        {/* Barra Superior: Modo de Visualização */}
-        <div className="border-b border-gray-200 bg-white px-6">
-          <div className="max-w-[1600px] mx-auto py-3">
-            <TabsList variant="default">
-              <TabsTrigger value="overview" variant="default">
-                Visão Geral
-              </TabsTrigger>
-              <TabsTrigger value="recurring" variant="default">
-                Recorrentes (Fixos)
-              </TabsTrigger>
-              <TabsTrigger value="planning" variant="default">
-                Planejamento
-              </TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
-
-        {/* Barra Inferior: Filtros e Ações */}
-        <div className="border-b border-gray-200 bg-white px-6">
-          <div className="max-w-[1600px] mx-auto py-3">
-            <div className="flex flex-1 items-center justify-between gap-2 flex-wrap">
-              {/* Lado Esquerdo: Botão Novo */}
-              <div className="flex items-center gap-4">
-                <NewTransactionButton />
-              </div>
-
-              {/* Lado Direito: Filtros */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <MonthSelector />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Conteúdo Principal */}
-        <div className="w-full bg-white px-6">
-          <div className="max-w-[1600px] mx-auto">
-            <div className="py-3 space-y-8">
-              <TabsContent value="overview" className="space-y-8 mt-0">
-
+      <FinanceTabsClient
+        overview={
+          <div className="space-y-8">
             {/* DIAGNOSTIC SECTION */}
             <FinancialHealthCard data={metrics} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
               {/* LEFT COLUMN: TABLES (SPAN 2) */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
                   {/* INCOME CARD */}
                   <FinanceTransactionsList
                     transactions={incomeTransactions}
@@ -350,11 +304,10 @@ export default async function FinancePage(props: {
                   <FinanceTransactionsList
                     transactions={expenseTransactions}
                     type="expense"
-                    title="Saídas"
+                    title="Sa¡das"
                     icon={<div className="p-1.5 bg-red-100 rounded-full"><ArrowDownCircle className="w-4 h-4 text-red-600" /></div>}
                     totalAmount={metrics.totalExpense}
                   />
-
                 </div>
               </div>
 
@@ -366,7 +319,7 @@ export default async function FinancePage(props: {
                       <Wallet className="w-4 h-4 text-gray-500" />
                       Por Categoria
                     </CardTitle>
-                    <CardDescription>Distribuição dos seus gastos</CardDescription>
+                    <CardDescription>Distribui‡Æo dos seus gastos</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     {categories.length === 0 ? (
@@ -380,24 +333,24 @@ export default async function FinancePage(props: {
                     <Separator className="my-4" />
 
                     <div className="rounded-lg bg-gray-50 p-4 text-center">
-                      <p className="text-xs text-gray-500 mb-1">Maior gasto este mês</p>
+                      <p className="text-xs text-gray-500 mb-1">Maior gasto este mˆs</p>
                       <p className="font-semibold text-gray-900">{topCategory.name}</p>
                     </div>
                   </CardContent>
                 </Card>
               </div>
-
             </div>
-          </TabsContent>
-
-          <TabsContent value="recurring" className="space-y-8 mt-0">
+          </div>
+        }
+        recurring={
+          <div className="space-y-8">
             <Card className="border-none shadow-sm ring-1 ring-gray-200">
               <CardHeader>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <div className="p-1.5 bg-blue-100 rounded-full">
                     <Calendar className="w-4 h-4 text-blue-600" />
                   </div>
-                  Transações Recorrentes
+                  Transa‡äes Recorrentes
                 </CardTitle>
                 <CardDescription>
                   Lista de todas as receitas e despesas marcadas como recorrentes (mensais).
@@ -409,11 +362,12 @@ export default async function FinancePage(props: {
                 </Suspense>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="planning" className="space-y-8 mt-0">
+          </div>
+        }
+        planning={
+          <div className="space-y-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Orçamento por Categoria */}
+              {/* Or‡amento por Categoria */}
               <PlanningBudgetCard
                 month={monthParam}
                 year={yearParam}
@@ -430,11 +384,9 @@ export default async function FinancePage(props: {
             <Suspense fallback={<div className="min-h-[200px]" />}>
               <PlanningForecastSection workspaceId={workspaceId} />
             </Suspense>
-          </TabsContent>
-            </div>
           </div>
-        </div>
-      </Tabs>
+        }
+      />
     </div>
   );
 }

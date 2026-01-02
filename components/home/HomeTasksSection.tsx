@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskRowMinify } from "@/components/tasks/TaskRowMinify";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
 import { getTasks, TaskWithDetails } from "@/lib/actions/tasks";
@@ -28,6 +29,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   const [members, setMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
   const [workspaceMap, setWorkspaceMap] = useState<Map<string, string>>(new Map());
   const [displayLimit, setDisplayLimit] = useState(10); // Limite inicial de 10 itens
+  const shouldReduceMotion = useReducedMotion();
 
   // Calcular range de datas baseado no período (apenas para "Próximas")
   const dateRange = useMemo(() => {
@@ -280,6 +282,15 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
 
         {/* Content com scroll */}
         <div className="flex-1 min-h-0 overflow-y-auto">
+          <AnimatePresence mode="sync" initial={false}>
+            <motion.div
+              key={statusFilter}
+              initial={shouldReduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
+              transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
+              className="h-full"
+            >
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
@@ -400,6 +411,8 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
               )}
             </div>
           )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
 

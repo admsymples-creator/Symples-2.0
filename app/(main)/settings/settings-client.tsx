@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,10 +56,14 @@ interface SettingsPageClientProps {
   initialSubscription?: SubscriptionData | null;
 }
 
+type SettingsTab = "general" | "members" | "billing" | "profile";
+
 export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites, initialSubscription }: SettingsPageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const activeTab = searchParams.get("tab") || "general";
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    () => (searchParams.get("tab") as SettingsTab) || "general"
+  );
   const { activeWorkspaceId, isLoaded } = useWorkspace();
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
@@ -156,6 +160,17 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   // Prevent hydration mismatch - mount Tabs only on client
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  const handleTabChange = useCallback((value: string) => {
+    const nextTab = value as SettingsTab;
+    setActiveTab(nextTab);
+
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", nextTab);
+      window.history.replaceState(null, "", url.toString());
+    }
   }, []);
 
   // Update state if props change (para perfil do usuário)
@@ -399,9 +414,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       <div className="w-full bg-white px-6">
         <div className="max-w-[1600px] mx-auto">
           <div className="py-3">
-      <Tabs 
-        value={activeTab} 
-        onValueChange={(val) => router.push(`/settings?tab=${val}`)} 
+      <Tabs
+        value={activeTab}
+        onValueChange={handleTabChange}
         className="w-full space-y-3"
       >
         {/* Navigation Tabs */}
