@@ -60,10 +60,10 @@ export function HomeInboxSection() {
 
   
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[400px] flex flex-col">
+    <div className="card-surface h-[400px] flex flex-col">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900">
+      <div className="px-6 py-4 border-b border-border flex items-center min-h-[56px]">
+        <h3 className="text-lg font-semibold text-foreground leading-6">
           Caixa de entrada
           {process.env.NODE_ENV === 'development' && (
             <span className="ml-2 text-xs text-gray-400">

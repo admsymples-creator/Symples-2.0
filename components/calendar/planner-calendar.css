@@ -12,10 +12,7 @@
 }
 
 .fc-theme-standard .fc-scrollgrid {
-  border-color: var(--border);
-  border-top: none !important;
-  border-left: none !important;
-  border-right: none !important;
+  border: none;
 }
 
 /* Remover bordas que se sobrepõem quando em tela cheia */
@@ -38,16 +35,8 @@
   border-left: none !important;
 }
 
-.fc-theme-standard .fc-col-header-cell:first-child {
-  border-left: 1px solid var(--border) !important;
-}
-
 .fc-theme-standard .fc-daygrid-day {
   border-left: none !important;
-}
-
-.fc-theme-standard .fc-daygrid-day:first-child {
-  border-left: 1px solid var(--border) !important;
 }
 
 /* Header do calendário (oculto, usando header customizado) */
@@ -66,9 +55,8 @@
 }
 
 .fc-event:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  opacity: 0.95;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .fc-event-main-frame {
@@ -94,6 +82,17 @@
 .fc-event-title.line-through {
   text-decoration: line-through;
   opacity: 0.7;
+}
+
+.fc-more-link {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.fc-more-link:hover {
+  color: var(--foreground);
+  text-decoration: none;
 }
 
 /* Tarefas concluídas */
@@ -180,6 +179,12 @@
   font-weight: 500;
   font-size: 0.875rem;
   font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
+.fc-list-day-cushion {
+  background-color: var(--muted, #f9fafb);
+  color: var(--foreground);
+  font-weight: 600;
 }
 
 /* TimeGrid (semana) */

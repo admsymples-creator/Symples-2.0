@@ -52,6 +52,7 @@ export function DayColumn({
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [optimisticTasks, addOptimisticTask] = useOptimistic(
     tasks,
@@ -72,7 +73,10 @@ export function DayColumn({
   useEffect(() => {
     if (highlightInput && isToday && inputRef.current) {
       setShowTutorialHint(true);
-      setTimeout(() => {
+      if (hintTimeoutRef.current) {
+        clearTimeout(hintTimeoutRef.current);
+      }
+      hintTimeoutRef.current = setTimeout(() => {
         inputRef.current?.scrollIntoView({
           behavior: 'smooth',
           block: 'center',
@@ -80,6 +84,12 @@ export function DayColumn({
         });
       }, 300);
     }
+    return () => {
+      if (hintTimeoutRef.current) {
+        clearTimeout(hintTimeoutRef.current);
+        hintTimeoutRef.current = null;
+      }
+    };
   }, [highlightInput, isToday]);
 
   const handleInputFocus = () => {
@@ -94,7 +104,6 @@ export function DayColumn({
 
     if (showTutorialHint && e.target.value.trim().length > 0) {
       setShowTutorialHint(false);
-    }
   };
 
   const processBatchInput = (text: string): string[] => {
@@ -105,10 +114,6 @@ export function DayColumn({
   };
 
   const sortedTasks = useMemo(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:107',message:'BUG-SORT: Sorting tasks',data:{taskCount:optimisticTasks.length,sampleTasks:optimisticTasks.slice(0,3).map(t=>({id:t.id,title:t.title,due_date:t.due_date,is_personal:t.is_personal}))},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-sort',hypothesisId:'bug-sort'})}).catch(()=>{});
-    // #endregion
-
     return [...optimisticTasks].sort((a, b) => {
       const aIsPersonal = a.is_personal || !a.workspace_id;
       const bIsPersonal = b.is_personal || !b.workspace_id;
@@ -119,9 +124,6 @@ export function DayColumn({
         if (a.due_date && b.due_date) {
           const timeA = new Date(a.due_date).getTime();
           const timeB = new Date(b.due_date).getTime();
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:122',message:'BUG-SORT: Comparing personal tasks',data:{aId:a.id,aDueDate:a.due_date,aTime:timeA,aDate:new Date(a.due_date).toString(),bId:b.id,bDueDate:b.due_date,bTime:timeB,bDate:new Date(b.due_date).toString(),result:timeA-timeB},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-sort',hypothesisId:'bug-sort'})}).catch(()=>{});
-          // #endregion
           return timeA - timeB;
         }
         if (a.due_date) return -1; // a tem data, b não -> a primeiro
@@ -174,24 +176,25 @@ export function DayColumn({
     }
 
     // Optimistic Update
-    tasksToCreate.forEach(title => {
-      const tempTask: Task = {
-        id: `temp-${Date.now()}-${Math.random()}`,
-        title,
-        status: "todo",
-        due_date: dueDateISO || null,
-        workspace_id: null,
-        is_personal: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        description: null,
-        position: 0,
-        assignee_id: null,
-        priority: null,
-        created_by: null,
-        origin_context: null
-      };
+    const baseId = Date.now();
+    const tempTasks = tasksToCreate.map((title, index) => ({
+      id: `temp-${baseId}-${index}-${Math.random()}`,
+      title,
+      status: "todo",
+      due_date: dueDateISO || null,
+      workspace_id: null,
+      is_personal: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      description: null,
+      position: 0,
+      assignee_id: null,
+      priority: null,
+      created_by: null,
+      origin_context: null
+    } as Task));
 
+    tempTasks.forEach((tempTask) => {
       startTransition(() => {
         addOptimisticTask({ type: 'add', task: tempTask });
       });
@@ -216,14 +219,34 @@ export function DayColumn({
       setSelectedDateTime(null);
       setRecurrenceType(null);
       const results = await Promise.all(createPromises);
+      const failedCount = results.filter((r) => !r.success).length;
+      const successCount = results.filter((r) => r.success).length;
 
-      if (results.some((r) => r.success)) {
-        onTaskUpdate?.(); // Notificar atualização
+      results.forEach((result, index) => {
+        const tempTask = tempTasks[index];
+        if (!tempTask) return;
+        startTransition(() => {
+          addOptimisticTask({ type: 'delete', id: tempTask.id });
+          if (result.success && result.data) {
+            addOptimisticTask({ type: 'add', task: result.data });
+          }
+        });
+      });
+
+      if (successCount > 0) {
+        onTaskUpdate?.(); // Notificar atualizacao
         startTransition(() => {
           router.refresh();
         });
       }
-      else throw new Error("Falha ao criar");
+
+      if (failedCount === results.length) {
+        setQuickAddValue(rawValue);
+        throw new Error("Falha ao criar");
+      }
+      if (failedCount > 0) {
+        toast.error(`Falha ao criar ${failedCount} tarefa(s)`);
+      }
 
     } catch (error) {
       toast.error("Erro ao criar tarefa");
@@ -258,13 +281,20 @@ export function DayColumn({
     
     setTaskToDelete({ id, title: task.title || "Tarefa" });
     
-    // Verificar se a tarefa é recorrente
-    const recurrenceInfo = await getTaskRecurrenceInfo(id);
-    
-    if (recurrenceInfo.isRecurring && recurrenceInfo.relatedTasksCount > 1) {
-      setShowRecurringModal(true);
-    } else {
+    // Verificar se a tarefa e recorrente
+    try {
+      const recurrenceInfo = await getTaskRecurrenceInfo(id);
+      
+      if (recurrenceInfo.isRecurring && recurrenceInfo.relatedTasksCount > 1) {
+        setShowRecurringModal(true);
+      } else {
+        setShowDeleteModal(true);
+      }
+    } catch (error) {
+      console.error("Erro ao verificar recorrencia:", error);
+      toast.error("Erro ao verificar recorrencia");
       setShowDeleteModal(true);
+    }
     }
   };
 
@@ -408,7 +438,7 @@ export function DayColumn({
           </>
         ) : (
           /* Empty State Centralizado sem Scroll */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-4 opacity-0 group-hover/column:opacity-100 transition-opacity duration-300">
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-4 opacity-70 group-hover/column:opacity-100 transition-opacity duration-300">
             <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center mb-2">
               <FolderOpen className="w-4 h-4 text-gray-300" />
             </div>
@@ -488,20 +518,27 @@ export function DayColumn({
                 />
               </div>
 
-              {(isQuickAddFocused || quickAddValue) && (
-                <button
-                  type="submit"
-                  disabled={isCreating || !quickAddValue.trim()}
-                  className={cn(
-                    "text-[10px] font-medium px-2 py-1 rounded hover:bg-gray-200 transition-colors",
-                    isCreating || !quickAddValue.trim()
-                      ? "text-gray-400 cursor-not-allowed"
-                      : "text-gray-600 hover:text-gray-900"
-                  )}
-                >
-                  Salvar
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {(isQuickAddFocused || quickAddValue) && (
+                  <span className="text-[10px] text-gray-400 hidden sm:inline">
+                    Shift+Enter para nova linha
+                  </span>
+                )}
+                {(isQuickAddFocused || quickAddValue) && (
+                  <button
+                    type="submit"
+                    disabled={isCreating || !quickAddValue.trim()}
+                    className={cn(
+                      "text-[10px] font-medium px-2 py-1 rounded hover:bg-gray-200 transition-colors",
+                      isCreating || !quickAddValue.trim()
+                        ? "text-gray-400 cursor-not-allowed"
+                        : "text-gray-600 hover:text-gray-900"
+                    )}
+                  >
+                    Salvar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </form>

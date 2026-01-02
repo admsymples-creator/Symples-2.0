@@ -189,6 +189,16 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
     // FullCalendar já atualiza a UI, então não precisamos fazer nada aqui
     draggedEventRef.current = event;
+    eventsCacheRef.current.clear();
+
+    const optimisticStart = event.startStr || newDate.toISOString();
+    setEvents((prev) =>
+      prev.map((item) =>
+        item.id === event.id
+          ? { ...item, start: optimisticStart, allDay: event.allDay }
+          : item
+      )
+    );
 
     try {
       const result = await updateTaskDate(event.id, newDate);
@@ -198,12 +208,12 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         info.revert();
         setEvents(previousEvents);
         toast.error(result.error || "Erro ao atualizar data da tarefa");
+        eventsCacheRef.current.clear();
         draggedEventRef.current = null;
         originalDateRef.current = null;
       } else {
         // Sucesso: manter como está (FullCalendar já atualizou)
         // Invalidar cache para forçar recarga na próxima vez
-        eventsCacheRef.current.clear();
         draggedEventRef.current = null;
         originalDateRef.current = null;
         // Não mostrar toast de sucesso para não poluir a UI
@@ -439,17 +449,16 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
       )}
 
       {/* Loading Indicator */}
-      {isLoadingEvents && (
-        <div className="absolute top-20 right-4 z-10">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-gray-200 shadow-sm">
-            <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-            <span className="text-xs text-gray-600">Carregando...</span>
-          </div>
-        </div>
-      )}
-
       {/* Calendário */}
-      <div className="flex-1 w-full relative">
+      <div className="flex-1 w-full relative card-surface overflow-hidden">
+        {isLoadingEvents && (
+          <div className="absolute top-3 right-3 z-10 pointer-events-none">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-card border border-border shadow-sm">
+              <div className="w-3 h-3 border-2 border-border border-t-foreground/60 rounded-full animate-spin" />
+              <span className="text-xs text-muted-foreground">Carregando...</span>
+            </div>
+          </div>
+        )}
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}

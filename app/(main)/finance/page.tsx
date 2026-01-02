@@ -283,14 +283,14 @@ export default async function FinancePage(props: {
       </div>
       <FinanceTabsClient
         overview={
-          <div className="space-y-8">
+          <div className="flex flex-col gap-8 min-h-[calc(100svh-320px)]">
             {/* DIAGNOSTIC SECTION */}
             <FinancialHealthCard data={metrics} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1 min-h-0">
               {/* LEFT COLUMN: TABLES (SPAN 2) */}
-              <div className="lg:col-span-2 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="lg:col-span-2 h-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full md:auto-rows-fr">
                   {/* INCOME CARD */}
                   <FinanceTransactionsList
                     transactions={incomeTransactions}
@@ -312,8 +312,8 @@ export default async function FinancePage(props: {
               </div>
 
               {/* RIGHT COLUMN: CATEGORIES */}
-              <div className="lg:col-span-1">
-                <Card className="h-full border-none shadow-sm ring-1 ring-gray-200">
+              <div className="lg:col-span-1 h-full">
+                <Card className="card-surface flex flex-col h-full">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <Wallet className="w-4 h-4 text-gray-500" />
@@ -321,7 +321,7 @@ export default async function FinancePage(props: {
                     </CardTitle>
                     <CardDescription>Distribui‡Æo dos seus gastos</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-6 flex-1">
                     {categories.length === 0 ? (
                       <p className="text-gray-400 text-sm text-center">Sem dados de categorias</p>
                     ) : (

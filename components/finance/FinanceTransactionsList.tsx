@@ -99,8 +99,8 @@ export function FinanceTransactionsList({
 
   return (
     <>
-      <Card className="border-none shadow-sm ring-1 ring-gray-200">
-        <CardHeader className="pb-3 border-b border-gray-50">
+      <Card className="card-surface flex flex-col h-full">
+        <CardHeader className="pb-3 border-b border-border/60">
           <div className="flex justify-between items-center">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               {icon}
@@ -114,7 +114,7 @@ export function FinanceTransactionsList({
             </span>
           </div>
         </CardHeader>
-        <CardContent className="pt-4 px-0">
+        <CardContent className="pt-4 px-0 flex-1">
           <div className="space-y-1">
             {processedTransactions.length === 0 ? (
               <p className="text-center text-gray-400 py-4 text-sm">
