@@ -321,17 +321,24 @@ export const getProjectsWeeklyStats = cache(async (
 
     if (!membership) return [];
 
-    // Buscar tarefas do workspace na semana que tenham tags
-    const startISO = start.toISOString();
-    const endISO = end.toISOString();
+    // OTIMIZAÇÃO: Buscar apenas colunas necessárias e fazer queries em paralelo
+    // Buscar TODAS as tarefas do workspace que tenham tags (não apenas da semana)
+    // Isso garante que todos os projetos apareçam, mesmo sem tarefas na semana atual
+    const [tasksResult, projectIconsResult] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("tags, status") // Apenas colunas necessárias (não precisa de id nem due_date)
+        .eq("workspace_id", workspaceId)
+        .neq("status", "archived")
+        .not("tags", "is", null), // Apenas tarefas com tags
+      (supabase as any)
+        .from("project_icons")
+        .select("tag_name")
+        .eq("workspace_id", workspaceId)
+    ]);
 
-    const { data: tasks, error: tasksError } = await supabase
-      .from("tasks")
-      .select("id, tags, status")
-      .eq("workspace_id", workspaceId)
-      .neq("status", "archived")
-      .gte("due_date", startISO)
-      .lte("due_date", endISO);
+    const { data: tasks, error: tasksError } = tasksResult;
+    const { data: projectIcons, error: iconsError } = projectIconsResult;
 
     if (tasksError) {
       console.error("Erro ao buscar tarefas dos projetos:", tasksError);
@@ -358,6 +365,19 @@ export const getProjectsWeeklyStats = cache(async (
         });
       }
     });
+
+    // Adicionar projetos que têm ícones salvos mas ainda não têm tarefas
+    if (!iconsError && projectIcons) {
+      projectIcons.forEach((icon: any) => {
+        if (icon.tag_name && icon.tag_name.trim()) {
+          const tagKey = icon.tag_name.trim();
+          // Adicionar projeto mesmo sem tarefas (com contadores zerados)
+          if (!statsMap.has(tagKey)) {
+            statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+          }
+        }
+      });
+    }
 
     // Converter para array e ordenar por nome
     return Array.from(statsMap.entries())

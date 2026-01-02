@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { ProjectCard } from "@/components/home/ProjectCard";
 import { getProjectsWeeklyStats } from "@/lib/actions/dashboard";
-import { getUserWorkspaces } from "@/lib/actions/user";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { getProjectIcons } from "@/lib/actions/projects";
 
@@ -31,23 +31,10 @@ interface HomeWorkspaceOverviewProps {
 
 export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: HomeWorkspaceOverviewProps) {
   const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const workspaces = useWorkspaces();
   const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number }>>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
-  const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string; slug: string | null }>>([]);
   const [projectIcons, setProjectIcons] = useState<Map<string, string>>(new Map());
-
-  // Buscar workspaces para detectar se é pessoal
-  useEffect(() => {
-    const loadWorkspaces = async () => {
-      try {
-        const ws = await getUserWorkspaces();
-        setWorkspaces(ws);
-      } catch (error) {
-        console.error("Erro ao carregar workspaces:", error);
-      }
-    };
-    loadWorkspaces();
-  }, []);
 
   // Detectar se é workspace pessoal (usando função helper robusta)
   const isPersonal = useMemo(() => {
@@ -66,11 +53,13 @@ export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: Ho
 
       setLoadingProjects(true);
       try {
-        const stats = await getProjectsWeeklyStats(activeWorkspaceId, weekStart, weekEnd);
-        setProjectStats(stats);
+        // OTIMIZAÇÃO: Buscar stats e icons em paralelo
+        const [stats, icons] = await Promise.all([
+          getProjectsWeeklyStats(activeWorkspaceId, weekStart, weekEnd),
+          getProjectIcons(activeWorkspaceId)
+        ]);
         
-        // Buscar ícones dos projetos
-        const icons = await getProjectIcons(activeWorkspaceId);
+        setProjectStats(stats);
         setProjectIcons(icons);
       } catch (error) {
         console.error("Erro ao carregar estatísticas de projetos:", error);
@@ -123,13 +112,32 @@ export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: Ho
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Visão por Projeto
           </h2>
-          <div className="text-sm text-gray-500">Carregando projetos...</div>
+          {/* Skeleton loading para melhor UX */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-xl p-5 border border-gray-200 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-2 bg-gray-200 rounded w-1/2 mb-4"></div>
+                <div className="h-2 bg-gray-200 rounded w-full"></div>
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
 
+    // Mostrar mensagem se não houver projetos (em vez de retornar null)
     if (projectStats.length === 0) {
-      return null;
+      return (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Visão por Projeto
+          </h2>
+          <div className="text-sm text-gray-500">
+            Nenhum projeto encontrado. Crie um projeto na página de Tarefas.
+          </div>
+        </div>
+      );
     }
 
     return (
@@ -188,4 +196,3 @@ export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: Ho
     </div>
   );
 }
-

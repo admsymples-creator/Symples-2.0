@@ -3,17 +3,13 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
-import { getUserWorkspaces } from "@/lib/actions/user";
-import { getTasks } from "@/lib/actions/tasks";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
+import { getTasks, getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { PlannerContent } from "@/components/planner/PlannerContent";
 import { Database } from "@/types/database.types";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
-
-interface PlannerClientProps {
-  workspaces: { id: string; name: string }[];
-}
 
 // Funções auxiliares para manipulação de datas
 function getStartOfWeek(date: Date): Date {
@@ -31,58 +27,106 @@ function getEndOfWeek(date: Date): Date {
   return end;
 }
 
-export function PlannerClient({ workspaces: initialWorkspaces }: PlannerClientProps) {
+export function PlannerClient() {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const initialWorkspaces = useWorkspaces();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(null);
-  const [allWorkspaces, setAllWorkspaces] = useState<Array<{ id: string; name: string; slug: string | null }>>([]);
+  const [pendingWorkspaceSlug, setPendingWorkspaceSlug] = useState<string | null>(null);
 
   // Detectar workspace atual da URL e verificar se é pessoal
   useEffect(() => {
-    const detectWorkspace = async () => {
-      if (!isLoaded) return;
-      
-      const workspaces = await getUserWorkspaces();
-      setAllWorkspaces(workspaces); // Armazenar para usar na função helper
-      const segments = pathname.split("/").filter(Boolean);
-      
-      // Se estamos em /planner (sem workspace), usar workspace ativo do contexto
-      let workspaceId = activeWorkspaceId;
-      if (segments.length > 0 && segments[0] !== "planner") {
-        // Estamos em um workspace específico na URL
-        const workspaceSlug = segments[0];
-        const workspace = workspaces.find(w => w.slug === workspaceSlug || w.id === workspaceSlug);
-        if (workspace) {
-          workspaceId = workspace.id;
-        }
+    if (!isLoaded) return;
+    if (!initialWorkspaces || initialWorkspaces.length === 0) {
+      setCurrentWorkspace(null);
+      setPendingWorkspaceSlug(null);
+      return;
+    }
+
+    const workspaces = initialWorkspaces;
+    const segments = pathname.split("/").filter(Boolean);
+    const isWorkspaceScoped = segments.length > 0 && segments[0] !== "planner";
+    
+    // Se estamos em /planner (sem workspace), usar workspace ativo do contexto
+    let workspaceId = isWorkspaceScoped ? undefined : activeWorkspaceId;
+    if (isWorkspaceScoped) {
+      // Estamos em um workspace específico na URL
+      const workspaceSlug = segments[0];
+      const workspace = workspaces.find(w => w.slug === workspaceSlug || w.id === workspaceSlug);
+      if (workspace) {
+        workspaceId = workspace.id;
+        setPendingWorkspaceSlug(null);
+      } else {
+        setPendingWorkspaceSlug(workspaceSlug);
       }
-      
-      if (workspaceId) {
-        const workspace = workspaces.find(w => w.id === workspaceId);
-        const isPersonal = isPersonalWorkspace(workspace, workspaces);
+    }
+    
+    if (workspaceId) {
+      const workspace = workspaces.find(w => w.id === workspaceId);
+      const isPersonal = isPersonalWorkspace(workspace, workspaces);
+      setCurrentWorkspace({
+        id: workspaceId,
+        name: workspace?.name || "Workspace",
+        isPersonal
+      });
+    } else if (isWorkspaceScoped) {
+      // Se a URL é de workspace e ainda não resolvemos o slug, não fazer fallback
+      setCurrentWorkspace(null);
+    } else {
+      // Se não há workspace ativo, usar o primeiro workspace ou criar lógica padrão
+      const firstWorkspace = workspaces[0];
+      if (firstWorkspace) {
+        const isPersonal = isPersonalWorkspace(firstWorkspace, workspaces);
         setCurrentWorkspace({
-          id: workspaceId,
-          name: workspace?.name || "Workspace",
+          id: firstWorkspace.id,
+          name: firstWorkspace.name,
           isPersonal
         });
       } else {
-        // Se não há workspace ativo, usar o primeiro workspace ou criar lógica padrão
-        const firstWorkspace = workspaces[0];
-        if (firstWorkspace) {
-          const isPersonal = isPersonalWorkspace(firstWorkspace, workspaces);
-          setCurrentWorkspace({
-            id: firstWorkspace.id,
-            name: firstWorkspace.name,
-            isPersonal
-          });
+        setCurrentWorkspace(null);
+      }
+    }
+  }, [pathname, activeWorkspaceId, isLoaded, initialWorkspaces]);
+
+  useEffect(() => {
+    if (!pendingWorkspaceSlug || !initialWorkspaces || initialWorkspaces.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const resolveWorkspace = async () => {
+      try {
+        const resolvedId = await getWorkspaceIdBySlug(pendingWorkspaceSlug);
+        if (cancelled) return;
+        if (!resolvedId) {
+          setCurrentWorkspace(null);
+          return;
+        }
+        const workspace = initialWorkspaces.find(w => w.id === resolvedId) || null;
+        const isPersonal = isPersonalWorkspace(workspace, initialWorkspaces);
+        setCurrentWorkspace({
+          id: resolvedId,
+          name: workspace?.name || "Workspace",
+          isPersonal
+        });
+        setPendingWorkspaceSlug(null);
+      } catch (error) {
+        console.error("Erro ao resolver workspace por slug:", error);
+        if (!cancelled) {
+          setCurrentWorkspace(null);
         }
       }
     };
-    
-    detectWorkspace();
-  }, [pathname, activeWorkspaceId, isLoaded]);
+
+    resolveWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingWorkspaceSlug, initialWorkspaces]);
 
   // Buscar tarefas - filtrar por workspace ativo (exceto se for pessoal)
   useEffect(() => {
@@ -113,7 +157,10 @@ export function PlannerClient({ workspaces: initialWorkspaces }: PlannerClientPr
             dueDateStart: startOfWeek.toISOString(),
             dueDateEnd: endOfWeek.toISOString(),
           });
-          setTasks(fetchedTasks as unknown as Task[] || []);
+          const scopedTasks = (fetchedTasks as unknown as Task[] || []).filter(
+            (task) => task.workspace_id === currentWorkspace.id
+          );
+          setTasks(scopedTasks);
         }
       } catch (error) {
         console.error("Erro ao carregar tarefas:", error);

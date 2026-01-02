@@ -1,14 +1,23 @@
-import { redirect } from "next/navigation";
-import { getUserWorkspaces } from "@/lib/actions/user";
+"use client";
 
-export default async function FinancePage() {
-  const workspaces = await getUserWorkspaces();
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 
-  if (workspaces.length === 0) {
-    return redirect("/onboarding");
-  }
+export default function FinancePage() {
+  const router = useRouter();
+  const workspaces = useWorkspaces();
 
-  const workspace = workspaces[0];
-  const slug = workspace.slug || workspace.id;
-  return redirect(`/${slug}/finance`);
+  useEffect(() => {
+    if (workspaces.length === 0) {
+      router.replace("/onboarding");
+      return;
+    }
+
+    const workspace = workspaces[0];
+    const slug = workspace.slug || workspace.id;
+    router.replace(`/${slug}/finance`);
+  }, [router, workspaces]);
+
+  return null;
 }

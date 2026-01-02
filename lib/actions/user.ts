@@ -5,27 +5,74 @@ import { Database } from "@/types/database.types";
 import { revalidatePath } from "next/cache";
 import { cache } from "react";
 
+const perfEnabled = process.env.DEBUG_PERF === "1";
+const perfNow = () => Date.now();
+const logPerf = (label: string, startMs: number, meta?: Record<string, unknown>) => {
+  if (!perfEnabled) return;
+  const durationMs = perfNow() - startMs;
+  if (meta) {
+    console.log(`[perf] ${label}`, { durationMs, ...meta });
+  } else {
+    console.log(`[perf] ${label}`, { durationMs });
+  }
+};
+
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & { logo_url?: string | null };
 
+type CacheEntry<T> = { value: T; expiresAt: number };
+const IN_MEMORY_TTL_MS = 10_000;
+const profileCache = new Map<string, CacheEntry<Profile | null>>();
+const workspacesCache = new Map<string, CacheEntry<Workspace[]>>();
+
+const readCache = <T,>(cache: Map<string, CacheEntry<T>>, key: string): CacheEntry<T> | null => {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return cached;
+};
+
+const writeCache = <T,>(cache: Map<string, CacheEntry<T>>, key: string, value: T) => {
+  cache.set(key, { value, expiresAt: Date.now() + IN_MEMORY_TTL_MS });
+};
+
 export const getUserProfile = cache(async () => {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) {
+    logPerf("getUserProfile:anonymous", perfStart);
+    return null;
+  }
 
+  const cachedProfile = readCache(profileCache, user.id);
+  if (cachedProfile) {
+    logPerf("getUserProfile:cache", perfStart);
+    return cachedProfile.value;
+  }
+
+  const queryStart = perfNow();
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .single();
+  logPerf("getUserProfile:query", queryStart);
 
-  return profile;
+  const profileValue = profile ?? null;
+  writeCache(profileCache, user.id, profileValue);
+  logPerf("getUserProfile", perfStart);
+  return profileValue;
 });
 
 export const getUserWorkspaces = cache(async () => {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const {
     data: { user },
@@ -34,12 +81,20 @@ export const getUserWorkspaces = cache(async () => {
 
   if (authError) {
     console.error("❌ [getUserWorkspaces] Erro ao buscar usuário autenticado:", authError);
+    logPerf("getUserWorkspaces:auth-error", perfStart);
     return [];
   }
 
   if (!user) {
     console.warn("⚠️ [getUserWorkspaces] Usuário não autenticado");
+    logPerf("getUserWorkspaces:anonymous", perfStart);
     return [];
+  }
+
+  const cachedWorkspaces = readCache(workspacesCache, user.id);
+  if (cachedWorkspaces) {
+    logPerf("getUserWorkspaces:cache", perfStart, { count: cachedWorkspaces.value.length });
+    return cachedWorkspaces.value;
   }
 
   console.log("🔍 [getUserWorkspaces] Buscando workspaces para usuário:", user.id);
@@ -47,6 +102,7 @@ export const getUserWorkspaces = cache(async () => {
   // Buscar workspaces onde o usuário é membro
   // Nota: Não podemos usar unstable_cache aqui porque precisamos acessar cookies() para autenticação
   // O Next.js não permite acessar dados dinâmicos (cookies) dentro de funções cacheadas
+  const queryStart = perfNow();
   const { data: memberWorkspaces, error } = await supabase
     .from("workspace_members")
     .select(`
@@ -59,6 +115,7 @@ export const getUserWorkspaces = cache(async () => {
       )
     `)
     .eq("user_id", user.id);
+  logPerf("getUserWorkspaces:query", queryStart);
 
   if (error) {
     console.error("❌ [getUserWorkspaces] Erro ao buscar workspaces:", {
@@ -85,6 +142,8 @@ export const getUserWorkspaces = cache(async () => {
 
   console.log("✅ [getUserWorkspaces] Workspaces transformados:", workspaces.length);
 
+  writeCache(workspacesCache, user.id, workspaces);
+  logPerf("getUserWorkspaces", perfStart, { count: workspaces.length });
   return workspaces;
 });
 

@@ -74,6 +74,53 @@ interface TaskRowMinifyProps {
   showDragHandle?: boolean;
 }
 
+type CurrentUser = { id: string; name: string; avatar?: string };
+
+let currentUserCache: CurrentUser | null = null;
+let currentUserLoaded = false;
+let currentUserPromise: Promise<CurrentUser | null> | null = null;
+
+const loadCurrentUser = async (): Promise<CurrentUser | null> => {
+  if (currentUserLoaded) {
+    return currentUserCache;
+  }
+  if (!currentUserPromise) {
+    currentUserPromise = (async () => {
+      const supabase = createBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        currentUserLoaded = true;
+        currentUserCache = null;
+        return null;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, avatar_url")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile) {
+        currentUserLoaded = true;
+        currentUserCache = null;
+        return null;
+      }
+
+      currentUserCache = {
+        id: profile.id,
+        name: profile.full_name || profile.email || "Usuario",
+        avatar: profile.avatar_url || undefined,
+      };
+      currentUserLoaded = true;
+      return currentUserCache;
+    })().finally(() => {
+      currentUserPromise = null;
+    });
+  }
+  return currentUserPromise;
+};
+
 // Função auxiliar para verificar se é hoje
 const isTodayFunc = (dateString?: string): boolean => {
   if (!dateString) return false;
@@ -137,28 +184,17 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
 
   // Buscar usuário atual
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const supabase = createBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, full_name, email, avatar_url")
-          .eq("id", user.id)
-          .single();
-        
-        if (profile) {
-          setCurrentUser({
-            id: profile.id,
-            name: profile.full_name || profile.email || "Usuário",
-            avatar: profile.avatar_url || undefined,
-          });
-        }
+    let isActive = true;
+
+    loadCurrentUser().then((user) => {
+      if (isActive && user) {
+        setCurrentUser(user);
       }
+    });
+
+    return () => {
+      isActive = false;
     };
-    
-    fetchCurrentUser();
   }, []);
 
   // Garantir que o usuário atual esteja na lista de membros

@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr'
+﻿import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { Database } from '@/types/database.types'
 
@@ -6,6 +6,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function middleware(request: NextRequest) {
+  const startTime = Date.now()
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -26,10 +27,12 @@ export async function middleware(request: NextRequest) {
     },
   })
 
+  const authStart = Date.now()
   // Atualizar sessão (refresh token se necessário)
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  const authMs = Date.now() - authStart
 
   const { pathname } = request.nextUrl
 
@@ -83,6 +86,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  const totalMs = Date.now() - startTime
+  response.headers.set("Server-Timing", "mw;dur=" + totalMs + ", mw_auth;dur=" + authMs)
+  response.headers.set("X-Middleware-Time", String(totalMs))
   // Retornar response com cookies atualizados
   return response
 }
@@ -99,4 +105,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
-

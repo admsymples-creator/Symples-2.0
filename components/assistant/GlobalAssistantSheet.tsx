@@ -35,7 +35,7 @@ import { HelpDialog } from "./HelpDialog";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { getWorkspaceMembers, getTasks } from "@/lib/actions/tasks";
 import { createTask } from "@/lib/actions/tasks";
-import { getUserWorkspaces, type Workspace } from "@/lib/actions/user";
+import type { Workspace } from "@/lib/actions/user";
 import { invalidateTasksCache } from "@/hooks/use-tasks";
 import { 
   loadAssistantMessages, 
@@ -79,6 +79,7 @@ interface GlobalAssistantSheetProps {
     email?: string | null;
     avatarUrl?: string | null;
   } | null;
+  workspaces?: Workspace[];
 }
 
 // Função para gerar saudação dinâmica baseada no horário
@@ -286,7 +287,7 @@ const AudioRecorderDisplay = ({ stream, onCancel, onStop, maxDuration = 120 }: A
   );
 };
 
-export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
+export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: GlobalAssistantSheetProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -309,7 +310,7 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
   const { activeWorkspaceId } = useWorkspace();
   const [workspaceMembers, setWorkspaceMembers] = React.useState<Array<{ id: string; name: string; avatar?: string; email?: string }>>([]);
   const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
-  const [workspaces, setWorkspaces] = React.useState<Workspace[]>([]);
+  const [workspaces, setWorkspaces] = React.useState<Workspace[]>(initialWorkspaces || []);
   
   // Estados para Smart Daily Reset e Context Divider
   const [showZeroState, setShowZeroState] = React.useState(true);
@@ -490,20 +491,12 @@ export function GlobalAssistantSheet({ user }: GlobalAssistantSheetProps) {
     loadMembers();
   }, [activeWorkspaceId]);
 
-  // Carregar lista de workspaces
+  // Sincronizar workspaces vindos do layout
   React.useEffect(() => {
-    const loadWorkspaces = async () => {
-      try {
-        const userWorkspaces = await getUserWorkspaces();
-        setWorkspaces(userWorkspaces);
-      } catch (error) {
-        console.error("Erro ao carregar workspaces:", error);
-        setWorkspaces([]);
-      }
-    };
-
-    loadWorkspaces();
-  }, []);
+    if (initialWorkspaces) {
+      setWorkspaces(initialWorkspaces);
+    }
+  }, [initialWorkspaces]);
 
   // Auto-scroll sempre que mensagens mudarem
   React.useEffect(() => {

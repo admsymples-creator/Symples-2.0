@@ -22,7 +22,8 @@ import type { SubscriptionData } from "@/lib/types/subscription";
 import { getWorkspaceTags } from "@/lib/actions/tasks";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { setProjectIcon, getProjectIcons } from "@/lib/actions/projects";
-import { IconPicker, getIconComponent } from "@/components/projects/IconPicker";
+import dynamic from "next/dynamic";
+import { getIconComponent } from "@/components/projects/IconPicker";
 import {
     Dialog,
     DialogContent,
@@ -58,15 +59,32 @@ interface SidebarProps {
 function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
     const Icon = item.icon;
 
+    const handleClick = () => {
+        try {
+            sessionStorage.setItem("nav-click-ts", String(performance.now()));
+            sessionStorage.setItem("nav-click-href", item.href);
+        } catch {}
+    };
+
     const linkElement = (
         <Link
             href={item.href}
             prefetch={true}
+            onMouseEnter={() => {
+                // Prefetch adicional ao hover para garantir carregamento rápido
+                if (typeof window !== 'undefined') {
+                    const link = document.createElement('link');
+                    link.rel = 'prefetch';
+                    link.href = item.href;
+                    document.head.appendChild(link);
+                }
+            }}
+            onClick={handleClick}
             className={cn(
                 "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap",
                 isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm w-full",
                 isActive
-                    ? "bg-sidebar-active text-[#050815] font-semibold"
+                    ? "bg-gray-50 text-gray-900 font-semibold"
                     : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
             )}
         >
@@ -112,9 +130,84 @@ function ToggleItemView({ label, icon, isActive, isCollapsed, isOpen, onToggle, 
                 "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap w-full",
                 isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm",
                 isActive
-                    ? "bg-sidebar-active text-[#050815] font-semibold"
+                    ? "bg-gray-50 text-gray-900 font-semibold"
                     : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900",
                 className
+            )}
+        >
+            <div className="w-6 h-6 rounded-md bg-[#050815] flex items-center justify-center flex-shrink-0">
+                <Icon className="w-4 h-4 text-white" />
+            </div>
+            <span className={cn(
+                "transition-all duration-150 overflow-hidden",
+                isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"
+            )}>
+                {label}
+            </span>
+            {!isCollapsed && (
+                <ChevronDown className={cn("ml-auto w-4 h-4 text-gray-400 transition-transform", !isOpen && "-rotate-90")} />
+            )}
+        </button>
+    );
+
+    if (isCollapsed) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    {buttonElement}
+                </TooltipTrigger>
+                <TooltipContent side="right" className="z-[100]">
+                    {label}
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
+
+    return buttonElement;
+}
+
+// Componente otimizado para projetos com navegação rápida e prefetch
+function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, isOpen, onToggle }: { 
+    label: string; 
+    icon: React.ComponentType<{ className?: string }>; 
+    href: string;
+    isActive: boolean; 
+    isCollapsed: boolean; 
+    isOpen: boolean; 
+    onToggle: () => void;
+}) {
+    const Icon = icon;
+    const router = useRouter();
+
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        // Se não estiver colapsado, expandir/colapsar
+        if (!isCollapsed) {
+            onToggle();
+        }
+        // Navegar diretamente para o projeto (não esperar expandir)
+        e.preventDefault();
+        startTransition(() => {
+            router.push(href);
+        });
+    }, [href, router, isCollapsed, onToggle]);
+
+    const handleMouseEnter = useCallback(() => {
+        // Prefetch ao hover para carregar mais rápido
+        router.prefetch(href);
+    }, [href, router]);
+
+    const buttonElement = (
+        <button
+            type="button"
+            onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
+            aria-expanded={isOpen}
+            className={cn(
+                "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap w-full",
+                isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm",
+                isActive
+                    ? "bg-gray-50 text-gray-900 font-semibold"
+                    : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
             )}
         >
             <div className="w-6 h-6 rounded-md bg-[#050815] flex items-center justify-center flex-shrink-0">
@@ -155,7 +248,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
     const { isCollapsed, toggleSidebar } = useSidebar();
     const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
     const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
-    const [isProjectsOpen, setIsProjectsOpen] = useState(true);
+    const [isProjectsOpen, setIsProjectsOpen] = useState(true); // Aberto por padrão
     const [workspaceTags, setWorkspaceTags] = useState<string[]>([]);
     const [openProjectTags, setOpenProjectTags] = useState<Record<string, boolean>>({});
     const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
@@ -164,6 +257,12 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
     const [projectIcons, setProjectIcons] = useState<Map<string, string>>(new Map());
     const workspaceTagsCache = useRef<Map<string, { tags: string[]; ts: number }>>(new Map());
     const projectIconsCache = useRef<Map<string, { icons: Map<string, string>; ts: number }>>(new Map());
+    const IconPicker = useMemo(
+        () => dynamic(() => import("@/components/projects/IconPicker").then((mod) => mod.IconPicker), {
+            loading: () => <div className="h-10" />,
+        }),
+        []
+    );
 
     // Calcular dias restantes do trial (memoizado) - apenas lógica visual baseada em props
     const trialDaysRemaining = useMemo(() => {
@@ -201,23 +300,25 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
         if (!currentWorkspace) return true;
         return isPersonalWorkspace(currentWorkspace, workspaces);
     }, [currentWorkspace, workspaces]);
-    // Buscar tags do workspace quando workspace ativo muda
+    // OTIMIZAÇÃO: Carregar tags ANTES de abrir dropdown (prefetch) e quando workspace muda
     useEffect(() => {
+        if (!activeWorkspaceId || isPersonal) {
+            setWorkspaceTags([]);
+            setProjectIcons(new Map());
+            return;
+        }
+
+        // Carregar tags imediatamente quando workspace muda (não esperar abrir dropdown)
         let cancelled = false;
         const loadWorkspaceTags = async () => {
-            if (!activeWorkspaceId || isPersonal || !isProjectsOpen) {
-                setWorkspaceTags([]);
-                setProjectIcons(new Map());
-                return;
-            }
-
             try {
                 const now = Date.now();
                 const cachedTags = workspaceTagsCache.current.get(activeWorkspaceId);
                 const cachedIcons = projectIconsCache.current.get(activeWorkspaceId);
-                const tagsFresh = cachedTags && now - cachedTags.ts < 120000;
-                const iconsFresh = cachedIcons && now - cachedIcons.ts < 120000;
+                const tagsFresh = cachedTags && now - cachedTags.ts < 300000; // 5 minutos
+                const iconsFresh = cachedIcons && now - cachedIcons.ts < 300000;
 
+                // Mostrar cache imediatamente se disponível
                 if (tagsFresh) {
                     setWorkspaceTags(cachedTags.tags);
                 }
@@ -225,32 +326,57 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
                     setProjectIcons(cachedIcons.icons);
                 }
 
-                if (!tagsFresh) {
-                    const tags = await getWorkspaceTags(activeWorkspaceId);
-                    if (cancelled) return;
-                    workspaceTagsCache.current.set(activeWorkspaceId, { tags, ts: now });
-                    setWorkspaceTags(tags);
-                }
+                // Buscar dados frescos em background (não bloquear UI)
+                if (!tagsFresh || !iconsFresh) {
+                    const promises: Promise<any>[] = [];
+                    
+                    if (!tagsFresh) {
+                        promises.push(
+                            getWorkspaceTags(activeWorkspaceId).then(tags => {
+                                if (!cancelled) {
+                                    workspaceTagsCache.current.set(activeWorkspaceId, { tags, ts: Date.now() });
+                                    setWorkspaceTags(tags);
+                                }
+                            })
+                        );
+                    }
 
-                if (!iconsFresh) {
-                    const icons = await getProjectIcons(activeWorkspaceId);
-                    if (cancelled) return;
-                    projectIconsCache.current.set(activeWorkspaceId, { icons, ts: now });
-                    setProjectIcons(icons);
+                    if (!iconsFresh) {
+                        promises.push(
+                            getProjectIcons(activeWorkspaceId).then(icons => {
+                                if (!cancelled) {
+                                    projectIconsCache.current.set(activeWorkspaceId, { icons, ts: Date.now() });
+                                    setProjectIcons(icons);
+                                }
+                            })
+                        );
+                    }
+
+                    // Executar em paralelo
+                    Promise.all(promises).catch(error => {
+                        console.error("Erro ao carregar tags do workspace:", error);
+                        if (!cancelled) {
+                            setWorkspaceTags([]);
+                            setProjectIcons(new Map());
+                        }
+                    });
                 }
             } catch (error) {
                 console.error("Erro ao carregar tags do workspace:", error);
-                setWorkspaceTags([]);
-                setProjectIcons(new Map());
+                if (!cancelled) {
+                    setWorkspaceTags([]);
+                    setProjectIcons(new Map());
+                }
             }
         };
 
-        const timeoutId = setTimeout(loadWorkspaceTags, 150);
+        // Carregar imediatamente (sem delay)
+        loadWorkspaceTags();
+        
         return () => {
             cancelled = true;
-            clearTimeout(timeoutId);
         };
-    }, [activeWorkspaceId, isPersonal, isProjectsOpen]);
+    }, [activeWorkspaceId, isPersonal]); // Removido isProjectsOpen da dependência
 
     const managementItems = useMemo(() => {
         const filtered = isPersonal
@@ -400,7 +526,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
                 "h-16 flex items-center border-b border-gray-200 transition-all duration-300 relative",
                 isCollapsed ? "justify-center px-0" : "px-4 justify-between"
             )}>
-                <Link href={`${workspacePrefix}/home`} prefetch={true} className={cn("block", isCollapsed ? "mx-auto" : "")}>
+                <Link href={`${workspacePrefix}/home`} prefetch={false} className={cn("block", isCollapsed ? "mx-auto" : "")}>
                     {isCollapsed ? (
                         <Image
                             src="/logo-dock.png"
@@ -551,7 +677,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
                                 ))}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem asChild className="cursor-pointer gap-2 text-[#050815] focus:text-[#050815] focus:bg-gray-50">
-                                    <Link href="/onboarding" prefetch={true}>
+                                    <Link href="/onboarding" prefetch={false}>
                                         <Plus className="w-4 h-4" />
                                         Criar Novo Workspace
                                     </Link>
@@ -561,7 +687,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
                     ) : (
                         <Link
                             href="/onboarding"
-                            prefetch={true}
+                            prefetch={false}
                             className={cn(
                                 "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-[#050815] hover:border-[#050815] hover:bg-gray-50 transition-all",
                                 isCollapsed ? "px-0" : ""
@@ -651,7 +777,8 @@ function SidebarContent({ workspaces = [], initialSubscription = null }: Sidebar
                                         
                                         return (
                                             <li key={tag} className={cn(!isCollapsed && "pl-2")}>
-                                                <ToggleItemView
+                                                <ProjectToggleItem
+                                                    href={tagHref}
                                                     label={tag}
                                                     icon={ProjectIcon}
                                                     isActive={isTagCurrentlyActive}

@@ -69,8 +69,8 @@ import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups, reord
 import { getTaskDetails } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { getUserWorkspaces } from "@/lib/actions/user";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
 import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
@@ -231,6 +231,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return [];
     });
     const { activeWorkspaceId, isLoaded } = useWorkspace();
+    const workspaces = useWorkspaces();
     const localTasksRef = useRef<Task[]>([]);
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
     const previousGroupOrderRef = useRef<string[]>([]);
@@ -399,16 +400,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         try {
             let targetWorkspaceId: string | null = effectiveWorkspaceId;
             
-            // Se nÃ£o encontrou (improvÃ¡vel com o novo Sidebar), buscar do primeiro workspace do usuÃ¡rio
-            if (!targetWorkspaceId) {
-                try {
-                    const workspaces = await getUserWorkspaces();
-                    if (workspaces.length > 0) {
-                        targetWorkspaceId = workspaces[0].id;
-                    }
-                } catch (err) {
-                    console.error("Erro ao buscar workspaces:", err);
-                }
+            // Se nÃ£o encontrou (improvÃ¡vel com o novo Sidebar), usar o primeiro workspace do contexto
+            if (!targetWorkspaceId && workspaces.length > 0) {
+                targetWorkspaceId = workspaces[0].id;
             }
             
             if (!targetWorkspaceId) {
@@ -3205,6 +3199,3 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         </div>
     );
 }
-
-
-

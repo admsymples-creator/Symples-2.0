@@ -26,7 +26,7 @@ export async function getProjectIcon(
   if (!membership) return null;
 
   // Buscar ícone do projeto
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("project_icons")
     .select("icon_name")
     .eq("workspace_id", workspaceId)
@@ -61,7 +61,7 @@ export async function getProjectIcons(
   if (!membership) return new Map();
 
   // Buscar todos os ícones do workspace
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("project_icons")
     .select("tag_name, icon_name")
     .eq("workspace_id", workspaceId);
@@ -70,7 +70,7 @@ export async function getProjectIcons(
 
   // Converter para Map
   const iconsMap = new Map<string, string>();
-  data.forEach((item) => {
+  data.forEach((item: any) => {
     iconsMap.set(item.tag_name, item.icon_name);
   });
 
@@ -105,7 +105,7 @@ export async function setProjectIcon(
   }
 
   // Inserir ou atualizar ícone (UPSERT)
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from("project_icons")
     .upsert(
       {
@@ -154,7 +154,7 @@ export async function deleteProjectIcon(
   }
 
   // Deletar ícone
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from("project_icons")
     .delete()
     .eq("workspace_id", workspaceId)

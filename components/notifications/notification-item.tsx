@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { memo, useMemo } from "react";
 import Link from "next/link";
 import { 
   Mic, 
@@ -42,12 +42,21 @@ const iconMap: Record<string, LucideIcon> = {
   AlertCircle,
 };
 
-export function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps) {
+function NotificationItemComponent({ notification, onMarkAsRead }: NotificationItemProps) {
   const isRead = !!notification.read_at;
   const metadata = notification.metadata || {};
   
-  // Lógica de renderização de ícones
-  const getIcon = (): { Icon: LucideIcon; color: string; bg: string } => {
+  // Memoizar cálculo de timeAgo para evitar recálculos desnecessários
+  const timeAgo = useMemo(() => {
+    return formatDistanceToNow(new Date(notification.created_at), {
+      addSuffix: true,
+      locale: ptBR
+    });
+  }, [notification.created_at]);
+  
+  // Memoizar lógica de renderização de ícones
+  const iconConfig = useMemo(() => {
+    const getIcon = (): { Icon: LucideIcon; color: string; bg: string } => {
     // Prioridade 1: Anexos (especialmente áudio)
     if (metadata.file_type === 'audio') {
       return {
@@ -145,26 +154,30 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
       };
     }
     
-    // Default
-    return {
-      Icon: AlertCircle,
-      color: 'text-gray-600',
-      bg: 'bg-gray-50'
+      // Default
+      return {
+        Icon: AlertCircle,
+        color: 'text-gray-600',
+        bg: 'bg-gray-50'
+      };
     };
-  };
+    
+    return getIcon();
+  }, [
+    metadata.file_type,
+    metadata.file_count,
+    notification.category,
+    notification.resource_type,
+    notification.title
+  ]);
 
-  const { Icon, color, bg } = getIcon();
+  const { Icon, color, bg } = iconConfig;
   
   const handleClick = () => {
     if (!isRead) {
       onMarkAsRead(notification.id);
     }
   };
-
-  const timeAgo = formatDistanceToNow(new Date(notification.created_at), {
-    addSuffix: true,
-    locale: ptBR
-  });
 
   const content = (
     <div
@@ -233,4 +246,16 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
 
   return content;
 }
+
+// Memoizar componente para evitar re-renders desnecessários
+export const NotificationItem = memo(NotificationItemComponent, (prev, next) => {
+  // Comparar apenas propriedades relevantes
+  return (
+    prev.notification.id === next.notification.id &&
+    prev.notification.read_at === next.notification.read_at &&
+    prev.notification.title === next.notification.title &&
+    prev.notification.content === next.notification.content &&
+    prev.onMarkAsRead === next.onMarkAsRead
+  );
+});
 

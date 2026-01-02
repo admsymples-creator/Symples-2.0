@@ -13,41 +13,21 @@ export function HomeInboxSection() {
   const [displayLimit, setDisplayLimit] = useState(5);
   const { activeWorkspaceId, isLoaded } = useWorkspace();
 
-  // Buscar notificações - filtrar por workspace ativo
+  // Buscar notificações - OTIMIZADO: filtrar por workspace no backend
   useEffect(() => {
     const loadNotifications = async () => {
       if (!isLoaded) return; // Aguardar workspace carregar
       
       setLoading(true);
       try {
-        // Buscar todas as notificações (agora com workspace_id no metadata quando disponível)
-        const fetchedNotifications = await getNotifications({ limit: 100 });
+        // OTIMIZAÇÃO: Filtrar por workspace no backend e reduzir limit
+        // Não precisa mais buscar 100 e filtrar no frontend
+        const fetchedNotifications = await getNotifications({ 
+          limit: 30, // Reduzido de 100 para 30 (suficiente para exibição inicial)
+          workspaceId: activeWorkspaceId || null, // Filtrar no backend
+        });
         
-        // Filtrar por workspace ativo (usar workspace_id quando disponível, fallback para workspace_name)
-        let filteredNotifications = fetchedNotifications || [];
-        
-        if (activeWorkspaceId) {
-          filteredNotifications = filteredNotifications.filter((notification) => {
-            const metadata = notification.metadata as any;
-            
-            // Prioridade 1: Filtrar por workspace_id (mais robusto)
-            if (metadata?.workspace_id) {
-              return metadata.workspace_id === activeWorkspaceId;
-            }
-            
-            // Prioridade 2: Se não tem workspace_id, só mostrar se for notificação de sistema/admin
-            // Não mostrar notificações sem workspace_id em workspaces profissionais (evita vazamento)
-            // Apenas notificações de sistema/admin (category: 'system' ou 'admin') podem aparecer sem workspace_id
-            if (!metadata?.workspace_id) {
-              // Apenas notificações de sistema/admin podem aparecer sem workspace_id
-              return notification.category === 'system' || notification.category === 'admin';
-            }
-            
-            return false;
-          });
-        }
-        
-        setNotifications(filteredNotifications);
+        setNotifications(fetchedNotifications || []);
       } catch (error) {
         console.error("Erro ao carregar notificações:", error);
         setNotifications([]);

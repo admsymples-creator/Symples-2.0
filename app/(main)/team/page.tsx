@@ -1,33 +1,35 @@
-import { Suspense } from "react";
-import { cookies } from "next/headers";
-import { getUserProfile, getUserWorkspaces } from "@/lib/actions/user";
-import { getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
+"use client";
+
+import { useEffect, useState } from "react";
 import { SettingsPageClient } from "../settings/settings-client";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
+import { getUserProfile, type Profile, type Workspace } from "@/lib/actions/user";
 
-export default async function TeamPage() {
-  const user = await getUserProfile();
-  const workspaces = await getUserWorkspaces();
+export default function TeamPage() {
+  const workspaces = useWorkspaces();
+  const [user, setUser] = useState<Profile | null>(null);
 
-  const cookieStore = await cookies();
-  const activeWorkspaceId = cookieStore.get("active-workspace-id")?.value;
-  const activeWorkspace = activeWorkspaceId
-    ? workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0]
-    : workspaces.length > 0
-      ? workspaces[0]
-      : null;
+  useEffect(() => {
+    let isActive = true;
+    getUserProfile().then((profile) => {
+      if (isActive) {
+        setUser(profile);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
-  const members = activeWorkspace ? await getWorkspaceMembers(activeWorkspace.id) : [];
-  const invites = activeWorkspace ? await getPendingInvites(activeWorkspace.id) : [];
+  const initialWorkspace: Workspace | null = workspaces[0] ?? null;
 
   return (
-    <Suspense fallback={null}>
-      <SettingsPageClient
-        user={user}
-        workspace={activeWorkspace}
-        initialMembers={members}
-        initialInvites={invites}
-        mode="team"
-      />
-    </Suspense>
+    <SettingsPageClient
+      user={user}
+      workspace={initialWorkspace}
+      initialMembers={[]}
+      initialInvites={[]}
+      mode="team"
+    />
   );
 }

@@ -1,11 +1,6 @@
-import { getUserWorkspaces } from "@/lib/actions/user";
-import { PlannerContent } from "@/components/planner/PlannerContent";
-import { PlannerClient } from "@/components/planner/PlannerClient";
+import { PlannerPageClient } from "./planner-page-client";
 
-export default async function PlannerPage() {
-  // Buscar workspaces
-  const userWorkspaces = await getUserWorkspaces();
-
+export default function PlannerPage() {
   return (
     <div className="min-h-screen bg-white pb-20">
       {/* HEADER AREA - LINE 1 */}
@@ -21,9 +16,7 @@ export default async function PlannerPage() {
       <div className="w-full bg-white px-6">
         <div className="max-w-[1600px] mx-auto">
           <div className="py-3 space-y-8">
-            <PlannerClient 
-              workspaces={userWorkspaces.map(w => ({ id: w.id, name: w.name }))}
-            />
+            <PlannerPageClient />
           </div>
         </div>
       </div>

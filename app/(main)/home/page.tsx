@@ -1,5 +1,4 @@
 import { getWorkspacesWeeklyStats } from "@/lib/actions/dashboard";
-import { getUserWorkspaces } from "@/lib/actions/user";
 import { TrialBanner } from "@/components/home/TrialBanner";
 import { HomeTasksSection } from "@/components/home/HomeTasksSection";
 import { HomeInboxSection } from "@/components/home/HomeInboxSection";
@@ -17,9 +16,8 @@ export default async function HomePage() {
   endOfWeek.setHours(23, 59, 59, 999);
 
   // Buscar dados em paralelo
-  const [workspaceStats, userWorkspaces] = await Promise.all([
-    getWorkspacesWeeklyStats(startOfWeek, endOfWeek),
-    getUserWorkspaces()
+  const [workspaceStats] = await Promise.all([
+    getWorkspacesWeeklyStats(startOfWeek, endOfWeek)
   ]);
 
   return (
