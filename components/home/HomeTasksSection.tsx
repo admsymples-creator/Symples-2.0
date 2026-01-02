@@ -256,12 +256,12 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-[400px] flex flex-col">
+      <div className="card-surface h-[400px] flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between gap-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Minhas tarefas
+        <div className="px-6 py-4 border-b border-border min-h-[56px] flex items-center">
+          <div className="flex items-center justify-between gap-4 w-full">
+            <h3 className="text-lg font-semibold text-foreground leading-6">
+              Meu trabalho
               {process.env.NODE_ENV === 'development' && (
                 <span className="ml-2 text-xs text-gray-400">
                   ({tasks.length} total, {sortedTasks.length} filtradas)

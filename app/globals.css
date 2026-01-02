@@ -173,9 +173,13 @@
 
 /* FullCalendar Custom Styling */
 @layer components {
+  .card-surface {
+    @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
+  }
+
   /* Container do calendário */
   .calendar-container {
-    @apply bg-white rounded-lg border border-gray-200 p-4 md:p-6;
+    @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm p-4 md:p-6;
   }
 
   /* Sobrescrever estilos padrão do FullCalendar */
