@@ -19,7 +19,9 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
   const shouldReduceMotion = useReducedMotion();
-  const transition = { duration: shouldReduceMotion ? 0 : 0.15, ease: "easeOut" };
+  const transition = shouldReduceMotion
+    ? undefined
+    : { duration: 0.15, ease: [0.16, 1, 0.3, 1] };
 
   // Carregar preferência salva no mount
   useEffect(() => {

@@ -34,6 +34,21 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 - Revisar visualmente o preenchimento do skeleton de Tarefas e ajustar altura/quantidade de linhas se necessario
 - Avaliar se o loading global pode ser desativado em navegacoes curtas (para reduzir dupla transicao)
 
+## 2026-01-02 10:18 - Fix de build (WeeklyView motion)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Ajuste de easing no WeeklyView
+- Troca de `ease: "easeOut"` por cubic-bezier para compatibilidade com types do Framer Motion
+
+### 2. O que esta sendo trabalhado no momento
+
+- Nenhum item ativo
+
+### 3. Proximos passos
+
+- Revalidar build e deploy
+
 ## 2026-01-02 - Refinamentos do Kanban (DnD, layout, quick add)
 
 ### 1. Melhorias, bugs e features implementadas em preview
