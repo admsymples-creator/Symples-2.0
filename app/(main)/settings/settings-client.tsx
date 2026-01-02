@@ -105,6 +105,22 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       return;
     }
 
+    // OTIMIZAÇÃO: Se já temos dados iniciais para este workspace, não recarregar
+    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id && (initialMembers.length > 0 || initialInvites.length > 0)) {
+      // Dados já estão carregados, apenas atualizar workspace se necessário
+      if (!workspace || workspace.id !== activeWorkspaceId) {
+        getWorkspaceById(activeWorkspaceId).then(activeWorkspace => {
+          if (activeWorkspace) {
+            setWorkspace(activeWorkspace);
+            setWorkspaceName(activeWorkspace.name);
+            setSlug(activeWorkspace.slug || "");
+            setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
+          }
+        });
+      }
+      return;
+    }
+
     const loadActiveWorkspace = async () => {
       setIsLoadingWorkspace(true);
       try {
@@ -116,7 +132,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
           setWorkspaceLogoFile(null); // Limpar arquivo selecionado ao trocar workspace
           
-          // Recarregar membros e convites do novo workspace
+          // Recarregar membros e convites do novo workspace apenas se não temos dados iniciais
           const [members, invites] = await Promise.all([
             getWorkspaceMembers(activeWorkspaceId),
             getPendingInvites(activeWorkspaceId)
@@ -133,7 +149,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     };
 
     loadActiveWorkspace();
-  }, [activeWorkspaceId, isLoaded]);
+  }, [activeWorkspaceId, isLoaded, initialWorkspace, initialMembers, initialInvites]);
 
   // Carregar dados de subscription quando workspace mudar ou tab billing for aberta
   useEffect(() => {
@@ -211,8 +227,18 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [isMounted, setIsMounted] = useState(false);
 
   // Members & Invites State
+  // OTIMIZAÇÃO: Usar dados iniciais se disponíveis
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
+  
+  // Atualizar membros e convites quando dados iniciais mudarem ou quando workspace mudar
+  useEffect(() => {
+    // Se temos dados iniciais e o workspace inicial corresponde ao workspace ativo, usar dados iniciais
+    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id && (initialMembers.length > 0 || initialInvites.length > 0)) {
+      setMembers(initialMembers);
+      setInvites(initialInvites);
+    }
+  }, [initialMembers, initialInvites, initialWorkspace, activeWorkspaceId]);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);

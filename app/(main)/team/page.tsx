@@ -1,34 +1,55 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import { SettingsPageClient } from "../settings/settings-client";
-import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
-import { getUserProfile, type Profile, type Workspace } from "@/lib/actions/user";
+import { getUserProfile, getUserWorkspaces } from "@/lib/actions/user";
+import { getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
-export default function TeamPage() {
-  const workspaces = useWorkspaces();
-  const [user, setUser] = useState<Profile | null>(null);
+/**
+ * Server Component para a página de Time
+ * Busca dados no servidor antes de renderizar para melhor performance
+ */
+export default async function TeamPage() {
+  // Buscar dados do usuário e workspaces no servidor
+  const [user, userWorkspaces] = await Promise.all([
+    getUserProfile(),
+    getUserWorkspaces()
+  ]);
 
-  useEffect(() => {
-    let isActive = true;
-    getUserProfile().then((profile) => {
-      if (isActive) {
-        setUser(profile);
-      }
-    });
-    return () => {
-      isActive = false;
-    };
-  }, []);
+  if (!user) {
+    redirect("/login");
+  }
 
-  const initialWorkspace: Workspace | null = workspaces[0] ?? null;
+  if (!userWorkspaces || userWorkspaces.length === 0) {
+    redirect("/onboarding");
+  }
+
+  // Tentar obter workspace ativo do cookie (gerenciado pelo SidebarProvider)
+  const cookieStore = await cookies();
+  const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
+  let activeWorkspace = userWorkspaces[0]; // Fallback para primeiro workspace
+
+  // Se houver cookie com workspace ativo, usar ele
+  if (activeWorkspaceIdCookie?.value) {
+    const workspaceFromCookie = userWorkspaces.find(
+      w => w.id === activeWorkspaceIdCookie.value
+    );
+    if (workspaceFromCookie) {
+      activeWorkspace = workspaceFromCookie;
+    }
+  }
+
+  // Buscar membros e convites em paralelo
+  const [members, invites] = await Promise.all([
+    getWorkspaceMembers(activeWorkspace.id),
+    getPendingInvites(activeWorkspace.id)
+  ]);
 
   return (
     <SettingsPageClient
       user={user}
-      workspace={initialWorkspace}
-      initialMembers={[]}
-      initialInvites={[]}
+      workspace={activeWorkspace}
+      initialMembers={members}
+      initialInvites={invites}
       mode="team"
     />
   );

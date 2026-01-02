@@ -27,56 +27,39 @@ export async function FinanceContent({
   const startDate = startOfMonth(dateForRange).toISOString();
   const endDate = endOfMonth(dateForRange).toISOString();
 
+  // OTIMIZAÇÃO: Buscar dados em paralelo
   const [metrics, rawTransactions] = await Promise.all([
     getFinanceMetrics(monthParam, yearParam, workspaceId),
     getTransactions({ startDate, endDate, workspaceId, limit: 200 }),
   ]);
   const typedTransactions = rawTransactions as any[];
 
-  // Process Transactions for UI (using due_date instead of date)
-  const incomeTransactions = typedTransactions
-    .filter((t: any) => t.type === "income")
-    .map((t: any) => {
-      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
-      return {
-        id: tx.id,
-        due_date: tx.due_date || new Date().toISOString(),
-        created_at: tx.created_at || new Date().toISOString(),
-        description: tx.description,
-        amount: Number(tx.amount) || 0,
-        status: (tx.status || "pending") as TransactionStatus,
-        category: tx.category || "Geral",
-        type: tx.type as "income" | "expense",
-        is_recurring: tx.is_recurring || false,
-      };
-    });
+  // OTIMIZAÇÃO: Processar transações em uma única passada
+  const incomeTransactions: any[] = [];
+  const expenseTransactions: any[] = [];
+  const categoryTotals: Record<string, number> = {};
 
-  const expenseTransactions = typedTransactions
-    .filter((t: any) => t.type === "expense")
-    .map((t: any) => {
-      const tx = t as any; // Type assertion para acessar campos que podem não estar nos tipos gerados
-      return {
-        id: tx.id,
-        due_date: tx.due_date || new Date().toISOString(),
-        created_at: tx.created_at || new Date().toISOString(),
-        description: tx.description,
-        amount: Number(tx.amount) || 0,
-        status: (tx.status || "pending") as TransactionStatus,
-        category: tx.category || "Geral",
-        type: tx.type as "income" | "expense",
-        is_recurring: tx.is_recurring || false,
-      };
-    });
+  typedTransactions.forEach((t: any) => {
+    const tx = {
+      id: t.id,
+      due_date: t.due_date || new Date().toISOString(),
+      created_at: t.created_at || new Date().toISOString(),
+      description: t.description,
+      amount: Number(t.amount) || 0,
+      status: (t.status || "pending") as TransactionStatus,
+      category: t.category || "Geral",
+      type: t.type as "income" | "expense",
+      is_recurring: t.is_recurring || false,
+    };
 
-  // Process Categories (garantir conversão numérica)
-  const categoryTotals = typedTransactions
-    .filter((t: any) => t.type === "expense")
-    .reduce((acc, curr: any) => {
-      const cat = curr.category || "Outros";
-      const amount = Number(curr.amount) || 0;
-      acc[cat] = (acc[cat] || 0) + amount;
-      return acc;
-    }, {} as Record<string, number>);
+    if (tx.type === "income") {
+      incomeTransactions.push(tx);
+    } else {
+      expenseTransactions.push(tx);
+      const cat = tx.category || "Outros";
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + tx.amount;
+    }
+  });
 
   const totalExpensesVal = metrics.totalExpense || 1; // Avoid division by zero
   const categories = Object.entries(categoryTotals)

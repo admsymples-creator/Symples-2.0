@@ -71,9 +71,7 @@ export async function getTasksForCalendar(
   let error: any = null;
 
   if (workspaceId === undefined) {
-    // Calendário geral: tarefas atribuídas ao usuário (de todos os workspaces) + tarefas pessoais
-    // Incluir tarefas via assignee_id e task_members
-    
+    // OTIMIZAÇÃO: Calendário geral - executar queries em paralelo
     // Query 1: Tarefas atribuídas ao usuário via assignee_id (de todos os workspaces)
     const query1 = supabase
       .from("tasks")
@@ -95,8 +93,8 @@ export async function getTasksForCalendar(
       .gte("due_date", startISO)
       .lte("due_date", endISO);
 
-    // Query 3: Tarefas de workspace via task_members (onde usuário está em task_members mas não é assignee_id)
-    const { data: taskMemberTasks } = await supabase
+    // Query 3: Tarefas de workspace via task_members
+    const query3 = supabase
       .from("task_members")
       .select(`
         task_id,
@@ -114,8 +112,8 @@ export async function getTasksForCalendar(
       `)
       .eq("user_id", user.id);
 
-    // Executar queries 1 e 2 em paralelo
-    const [result1, result2] = await Promise.all([query1, query2]);
+    // OTIMIZAÇÃO: Executar todas as queries em paralelo
+    const [result1, result2, result3] = await Promise.all([query1, query2, query3]);
 
     if (result1.error) {
       console.error("[getTasksForCalendar] Erro na query 1:", result1.error);
@@ -131,8 +129,8 @@ export async function getTasksForCalendar(
     const taskIdsSet = new Set(allTasks.map(task => task.id));
 
     // Adicionar tarefas de task_members que não estão já incluídas e estão no range de datas
-    if (taskMemberTasks) {
-      taskMemberTasks.forEach((tm: any) => {
+    if (result3.data) {
+      result3.data.forEach((tm: any) => {
         const task = tm.tasks;
         if (task && !taskIdsSet.has(task.id)) {
           // Filtrar por range de datas e status
@@ -189,12 +187,12 @@ export async function getTasksForCalendar(
       .gte("due_date", startISO)
       .lte("due_date", endISO);
 
-    // Query 2: Tarefas onde usuário está em task_members
-    const { data: taskMemberTasks } = await supabase
+    // OTIMIZAÇÃO: Query 2 em paralelo - Tarefas onde usuário está em task_members
+    const query2 = supabase
       .from("task_members")
       .select(`
         task_id,
-        tasks:task_id (
+        tasks!inner (
           id,
           title,
           due_date,
@@ -206,9 +204,12 @@ export async function getTasksForCalendar(
           recurrence_parent_id
         )
       `)
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .eq("tasks.workspace_id", workspaceId);
 
-    const result1 = await query1;
+    // Executar queries em paralelo
+    const [result1, result2] = await Promise.all([query1, query2]);
+    
     if (result1.error) {
       console.error("[getTasksForCalendar] Erro na query 1:", result1.error);
       error = result1.error;
@@ -218,13 +219,12 @@ export async function getTasksForCalendar(
     const taskIdsSet = new Set(allTasks.map(task => task.id));
 
     // Adicionar tarefas de task_members que pertencem ao workspace e não estão já incluídas
-    if (taskMemberTasks) {
-      taskMemberTasks.forEach((tm: any) => {
+    if (result2.data) {
+      result2.data.forEach((tm: any) => {
         const task = tm.tasks;
         if (
           task &&
           !taskIdsSet.has(task.id) &&
-          task.workspace_id === workspaceId &&
           task.status !== "archived" &&
           task.due_date
         ) {
@@ -241,7 +241,6 @@ export async function getTasksForCalendar(
     }
 
     data = allTasks;
-    error = result1.error;
   }
 
   if (error) {

@@ -27,13 +27,32 @@ function getEndOfWeek(date: Date): Date {
   return end;
 }
 
-export function PlannerClient() {
+interface PlannerClientProps {
+  initialTasks?: Task[];
+  initialWorkspaceId?: string;
+  initialIsPersonal?: boolean;
+}
+
+export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPersonal }: PlannerClientProps = {}) {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
   const initialWorkspaces = useWorkspaces();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(null);
+  const [tasks, setTasks] = useState<Task[]>(initialTasks || []);
+  const [loading, setLoading] = useState(!initialTasks); // Não carregar se temos dados iniciais
+  const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(() => {
+    // Inicializar com dados fornecidos se disponíveis
+    if (initialWorkspaceId && initialWorkspaces) {
+      const workspace = initialWorkspaces.find(w => w.id === initialWorkspaceId);
+      if (workspace) {
+        return {
+          id: initialWorkspaceId,
+          name: workspace.name || "Workspace",
+          isPersonal: initialIsPersonal ?? false
+        };
+      }
+    }
+    return null;
+  });
   const [pendingWorkspaceSlug, setPendingWorkspaceSlug] = useState<string | null>(null);
 
   // Detectar workspace atual da URL e verificar se é pessoal
@@ -128,8 +147,18 @@ export function PlannerClient() {
     };
   }, [pendingWorkspaceSlug, initialWorkspaces]);
 
-  // Buscar tarefas - filtrar por workspace ativo (exceto se for pessoal)
+  // OTIMIZAÇÃO: Buscar tarefas apenas se não tivermos dados iniciais
   useEffect(() => {
+    // Se temos dados iniciais, não precisamos buscar novamente
+    if (initialTasks && initialTasks.length >= 0 && currentWorkspace) {
+      // Usar dados iniciais se disponíveis
+      if (initialTasks.length > 0) {
+        setTasks(initialTasks as unknown as Task[]);
+        setLoading(false);
+        return;
+      }
+    }
+
     const loadTasks = async () => {
       if (!currentWorkspace) return;
       
@@ -139,24 +168,28 @@ export function PlannerClient() {
         const startOfWeek = getStartOfWeek(today);
         const endOfWeek = getEndOfWeek(today);
 
-        // Se for workspace pessoal, buscar de todos os workspaces (reunir informações)
-        // Caso contrário, buscar apenas do workspace ativo
+        // OTIMIZAÇÃO: Usar Promise para não bloquear UI
+        const fetchPromise = currentWorkspace.isPersonal
+          ? // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário da semana
+            getTasks({
+              assigneeId: "current",
+              dueDateStart: startOfWeek.toISOString(),
+              dueDateEnd: endOfWeek.toISOString(),
+            })
+          : // Workspace profissional: buscar apenas tarefas do workspace ativo da semana
+            getTasks({
+              workspaceId: currentWorkspace.id,
+              assigneeId: "current",
+              dueDateStart: startOfWeek.toISOString(),
+              dueDateEnd: endOfWeek.toISOString(),
+            });
+
+        const fetchedTasks = await fetchPromise;
+        
         if (currentWorkspace.isPersonal) {
-          // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário da semana
-          const fetchedTasks = await getTasks({
-            assigneeId: "current",
-            dueDateStart: startOfWeek.toISOString(),
-            dueDateEnd: endOfWeek.toISOString(),
-          });
           setTasks(fetchedTasks as unknown as Task[] || []);
         } else {
-          // Workspace profissional: buscar apenas tarefas do workspace ativo da semana
-          const fetchedTasks = await getTasks({
-            workspaceId: currentWorkspace.id,
-            assigneeId: "current",
-            dueDateStart: startOfWeek.toISOString(),
-            dueDateEnd: endOfWeek.toISOString(),
-          });
+          // Filtrar apenas tarefas do workspace ativo (garantir escopo)
           const scopedTasks = (fetchedTasks as unknown as Task[] || []).filter(
             (task) => task.workspace_id === currentWorkspace.id
           );
@@ -171,10 +204,32 @@ export function PlannerClient() {
     };
 
     loadTasks();
-  }, [currentWorkspace]);
+  }, [currentWorkspace, initialTasks]);
 
   if (loading || !currentWorkspace) {
-    return <div className="min-h-[400px]" />;
+    return (
+      <div className="space-y-8">
+        {/* Skeleton para Visão Semanal */}
+        <div>
+          <div className="h-6 bg-gray-200 rounded w-48 mb-4 animate-pulse"></div>
+          <div className="grid grid-cols-7 gap-2">
+            {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+              <div key={i} className="bg-gray-50 rounded-lg p-4 border border-gray-200 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-20 mb-2"></div>
+                <div className="space-y-2">
+                  <div className="h-3 bg-gray-200 rounded w-full"></div>
+                  <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Skeleton para Calendário */}
+        <div>
+          <div className="h-[calc(100vh-300px)] bg-gray-50 rounded-lg border border-gray-200 animate-pulse"></div>
+        </div>
+      </div>
+    );
   }
 
   return (

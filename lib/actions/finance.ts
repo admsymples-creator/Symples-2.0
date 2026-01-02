@@ -642,22 +642,25 @@ export const getProjections = cache(async (months: number = 6, workspaceId?: str
   const rangeStart = startOfMonth(firstMonthDate).toISOString();
   const rangeEnd = endOfMonth(lastMonthDate).toISOString();
 
-  const recurringStart = perfNow();
-  const { data: recurringTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .eq("is_recurring", true);
-  logPerf("getProjections:recurring", recurringStart, { workspaceId: effectiveWorkspaceId });
+  // OTIMIZAÇÃO: Executar queries em paralelo
+  const queriesStart = perfNow();
+  const [recurringResult, scheduledResult] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .eq("is_recurring", true),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .gte("due_date", rangeStart)
+      .lte("due_date", rangeEnd)
+  ]);
+  logPerf("getProjections:queries-parallel", queriesStart, { workspaceId: effectiveWorkspaceId });
 
-  const scheduledStart = perfNow();
-  const { data: scheduledTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .gte("due_date", rangeStart)
-    .lte("due_date", rangeEnd);
-  logPerf("getProjections:scheduled", scheduledStart, { workspaceId: effectiveWorkspaceId });
+  const recurringTransactions = recurringResult.data;
+  const scheduledTransactions = scheduledResult.data;
 
   const scheduledByMonth = new Map<string, any[]>();
   (scheduledTransactions || []).forEach((t: any) => {
@@ -962,19 +965,40 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
     return [];
   }
 
-  // Buscar saldo atual (mês atual)
+  // OTIMIZAÇÃO: Calcular range de datas primeiro
   const currentDate = new Date();
   const currentMonthStart = startOfMonth(currentDate).toISOString();
   const currentMonthEnd = endOfMonth(currentDate).toISOString();
+  const lastMonthDate = addMonths(currentDate, months - 1);
+  const rangeStart = startOfMonth(currentDate).toISOString();
+  const rangeEnd = endOfMonth(lastMonthDate).toISOString();
 
-  const currentMonthQueryStart = perfNow();
-  const { data: currentMonthTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .gte("due_date", currentMonthStart)
-    .lte("due_date", currentMonthEnd);
-  logPerf("getCashFlowForecast:current-month", currentMonthQueryStart, { workspaceId: effectiveWorkspaceId });
+  // OTIMIZAÇÃO: Executar todas as queries em paralelo
+  const queriesStart = perfNow();
+  const [currentMonthResult, recurringResult, scheduledResult] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .gte("due_date", currentMonthStart)
+      .lte("due_date", currentMonthEnd),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .eq("is_recurring", true),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .gte("due_date", rangeStart)
+      .lte("due_date", rangeEnd)
+  ]);
+  logPerf("getCashFlowForecast:queries-parallel", queriesStart, { workspaceId: effectiveWorkspaceId });
+
+  const currentMonthTransactions = currentMonthResult.data;
+  const recurringTransactions = recurringResult.data;
+  const scheduledTransactions = scheduledResult.data;
 
   const currentMonthIncome = (currentMonthTransactions || [])
     .filter((t: any) => t.type === "income")
@@ -985,29 +1009,7 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
     .reduce((acc: number, curr: any) => acc + Number(curr.amount) || 0, 0);
 
   let runningBalance = currentMonthIncome - currentMonthExpense;
-
   const forecast = [];
-  
-  const lastMonthDate = addMonths(currentDate, months - 1);
-  const rangeStart = startOfMonth(currentDate).toISOString();
-  const rangeEnd = endOfMonth(lastMonthDate).toISOString();
-
-  const recurringStart = perfNow();
-  const { data: recurringTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .eq("is_recurring", true);
-  logPerf("getCashFlowForecast:recurring", recurringStart, { workspaceId: effectiveWorkspaceId });
-
-  const scheduledStart = perfNow();
-  const { data: scheduledTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .gte("due_date", rangeStart)
-    .lte("due_date", rangeEnd);
-  logPerf("getCashFlowForecast:scheduled", scheduledStart, { workspaceId: effectiveWorkspaceId });
 
   const scheduledByMonth = new Map<string, any[]>();
   (scheduledTransactions || []).forEach((t: any) => {

@@ -111,21 +111,31 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
     return `${startISO}-${endISO}-${effectiveWorkspaceId || 'all'}`;
   }, [effectiveWorkspaceId]);
 
-  // Carregar eventos do calendário com cache
+  // OTIMIZAÇÃO: Carregar eventos do calendário com cache e loading otimizado
   const loadEvents = useCallback(async (start: Date, end: Date, useCache = true) => {
     if (!isLoaded && effectiveWorkspaceId !== undefined) return;
 
     const cacheKey = getCacheKey(start, end);
     
-    // Verificar cache
+    // Verificar cache primeiro (mostrar imediatamente se disponível)
     if (useCache && eventsCacheRef.current.has(cacheKey)) {
       const cachedEvents = eventsCacheRef.current.get(cacheKey)!;
       setEvents(cachedEvents);
+      // Atualizar em background se necessário
+      startTransition(() => {
+        getTasksForCalendar(start, end, effectiveWorkspaceId).then(calendarEvents => {
+          eventsCacheRef.current.set(cacheKey, calendarEvents);
+          setEvents(calendarEvents);
+        }).catch(() => {
+          // Manter cache em caso de erro
+        });
+      });
       return;
     }
 
     setIsLoadingEvents(true);
     try {
+      // Usar startTransition para não bloquear UI
       const calendarEvents = await getTasksForCalendar(
         start,
         end,
