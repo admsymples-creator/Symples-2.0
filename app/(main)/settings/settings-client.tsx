@@ -358,17 +358,24 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   // Renderizar apenas após montagem no cliente para evitar erro de hidratação
   if (!isMounted) {
     return (
-      <div className="w-full bg-white">
-        <div className="max-w-[1600px] mx-auto px-6">
-          <div className="py-3">
-            <div className="flex flex-col gap-2 mb-8">
-              <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
-              <p className="text-muted-foreground">
+      <div className="min-h-screen bg-white pb-20">
+        <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+          <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Configurações do Workspace</h1>
+              <p className="text-sm text-gray-500">
                 Gerencie as preferências gerais, membros da equipe e faturamento.
               </p>
             </div>
-            <div className="flex items-center justify-center py-12">
-              <div className="text-muted-foreground">Carregando...</div>
+          </div>
+        </div>
+
+        <div className="w-full bg-white px-6">
+          <div className="max-w-[1600px] mx-auto">
+            <div className="py-3">
+              <div className="flex items-center justify-center py-12">
+                <div className="text-muted-foreground">Carregando...</div>
+              </div>
             </div>
           </div>
         </div>
@@ -377,20 +384,25 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   }
 
   return (
-    <div className="w-full bg-white">
-      <div className="max-w-[1600px] mx-auto px-6">
-        <div className="py-3">
-      <div className="flex flex-col gap-2 mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
-        <p className="text-muted-foreground">
-          Gerencie as preferências gerais, membros da equipe e faturamento.
-        </p>
+    <div className="min-h-screen bg-white pb-20">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Configurações do Workspace</h1>
+            <p className="text-sm text-gray-500">
+              Gerencie as preferências gerais, membros da equipe e faturamento.
+            </p>
+          </div>
+        </div>
       </div>
 
+      <div className="w-full bg-white px-6">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="py-3">
       <Tabs 
         value={activeTab} 
         onValueChange={(val) => router.push(`/settings?tab=${val}`)} 
-        className="w-full space-y-6"
+        className="w-full space-y-3"
       >
         {/* Navigation Tabs */}
         <TabsList variant="grid" className="grid w-full grid-cols-4 md:w-[500px]">
@@ -401,7 +413,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </TabsList>
 
         {/* A. ABA GERAL (WORKSPACE) */}
-        <TabsContent value="general" className="space-y-6">
+        <TabsContent value="general" className="mt-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -559,7 +571,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </TabsContent>
 
         {/* B. ABA MEMBROS (GESTÃO DE TIME) */}
-        <TabsContent value="members" className="space-y-6">
+        <TabsContent value="members" className="mt-0 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-medium flex items-center gap-2">
               Membros do Time
@@ -772,7 +784,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </TabsContent>
 
         {/* C. ABA FATURAMENTO (BILLING) */}
-        <TabsContent value="billing" className="space-y-6">
+        <TabsContent value="billing" className="mt-0 space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
             {/* Card do Plano */}
             <Card className="md:col-span-2">
@@ -868,7 +880,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </TabsContent>
 
         {/* D. ABA PERFIL (USER PROFILE) */}
-        <TabsContent value="profile" className="space-y-6">
+        <TabsContent value="profile" className="mt-0 space-y-6">
           {/* Personal Info */}
           <Card>
             <CardHeader>
@@ -973,5 +985,6 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </div>
       </div>
     </div>
+  </div>
   );
 }
