@@ -1,10 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -100,6 +100,9 @@ const PlannerCalendar = dynamic(() => import("@/components/calendar/planner-cale
     loading: () => <div className="min-h-[400px]" />,
 });
 
+const preloadTaskBoard = () => import("@/components/tasks/TaskBoard");
+const preloadPlannerCalendar = () => import("@/components/calendar/planner-calendar");
+
 interface Task {
     id: string;
     title: string;
@@ -116,7 +119,7 @@ interface Task {
     hasComments?: boolean;
     commentCount?: number;
     position?: number; // Posição para ordenação (drag & drop)
-    isPending?: boolean; // ✅ Marca tarefas otimistas que ainda estão sendo criadas
+    isPending?: boolean; // ? Marca tarefas otimistas que ainda estão sendo criadas
 }
 
 interface TasksPageProps {
@@ -125,7 +128,7 @@ interface TasksPageProps {
     workspaceId?: string;
 }
 
-// ✅ Função auxiliar para mapear parâmetro group da URL para ViewOption
+// ? Função auxiliar para mapear parâmetro group da URL para ViewOption
 // Trata todos os edge cases: "none", null, undefined -> "group" (padrão)
 function getInitialViewOption(groupParam: string | null): ViewOption {
     if (groupParam === "status") return "status";
@@ -145,7 +148,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ler sortBy da URL, com fallback para "position"
     const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
     
-    // ✅ Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
+    // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
     
     const activeTab = "todas" as const;
@@ -172,6 +175,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         currentView: string;
         reloadEvents?: () => void;
     } | null>(null);
+    const shouldReduceMotion = useReducedMotion();
     
     // Ref para throttling do handleDragOver
     const dragOverThrottleRef = useRef<number | null>(null);
@@ -180,7 +184,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     
-    // ✅ CORREÇÃO: Inicializar availableGroups com initialGroups se disponível (evita flicker)
+    // ? CORREÇÃO: Inicializar availableGroups com initialGroups se disponível (evita flicker)
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>(() => {
         if (initialGroups && initialGroups.length > 0) {
             return initialGroups.map(g => ({
@@ -192,7 +196,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return [];
     });
     
-    // ✅ CORREÇÃO: Inicializar groupOrder com base em initialGroups ou localStorage (evita flicker)
+    // ? CORREÇÃO: Inicializar groupOrder com base em initialGroups ou localStorage (evita flicker)
     const [groupOrder, setGroupOrder] = useState<string[]>(() => {
         if (initialViewOption === "group") {
             if (initialGroups && initialGroups.length > 0) {
@@ -581,7 +585,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [effectiveWorkspaceId, activeTab]);
 
-    // ✅ Optimistic Create: Adiciona tarefa instantaneamente ao estado local
+    // ? Optimistic Create: Adiciona tarefa instantaneamente ao estado local
     const handleTaskCreatedOptimistic = useCallback((taskData: {
         id: string; // ID temporário ou real
         title: string;
@@ -591,7 +595,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         dueDate?: string;
         groupId?: string | null;
         workspaceId?: string | null;
-        isPending?: boolean; // ✅ Marca se está sendo criada (para mostrar skeleton)
+        isPending?: boolean; // ? Marca se está sendo criada (para mostrar skeleton)
     }) => {
         const newTask: Task = {
             id: taskData.id,
@@ -613,11 +617,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             hasComments: false,
             commentCount: 0,
             position: undefined,
-            isPending: taskData.isPending ?? true, // ✅ Por padrão, tarefas otimistas estão pending
+            isPending: taskData.isPending ?? true, // ? Por padrão, tarefas otimistas estão pending
         };
 
         setLocalTasks((prev) => {
-            // ✅ Seguir ordem existente: adicionar no final
+            // ? Seguir ordem existente: adicionar no final
             // Isso mantém consistência com ordenação (position, priority, etc.)
             // e permite criação rápida sem quebrar o fluxo visual
             // O QuickTaskAdd está no final, então faz sentido a tarefa aparecer logo acima dele
@@ -645,9 +649,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 return [...prev, newTask];
             }
         });
-    }, [availableGroups, sortBy, viewOption]); // ✅ Adicionar sortBy e viewOption nas dependências
+    }, [availableGroups, sortBy, viewOption]); // ? Adicionar sortBy e viewOption nas dependências
 
-    // ✅ Optimistic Delete: Remove tarefa instantaneamente do estado local
+    // ? Optimistic Delete: Remove tarefa instantaneamente do estado local
     const handleOptimisticDelete = useCallback((taskId: string | number) => {
         const id = String(taskId);
         setLocalTasks((prev) => {
@@ -662,7 +666,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         dueDate?: Date | null,
         assigneeId?: string | null
     ) => {
-        // ✅ 1. Snapshot do estado anterior (para rollback)
+        // ? 1. Snapshot do estado anterior (para rollback)
         const previousTasks = [...localTasksRef.current];
 
         // Mapear status/priority baseado no viewOption e groupId (columnId)
@@ -715,7 +719,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             statusLabel = STATUS_TO_LABEL.todo;
         }
 
-        // ✅ 2. Atualização otimista: adicionar tarefa ao estado local imediatamente
+        // ? 2. Atualização otimista: adicionar tarefa ao estado local imediatamente
         const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const assignee = assigneeId ? workspaceMembers.find(m => m.id === assigneeId) : undefined;
         
@@ -735,7 +739,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
 
         try {
-            // ✅ 3. Backend em background
+            // ? 3. Backend em background
             const result = await createTask({
                 title,
                 status: dbStatus as any,
@@ -747,7 +751,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
 
             if (result.success && 'data' in result && result.data) {
-                // ✅ 4. Sucesso: atualizar tarefa otimista com ID real do backend e remover pending
+                // ? 4. Sucesso: atualizar tarefa otimista com ID real do backend e remover pending
                 const createdTask = result.data;
                 setLocalTasks((prev) => {
                     return prev.map((task) => {
@@ -758,14 +762,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 status: createdTask.status ? mapStatusToLabel(createdTask.status as string) || task.status : task.status,
                                 priority: (createdTask.priority as "low" | "medium" | "high" | "urgent") || task.priority,
                                 dueDate: createdTask.due_date || task.dueDate,
-                                isPending: false, // ✅ Marcar como não pending após sucesso
+                                isPending: false, // ? Marcar como não pending após sucesso
                             } as Task;
                         }
                         return task;
                     });
                 });
             } else {
-                // ✅ 5. Erro: rollback - remover tarefa otimista
+                // ? 5. Erro: rollback - remover tarefa otimista
                 setLocalTasks(previousTasks);
                 console.error("Erro ao criar tarefa:", result.error);
                 if (result.error === "Usuário não autenticado") {
@@ -775,7 +779,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 }
             }
         } catch (error) {
-            // ✅ 5. Erro: rollback - remover tarefa otimista
+            // ? 5. Erro: rollback - remover tarefa otimista
             setLocalTasks(previousTasks);
             console.error("Erro ao criar tarefa:", error);
             toast.error("Erro ao criar tarefa");
@@ -795,27 +799,27 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return handleAddTaskToGroup(columnId, title, dueDate, assigneeId);
     }, [handleAddTaskToGroup]);
 
-    // ✅ Handler para excluir tarefa com Optimistic UI e rollback
+    // ? Handler para excluir tarefa com Optimistic UI e rollback
     const handleDeleteTaskWithOptimistic = useCallback(async (taskId: string | number) => {
         const id = String(taskId);
         
-        // ✅ 1. Snapshot do estado anterior (para rollback)
+        // ? 1. Snapshot do estado anterior (para rollback)
         const previousTasks = [...localTasksRef.current];
         
-        // ✅ 2. Optimistic UI: Remover tarefa do estado local imediatamente
+        // ? 2. Optimistic UI: Remover tarefa do estado local imediatamente
         handleOptimisticDelete(id);
 
         try {
-            // ✅ 3. Backend em background
+            // ? 3. Backend em background
             const result = await deleteTask(id);
 
             if (result.success) {
-                // ✅ 4. Sucesso: Tarefa já foi removida otimisticamente
+                // ? 4. Sucesso: Tarefa já foi removida otimisticamente
                 toast.success("Tarefa excluída com sucesso");
                 // Invalidar cache para sincronizar
                 invalidateTasksCache(effectiveWorkspaceId, activeTab);
             } else {
-                // ✅ 5. Erro: Rollback - restaurar tarefa
+                // ? 5. Erro: Rollback - restaurar tarefa
                 setLocalTasks(previousTasks);
                 console.error("Erro ao excluir tarefa:", result.error);
                 if (result.error === "Usuário não autenticado") {
@@ -825,7 +829,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 }
             }
         } catch (error) {
-            // ✅ 5. Erro: Rollback - restaurar tarefa
+            // ? 5. Erro: Rollback - restaurar tarefa
             setLocalTasks(previousTasks);
             console.error("Erro ao excluir tarefa:", error);
             toast.error("Erro ao excluir tarefa");
@@ -1043,7 +1047,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         loadMembers();
     }, [effectiveWorkspaceId]);
 
-    // ✅ Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
+    // ? Atualização otimista: atualiza estado local imediatamente (Optimistic UI)
     const updateLocalTask = useCallback((taskId: string | number, updates: Partial<Task>) => {
         const id = String(taskId);
         setLocalTasks((prev) => {
@@ -1264,7 +1268,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [activeWorkspaceId, loadGroups]);
 
-    // ✅ Callback memoizado para optimistic updates
+    // ? Callback memoizado para optimistic updates
     const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
         const localUpdates: Partial<Task> = {};
         if (updates.title) localUpdates.title = updates.title;
@@ -1275,7 +1279,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
         if (updates.assignees) {
             localUpdates.assignees = updates.assignees;
-            // ✅ Também atualizar assigneeId para manter consistência
+            // ? Também atualizar assigneeId para manter consistência
             localUpdates.assigneeId = updates.assignees[0]?.id || null;
         }
         updateLocalTask(taskId, localUpdates);
@@ -1356,7 +1360,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             "low": "Baixa",
         };
 
-        // ✅ Buckets First: Inicializar grupos vazios baseado no viewOption
+        // ? Buckets First: Inicializar grupos vazios baseado no viewOption
         if (viewOption === "group") {
             // Inicializar grupo "Inbox" (tarefas sem grupo)
             groups["inbox"] = [];
@@ -1451,7 +1455,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Atualizar ref para groupedData (apÃ³s groupedData ser definido)
     groupedDataRef.current = groupedData;
 
-    // ✅ CORREÇÃO: Reordenar grupos quando viewOption === "group" baseado em groupOrder
+    // ? CORREÇÃO: Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
         if (viewOption === "group") {
             // Sempre usar groupOrder se disponível, mesmo que esteja vazio inicialmente
@@ -1495,7 +1499,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         
         const columns = Object.entries(dataToUse)
             .filter(([key, tasks]) => {
-                // ✅ Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
+                // ? Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
                 // verificar se o grupo ainda existe em availableGroups
                 if (viewOption === "group" && key !== "inbox") {
                     const groupExists = availableGroups.some(g => g.id === key);
@@ -1721,7 +1725,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        // ✅ CORREÇÃO: Ordenar grupos baseado em groupOrder quando viewOption === "group"
+        // ? CORREÇÃO: Ordenar grupos baseado em groupOrder quando viewOption === "group"
         if (viewOption === "group" && groupOrder.length > 0) {
             return groups.sort((a, b) => {
                 const aIndex = groupOrder.indexOf(a.id);
@@ -1734,7 +1738,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         return groups;
-    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ✅ Adicionar groupOrder para recalcular quando a ordem mudar
+    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ? Adicionar groupOrder para recalcular quando a ordem mudar
 
     const shouldShowLoadingSkeleton = !initialTasks
         && localTasks.length === 0
@@ -1801,7 +1805,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         setSortBy(urlSort);
     }, [urlSort]);
 
-    // ✅ Sincronizar viewOption quando parâmetro group da URL mudar
+    // ? Sincronizar viewOption quando parâmetro group da URL mudar
     useEffect(() => {
         const groupParam = searchParams.get("group");
         const newViewOption = getInitialViewOption(groupParam);
@@ -2001,10 +2005,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     };
 
     const handleDragStart = (event: DragStartEvent) => {
-        // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
-        // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
+        // ? Guard Clause: Verificar se drag está habilitado para este viewOption
+        // ? CORREÇÃO: Validar se viewOption existe antes de comparar
         if (!viewOption) {
-            console.warn("⚠️ [handleDragStart] viewOption está undefined. Bloqueando drag.");
+            console.warn("?? [handleDragStart] viewOption está undefined. Bloqueando drag.");
             return;
         }
         
@@ -2015,13 +2019,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         const { active } = event;
-        // ✅ CORREÇÃO: Normalizar ID para string
+        // ? CORREÇÃO: Normalizar ID para string
         const activeIdStr = String(active.id);
         // Usar ref para busca mais rápida (evita re-render)
         const task = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
         
         if (!task) {
-            console.warn("⚠️ [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
+            console.warn("?? [handleDragStart] Tarefa não encontrada para ID:", activeIdStr);
             return;
         }
 
@@ -2167,10 +2171,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // Handler para quando o drag termina
     const handleDragEnd = (event: DragEndEvent) => {
-        // ✅ Guard Clause: Verificar se drag está habilitado para este viewOption
-        // ✅ CORREÇÃO: Validar se viewOption existe antes de comparar
+        // ? Guard Clause: Verificar se drag está habilitado para este viewOption
+        // ? CORREÇÃO: Validar se viewOption existe antes de comparar
         if (!viewOption) {
-            console.warn("⚠️ [handleDragEnd] viewOption está undefined. Bloqueando drag.");
+            console.warn("?? [handleDragEnd] viewOption está undefined. Bloqueando drag.");
             setActiveTask(null);
             resetDragState();
             return;
@@ -2187,16 +2191,16 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const { active, over } = event;
         setActiveTask(null);
         
-        // ✅ CORREÇÃO: Validar se over existe e tem ID válido
+        // ? CORREÇÃO: Validar se over existe e tem ID válido
         if (!over) {
-            console.log("ℹ️ [handleDragEnd] Drag cancelado: over é null/undefined");
+            console.log("?? [handleDragEnd] Drag cancelado: over é null/undefined");
             resetDragState();
             return;
         }
         
-        // ✅ CORREÇÃO: Validar se active existe
+        // ? CORREÇÃO: Validar se active existe
         if (!active) {
-            console.warn("⚠️ [handleDragEnd] active é null/undefined");
+            console.warn("?? [handleDragEnd] active é null/undefined");
             resetDragState();
             return;
         }
@@ -2208,15 +2212,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const sourceGroupKey = dragStartGroupKeyRef.current || findGroupKeyForId(activeIdStr);
         let destinationGroupKey = findGroupKeyForId(overIdStr);
         
-        // ✅ CORREÇÃO: Validação melhorada com logs
+        // ? CORREÇÃO: Validação melhorada com logs
         if (!sourceGroupKey) {
-            console.error("❌ [handleDragEnd] Grupo de origem não encontrado para tarefa:", activeIdStr);
+            console.error("? [handleDragEnd] Grupo de origem não encontrado para tarefa:", activeIdStr);
             toast.error("Erro: Tarefa de origem não encontrada. Recarregue a página.");
             resetDragState();
             return;
         }
         
-        // ✅ CORREÇÃO: Se overIdStr é uma coluna (não uma tarefa), usar diretamente
+        // ? CORREÇÃO: Se overIdStr é uma coluna (não uma tarefa), usar diretamente
         // No modo kanban, o over.id pode ser o ID da coluna (DroppableColumn)
         if (!destinationGroupKey) {
             // Verificar se é uma coluna do kanban
@@ -2240,7 +2244,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const destinationTasks = groupedData[destinationGroupKey] || [];
         
-        // ✅ CORREÇÃO: Se overIdStr é o ID de uma coluna (não uma tarefa), adicionar no final
+        // ? CORREÇÃO: Se overIdStr é o ID de uma coluna (não uma tarefa), adicionar no final
         // Se overIdStr é uma chave de groupedData, significa que arrastou para a coluna vazia
         const isOverColumn = Object.keys(groupedData).includes(overIdStr);
         let overIndex = -1;
@@ -2307,7 +2311,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         let finalState: Task[] = [];
         const rollbackState = localTasksRef.current.map((t) => ({ ...t }));
         
-        // ✅ Calcular posição ANTES de atualizar o estado (para usar fora do setState)
+        // ? Calcular posição ANTES de atualizar o estado (para usar fora do setState)
         const current = [...localTasksRef.current];
         const movingIndex = current.findIndex((t) => String(t.id) === activeIdStr);
         if (movingIndex === -1) {
@@ -2406,7 +2410,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             localTasksRef.current = finalState;
         }
 
-        // ✅ Obter posição calculada do item movido
+        // ? Obter posição calculada do item movido
         const movingFinal = finalState.find((t) => String(t.id) === activeIdStr);
 
         const finalGroupId = viewOption === "group"
@@ -2588,7 +2592,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 subTasks: [], // Subtarefas nÃ£o estÃ£o implementadas no schema ainda
                 activities,
                 attachments: mappedAttachments,
-                workspaceId: taskDetails.workspace_id || null, // ✅ Adicionar workspaceId
+                workspaceId: taskDetails.workspace_id || null, // ? Adicionar workspaceId
             });
         } catch (error) {
             console.error("Erro ao carregar detalhes da tarefa:", error);
@@ -2597,8 +2601,18 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     };
 
-    // ✅ Variável para controlar se drag está habilitado
+    // ? Variável para controlar se drag está habilitado
     const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
+
+    const handleViewModeChange = useCallback((value: string) => {
+        if (value === "kanban") {
+            preloadTaskBoard().catch(() => {});
+        } else if (value === "calendar") {
+            preloadPlannerCalendar().catch(() => {});
+        }
+
+        setViewMode(value as ViewMode);
+    }, []);
 
     return (
         <div
@@ -2624,17 +2638,37 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             <div className="border-b border-gray-200 bg-white px-6 py-3">
                 <div className="max-w-[1600px] mx-auto">
                     <div className="flex items-center justify-between gap-4">
-                        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+                        <Tabs value={viewMode} onValueChange={handleViewModeChange}>
                             <TabsList variant="default">
                                 <TabsTrigger value="list" variant="default" className="flex items-center gap-1">
                                     <List className="w-4 h-4" />
                                     <span className="text-sm font-medium">Lista</span>
                                 </TabsTrigger>
-                                <TabsTrigger value="kanban" variant="default" className="flex items-center gap-1">
+                                <TabsTrigger
+                                    value="kanban"
+                                    variant="default"
+                                    className="flex items-center gap-1"
+                                    onMouseEnter={() => {
+                                        preloadTaskBoard().catch(() => {});
+                                    }}
+                                    onFocus={() => {
+                                        preloadTaskBoard().catch(() => {});
+                                    }}
+                                >
                                     <LayoutGrid className="w-4 h-4" />
                                     <span className="text-sm font-medium">Quadro</span>
                                 </TabsTrigger>
-                                <TabsTrigger value="calendar" variant="default" className="flex items-center gap-1">
+                                <TabsTrigger
+                                    value="calendar"
+                                    variant="default"
+                                    className="flex items-center gap-1"
+                                    onMouseEnter={() => {
+                                        preloadPlannerCalendar().catch(() => {});
+                                    }}
+                                    onFocus={() => {
+                                        preloadPlannerCalendar().catch(() => {});
+                                    }}
+                                >
                                     <Calendar className="w-4 h-4" />
                                     <span className="text-sm font-medium">Calendário</span>
                                 </TabsTrigger>
@@ -2647,7 +2681,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
             {/* Barra Inferior: Filtros e Ações */}
             <div className="border-b border-gray-200 bg-white px-6">
-                <div className={cn("max-w-[1600px] mx-auto py-3", viewMode === "calendar" && "w-full max-w-none")}>
+                <div className="max-w-[1600px] mx-auto py-3">
                     <div className="flex flex-1 items-center justify-between gap-2 flex-wrap">
                         {/* Lado Esquerdo */}
                         <div className="flex items-center gap-4">
@@ -2788,24 +2822,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             {/* Conteúdo Principal */}
             <div
                 className={cn(
-                    "w-full bg-white",
-                    viewMode === "kanban" ? "flex-1 min-h-0 px-2 overflow-hidden" : "px-6"
+                    "w-full bg-white px-6",
+                    viewMode === "kanban" ? "flex-1 min-h-0 overflow-hidden" : ""
                 )}
             >
-                <div
-                    className={cn(
-                        "mx-auto",
-                        viewMode === "kanban"
-                            ? "w-full max-w-none h-full"
-                            : viewMode === "calendar"
-                              ? "w-full max-w-none"
-                              : "max-w-[1600px]"
-                    )}
-                >
-                    <div className={cn(
-                        "relative h-full w-full",
-                        viewMode === "calendar" ? "" : viewMode === "kanban" ? "pt-2 pb-0" : "py-3"
-                    )}>
+                <div className={cn("mx-auto w-full max-w-[1600px]", viewMode === "kanban" && "h-full")}>
+                    <div className="relative h-full w-full py-3">
                     {/* Overlay de carregamento ao trocar de workspace / filtros */}
                     {isLoadingTasks && (
                         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
@@ -2818,7 +2840,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         </div>
                     )}
 
-                    <AnimatePresence mode="wait">
+                    <AnimatePresence mode="sync" initial={false}>
+                        <motion.div
+                            key={viewMode}
+                            initial={shouldReduceMotion ? false : { opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
+                            transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
+                            className="h-full"
+                        >
                         {viewMode === "list" ? (
                             <div className="h-full">
                                 <DndContext
@@ -2982,7 +3012,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </DndContext>
                             </div>
                         ) : viewMode === "calendar" ? (
-                            <div className="h-[calc(100vh-300px)] -mx-6" key={`calendar-${effectiveWorkspaceId}`}>
+                            <div className="h-[calc(100vh-300px)]" key={`calendar-${effectiveWorkspaceId}`}>
                                 <PlannerCalendar 
                                     workspaceId={effectiveWorkspaceId} 
                                     hideHeader={true}
@@ -2991,7 +3021,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             </div>
                         ) : (
                             <div className="h-full min-h-0" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
-                                {/* ✅ CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
+                                {/* ? CORREÇÃO CRÍTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
                                 <DndContext
                                     sensors={sensors}
                                     collisionDetection={collisionDetectionStrategy}
@@ -3036,6 +3066,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </DndContext>
                             </div>
                         )}
+                        </motion.div>
                     </AnimatePresence>
                 </div>
 
@@ -3152,5 +3183,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         </div>
     );
 }
+
 
 

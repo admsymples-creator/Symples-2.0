@@ -6,6 +6,25 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-02 11:37 - Tabs: performance e transicoes
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Transicoes e desempenho nas tabs principais
+- Tarefas com fade suave entre views e prefetch das telas pesadas
+- Financeiro com transicao padronizada e container consistente
+- Weekly View sem flicker na troca 3/5 dias (animacao no grid inteiro)
+- Home "Minhas tarefas" com fade leve ao trocar filtros
+- Configuracoes com troca de tabs local (URL atualizada sem navegacao)
+
+### 2. O que esta sendo trabalhado no momento
+
+- Nenhum item ativo
+
+### 3. Proximos passos
+
+- Validar tempo de troca nas tabs de Configuracoes e Financeiro
+
 ## 2026-01-02 10:16 - Ajustes de skeleton loading e consistencia visual
 
 ### 1. Melhorias, bugs e features implementadas em preview
