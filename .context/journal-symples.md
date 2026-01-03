@@ -6,6 +6,48 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-02 22:30 - Otimizações de Performance em Produção
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Correção de erro 500 em getNotifications
+- Removido JOIN inválido entre notifications.triggering_user_id e profiles
+- Implementada busca separada de profiles em batch query
+- Melhor tratamento de erros com logs detalhados
+- Resolve erro ao buscar notificações na home page
+
+#### - Otimizações de cache e performance
+- Adicionado `export const dynamic = 'force-dynamic'` nas páginas home e planner
+- Adicionado `export const revalidate = 0` para desabilitar cache
+- Resolve problema de lentidão em produção causado por cache do Next.js
+
+#### - Logs de performance detalhados
+- Logs em home page: tempo de dados críticos, secundários e total
+- Logs em planner: tempo de busca de tarefas e total
+- Logs em getNotifications: tempo de query, profiles e total
+- Monitoramento de tamanho de dados serializados (KB)
+- Facilita identificação de gargalos em produção
+
+#### - Correção de hooks do React
+- Corrigido erro "Rendered more hooks than during the previous render"
+- Garantido que todos os hooks são sempre chamados na mesma ordem
+- Removido initialNotifications das dependências do useEffect para evitar loops
+- Resolve erro de runtime em componentes home
+
+### 2. O que esta sendo trabalhado no momento
+
+- Monitoramento de logs de performance em produção
+- Validação de melhorias de performance após deploy
+
+### 3. Proximos passos
+
+- Analisar logs de performance na Vercel para identificar gargalos
+- Limpar cache do Vercel se necessário
+- Verificar se latência do Supabase está causando lentidão
+- Considerar otimizações adicionais baseadas nos logs
+
+---
+
 ## 2026-01-02 11:37 - Tabs: performance e transicoes
 
 ### 1. Melhorias, bugs e features implementadas em preview
