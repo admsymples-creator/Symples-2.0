@@ -52,7 +52,7 @@ export function GlobalSearch() {
     <>
       <Button
         variant="outline"
-        className="relative w-full justify-start text-sm text-muted-foreground sm:pr-12 md:w-40 lg:w-64 bg-muted/50 border-muted-foreground/20 hover:bg-muted/80"
+        className="relative w-full justify-start text-sm text-muted-foreground sm:pr-12 bg-muted/50 border-muted-foreground/20 hover:bg-muted/80"
         onClick={() => setOpen(true)}
       >
         <span className="hidden lg:inline-flex">Buscar...</span>

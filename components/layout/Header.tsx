@@ -2,12 +2,12 @@
 
 import React from "react";
 import Link from "next/link";
-import { Settings } from "lucide-react";
+import { Settings, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { NotificationsPopover } from "@/components/notifications/notifications-popover";
 import { UserNav } from "@/components/layout/UserNav";
-import { GlobalSearch } from "@/components/layout/GlobalSearch";
+import { useSidebar } from "@/components/providers/SidebarProvider";
 
 interface HeaderProps {
     user?: {
@@ -19,15 +19,23 @@ interface HeaderProps {
 }
 
 export function Header({ user }: HeaderProps) {
+    const { isCollapsed, toggleSidebar } = useSidebar();
+
     return (
         <header className="h-16 border-b border-gray-200 bg-white flex items-center justify-between px-6 sticky top-0 z-40">
-            {/* Busca Global */}
-            <div className="flex-1 max-w-md">
-                <GlobalSearch />
-            </div>
+            {/* Toggle Sidebar Button */}
+            <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="h-9 w-9 text-gray-400 hover:text-gray-600 transition-all"
+                aria-label={isCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+            >
+                {isCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+            </Button>
 
             {/* Ações & Perfil */}
-            <div className="flex items-center gap-2 ml-4">
+            <div className="flex items-center gap-2 ml-auto">
                 {/* Notificações */}
                 <NotificationsPopover userRole={user?.role} useMockData={false} />
 
