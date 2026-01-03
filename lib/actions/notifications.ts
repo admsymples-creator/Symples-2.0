@@ -28,7 +28,8 @@ export interface NotificationWithActor extends Notification {
 
 /**
  * Busca notificações do usuário atual
- * OTIMIZADO: Usa JOINs para buscar tudo em 1 query, filtra por workspace no backend
+ * OTIMIZADO: Busca profiles dos triggering_users em batch (1 query), filtra por workspace no backend
+ * NOTA: triggering_user_id referencia auth.users, então buscamos profiles separadamente (não via JOIN)
  */
 export async function getNotifications(
   filters?: {
