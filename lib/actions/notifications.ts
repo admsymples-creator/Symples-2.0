@@ -39,6 +39,7 @@ export async function getNotifications(
     workspaceId?: string | null; // NOVO: Filtrar por workspace no backend
   }
 ): Promise<NotificationWithActor[]> {
+  const perfStart = Date.now();
   try {
     const supabase = await createServerActionClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -56,6 +57,7 @@ export async function getNotifications(
     }
 
     // Buscar notificações (sem JOIN - triggering_user_id referencia auth.users, não profiles)
+    const queryStart = Date.now();
     let query = supabase
       .from("notifications")
       .select("*")
@@ -72,6 +74,8 @@ export async function getNotifications(
     }
 
     const { data: notifications, error } = await query;
+    const queryTime = Date.now() - queryStart;
+    console.log(`[PERF] getNotifications - Query: ${queryTime}ms`);
 
     if (error) {
       console.error("Error fetching notifications:", {
@@ -89,6 +93,7 @@ export async function getNotifications(
     }
 
     // OTIMIZAÇÃO: Buscar profiles dos triggering_users em batch (1 query em vez de N)
+    const profilesStart = Date.now();
     const triggeringUserIds = notifications
       .map(n => n.triggering_user_id)
       .filter((id): id is string => id !== null);
@@ -100,6 +105,9 @@ export async function getNotifications(
         .from("profiles")
         .select("id, full_name, avatar_url")
         .in("id", triggeringUserIds);
+      
+      const profilesTime = Date.now() - profilesStart;
+      console.log(`[PERF] getNotifications - Profiles fetch: ${profilesTime}ms (${triggeringUserIds.length} users)`);
       
       if (profilesError) {
         console.error("Error fetching triggering user profiles:", {
@@ -195,9 +203,12 @@ export async function getNotifications(
         return false;
       }) as NotificationWithActor[];
 
+    const totalTime = Date.now() - perfStart;
+    console.log(`[PERF] getNotifications - Total: ${totalTime}ms (${result.length} notifications)`);
     return result;
   } catch (err) {
-    console.error("Unexpected error in getNotifications:", {
+    const totalTime = Date.now() - perfStart;
+    console.error(`[PERF] getNotifications - Error after ${totalTime}ms:`, {
       error: err,
       message: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined,
