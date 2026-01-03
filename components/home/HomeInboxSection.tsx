@@ -7,16 +7,25 @@ import { Loader2, Inbox, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 
-export function HomeInboxSection() {
-  const [notifications, setNotifications] = useState<NotificationWithActor[]>([]);
-  const [loading, setLoading] = useState(true);
+interface HomeInboxSectionProps {
+  initialNotifications?: NotificationWithActor[];
+}
+
+export function HomeInboxSection({ initialNotifications }: HomeInboxSectionProps) {
+  const [notifications, setNotifications] = useState<NotificationWithActor[]>(initialNotifications || []);
+  const [loading, setLoading] = useState(!initialNotifications); // Não mostrar loading se já temos dados iniciais
   const [displayLimit, setDisplayLimit] = useState(5);
   const { activeWorkspaceId, isLoaded } = useWorkspace();
 
-  // Buscar notificações - OTIMIZADO: filtrar por workspace no backend
+  // Buscar notificações - OTIMIZADO: só fazer fetch se não tiver dados iniciais
   useEffect(() => {
     const loadNotifications = async () => {
       if (!isLoaded) return; // Aguardar workspace carregar
+      
+      // Se temos dados iniciais, não fazer fetch na primeira renderização
+      if (initialNotifications !== undefined) {
+        return; // Usar dados iniciais
+      }
       
       setLoading(true);
       try {
@@ -37,7 +46,7 @@ export function HomeInboxSection() {
     };
 
     loadNotifications();
-  }, [activeWorkspaceId, isLoaded]);
+  }, [activeWorkspaceId, isLoaded, initialNotifications]);
 
   const displayedNotifications = notifications.slice(0, displayLimit);
   const hasMore = notifications.length > displayLimit;
