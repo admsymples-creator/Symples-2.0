@@ -25,11 +25,16 @@ function getEndOfWeek(date: Date): Date {
   return end;
 }
 
+// Forçar renderização dinâmica para evitar cache que pode causar lentidão
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * Server Component para o planner por workspace
  * Busca dados iniciais no servidor para melhor performance
  */
 export default async function WorkspacePlannerPage({ params }: PageProps) {
+  const pageStartTime = Date.now();
   const { workspaceSlug } = await params;
 
   // 1. Obter workspaceId do slug
@@ -50,17 +55,25 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
   const endOfWeek = getEndOfWeek(today);
 
   // 4. Buscar tarefas iniciais da semana
+  const tasksStartTime = Date.now();
   const initialTasks = await getTasks({
     workspaceId: isPersonal ? undefined : workspaceId,
     assigneeId: "current",
     dueDateStart: startOfWeek.toISOString(),
     dueDateEnd: endOfWeek.toISOString(),
   });
+  const tasksTime = Date.now() - tasksStartTime;
+  const tasksSize = JSON.stringify(initialTasks).length;
+  console.log(`[PERF] Planner - Tasks fetch: ${tasksTime}ms`);
+  console.log(`[PERF] Planner - Data size: tasks=${(tasksSize / 1024).toFixed(2)}KB`);
 
   // Filtrar por workspace se não for pessoal
   const filteredTasks = isPersonal 
     ? initialTasks 
     : initialTasks.filter(task => task.workspace_id === workspaceId);
+  
+  const totalPageTime = Date.now() - pageStartTime;
+  console.log(`[PERF] Planner - Total page render time: ${totalPageTime}ms`);
 
   return (
     <div className="min-h-screen bg-white pb-20">

@@ -23,18 +23,34 @@ interface WorkspaceStats {
   }>;
 }
 
-interface HomeWorkspaceOverviewProps {
+export interface HomeWorkspaceOverviewProps {
   workspaceStats: WorkspaceStats[];
   weekStart: Date;
   weekEnd: Date;
+  initialProjectStats?: Array<{ tag: string; pendingCount: number; totalCount: number }>;
+  initialProjectIcons?: Record<string, string>; // Objeto serializável em vez de Map
+  initialIsPersonal?: boolean;
 }
 
-export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: HomeWorkspaceOverviewProps) {
+export function HomeWorkspaceOverview({ 
+  workspaceStats, 
+  weekStart, 
+  weekEnd, 
+  initialProjectStats = [], 
+  initialProjectIcons = {}, 
+  initialIsPersonal = false 
+}: HomeWorkspaceOverviewProps) {
   const { activeWorkspaceId, isLoaded } = useWorkspace();
   const workspaces = useWorkspaces();
-  const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number }>>([]);
+  const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number }>>(initialProjectStats || []);
   const [loadingProjects, setLoadingProjects] = useState(false);
-  const [projectIcons, setProjectIcons] = useState<Map<string, string>>(new Map());
+  // Converter objeto para Map se necessário
+  const [projectIcons, setProjectIcons] = useState<Map<string, string>>(() => {
+    if (initialProjectIcons) {
+      return new Map(Object.entries(initialProjectIcons));
+    }
+    return new Map();
+  });
 
   // Detectar se é workspace pessoal (usando função helper robusta)
   const isPersonal = useMemo(() => {
@@ -43,12 +59,30 @@ export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: Ho
     return isPersonalWorkspace(currentWorkspace, workspaces);
   }, [activeWorkspaceId, isLoaded, workspaces]);
 
+  // Sincronizar dados iniciais quando disponíveis
+  useEffect(() => {
+    if (initialProjectStats !== undefined && !isPersonal && initialIsPersonal === false) {
+      setProjectStats(initialProjectStats);
+      if (initialProjectIcons) {
+        setProjectIcons(new Map(Object.entries(initialProjectIcons)));
+      }
+    }
+  }, [initialProjectStats, initialProjectIcons, initialIsPersonal, isPersonal]);
+
   // Buscar estatísticas de projetos quando for workspace profissional
+  // OTIMIZAÇÃO: Só fazer fetch se não tiver dados iniciais
   useEffect(() => {
     const loadProjectStats = async () => {
       if (!activeWorkspaceId || !isLoaded || isPersonal) {
-        setProjectStats([]);
+        if (isPersonal) {
+          setProjectStats([]);
+        }
         return;
+      }
+
+      // Se temos dados iniciais válidos, não fazer fetch
+      if (initialProjectStats !== undefined && initialIsPersonal === false) {
+        return; // Usar dados iniciais
       }
 
       setLoadingProjects(true);
@@ -71,7 +105,7 @@ export function HomeWorkspaceOverview({ workspaceStats, weekStart, weekEnd }: Ho
     };
 
     loadProjectStats();
-  }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd]);
+  }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd, initialProjectStats, initialIsPersonal, workspaces]);
 
   // Filtrar stats para mostrar apenas workspaces (quando for pessoal)
   const filteredWorkspaceStats = useMemo(() => {
