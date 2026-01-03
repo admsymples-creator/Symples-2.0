@@ -5,9 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MyTaskRowHome } from "@/components/tasks/MyTaskRowHome";
 import dynamic from "next/dynamic";
-import { getMyWorkTasks, TaskWithDetails } from "@/lib/actions/tasks";
-import { getWorkspaceMembers, getWorkspaceMembersBatch } from "@/lib/actions/tasks";
-import { createTask, getTasks } from "@/lib/actions/tasks";
+import { TaskWithDetails, getTasks, createTask, getWorkspaceMembers, getWorkspaceMembersBatch } from "@/lib/actions/tasks";
 import { cn } from "@/lib/utils";
 import { Loader2, CheckSquare, Clock, AlertCircle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,13 +22,17 @@ const TaskDetailModal = dynamic(
 
 interface HomeTasksSectionProps {
   period: "week" | "month";
+  initialTasks?: TaskWithDetails[];
+  initialWorkspaceId?: string;
+  initialIsPersonal?: boolean;
 }
 
 type TaskStatusFilter = "upcoming" | "overdue" | "completed";
 
-export function HomeTasksSection({ period }: HomeTasksSectionProps) {
-  const [tasks, setTasks] = useState<TaskWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
+export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, initialIsPersonal }: HomeTasksSectionProps) {
+  // Inicializar com dados do servidor para exibição instantânea
+  const [tasks, setTasks] = useState<TaskWithDetails[]>(() => initialTasks || []);
+  const [loading, setLoading] = useState(() => !initialTasks || initialTasks.length === 0); // Não mostrar loading se já temos dados iniciais
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("upcoming");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,10 +124,36 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     }
   }, [pathname, activeWorkspaceId, isLoaded, workspaces]);
 
+  // Sincronizar dados iniciais quando workspace corresponder
+  useEffect(() => {
+    if (initialTasks !== undefined && 
+        currentWorkspace?.id === initialWorkspaceId && 
+        currentWorkspace?.isPersonal === initialIsPersonal &&
+        statusFilter === "upcoming" &&
+        period === "week") {
+      // Atualizar tarefas com dados iniciais se workspace corresponde
+      setTasks(initialTasks);
+      setLoading(false);
+    }
+  }, [initialTasks, initialWorkspaceId, initialIsPersonal, currentWorkspace, statusFilter, period]);
+
   // Buscar tarefas - workspace pessoal mostra todas as tarefas dos outros workspaces
+  // OTIMIZAÇÃO: Só fazer fetch se não tiver dados iniciais ou se workspace/filtro mudar
   useEffect(() => {
     const loadTasks = async () => {
       if (!currentWorkspace) return;
+      
+      // Se temos dados iniciais e workspace/filtro não mudou, não fazer fetch
+      // Verificar se os dados iniciais são válidos e correspondem ao workspace atual
+      if (initialTasks !== undefined && 
+          initialTasks.length >= 0 && // Aceita array vazio também
+          currentWorkspace.id === initialWorkspaceId && 
+          currentWorkspace.isPersonal === initialIsPersonal &&
+          statusFilter === "upcoming" &&
+          period === "week") { // Só usar dados iniciais para período "week"
+        // Usar dados iniciais - não fazer fetch
+        return;
+      }
       
       setLoading(true);
       try {
@@ -164,7 +192,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     };
 
     loadTasks();
-  }, [period, currentWorkspace, statusFilter, dateRange]); // Recarregar quando o período, workspace ou filtro mudar
+  }, [period, currentWorkspace, statusFilter, dateRange, initialTasks, initialWorkspaceId, initialIsPersonal]); // Recarregar quando o período, workspace ou filtro mudar
 
   // Buscar workspaces para criar mapa workspace_id -> name
   useEffect(() => {
@@ -322,7 +350,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
           }
           if (updates.assignees !== undefined) {
             // Atualizar assignees mantendo estrutura TaskWithDetails
-            updatedTask.assignees = updates.assignees;
+            (updatedTask as any).assignees = updates.assignees;
           }
           
           return updatedTask;
@@ -507,7 +535,7 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
 
               {displayedTasks.map((task: any) => {
                 // getTasks já retorna assignees através de transformTaskWithMembers
-                const assignees = task.assignees || [];
+                const assignees = (task as any).assignees || [];
                 const commentCount = task.comment_count || 0;
                 const workspaceName = task.workspace_id ? workspaceMap.get(task.workspace_id) : undefined;
                 const projectTag = task.tags && task.tags.length > 0 ? task.tags[0] : undefined;
