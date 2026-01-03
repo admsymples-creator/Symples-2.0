@@ -107,3 +107,98 @@ Se necessário, implementar:
 
 **Data**: 2025-12-14  
 **Branch**: `perf/system-performance`
+
+---
+
+## Fase 3: Otimizações de Produção (2026-01-02)
+
+### Problema Identificado
+- Home e Planner carregavam instantaneamente em build local, mas lentidão persistia em produção (Vercel)
+- Cache do Next.js servindo versões antigas
+- Falta de logs de performance para identificar gargalos
+
+### Mudanças Implementadas
+
+#### 1. Configurações de Cache Dinâmico
+**Arquivos**: 
+- `app/(main)/[workspaceSlug]/home/page.tsx`
+- `app/(main)/[workspaceSlug]/planner/page.tsx`
+
+**Adicionado**:
+```typescript
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+```
+
+**Impacto**: Força renderização dinâmica, evitando cache que causava lentidão em produção
+
+#### 2. Logs de Performance Detalhados
+**Arquivos**:
+- `app/(main)/[workspaceSlug]/home/page.tsx`
+- `app/(main)/[workspaceSlug]/planner/page.tsx`
+- `lib/actions/notifications.ts`
+
+**Métricas adicionadas**:
+- Tempo de dados críticos (tasks + notifications)
+- Tempo de dados secundários (stats + icons)
+- Tempo total de renderização da página
+- Tamanho dos dados serializados (KB)
+- Tempo de queries individuais
+
+**Exemplo de logs**:
+```
+[PERF] Home - Critical data (tasks + notifications): 250ms
+[PERF] Home - Data size: tasks=45.23KB, notifications=12.45KB
+[PERF] Home - Total page render time: 350ms
+[PERF] getNotifications - Query: 120ms
+[PERF] getNotifications - Profiles fetch: 45ms (5 users)
+[PERF] getNotifications - Total: 165ms (30 notifications)
+```
+
+#### 3. Correção de getNotifications
+**Arquivo**: `lib/actions/notifications.ts`
+
+**Problema**: JOIN inválido entre `notifications.triggering_user_id` (auth.users) e `profiles`
+
+**Solução**: 
+- Removido JOIN problemático
+- Busca de profiles em batch query separada
+- Melhor tratamento de erros com logs detalhados
+
+**Impacto**: Resolve erro 500 ao buscar notificações
+
+#### 4. Correção de Hooks do React
+**Arquivos**:
+- `components/home/HomeTasksSection.tsx`
+- `components/home/HomeInboxSection.tsx`
+- `components/home/HomeWorkspaceOverview.tsx`
+
+**Problema**: Erro "Rendered more hooks than during the previous render"
+
+**Solução**:
+- Garantido que todos os hooks são sempre chamados na mesma ordem
+- Removido `initialNotifications` das dependências do useEffect para evitar loops
+- Adicionados comentários explicativos sobre ordem dos hooks
+
+**Impacto**: Resolve erro de runtime relacionado a hooks
+
+### Arquivos Modificados
+
+- `app/(main)/[workspaceSlug]/home/page.tsx` - Cache dinâmico + logs
+- `app/(main)/[workspaceSlug]/planner/page.tsx` - Cache dinâmico + logs
+- `lib/actions/notifications.ts` - Correção JOIN + logs de performance
+- `components/home/HomeTasksSection.tsx` - Correção hooks
+- `components/home/HomeInboxSection.tsx` - Correção hooks
+- `components/home/HomeWorkspaceOverview.tsx` - Correção hooks + exportação de interface
+
+### Próximos Passos
+
+1. Monitorar logs de performance em produção para identificar gargalos
+2. Limpar cache do Vercel após deploy
+3. Verificar se latência do Supabase está causando lentidão
+4. Considerar otimizações adicionais baseadas nos logs
+
+---
+
+**Data**: 2026-01-02  
+**Branch**: `nav/sidebar-project`

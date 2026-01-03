@@ -108,6 +108,7 @@ export function HomeWorkspaceOverview({
   }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd, initialProjectStats, initialIsPersonal, workspaces]);
 
   // Filtrar stats para mostrar apenas workspaces (quando for pessoal)
+  // IMPORTANTE: Este useMemo deve estar ANTES de qualquer return condicional
   const filteredWorkspaceStats = useMemo(() => {
     if (isPersonal) {
       return workspaceStats.filter((ws) => {
@@ -120,6 +121,7 @@ export function HomeWorkspaceOverview({
   }, [workspaceStats, isPersonal, workspaces]);
 
   // Mostrar skeleton/loading enquanto carrega (evita desaparecimento do card)
+  // IMPORTANTE: Este return está DEPOIS de todos os hooks, então está correto
   if (!isLoaded) {
     return (
       <div>

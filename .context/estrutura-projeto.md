@@ -549,4 +549,29 @@ Documentação técnica do projeto
 
 ---
 
-*Última atualização: Sistema completo de convites e gestão de membros (Dezembro 2024)*
+## ✅ Otimizações de Performance em Produção (2026-01-02)
+
+### 1. Configurações de Cache
+- **Páginas Home e Planner**: `export const dynamic = 'force-dynamic'` e `export const revalidate = 0`
+- Força renderização dinâmica para evitar cache que causava lentidão em produção
+- Resolve problema onde build local era rápida mas produção continuava lenta
+
+### 2. Sistema de Logs de Performance
+- Logs detalhados em todas as funções críticas (`getTasks`, `getNotifications`)
+- Logs de tempo de renderização nas páginas (home, planner)
+- Monitoramento de tamanho de dados serializados
+- Facilita identificação de gargalos em produção
+
+### 3. Correção de getNotifications
+- **Problema**: JOIN inválido entre `notifications.triggering_user_id` (auth.users) e `profiles`
+- **Solução**: Busca separada de profiles em batch query
+- **Impacto**: Resolve erro 500 ao buscar notificações
+
+### 4. Correção de Hooks do React
+- Garantido que todos os hooks são sempre chamados na mesma ordem
+- Removido dependências problemáticas de useEffect para evitar loops
+- Resolve erro "Rendered more hooks than during the previous render"
+
+---
+
+*Última atualização: Otimizações de performance em produção (Janeiro 2026)*
