@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getTasksForWorkspace, getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { getGroupsForWorkspace } from "@/lib/group-actions";
-import TasksPage from "../../tasks/page";
+import TasksPage from "../../tasks/tasks-page-client";
 
 interface PageProps {
   params: Promise<{ workspaceSlug: string }>;

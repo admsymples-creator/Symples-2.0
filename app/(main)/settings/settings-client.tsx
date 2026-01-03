@@ -99,25 +99,30 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_url || null);
 
-  // Carregar workspace ativo quando o contexto mudar
+  // Sincronizar dados iniciais quando disponíveis - executar apenas uma vez no mount
+  useEffect(() => {
+    if (initialWorkspace) {
+      setWorkspace(initialWorkspace);
+      setWorkspaceName(initialWorkspace.name);
+      setSlug(initialWorkspace.slug || "");
+      setWorkspaceLogoPreview((initialWorkspace as any)?.logo_url || null);
+    }
+    if (initialMembers.length > 0 || initialInvites.length > 0) {
+      setMembers(initialMembers);
+      setInvites(initialInvites);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Executar apenas no mount
+
+  // Carregar workspace ativo quando o contexto mudar (apenas se não temos dados iniciais)
   useEffect(() => {
     if (!isLoaded || !activeWorkspaceId) {
       return;
     }
 
     // OTIMIZAÇÃO: Se já temos dados iniciais para este workspace, não recarregar
-    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id && (initialMembers.length > 0 || initialInvites.length > 0)) {
-      // Dados já estão carregados, apenas atualizar workspace se necessário
-      if (!workspace || workspace.id !== activeWorkspaceId) {
-        getWorkspaceById(activeWorkspaceId).then(activeWorkspace => {
-          if (activeWorkspace) {
-            setWorkspace(activeWorkspace);
-            setWorkspaceName(activeWorkspace.name);
-            setSlug(activeWorkspace.slug || "");
-            setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
-          }
-        });
-      }
+    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id) {
+      // Dados já estão carregados, não fazer fetch
       return;
     }
 
@@ -132,7 +137,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
           setWorkspaceLogoFile(null); // Limpar arquivo selecionado ao trocar workspace
           
-          // Recarregar membros e convites do novo workspace apenas se não temos dados iniciais
+          // Recarregar membros e convites do novo workspace
           const [members, invites] = await Promise.all([
             getWorkspaceMembers(activeWorkspaceId),
             getPendingInvites(activeWorkspaceId)
@@ -149,7 +154,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     };
 
     loadActiveWorkspace();
-  }, [activeWorkspaceId, isLoaded, initialWorkspace, initialMembers, initialInvites]);
+  }, [activeWorkspaceId, isLoaded, initialWorkspace]);
 
   // Carregar dados de subscription quando workspace mudar ou tab billing for aberta
   useEffect(() => {

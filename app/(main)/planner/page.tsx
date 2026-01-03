@@ -1,25 +1,31 @@
-import { PlannerPageClient } from "./planner-page-client";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { getUserWorkspaces } from "@/lib/actions/user";
 
-export default function PlannerPage() {
-  return (
-    <div className="min-h-screen bg-white pb-20">
-      {/* HEADER AREA - LINE 1 */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
-        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Planner</h1>
-            <p className="text-sm text-gray-500">Visualize suas tarefas em formato de calendário e visão semanal.</p>
-          </div>
-        </div>
-      </div>
+/**
+ * Redireciona /planner para /[workspaceSlug]/planner baseado no workspace ativo
+ */
+export default async function PlannerPage() {
+  const cookieStore = await cookies();
+  const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
+  const workspaces = await getUserWorkspaces();
 
-      <div className="w-full bg-white px-6">
-        <div className="max-w-[1600px] mx-auto">
-          <div className="py-3 space-y-8">
-            <PlannerPageClient />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  if (!workspaces || workspaces.length === 0) {
+    redirect("/onboarding");
+  }
+
+  // Determinar workspace ativo
+  let activeWorkspace = workspaces[0];
+  if (activeWorkspaceIdCookie?.value) {
+    const workspaceFromCookie = workspaces.find(
+      w => w.id === activeWorkspaceIdCookie.value
+    );
+    if (workspaceFromCookie) {
+      activeWorkspace = workspaceFromCookie;
+    }
+  }
+
+  // Redirecionar para a rota com workspace slug
+  const workspaceSlug = activeWorkspace.slug || activeWorkspace.id;
+  redirect(`/${workspaceSlug}/planner`);
 }

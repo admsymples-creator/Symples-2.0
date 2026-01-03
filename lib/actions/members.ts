@@ -3,6 +3,7 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { sendInviteEmail } from "@/lib/email/send-invite";
@@ -51,8 +52,9 @@ export async function getCurrentUserRole(workspaceId: string): Promise<string | 
 
 /**
  * Busca os membros de um workspace específico
+ * OTIMIZADO: Usa cache do React para evitar fetches duplicados
  */
-export async function getWorkspaceMembers(workspaceId: string) {
+export const getWorkspaceMembers = cache(async (workspaceId: string) => {
   const supabase = await createServerActionClient();
 
   // Verificar autenticação
@@ -205,12 +207,13 @@ export async function getWorkspaceMembers(workspaceId: string) {
     });
     return [];
   }
-}
+});
 
 /**
  * Busca convites pendentes de um workspace
+ * OTIMIZADO: Usa cache do React para evitar fetches duplicados
  */
-export async function getPendingInvites(workspaceId: string) {
+export const getPendingInvites = cache(async (workspaceId: string) => {
   const supabase = await createServerActionClient();
 
   const { data, error } = await supabase
@@ -226,7 +229,7 @@ export async function getPendingInvites(workspaceId: string) {
   }
 
   return data as Invite[];
-}
+});
 
 /**
  * Envia um convite para um novo membro

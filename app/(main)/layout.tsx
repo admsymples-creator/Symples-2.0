@@ -1,6 +1,10 @@
 import { getUserProfile, getUserWorkspaces, ensurePersonalWorkspace } from "@/lib/actions/user";
 import { getCurrentSubscription } from "@/lib/actions/billing";
+import { getWorkspaceTags } from "@/lib/actions/tasks";
+import { getProjectIcons } from "@/lib/actions/projects";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { AppShell } from "@/components/layout/AppShell";
 
 export default async function MainLayout({
@@ -39,8 +43,21 @@ export default async function MainLayout({
             avatarUrl: user.avatar_url,
         } : null;
 
+        // Buscar projetos para o workspace atualizado
+        const isPersonalUpdated = isPersonalWorkspace(activeWorkspace, updatedWorkspaces);
+        const [initialProjectsTagsUpdated, initialProjectsIconsUpdated] = await Promise.all([
+            !isPersonalUpdated ? getWorkspaceTags(activeWorkspace.id) : Promise.resolve([]),
+            !isPersonalUpdated ? getProjectIcons(activeWorkspace.id) : Promise.resolve(new Map<string, string>()),
+        ]);
+
         return (
-            <AppShell user={uiUser} workspaces={updatedWorkspaces} initialSubscription={subscription}>
+            <AppShell 
+                user={uiUser} 
+                workspaces={updatedWorkspaces} 
+                initialSubscription={subscription}
+                initialProjectsTags={initialProjectsTagsUpdated}
+                initialProjectsIcons={initialProjectsIconsUpdated}
+            >
                 {children}
             </AppShell>
         );
@@ -51,13 +68,22 @@ export default async function MainLayout({
         redirect("/onboarding");
     }
 
-    // Determine active workspace (first workspace for now)
-    const activeWorkspace = workspaces[0];
+    // Determine active workspace (do cookie ou primeiro workspace)
+    const cookieStore = await cookies();
+    const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
+    const activeWorkspace = activeWorkspaceIdCookie?.value 
+        ? workspaces.find(w => w.id === activeWorkspaceIdCookie.value) || workspaces[0]
+        : workspaces[0];
     
-    // Fetch subscription data in parallel with other data
-    const subscription = activeWorkspace 
-        ? await getCurrentSubscription(activeWorkspace.id)
-        : null;
+    const isPersonal = activeWorkspace ? isPersonalWorkspace(activeWorkspace, workspaces) : false;
+
+    // Fetch subscription data e projetos em paralelo
+    const [subscription, initialProjectsTags, initialProjectsIcons] = await Promise.all([
+        activeWorkspace ? getCurrentSubscription(activeWorkspace.id) : null,
+        // Buscar projetos apenas se não for workspace pessoal
+        activeWorkspace && !isPersonal ? getWorkspaceTags(activeWorkspace.id) : Promise.resolve([]),
+        activeWorkspace && !isPersonal ? getProjectIcons(activeWorkspace.id) : Promise.resolve(new Map<string, string>()),
+    ]);
 
     // Map Supabase user to UI user format
     const uiUser = user ? {
@@ -67,7 +93,13 @@ export default async function MainLayout({
     } : null;
 
     return (
-        <AppShell user={uiUser} workspaces={workspaces} initialSubscription={subscription}>
+        <AppShell 
+            user={uiUser} 
+            workspaces={workspaces} 
+            initialSubscription={subscription}
+            initialProjectsTags={initialProjectsTags}
+            initialProjectsIcons={initialProjectsIcons}
+        >
             {children}
         </AppShell>
     )
