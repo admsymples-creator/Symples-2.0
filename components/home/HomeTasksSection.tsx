@@ -125,7 +125,9 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   }, [pathname, activeWorkspaceId, isLoaded, workspaces]);
 
   // Sincronizar dados iniciais quando workspace corresponder
+  // IMPORTANTE: Este useEffect deve sempre ser chamado (não condicional)
   useEffect(() => {
+    // Verificar condições dentro do useEffect, não condicionalmente
     if (initialTasks !== undefined && 
         currentWorkspace?.id === initialWorkspaceId && 
         currentWorkspace?.isPersonal === initialIsPersonal &&

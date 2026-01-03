@@ -18,6 +18,7 @@ export function HomeInboxSection({ initialNotifications }: HomeInboxSectionProps
   const { activeWorkspaceId, isLoaded } = useWorkspace();
 
   // Buscar notificações - OTIMIZADO: só fazer fetch se não tiver dados iniciais
+  // IMPORTANTE: Este useEffect deve sempre ser chamado (não condicional)
   useEffect(() => {
     const loadNotifications = async () => {
       if (!isLoaded) return; // Aguardar workspace carregar
@@ -46,7 +47,8 @@ export function HomeInboxSection({ initialNotifications }: HomeInboxSectionProps
     };
 
     loadNotifications();
-  }, [activeWorkspaceId, isLoaded, initialNotifications]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId, isLoaded]); // Removido initialNotifications das dependências para evitar loops
 
   const displayedNotifications = notifications.slice(0, displayLimit);
   const hasMore = notifications.length > displayLimit;
