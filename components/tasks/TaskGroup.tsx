@@ -25,6 +25,7 @@ type MinimalTask = {
     commentCount?: number;
     commentsCount?: number;
     isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
+    tags?: string[]; // ✅ Tags de projeto
 };
 
 interface TaskGroupProps {
@@ -54,9 +55,10 @@ interface TaskGroupProps {
     canMoveToBottom?: boolean;
     showGroupActions?: boolean;
     onAddTask?: (groupId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    showProjectTag?: boolean; // ✅ Mostrar tag de projeto ao invés de workspace
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false }: TaskGroupProps) {
     const [isAdding, setIsAdding] = useState(false);
     
     // Normalizar IDs para string (dnd-kit requer strings)
@@ -160,7 +162,11 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                             {tasks.map((task) => (
                                 <TaskRowMinify
                                     key={task.id}
-                                    task={{...task, workspace_id: workspaceId || null}}
+                                    task={{
+                                        ...task, 
+                                        workspace_id: workspaceId || null,
+                                        tags: task.tags || []
+                                    }}
                                     containerId={id}
                                     groupColor={groupColor}
                                     onClick={onTaskClick}
@@ -171,6 +177,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     onTaskDeletedOptimistic={onTaskDeletedOptimistic}
                                     onTaskDuplicatedOptimistic={onTaskDuplicatedOptimistic}
                                     members={members}
+                                    showProjectTag={showProjectTag}
                                 />
                             ))}
                             
@@ -189,6 +196,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         onSubmit={handleSubmitAdd}
                                         members={members || []}
                                         variant="ghost"
+                                        showDragHandle={true}
                                     />
                                 </div>
                             )}
@@ -210,6 +218,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         onSubmit={handleSubmitAdd}
                                         members={members || []}
                                         variant="ghost"
+                                        showDragHandle={true}
                                     />
                                 </TaskGroupEmpty>
                             ) : isAdding ? (

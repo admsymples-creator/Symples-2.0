@@ -1,10 +1,8 @@
 import { getWorkspacesWeeklyStats } from "@/lib/actions/dashboard";
-import { getUserWorkspaces } from "@/lib/actions/user";
-import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { TrialBanner } from "@/components/home/TrialBanner";
 import { HomeTasksSection } from "@/components/home/HomeTasksSection";
 import { HomeInboxSection } from "@/components/home/HomeInboxSection";
-import { FolderOpen } from "lucide-react";
+import { HomeWorkspaceOverview } from "@/components/home/HomeWorkspaceOverview";
 
 // ✅ Componente Server-Side limpo (sem lógica de params propensos a erro/crash)
 export default async function HomePage() {
@@ -18,9 +16,8 @@ export default async function HomePage() {
   endOfWeek.setHours(23, 59, 59, 999);
 
   // Buscar dados em paralelo
-  const [workspaceStats, userWorkspaces] = await Promise.all([
-    getWorkspacesWeeklyStats(startOfWeek, endOfWeek),
-    getUserWorkspaces()
+  const [workspaceStats] = await Promise.all([
+    getWorkspacesWeeklyStats(startOfWeek, endOfWeek)
   ]);
 
   return (
@@ -51,38 +48,12 @@ export default async function HomePage() {
               <HomeInboxSection />
             </div>
 
-            {/* Workspaces Overview */}
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Visão por Workspace
-              </h2>
-
-              {workspaceStats.length > 0 ? (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {workspaceStats.map((workspace, index) => {
-                    return (
-                      <WorkspaceCard
-                        key={workspace.id}
-                        id={workspace.id}
-                        name={workspace.name}
-                        slug={workspace.slug}
-                        logo_url={workspace.logo_url}
-                        pendingCount={workspace.pendingCount}
-                        totalCount={workspace.totalCount}
-                        members={workspace.members}
-                        isFirst={index === 0} // ✅ Passa apenas se é o primeiro para fallback de highlight
-                      />
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-200 border-dashed">
-                  <FolderOpen className="w-12 h-12 text-gray-300 mb-3" />
-                  <p className="text-gray-500 font-medium">Nenhum workspace encontrado</p>
-                  <p className="text-sm text-gray-400 mt-1">Você ainda não participa de nenhum workspace.</p>
-                </div>
-              )}
-            </div>
+            {/* Workspaces Overview - Mostra projetos (profissional) ou workspaces (pessoal) */}
+            <HomeWorkspaceOverview 
+              workspaceStats={workspaceStats} 
+              weekStart={startOfWeek}
+              weekEnd={endOfWeek}
+            />
           </div>
         </div>
       </div>

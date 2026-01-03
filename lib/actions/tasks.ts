@@ -4,6 +4,36 @@ import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { Database } from "@/types/database.types";
 
+const perfEnabled = process.env.DEBUG_PERF === "1";
+const perfNow = () => Date.now();
+const logPerf = (label: string, startMs: number, meta?: Record<string, unknown>) => {
+  if (!perfEnabled) return;
+  const durationMs = perfNow() - startMs;
+  if (meta) {
+    console.log(`[perf] ${label}`, { durationMs, ...meta });
+  } else {
+    console.log(`[perf] ${label}`, { durationMs });
+  }
+};
+
+type CacheEntry<T> = { value: T; expiresAt: number };
+const IN_MEMORY_TTL_MS = 10_000;
+const workspaceIdBySlugCache = new Map<string, CacheEntry<string | null>>();
+
+const readCache = <T,>(cache: Map<string, CacheEntry<T>>, key: string): CacheEntry<T> | null => {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return cached;
+};
+
+const writeCache = <T,>(cache: Map<string, CacheEntry<T>>, key: string, value: T) => {
+  cache.set(key, { value, expiresAt: Date.now() + IN_MEMORY_TTL_MS });
+};
+
 // Re-exporting types
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
@@ -84,11 +114,14 @@ export async function getTasks(filters?: {
   assigneeId?: string | null | "current";
   dueDateStart?: string;
   dueDateEnd?: string;
+  tag?: string;
 }) {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    logPerf("getTasks:anonymous", perfStart);
     return [];
   }
 
@@ -98,6 +131,7 @@ export async function getTasks(filters?: {
   
   if (filters?.workspaceId === undefined && !isMinhasTab) {
     console.warn(`[getTasks] workspaceId não especificado e não é aba "Minhas" - retornando array vazio por segurança`);
+    logPerf("getTasks:no-workspace", perfStart);
     return [];
   }
 
@@ -113,6 +147,7 @@ export async function getTasks(filters?: {
     
     if (!membership) {
       console.warn(`[getTasks] Acesso negado: Usuário ${user.id} tentou acessar workspace ${filters.workspaceId} sem ser membro`);
+      logPerf("getTasks:denied", perfStart, { workspaceId: filters.workspaceId });
       return []; // Retornar vazio se não for membro
     }
   }
@@ -180,10 +215,18 @@ export async function getTasks(filters?: {
       query = query.lte("due_date", filters.dueDateEnd);
   }
 
+  // Filtro de Tag (Projeto)
+  if (filters?.tag) {
+    query = query.contains("tags", [filters.tag]);
+  }
+
+  const queryStart = perfNow();
   let { data, error } = await query;
+  logPerf("getTasks:query", queryStart, { workspaceId: filters?.workspaceId ?? null });
   
   // Se estamos na aba "Minhas" e há tarefas em task_members, buscar também essas tarefas
   if (filters?.assigneeId === "current" && isMinhasTab) {
+      const membersQueryStart = perfNow();
       const { data: taskMemberTasks } = await supabase
         .from("task_members")
         .select(`
@@ -215,6 +258,7 @@ export async function getTasks(filters?: {
           )
         `)
         .eq("user_id", user.id);
+      logPerf("getTasks:task-members", membersQueryStart);
       
       if (taskMemberTasks && taskMemberTasks.length > 0) {
           const tasksFromMembers = taskMemberTasks
@@ -233,10 +277,12 @@ export async function getTasks(filters?: {
 
   if (error) {
     console.error("Erro ao buscar tarefas:", error);
+    logPerf("getTasks:error", perfStart);
     return [];
   }
 
   if (!data || data.length === 0) {
+    logPerf("getTasks:empty", perfStart);
     return [];
   }
 
@@ -315,10 +361,12 @@ export async function getTasks(filters?: {
   
   if (taskIds.length > 0) {
     // Buscar todos os task_ids de uma vez - mais eficiente que múltiplas queries em lote
+    const commentsQueryStart = perfNow();
     const { data: commentsData, error: commentsError } = await supabase
       .from("task_comments")
       .select("task_id")
       .in("task_id", taskIds);
+    logPerf("getTasks:comments", commentsQueryStart, { count: taskIds.length });
     
     if (commentsError) {
       console.error("Erro ao buscar contagem de comentários:", commentsError);
@@ -342,7 +390,68 @@ export async function getTasks(filters?: {
     return transformed;
   }) as unknown as TaskWithDetails[];
   
+  logPerf("getTasks", perfStart, { count: result.length });
   return result;
+}
+
+/**
+ * Busca todas as tags únicas de um workspace
+ * Retorna array de tags ordenadas alfabeticamente
+ */
+export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user || !workspaceId) return [];
+
+  // Verificar se usuário é membro do workspace
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) return [];
+
+  // OTIMIZAÇÃO: Buscar apenas a coluna tags (não todas as tarefas)
+  // Usar distinct para reduzir dados transferidos
+  const { data: tasks, error } = await supabase
+    .from("tasks")
+    .select("tags")
+    .eq("workspace_id", workspaceId)
+    .neq("status", "archived")
+    .not("tags", "is", null); // Apenas tarefas com tags
+
+  // Extrair tags únicas de tarefas
+  const allTags = new Set<string>();
+  if (!error && tasks) {
+    tasks.forEach((task: any) => {
+      if (task.tags && Array.isArray(task.tags)) {
+        task.tags.forEach((tag: string) => {
+          if (tag && tag.trim()) {
+            allTags.add(tag.trim());
+          }
+        });
+      }
+    });
+  }
+
+  // Buscar tags que têm ícones salvos (projetos criados sem tarefas ainda)
+  const { data: projectIcons, error: iconsError } = await (supabase as any)
+    .from("project_icons")
+    .select("tag_name")
+    .eq("workspace_id", workspaceId);
+
+  if (!iconsError && projectIcons) {
+    projectIcons.forEach((icon: any) => {
+      if (icon.tag_name && icon.tag_name.trim()) {
+        allTags.add(icon.tag_name.trim());
+      }
+    });
+  }
+
+  return Array.from(allTags).sort();
 }
 
 /**
@@ -1106,6 +1215,21 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
     return null;
   }
 
+  const supabase = await createServerActionClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return null;
+  }
+
+  const cacheKey = `${user.id}:${workspaceSlug}`;
+  const cached = readCache(workspaceIdBySlugCache, cacheKey);
+  if (cached) {
+    return cached.value;
+  }
+
   const { getUserWorkspaces } = await import("@/lib/actions/user");
   const workspaces = await getUserWorkspaces();
 
@@ -1117,9 +1241,11 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
 
   if (!matchedWorkspace) {
     console.warn(`[getWorkspaceIdBySlug] Workspace não encontrado para slug: ${workspaceSlug}`);
+    writeCache(workspaceIdBySlugCache, cacheKey, null);
     return null;
   }
 
+  writeCache(workspaceIdBySlugCache, cacheKey, matchedWorkspace.id);
   return matchedWorkspace.id;
 }
 
@@ -1353,4 +1479,86 @@ export async function getWorkspaceMembers(workspaceId: string | null) {
     }
 
     return members;
+}
+
+/**
+ * Busca membros de múltiplos workspaces de uma vez (otimização de performance)
+ * Reduz N queries para 1 query única
+ */
+export async function getWorkspaceMembersBatch(workspaceIds: string[]): Promise<Map<string, Array<{ id: string; name: string; avatar?: string }>>> {
+    const supabase = await createServerActionClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user || !workspaceIds || workspaceIds.length === 0) {
+        return new Map();
+    }
+
+    // Buscar todos os membros de todos os workspaces de uma vez
+    const { data, error } = await supabase
+        .from("workspace_members")
+        .select(`
+            workspace_id,
+            user:user_id (
+                id,
+                full_name,
+                email,
+                avatar_url
+            )
+        `)
+        .in("workspace_id", workspaceIds);
+
+    if (error) {
+        console.error("Erro ao buscar membros em batch:", error);
+        return new Map();
+    }
+
+    // Organizar membros por workspace_id
+    const membersMap = new Map<string, Array<{ id: string; name: string; avatar?: string }>>();
+    
+    // Inicializar mapas vazios para cada workspace
+    workspaceIds.forEach(wsId => {
+        membersMap.set(wsId, []);
+    });
+
+    // Processar dados retornados
+    (data || []).forEach((member: any) => {
+        const workspaceId = member.workspace_id;
+        const userData = Array.isArray(member.user) ? member.user[0] : member.user;
+        
+        if (userData && workspaceId) {
+            const existing = membersMap.get(workspaceId) || [];
+            existing.push({
+                id: userData.id,
+                name: userData.full_name || userData.email || "Usuário",
+                avatar: userData.avatar_url || undefined,
+            });
+            membersMap.set(workspaceId, existing);
+        }
+    });
+
+    // Garantir que o usuário atual esteja em cada workspace
+    const { data: currentUserProfile } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, avatar_url")
+        .eq("id", user.id)
+        .single();
+
+    if (currentUserProfile) {
+        const currentUser = {
+            id: currentUserProfile.id,
+            name: currentUserProfile.full_name || currentUserProfile.email || "Usuário",
+            avatar: currentUserProfile.avatar_url || undefined,
+        };
+
+        workspaceIds.forEach(wsId => {
+            const existing = membersMap.get(wsId) || [];
+            const hasCurrentUser = existing.some(m => m.id === user.id);
+            if (!hasCurrentUser) {
+                existing.push(currentUser);
+                membersMap.set(wsId, existing);
+            }
+        });
+    }
+
+    return membersMap;
 }

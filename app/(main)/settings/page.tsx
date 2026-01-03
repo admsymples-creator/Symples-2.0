@@ -1,36 +1,35 @@
-import { Suspense } from "react";
-import { getUserProfile, getUserWorkspaces } from "@/lib/actions/user";
-import { getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
-import { getCurrentSubscription } from "@/lib/actions/billing";
-import { SettingsPageClient } from "./settings-client";
-import { cookies } from "next/headers";
+"use client";
 
-export default async function SettingsPage() {
-  const user = await getUserProfile();
-  const workspaces = await getUserWorkspaces();
-  
-  // Buscar workspace ativo do cookie ou usar o primeiro
-  const cookieStore = await cookies();
-  const activeWorkspaceId = cookieStore.get('active-workspace-id')?.value;
-  const activeWorkspace = activeWorkspaceId 
-    ? workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0]
-    : workspaces.length > 0 ? workspaces[0] : null;
-  
-  const members = activeWorkspace ? await getWorkspaceMembers(activeWorkspace.id) : [];
-  const invites = activeWorkspace ? await getPendingInvites(activeWorkspace.id) : [];
-  
-  // Buscar dados de subscription no servidor
-  const subscription = activeWorkspace ? await getCurrentSubscription(activeWorkspace.id) : null;
+import { useEffect, useState } from "react";
+import { SettingsPageClient } from "./settings-client";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
+import { getUserProfile, type Profile, type Workspace } from "@/lib/actions/user";
+
+export default function SettingsPage() {
+  const workspaces = useWorkspaces();
+  const [user, setUser] = useState<Profile | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    getUserProfile().then((profile) => {
+      if (isActive) {
+        setUser(profile);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const initialWorkspace: Workspace | null = workspaces[0] ?? null;
 
   return (
-    <Suspense fallback={null}>
-      <SettingsPageClient 
-        user={user} 
-        workspace={activeWorkspace}
-        initialMembers={members}
-        initialInvites={invites}
-        initialSubscription={subscription}
-      />
-    </Suspense>
+    <SettingsPageClient
+      user={user}
+      workspace={initialWorkspace}
+      initialMembers={[]}
+      initialInvites={[]}
+      initialSubscription={null}
+    />
   );
 }

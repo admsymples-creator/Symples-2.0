@@ -1,28 +1,38 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TaskRowMinify } from "@/components/tasks/TaskRowMinify";
-import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import { getTasks, TaskWithDetails } from "@/lib/actions/tasks";
-import { getWorkspaceMembers } from "@/lib/actions/tasks";
-import { getUserWorkspaces } from "@/lib/actions/user";
-import { createTask } from "@/lib/actions/tasks";
+import { MyTaskRowHome } from "@/components/tasks/MyTaskRowHome";
+import dynamic from "next/dynamic";
+import { TaskWithDetails, getTasks, createTask, getWorkspaceMembers, getWorkspaceMembersBatch } from "@/lib/actions/tasks";
 import { cn } from "@/lib/utils";
 import { Loader2, CheckSquare, Clock, AlertCircle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QuickTaskAdd } from "@/components/tasks/QuickTaskAdd";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
+import { usePathname } from "next/navigation";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
+
+const TaskDetailModal = dynamic(
+  () => import("@/components/tasks/TaskDetailModal").then((mod) => mod.TaskDetailModal),
+  { ssr: false }
+);
 
 interface HomeTasksSectionProps {
   period: "week" | "month";
+  initialTasks?: TaskWithDetails[];
+  initialWorkspaceId?: string;
+  initialIsPersonal?: boolean;
 }
 
 type TaskStatusFilter = "upcoming" | "overdue" | "completed";
 
-export function HomeTasksSection({ period }: HomeTasksSectionProps) {
-  const [tasks, setTasks] = useState<TaskWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
+export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, initialIsPersonal }: HomeTasksSectionProps) {
+  // Inicializar com dados do servidor para exibição instantânea
+  const [tasks, setTasks] = useState<TaskWithDetails[]>(() => initialTasks || []);
+  const [loading, setLoading] = useState(() => !initialTasks || initialTasks.length === 0); // Não mostrar loading se já temos dados iniciais
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("upcoming");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,6 +40,10 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
   const [workspaceMap, setWorkspaceMap] = useState<Map<string, string>>(new Map());
   const [displayLimit, setDisplayLimit] = useState(10); // Limite inicial de 10 itens
   const shouldReduceMotion = useReducedMotion();
+  const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const workspaces = useWorkspaces();
+  const pathname = usePathname();
+  const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(null);
 
   // Calcular range de datas baseado no período (apenas para "Próximas")
   const dateRange = useMemo(() => {
@@ -60,17 +74,115 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     }
   }, [period]);
 
-  // Buscar tarefas - buscar todas as tarefas do usuário (sem filtro de data inicial)
+  // Detectar workspace atual da URL e verificar se é pessoal
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!workspaces || workspaces.length === 0) {
+      setCurrentWorkspace(null);
+      return;
+    }
+
+    const segments = pathname.split("/").filter(Boolean);
+    
+    // Priorizar workspace da URL sobre contexto
+    let workspaceId = activeWorkspaceId;
+    let workspace = null;
+    
+    // Se estamos em /home (sem workspace na URL), usar workspace ativo do contexto
+    if (segments.length === 0 || segments[0] === "home") {
+      // Usar workspace ativo do contexto
+      workspace = workspaces.find(w => w.id === activeWorkspaceId);
+    } else {
+      // Estamos em um workspace específico na URL
+      const workspaceSlug = segments[0];
+      workspace = workspaces.find(w => w.slug === workspaceSlug || w.id === workspaceSlug);
+      if (workspace) {
+        workspaceId = workspace.id;
+      }
+    }
+    
+    if (workspaceId && workspace) {
+      const isPersonal = isPersonalWorkspace(workspace, workspaces);
+      setCurrentWorkspace({
+        id: workspaceId,
+        name: workspace.name || "Workspace",
+        isPersonal
+      });
+    } else {
+      // Se não há workspace ativo, usar o primeiro workspace ou criar lógica padrão
+      const firstWorkspace = workspaces[0];
+      if (firstWorkspace) {
+        const isPersonal = isPersonalWorkspace(firstWorkspace, workspaces);
+        setCurrentWorkspace({
+          id: firstWorkspace.id,
+          name: firstWorkspace.name,
+          isPersonal
+        });
+      } else {
+        setCurrentWorkspace(null);
+      }
+    }
+  }, [pathname, activeWorkspaceId, isLoaded, workspaces]);
+
+  // Sincronizar dados iniciais quando workspace corresponder
+  useEffect(() => {
+    if (initialTasks !== undefined && 
+        currentWorkspace?.id === initialWorkspaceId && 
+        currentWorkspace?.isPersonal === initialIsPersonal &&
+        statusFilter === "upcoming" &&
+        period === "week") {
+      // Atualizar tarefas com dados iniciais se workspace corresponde
+      setTasks(initialTasks);
+      setLoading(false);
+    }
+  }, [initialTasks, initialWorkspaceId, initialIsPersonal, currentWorkspace, statusFilter, period]);
+
+  // Buscar tarefas - workspace pessoal mostra todas as tarefas dos outros workspaces
+  // OTIMIZAÇÃO: Só fazer fetch se não tiver dados iniciais ou se workspace/filtro mudar
   useEffect(() => {
     const loadTasks = async () => {
+      if (!currentWorkspace) return;
+      
+      // Se temos dados iniciais e workspace/filtro não mudou, não fazer fetch
+      // Verificar se os dados iniciais são válidos e correspondem ao workspace atual
+      if (initialTasks !== undefined && 
+          initialTasks.length >= 0 && // Aceita array vazio também
+          currentWorkspace.id === initialWorkspaceId && 
+          currentWorkspace.isPersonal === initialIsPersonal &&
+          statusFilter === "upcoming" &&
+          period === "week") { // Só usar dados iniciais para período "week"
+        // Usar dados iniciais - não fazer fetch
+        return;
+      }
+      
       setLoading(true);
       try {
-        // Buscar todas as tarefas atribuídas ao usuário atual
-        const fetchedTasks = await getTasks({
-          assigneeId: "current",
-        });
+        // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário (de todos os workspaces)
+        if (currentWorkspace.isPersonal) {
+          const fetchedTasks = await getTasks({
+            assigneeId: "current",
+            // Não aplicar filtro de data para workspace pessoal (mostra todas)
+          });
+          setTasks(fetchedTasks || []);
+          setLoading(false);
+          return;
+        }
         
-        setTasks(fetchedTasks || []);
+        // Workspace profissional: buscar apenas tarefas do workspace ativo
+        // Aplicar filtro de data apenas para "Próximas" (statusFilter === "upcoming")
+        const fetchedTasks = await getTasks({
+          workspaceId: currentWorkspace.id,
+          assigneeId: "current",
+          // Aplicar filtro de data apenas para "Próximas"
+          ...(statusFilter === "upcoming" ? {
+            dueDateStart: dateRange.start,
+            dueDateEnd: dateRange.end,
+          } : {}),
+        });
+        const scopedTasks = (fetchedTasks || []).filter(
+          (task) => task.workspace_id === currentWorkspace.id
+        );
+        setTasks(scopedTasks);
       } catch (error) {
         console.error("Erro ao carregar tarefas:", error);
         setTasks([]);
@@ -80,79 +192,74 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     };
 
     loadTasks();
-  }, [period]); // Recarregar quando o período mudar
+  }, [period, currentWorkspace, statusFilter, dateRange, initialTasks, initialWorkspaceId, initialIsPersonal]); // Recarregar quando o período, workspace ou filtro mudar
 
   // Buscar workspaces para criar mapa workspace_id -> name
   useEffect(() => {
-    const loadWorkspaces = async () => {
-      try {
-        const workspaces = await getUserWorkspaces();
-        const map = new Map<string, string>();
-        workspaces.forEach((ws: any) => {
-          if (ws.id && ws.name) {
-            map.set(ws.id, ws.name);
-          }
-        });
-        setWorkspaceMap(map);
-      } catch (error) {
-        console.error("Erro ao carregar workspaces:", error);
+    const map = new Map<string, string>();
+    (workspaces || []).forEach((ws: any) => {
+      if (ws.id && ws.name) {
+        map.set(ws.id, ws.name);
       }
-    };
-    loadWorkspaces();
-  }, []);
+    });
+    setWorkspaceMap(map);
+  }, [workspaces]);
 
-  // Buscar membros (para o TaskRowMinify) - buscar de todos os workspaces únicos
+  // Buscar membros (para o TaskRowMinify e QuickTaskAdd) - OTIMIZADO: usa batch
   useEffect(() => {
     const loadMembers = async () => {
+      if (!currentWorkspace) return;
+      
       try {
-        // Buscar membros de todos os workspaces das tarefas
+        // Se for workspace profissional, buscar membros diretamente do workspace ativo
+        // Isso garante que mesmo sem tarefas, os membros estarão disponíveis
+        if (!currentWorkspace.isPersonal && currentWorkspace.id) {
+          try {
+            const workspaceMembers = await getWorkspaceMembers(currentWorkspace.id);
+            const membersList = workspaceMembers.map((m: any) => ({
+              id: m.user_id || m.id,
+              name: m.profiles?.full_name || m.full_name || m.email || "Usuário",
+              avatar: m.profiles?.avatar_url || m.avatar_url || undefined,
+            }));
+            setMembers(membersList);
+            return;
+          } catch (error) {
+            console.error(`Erro ao buscar membros do workspace ${currentWorkspace.id}:`, error);
+          }
+        }
+        
+        // Para workspace pessoal: buscar membros de todos os workspaces das tarefas em BATCH
         const workspaceIds = Array.from(
           new Set(tasks.map((t) => t.workspace_id).filter(Boolean) as string[])
         );
 
         if (workspaceIds.length > 0) {
-          // Buscar membros de todos os workspaces e combinar
+          // OTIMIZAÇÃO: Buscar todos os membros de uma vez em vez de loop sequencial
+          const membersMap = await getWorkspaceMembersBatch(workspaceIds);
+          
+          // Combinar todos os membros únicos (por ID)
           const allMembersMap = new Map<string, { id: string; name: string; avatar?: string }>();
           
-          for (const workspaceId of workspaceIds) {
-            try {
-              const workspaceMembers = await getWorkspaceMembers(workspaceId);
-              workspaceMembers.forEach((m: any) => {
-                if (m.id && !allMembersMap.has(m.id)) {
-                  allMembersMap.set(m.id, {
-                    id: m.id,
-                    name: m.full_name || m.email || "Usuário",
-                    avatar: m.avatar_url || undefined,
-                  });
-                }
-              });
-            } catch (error) {
-              console.error(`Erro ao buscar membros do workspace ${workspaceId}:`, error);
-            }
-          }
+          membersMap.forEach((members, workspaceId) => {
+            members.forEach((m) => {
+              if (!allMembersMap.has(m.id)) {
+                allMembersMap.set(m.id, m);
+              }
+            });
+          });
           
           setMembers(Array.from(allMembersMap.values()));
         } else {
-          // Se não há workspace, buscar membros pessoais
-          const personalMembers = await getWorkspaceMembers(null);
-          const mappedMembers = personalMembers.map((m: any) => ({
-            id: m.id,
-            name: m.full_name || m.email || "Usuário",
-            avatar: m.avatar_url || undefined,
-          }));
-          setMembers(mappedMembers);
+          setMembers([]);
         }
       } catch (error) {
         console.error("Erro ao carregar membros:", error);
+        setMembers([]);
       }
     };
 
-    if (tasks.length > 0) {
-      loadMembers();
-    } else {
-      setMembers([]);
-    }
-  }, [tasks]);
+    loadMembers();
+  }, [tasks, currentWorkspace]);
 
   // Filtrar tarefas baseado no status e período
   const filteredTasks = useMemo(() => {
@@ -216,34 +323,70 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
     setIsModalOpen(true);
   };
 
-  const handleTaskCreated = () => {
-    setIsModalOpen(false);
-    // Recarregar tarefas
-    const loadTasks = async () => {
-      setLoading(true);
-      try {
-        const fetchedTasks = await getTasks({
-          assigneeId: "current",
-        });
-        setTasks(fetchedTasks || []);
-      } catch (error) {
-        console.error("Erro ao recarregar tarefas:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadTasks();
-  };
+  // Callback para atualização otimista de tarefa
+  const handleTaskUpdatedOptimistic = useCallback((taskId: string | number, updates: Partial<{
+    title?: string;
+    dueDate?: string;
+    status?: string;
+    priority?: string;
+    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+  }>) => {
+    setTasks((prevTasks) => {
+      return prevTasks.map((task) => {
+        if (String(task.id) === String(taskId)) {
+          const updatedTask = { ...task };
+          
+          if (updates.title !== undefined) {
+            updatedTask.title = updates.title;
+          }
+          if (updates.dueDate !== undefined) {
+            updatedTask.due_date = updates.dueDate || null;
+          }
+          if (updates.status !== undefined) {
+            updatedTask.status = updates.status as any;
+          }
+          if (updates.priority !== undefined) {
+            updatedTask.priority = updates.priority as any;
+          }
+          if (updates.assignees !== undefined) {
+            // Atualizar assignees mantendo estrutura TaskWithDetails
+            (updatedTask as any).assignees = updates.assignees;
+          }
+          
+          return updatedTask;
+        }
+        return task;
+      });
+    });
+  }, []);
 
-  const handleTaskUpdated = () => {
-    // Recarregar tarefas
+  const handleTaskCreated = useCallback(() => {
+    setIsModalOpen(false);
+    // Recarregar tarefas apenas após criação (necessário para pegar ID e dados completos)
     const loadTasks = async () => {
+      if (!currentWorkspace) return;
+      
       setLoading(true);
       try {
-        const fetchedTasks = await getTasks({
-          assigneeId: "current",
-        });
-        setTasks(fetchedTasks || []);
+        if (currentWorkspace.isPersonal) {
+          const fetchedTasks = await getTasks({
+            assigneeId: "current",
+          });
+          setTasks(fetchedTasks || []);
+        } else {
+          const fetchedTasks = await getTasks({
+            workspaceId: currentWorkspace.id,
+            assigneeId: "current",
+            ...(statusFilter === "upcoming" ? {
+              dueDateStart: dateRange.start,
+              dueDateEnd: dateRange.end,
+            } : {}),
+          });
+          const scopedTasks = (fetchedTasks || []).filter(
+            (task) => task.workspace_id === currentWorkspace.id
+          );
+          setTasks(scopedTasks);
+        }
       } catch (error) {
         console.error("Erro ao recarregar tarefas:", error);
       } finally {
@@ -251,7 +394,13 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
       }
     };
     loadTasks();
-  };
+  }, [currentWorkspace, statusFilter, dateRange]);
+
+  const handleTaskUpdated = useCallback(() => {
+    // Não recarregar tudo - atualização otimista já foi feita
+    // Apenas revalidar se necessário (ex: mudança de status que afeta filtros)
+    // Por enquanto, deixar vazio pois onTaskUpdatedOptimistic já atualiza o estado
+  }, []);
 
   
   return (
@@ -297,7 +446,18 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
             </div>
           ) : sortedTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4">
-              {statusFilter === "upcoming" ? (
+              {currentWorkspace?.isPersonal && workspaces.length === 1 ? (
+                // Caso especial: workspace pessoal sem outros workspaces
+                <>
+                  <div className="bg-gray-50 p-3 rounded-full mb-3">
+                    <CheckSquare className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">Workspace pessoal não possui tarefas</p>
+                  <p className="text-xs text-gray-500 text-center">
+                    Crie um workspace profissional para começar a gerenciar tarefas
+                  </p>
+                </>
+              ) : statusFilter === "upcoming" ? (
                 <>
                   <div className="bg-gray-50 p-3 rounded-full mb-3">
                     <Clock className="w-6 h-6 text-gray-400" />
@@ -331,27 +491,36 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
             </div>
           ) : (
             <div className="px-2 py-2">
-              {/* Ghost TaskRow para criação rápida */}
-              <div className="px-2">
+              {/* Ghost TaskRow para criação rápida - apenas para workspaces profissionais */}
+              {!currentWorkspace?.isPersonal && (
                 <QuickTaskAdd
                   placeholder="Adicionar tarefa aqui..."
                   variant="ghost"
                   members={members}
+                  showProjectTag={true}
                   onSubmit={async (title, dueDate, assigneeId) => {
                     try {
+                      // Criar no workspace ativo (não pode ser pessoal aqui)
+                      const workspaceId = currentWorkspace?.id || null;
+                      
                       const result = await createTask({
                         title,
                         description: "",
                         status: "todo",
                         due_date: dueDate ? dueDate.toISOString() : null,
                         assignee_id: assigneeId || null,
-                        workspace_id: null,
+                        workspace_id: workspaceId,
                       });
                       
                       if (result.success) {
-                        // Recarregar tarefas
+                        // Recarregar tarefas do workspace ativo (após criação, necessário para pegar dados completos)
                         const fetchedTasks = await getTasks({
+                          workspaceId: currentWorkspace?.id,
                           assigneeId: "current",
+                          ...(statusFilter === "upcoming" ? {
+                            dueDateStart: dateRange.start,
+                            dueDateEnd: dateRange.end,
+                          } : {}),
                         });
                         setTasks(fetchedTasks || []);
                       } else {
@@ -362,16 +531,17 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
                     }
                   }}
                 />
-              </div>
+              )}
 
               {displayedTasks.map((task: any) => {
                 // getTasks já retorna assignees através de transformTaskWithMembers
-                const assignees = task.assignees || [];
+                const assignees = (task as any).assignees || [];
                 const commentCount = task.comment_count || 0;
                 const workspaceName = task.workspace_id ? workspaceMap.get(task.workspace_id) : undefined;
+                const projectTag = task.tags && task.tags.length > 0 ? task.tags[0] : undefined;
 
                 return (
-                  <TaskRowMinify
+                  <MyTaskRowHome
                     key={task.id}
                     task={{
                       id: task.id,
@@ -383,14 +553,16 @@ export function HomeTasksSection({ period }: HomeTasksSectionProps) {
                       assignees: assignees,
                       workspace_id: task.workspace_id || null,
                       commentCount: commentCount,
+                      tags: task.tags || [],
                     }}
                     groupColor={task.group?.color || undefined}
                     onClick={handleTaskClick}
                     onTaskUpdated={handleTaskUpdated}
+                    onTaskUpdatedOptimistic={handleTaskUpdatedOptimistic}
                     members={members}
                     disabled={true}
-                    showDragHandle={false}
-                    showWorkspaceBadge={true}
+                    showProjectTag={true}
+                    showWorkspaceBadge={false}
                     workspaceName={workspaceName}
                   />
                 );

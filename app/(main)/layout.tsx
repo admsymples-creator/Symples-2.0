@@ -1,4 +1,4 @@
-import { getUserProfile, getUserWorkspaces } from "@/lib/actions/user";
+import { getUserProfile, getUserWorkspaces, ensurePersonalWorkspace } from "@/lib/actions/user";
 import { getCurrentSubscription } from "@/lib/actions/billing";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -16,6 +16,34 @@ export default async function MainLayout({
 
     if (!user) {
         return null;
+    }
+
+    // Garantir que o usuário tenha workspace pessoal
+    const hasPersonalWorkspace = workspaces.some(w => w.name?.toLowerCase().trim() === "pessoal");
+    if (!hasPersonalWorkspace) {
+        await ensurePersonalWorkspace();
+        // Recarregar workspaces após criar o pessoal
+        const updatedWorkspaces = await getUserWorkspaces();
+        if (updatedWorkspaces.length === 0) {
+            redirect("/onboarding");
+        }
+        // Usar workspaces atualizados
+        const activeWorkspace = updatedWorkspaces[0];
+        const subscription = activeWorkspace 
+            ? await getCurrentSubscription(activeWorkspace.id)
+            : null;
+        
+        const uiUser = user ? {
+            name: user.full_name || "Usuário",
+            email: user.email || "",
+            avatarUrl: user.avatar_url,
+        } : null;
+
+        return (
+            <AppShell user={uiUser} workspaces={updatedWorkspaces} initialSubscription={subscription}>
+                {children}
+            </AppShell>
+        );
     }
 
     // Redirect to onboarding if no workspaces (fast failure)

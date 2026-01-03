@@ -28,80 +28,182 @@ export interface NotificationWithActor extends Notification {
 
 /**
  * Busca notificações do usuário atual
+ * OTIMIZADO: Busca profiles dos triggering_users em batch (1 query), filtra por workspace no backend
+ * NOTA: triggering_user_id referencia auth.users, então buscamos profiles separadamente (não via JOIN)
  */
 export async function getNotifications(
   filters?: {
     category?: NotificationCategory;
     unreadOnly?: boolean;
     limit?: number;
+    workspaceId?: string | null; // NOVO: Filtrar por workspace no backend
   }
 ): Promise<NotificationWithActor[]> {
-  const supabase = await createServerActionClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  try {
+    const supabase = await createServerActionClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-  if (!user) {
-    return [];
-  }
-
-  // Primeiro, buscar as notificações
-  let query = supabase
-    .from("notifications")
-    .select("*")
-    .eq("recipient_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(filters?.limit || 20);
-
-  if (filters?.category) {
-    query = query.eq("category", filters.category);
-  }
-
-  if (filters?.unreadOnly) {
-    query = query.is("read_at", null);
-  }
-
-  const { data: notifications, error } = await query;
-
-  if (error) {
-    console.error("Error fetching notifications:", error);
-    return [];
-  }
-
-  if (!notifications || notifications.length === 0) {
-    return [];
-  }
-
-  // Buscar dados dos usuários que dispararam as notificações
-  const triggeringUserIds = notifications
-    .map(n => n.triggering_user_id)
-    .filter((id): id is string => id !== null);
-
-  let usersData: Record<string, { full_name: string | null; avatar_url: string | null }> = {};
-
-  if (triggeringUserIds.length > 0) {
-    const { data: users } = await supabase
-      .from("profiles")
-      .select("id, full_name, avatar_url")
-      .in("id", triggeringUserIds);
-
-    if (users) {
-      usersData = users.reduce((acc, user) => {
-        acc[user.id] = {
-          full_name: user.full_name,
-          avatar_url: user.avatar_url,
-        };
-        return acc;
-      }, {} as Record<string, { full_name: string | null; avatar_url: string | null }>);
+    if (authError) {
+      console.error("Error getting user in getNotifications:", {
+        message: authError.message,
+        error: authError,
+      });
+      return [];
     }
-  }
 
-  // Combinar notificações com dados dos usuários
-  const result = notifications.map((notification) => ({
-    ...notification,
-    triggering_user: notification.triggering_user_id
-      ? usersData[notification.triggering_user_id] || null
-      : null,
-  })) as NotificationWithActor[];
-  return result;
+    if (!user) {
+      return [];
+    }
+
+    // Buscar notificações (sem JOIN - triggering_user_id referencia auth.users, não profiles)
+    let query = supabase
+      .from("notifications")
+      .select("*")
+      .eq("recipient_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(filters?.limit || 20);
+
+    if (filters?.category) {
+      query = query.eq("category", filters.category);
+    }
+
+    if (filters?.unreadOnly) {
+      query = query.is("read_at", null);
+    }
+
+    const { data: notifications, error } = await query;
+
+    if (error) {
+      console.error("Error fetching notifications:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        error: error,
+      });
+      return [];
+    }
+
+    if (!notifications || notifications.length === 0) {
+      return [];
+    }
+
+    // OTIMIZAÇÃO: Buscar profiles dos triggering_users em batch (1 query em vez de N)
+    const triggeringUserIds = notifications
+      .map(n => n.triggering_user_id)
+      .filter((id): id is string => id !== null);
+    
+    let triggeringUserMap: Record<string, { full_name: string | null; avatar_url: string | null }> = {};
+    
+    if (triggeringUserIds.length > 0) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, full_name, avatar_url")
+        .in("id", triggeringUserIds);
+      
+      if (profilesError) {
+        console.error("Error fetching triggering user profiles:", {
+          message: profilesError.message,
+          details: profilesError.details,
+          hint: profilesError.hint,
+          code: profilesError.code,
+        });
+        // Continuar mesmo com erro - triggering_user será null
+      } else if (profiles) {
+        triggeringUserMap = profiles.reduce((acc, profile) => {
+          acc[profile.id] = {
+            full_name: profile.full_name,
+            avatar_url: profile.avatar_url,
+          };
+          return acc;
+        }, {} as Record<string, { full_name: string | null; avatar_url: string | null }>);
+      }
+    }
+
+    // OTIMIZAÇÃO: Buscar workspace_id das tarefas em batch (1 query em vez de N)
+    const taskNotifications = notifications.filter(n => n.resource_type === 'task' && n.resource_id);
+    const taskIds = taskNotifications.map(n => n.resource_id).filter((id): id is string => id !== null);
+    
+    let taskWorkspaceMap: Record<string, string | null> = {};
+    
+    if (taskIds.length > 0) {
+      const { data: tasks } = await supabase
+        .from("tasks")
+        .select("id, workspace_id")
+        .in("id", taskIds);
+      
+      if (tasks) {
+        taskWorkspaceMap = tasks.reduce((acc, task) => {
+          acc[task.id] = task.workspace_id;
+          return acc;
+        }, {} as Record<string, string | null>);
+      }
+    }
+
+    // Processar notificações e aplicar filtro de workspace se necessário
+    const result = notifications
+      .map((notification: any) => {
+        // Buscar triggering_user do map
+        const triggeringUser = notification.triggering_user_id
+          ? triggeringUserMap[notification.triggering_user_id] || null
+          : null;
+
+        // Extrair workspace_id da tarefa (se resource_type === 'task')
+        let workspaceId: string | null = null;
+        if (notification.resource_type === 'task' && notification.resource_id) {
+          workspaceId = taskWorkspaceMap[notification.resource_id] || null;
+        }
+
+        // Adicionar workspace_id ao metadata se disponível
+        const existingMetadata = (notification.metadata as any) || {};
+        const metadata = workspaceId && !existingMetadata.workspace_id
+          ? { ...existingMetadata, workspace_id: workspaceId }
+          : existingMetadata;
+
+        return {
+          ...notification,
+          metadata,
+          triggering_user: triggeringUser,
+        };
+      })
+      // Filtrar por workspace no backend se especificado
+      .filter((notification: any) => {
+        if (!filters?.workspaceId) {
+          // Se não há filtro de workspace, mostrar todas (exceto as que têm workspace_id diferente)
+          // Notificações sem workspace_id (sistema/admin) sempre aparecem
+          const metadata = notification.metadata as any;
+          if (!metadata?.workspace_id) {
+            // Notificações sem workspace_id: apenas sistema/admin
+            return notification.category === 'system' || notification.category === 'admin';
+          }
+          return true; // Mostrar todas as que têm workspace_id
+        }
+
+        // Filtrar por workspace_id específico
+        const metadata = notification.metadata as any;
+        
+        // Prioridade 1: Filtrar por workspace_id no metadata
+        if (metadata?.workspace_id) {
+          return metadata.workspace_id === filters.workspaceId;
+        }
+        
+        // Prioridade 2: Se não tem workspace_id, só mostrar se for notificação de sistema/admin
+        if (!metadata?.workspace_id) {
+          return notification.category === 'system' || notification.category === 'admin';
+        }
+        
+        return false;
+      }) as NotificationWithActor[];
+
+    return result;
+  } catch (err) {
+    console.error("Unexpected error in getNotifications:", {
+      error: err,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return [];
+  }
 }
 
 /**
@@ -168,9 +270,26 @@ export async function createNotification(params: {
   title: string;
   content?: string;
   actionUrl?: string;
+  workspaceId?: string;
   metadata?: NotificationMetadata;
 }): Promise<{ success: boolean; error?: string; id?: string }> {
   const supabase = await createServerActionClient();
+
+  let metadata = (params.metadata as any) || {};
+  let workspaceId = metadata.workspace_id || params.workspaceId || null;
+
+  if (!workspaceId && params.resourceType === "task" && params.resourceId) {
+    const { data: task } = await supabase
+      .from("tasks")
+      .select("workspace_id")
+      .eq("id", params.resourceId)
+      .single();
+    workspaceId = task?.workspace_id || null;
+  }
+
+  if (workspaceId) {
+    metadata = { ...metadata, workspace_id: workspaceId };
+  }
 
   const { data, error } = await supabase
     .from("notifications")
@@ -183,7 +302,7 @@ export async function createNotification(params: {
       title: params.title,
       content: params.content || null,
       action_url: params.actionUrl || null,
-      metadata: params.metadata || {},
+      metadata,
     })
     .select("id")
     .single();
@@ -234,6 +353,14 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
     return { success: false, error: "Não autenticado" };
   }
 
+  const { data: workspaceMember } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .single();
+  const workspaceId = workspaceMember?.workspace_id || null;
+
   // Buscar perfil do usuário para usar como "triggering_user"
   const { data: profile } = await supabase
     .from("profiles")
@@ -257,7 +384,8 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
       action_url: "/tasks",
       metadata: {
         actor_name: actorName,
-        task_title: "Tarefa de Teste"
+        task_title: "Tarefa de Teste",
+        workspace_id: workspaceId,
       } as NotificationMetadata
     },
     {
@@ -275,7 +403,8 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
         task_title: "Tarefa de Teste",
         file_name: "audio-teste.ogg",
         color: "text-purple-600",
-        bg: "bg-purple-50"
+        bg: "bg-purple-50",
+        workspace_id: workspaceId,
       } as NotificationMetadata
     },
     {
@@ -289,7 +418,8 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
       action_url: "/tasks",
       metadata: {
         actor_name: actorName,
-        task_title: "Teste de Atribuição"
+        task_title: "Teste de Atribuição",
+        workspace_id: workspaceId,
       } as NotificationMetadata
     },
     {
@@ -304,7 +434,8 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
       metadata: {
         actor_name: actorName,
         workspace_name: "Workspace de Teste",
-        role: "member"
+        role: "member",
+        workspace_id: workspaceId,
       } as NotificationMetadata
     },
     {
@@ -318,7 +449,8 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
       action_url: "/tasks",
       metadata: {
         task_title: "Teste Atrasada",
-        days_overdue: 2
+        days_overdue: 2,
+        workspace_id: workspaceId,
       } as NotificationMetadata
     }
   ];
@@ -336,4 +468,3 @@ export async function createTestNotifications(): Promise<{ success: boolean; err
   revalidatePath("/");
   return { success: true, count: data?.length || 0 };
 }
-

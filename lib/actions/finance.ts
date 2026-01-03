@@ -6,6 +6,18 @@ import { startOfMonth, endOfMonth, parseISO, format, addMonths } from "date-fns"
 import { ptBR } from "date-fns/locale";
 import { cache } from "react";
 
+const perfEnabled = process.env.DEBUG_PERF === "1";
+const perfNow = () => Date.now();
+const logPerf = (label: string, startMs: number, meta?: Record<string, unknown>) => {
+  if (!perfEnabled) return;
+  const durationMs = perfNow() - startMs;
+  if (meta) {
+    console.log(`[perf] ${label}`, { durationMs, ...meta });
+  } else {
+    console.log(`[perf] ${label}`, { durationMs });
+  }
+};
+
 export interface TransactionData {
   amount: number;
   type: "income" | "expense";
@@ -102,17 +114,20 @@ export async function createTransaction(data: TransactionData) {
 }
 
 export const getFinanceMetrics = cache(async (month: number, year: number, workspaceId?: string) => {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    return {
+    const result = {
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
       burnRate: 0,
       healthStatus: "healthy" as const,
     };
+    logPerf("getFinanceMetrics:anonymous", perfStart);
+    return result;
   }
 
   // Se workspaceId não fornecido, pegar o primeiro do usuário
@@ -126,13 +141,15 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
       .single();
     
     if (!memberData) {
-      return {
+      const result = {
         totalIncome: 0,
         totalExpense: 0,
         balance: 0,
         burnRate: 0,
         healthStatus: "healthy" as const,
       };
+      logPerf("getFinanceMetrics:no-workspace", perfStart);
+      return result;
     }
     effectiveWorkspaceId = memberData.workspace_id;
   }
@@ -147,13 +164,15 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
   
   if (!membership) {
     console.warn(`[getFinanceMetrics] Acesso negado: Usuário ${user.id} tentou acessar workspace ${effectiveWorkspaceId} sem ser membro`);
-    return {
+    const result = {
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
       burnRate: 0,
       healthStatus: "healthy" as const,
     };
+    logPerf("getFinanceMetrics:denied", perfStart, { workspaceId: effectiveWorkspaceId });
+    return result;
   }
 
   // Definir range de datas
@@ -162,39 +181,45 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
   const endDate = endOfMonth(date).toISOString();
 
   // Buscar transações do mês filtradas por workspace
-  const { data: transactions, error } = await supabase
+  const queryStart = perfNow();
+  const { data: transactions, error } = await (supabase as any)
     .from("transactions")
-    .select("*")
+    .select("amount,type,is_recurring")
     .eq("workspace_id", effectiveWorkspaceId)
     .gte("due_date", startDate)
     .lte("due_date", endDate);
+  logPerf("getFinanceMetrics:query", queryStart, { workspaceId: effectiveWorkspaceId });
 
   if (error) {
     console.error("Erro ao buscar métricas:", error);
-    return {
+    const result = {
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
       burnRate: 0,
       healthStatus: "healthy" as const,
     };
+    logPerf("getFinanceMetrics:error", perfStart, { workspaceId: effectiveWorkspaceId });
+    return result;
   }
 
-  // Cálculos
-  const totalIncome = transactions
-    .filter((t) => t.type === "income")
-    .reduce((acc, curr) => acc + Number(curr.amount), 0);
+  const typedTransactions = (transactions as any[]) || [];
 
-  const totalExpense = transactions
-    .filter((t) => t.type === "expense")
-    .reduce((acc, curr) => acc + Number(curr.amount), 0);
+  // Cálculos
+  const totalIncome = typedTransactions
+    .filter((t: any) => t.type === "income")
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
+
+  const totalExpense = typedTransactions
+    .filter((t: any) => t.type === "expense")
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
 
   const balance = totalIncome - totalExpense;
 
   // Burn Rate: Soma das despesas fixas (is_recurring)
-  const burnRate = transactions
-    .filter((t) => t.type === "expense" && (t as any).is_recurring === true)
-    .reduce((acc, curr) => acc + Number(curr.amount), 0);
+  const burnRate = typedTransactions
+    .filter((t: any) => t.type === "expense" && t.is_recurring === true)
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
 
   // Lógica de Saúde Financeira
   let healthStatus: "healthy" | "critical" | "warning" = "healthy";
@@ -205,13 +230,15 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
     healthStatus = "warning";
   }
 
-  return {
+  const result = {
     totalIncome,
     totalExpense,
     balance,
     burnRate,
     healthStatus,
   };
+  logPerf("getFinanceMetrics", perfStart, { workspaceId: effectiveWorkspaceId });
+  return result;
 });
 
 export const getTransactions = cache(async (filters?: { 
@@ -221,10 +248,12 @@ export const getTransactions = cache(async (filters?: {
   workspaceId?: string;
   isRecurring?: boolean;
 }) => {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    logPerf("getTransactions:anonymous", perfStart);
     return [];
   }
 
@@ -239,6 +268,7 @@ export const getTransactions = cache(async (filters?: {
       .single();
     
     if (!memberData) {
+      logPerf("getTransactions:no-workspace", perfStart);
       return [];
     }
     effectiveWorkspaceId = memberData.workspace_id;
@@ -254,12 +284,13 @@ export const getTransactions = cache(async (filters?: {
   
   if (!membership) {
     console.warn(`[getTransactions] Acesso negado: Usuário ${user.id} tentou acessar workspace ${effectiveWorkspaceId} sem ser membro`);
+    logPerf("getTransactions:denied", perfStart, { workspaceId: effectiveWorkspaceId });
     return [];
   }
 
-  let query = supabase
+  let query = (supabase as any)
     .from("transactions")
-    .select("*")
+    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring")
     .eq("workspace_id", effectiveWorkspaceId)
     .order("due_date", { ascending: false });
 
@@ -279,13 +310,17 @@ export const getTransactions = cache(async (filters?: {
     query = query.limit(filters.limit);
   }
 
+  const queryStart = perfNow();
   const { data, error } = await query;
+  logPerf("getTransactions:query", queryStart, { workspaceId: effectiveWorkspaceId });
 
   if (error) {
     console.error("Erro ao buscar transações:", error);
+    logPerf("getTransactions:error", perfStart, { workspaceId: effectiveWorkspaceId });
     return [];
   }
 
+  logPerf("getTransactions", perfStart, { workspaceId: effectiveWorkspaceId, count: data?.length ?? 0 });
   return data;
 });
 
@@ -562,10 +597,12 @@ export interface Projection {
 }
 
 export const getProjections = cache(async (months: number = 6, workspaceId?: string): Promise<Projection[]> => {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    logPerf("getProjections:anonymous", perfStart);
     return [];
   }
 
@@ -579,6 +616,7 @@ export const getProjections = cache(async (months: number = 6, workspaceId?: str
       .single();
     
     if (!memberData) {
+      logPerf("getProjections:no-workspace", perfStart);
       return [];
     }
     effectiveWorkspaceId = memberData.workspace_id;
@@ -593,52 +631,60 @@ export const getProjections = cache(async (months: number = 6, workspaceId?: str
     .single();
   
   if (!membership) {
+    logPerf("getProjections:denied", perfStart, { workspaceId: effectiveWorkspaceId });
     return [];
   }
 
   const projections = [];
   const currentDate = new Date();
-  
+  const firstMonthDate = addMonths(currentDate, 1);
+  const lastMonthDate = addMonths(currentDate, months);
+  const rangeStart = startOfMonth(firstMonthDate).toISOString();
+  const rangeEnd = endOfMonth(lastMonthDate).toISOString();
+
+  // OTIMIZAÇÃO: Executar queries em paralelo
+  const queriesStart = perfNow();
+  const [recurringResult, scheduledResult] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .eq("is_recurring", true),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .gte("due_date", rangeStart)
+      .lte("due_date", rangeEnd)
+  ]);
+  logPerf("getProjections:queries-parallel", queriesStart, { workspaceId: effectiveWorkspaceId });
+
+  const recurringTransactions = recurringResult.data;
+  const scheduledTransactions = scheduledResult.data;
+
+  const scheduledByMonth = new Map<string, any[]>();
+  (scheduledTransactions || []).forEach((t: any) => {
+    const dueDate = t.due_date ? parseISO(String(t.due_date)) : null;
+    if (!dueDate) return;
+    const key = `${dueDate.getFullYear()}-${dueDate.getMonth() + 1}`;
+    const list = scheduledByMonth.get(key);
+    if (list) {
+      list.push(t);
+    } else {
+      scheduledByMonth.set(key, [t]);
+    }
+  });
+
   for (let i = 1; i <= months; i++) {
     const projectionDate = addMonths(currentDate, i);
     const month = projectionDate.getMonth() + 1;
     const year = projectionDate.getFullYear();
-    
-    const startDate = startOfMonth(projectionDate).toISOString();
-    const endDate = endOfMonth(projectionDate).toISOString();
-
-    // Buscar transações recorrentes e agendadas para o mês
-    // Primeiro, buscar todas as recorrentes
-    const { data: recurringTransactions } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("workspace_id", effectiveWorkspaceId)
-      .eq("is_recurring", true);
-
-    // Depois, buscar transações agendadas para o mês específico
-    const { data: scheduledTransactions } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("workspace_id", effectiveWorkspaceId)
-      .gte("due_date", startDate)
-      .lte("due_date", endDate);
-
-    // Combinar e remover duplicatas usando Map de IDs
-    const transactionMap = new Map();
-    
-    // Adicionar todas as recorrentes
-    (recurringTransactions || []).forEach((t: any) => {
-      transactionMap.set(t.id, t);
-    });
-    
-    // Adicionar agendadas do mês (sobrescrevendo se já existir)
-    (scheduledTransactions || []).forEach((t: any) => {
-      if (!t.is_recurring) {
-        transactionMap.set(t.id, t);
-      }
-    });
-    
-    const transactions = Array.from(transactionMap.values());
+    const key = `${year}-${month}`;
+    const scheduledForMonth = scheduledByMonth.get(key) || [];
+    const transactions = [
+      ...(recurringTransactions || []),
+      ...scheduledForMonth.filter((t: any) => !t.is_recurring),
+    ];
 
     const income = (transactions || [])
       .filter((t: any) => t.type === "income")
@@ -658,6 +704,7 @@ export const getProjections = cache(async (months: number = 6, workspaceId?: str
     });
   }
 
+  logPerf("getProjections", perfStart, { workspaceId: effectiveWorkspaceId, months });
   return projections;
 });
 
@@ -880,10 +927,12 @@ export interface CashFlowForecast {
 }
 
 export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?: string): Promise<CashFlowForecast[]> => {
+  const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    logPerf("getCashFlowForecast:anonymous", perfStart);
     return [];
   }
 
@@ -897,6 +946,7 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
       .single();
     
     if (!memberData) {
+      logPerf("getCashFlowForecast:no-workspace", perfStart);
       return [];
     }
     effectiveWorkspaceId = memberData.workspace_id;
@@ -911,20 +961,44 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
     .single();
   
   if (!membership) {
+    logPerf("getCashFlowForecast:denied", perfStart, { workspaceId: effectiveWorkspaceId });
     return [];
   }
 
-  // Buscar saldo atual (mês atual)
+  // OTIMIZAÇÃO: Calcular range de datas primeiro
   const currentDate = new Date();
   const currentMonthStart = startOfMonth(currentDate).toISOString();
   const currentMonthEnd = endOfMonth(currentDate).toISOString();
+  const lastMonthDate = addMonths(currentDate, months - 1);
+  const rangeStart = startOfMonth(currentDate).toISOString();
+  const rangeEnd = endOfMonth(lastMonthDate).toISOString();
 
-  const { data: currentMonthTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .gte("due_date", currentMonthStart)
-    .lte("due_date", currentMonthEnd);
+  // OTIMIZAÇÃO: Executar todas as queries em paralelo
+  const queriesStart = perfNow();
+  const [currentMonthResult, recurringResult, scheduledResult] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .gte("due_date", currentMonthStart)
+      .lte("due_date", currentMonthEnd),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .eq("is_recurring", true),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("workspace_id", effectiveWorkspaceId)
+      .gte("due_date", rangeStart)
+      .lte("due_date", rangeEnd)
+  ]);
+  logPerf("getCashFlowForecast:queries-parallel", queriesStart, { workspaceId: effectiveWorkspaceId });
+
+  const currentMonthTransactions = currentMonthResult.data;
+  const recurringTransactions = recurringResult.data;
+  const scheduledTransactions = scheduledResult.data;
 
   const currentMonthIncome = (currentMonthTransactions || [])
     .filter((t: any) => t.type === "income")
@@ -935,50 +1009,32 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
     .reduce((acc: number, curr: any) => acc + Number(curr.amount) || 0, 0);
 
   let runningBalance = currentMonthIncome - currentMonthExpense;
-
   const forecast = [];
-  
+
+  const scheduledByMonth = new Map<string, any[]>();
+  (scheduledTransactions || []).forEach((t: any) => {
+    const dueDate = t.due_date ? parseISO(String(t.due_date)) : null;
+    if (!dueDate) return;
+    const key = `${dueDate.getFullYear()}-${dueDate.getMonth() + 1}`;
+    const list = scheduledByMonth.get(key);
+    if (list) {
+      list.push(t);
+    } else {
+      scheduledByMonth.set(key, [t]);
+    }
+  });
+
   // Começar do mês atual (i = 0)
   for (let i = 0; i < months; i++) {
     const forecastDate = addMonths(currentDate, i);
     const month = forecastDate.getMonth() + 1;
     const year = forecastDate.getFullYear();
-    
-    const startDate = startOfMonth(forecastDate).toISOString();
-    const endDate = endOfMonth(forecastDate).toISOString();
-
-    // Buscar transações para o mês
-    // Primeiro, buscar todas as recorrentes
-    const { data: recurringTransactions } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("workspace_id", effectiveWorkspaceId)
-      .eq("is_recurring", true);
-
-    // Depois, buscar transações agendadas para o mês específico
-    const { data: scheduledTransactions } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("workspace_id", effectiveWorkspaceId)
-      .gte("due_date", startDate)
-      .lte("due_date", endDate);
-
-    // Combinar e remover duplicatas usando Map de IDs
-    const transactionMap = new Map();
-    
-    // Adicionar todas as recorrentes
-    (recurringTransactions || []).forEach((t: any) => {
-      transactionMap.set(t.id, t);
-    });
-    
-    // Adicionar agendadas do mês (sobrescrevendo se já existir)
-    (scheduledTransactions || []).forEach((t: any) => {
-      if (!t.is_recurring) {
-        transactionMap.set(t.id, t);
-      }
-    });
-    
-    const transactions = Array.from(transactionMap.values());
+    const key = `${year}-${month}`;
+    const scheduledForMonth = scheduledByMonth.get(key) || [];
+    const transactions = [
+      ...(recurringTransactions || []),
+      ...scheduledForMonth.filter((t: any) => !t.is_recurring),
+    ];
 
     const income = (transactions || [])
       .filter((t: any) => t.type === "income")
@@ -1000,5 +1056,6 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
     });
   }
 
+  logPerf("getCashFlowForecast", perfStart, { workspaceId: effectiveWorkspaceId, months });
   return forecast;
 });

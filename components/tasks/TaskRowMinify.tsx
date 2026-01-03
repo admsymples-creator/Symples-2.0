@@ -54,6 +54,7 @@ interface TaskRowMinifyProps {
     isPending?: boolean; // ✅ Marca tarefas que estão sendo criadas
     recurrence_type?: string | null;
     recurrence_parent_id?: string | null;
+    tags?: string[];
   };
   containerId?: string;
   isOverlay?: boolean;
@@ -69,8 +70,56 @@ interface TaskRowMinifyProps {
   members?: Array<{ id: string; name: string; avatar?: string }>;
   showWorkspaceBadge?: boolean;
   workspaceName?: string;
+  showProjectTag?: boolean; // ✅ Novo: mostrar tag de projeto ao invés de workspace
   showDragHandle?: boolean;
 }
+
+type CurrentUser = { id: string; name: string; avatar?: string };
+
+let currentUserCache: CurrentUser | null = null;
+let currentUserLoaded = false;
+let currentUserPromise: Promise<CurrentUser | null> | null = null;
+
+const loadCurrentUser = async (): Promise<CurrentUser | null> => {
+  if (currentUserLoaded) {
+    return currentUserCache;
+  }
+  if (!currentUserPromise) {
+    currentUserPromise = (async () => {
+      const supabase = createBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        currentUserLoaded = true;
+        currentUserCache = null;
+        return null;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, avatar_url")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile) {
+        currentUserLoaded = true;
+        currentUserCache = null;
+        return null;
+      }
+
+      currentUserCache = {
+        id: profile.id,
+        name: profile.full_name || profile.email || "Usuario",
+        avatar: profile.avatar_url || undefined,
+      };
+      currentUserLoaded = true;
+      return currentUserCache;
+    })().finally(() => {
+      currentUserPromise = null;
+    });
+  }
+  return currentUserPromise;
+};
 
 // Função auxiliar para verificar se é hoje
 const isTodayFunc = (dateString?: string): boolean => {
@@ -110,7 +159,7 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName, showDragHandle = true }: TaskRowMinifyProps) {
+function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName, showProjectTag = false, showDragHandle = true }: TaskRowMinifyProps) {
   const {
     attributes,
     listeners,
@@ -135,28 +184,17 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
 
   // Buscar usuário atual
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const supabase = createBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, full_name, email, avatar_url")
-          .eq("id", user.id)
-          .single();
-        
-        if (profile) {
-          setCurrentUser({
-            id: profile.id,
-            name: profile.full_name || profile.email || "Usuário",
-            avatar: profile.avatar_url || undefined,
-          });
-        }
+    let isActive = true;
+
+    loadCurrentUser().then((user) => {
+      if (isActive && user) {
+        setCurrentUser(user);
       }
+    });
+
+    return () => {
+      isActive = false;
     };
-    
-    fetchCurrentUser();
   }, []);
 
   // Garantir que o usuário atual esteja na lista de membros
@@ -550,12 +588,16 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               maxLength={100} // ✅ Limite de caracteres (padrão UX)
             />
           </div>
-          {/* Badge de Workspace - apenas na home */}
-          {showWorkspaceBadge && workspaceName && (
+          {/* Badge de Projeto (tag) ou Workspace */}
+          {showProjectTag && task.tags && task.tags.length > 0 ? (
+            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+              {task.tags[0]}
+            </Badge>
+          ) : showWorkspaceBadge && workspaceName ? (
             <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
               {workspaceName}
             </Badge>
-          )}
+          ) : null}
         </div>
         
         {/* Comentários - aparece apenas no hover */}

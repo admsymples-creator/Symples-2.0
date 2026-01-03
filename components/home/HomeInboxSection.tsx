@@ -5,19 +5,28 @@ import { NotificationItem } from "@/components/notifications/notification-item";
 import { getNotifications, markAsRead, NotificationWithActor } from "@/lib/actions/notifications";
 import { Loader2, Inbox, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 
 export function HomeInboxSection() {
   const [notifications, setNotifications] = useState<NotificationWithActor[]>([]);
   const [loading, setLoading] = useState(true);
   const [displayLimit, setDisplayLimit] = useState(5);
+  const { activeWorkspaceId, isLoaded } = useWorkspace();
 
-  // Buscar notificações
+  // Buscar notificações - OTIMIZADO: filtrar por workspace no backend
   useEffect(() => {
     const loadNotifications = async () => {
+      if (!isLoaded) return; // Aguardar workspace carregar
+      
       setLoading(true);
       try {
-        // Buscar mais notificações do que o limite de exibição para ter buffer
-        const fetchedNotifications = await getNotifications({ limit: 100 });
+        // OTIMIZAÇÃO: Filtrar por workspace no backend e reduzir limit
+        // Não precisa mais buscar 100 e filtrar no frontend
+        const fetchedNotifications = await getNotifications({ 
+          limit: 30, // Reduzido de 100 para 30 (suficiente para exibição inicial)
+          workspaceId: activeWorkspaceId || null, // Filtrar no backend
+        });
+        
         setNotifications(fetchedNotifications || []);
       } catch (error) {
         console.error("Erro ao carregar notificações:", error);
@@ -28,7 +37,7 @@ export function HomeInboxSection() {
     };
 
     loadNotifications();
-  }, []);
+  }, [activeWorkspaceId, isLoaded]);
 
   const displayedNotifications = notifications.slice(0, displayLimit);
   const hasMore = notifications.length > displayLimit;

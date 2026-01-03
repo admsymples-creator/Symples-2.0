@@ -163,3 +163,98 @@ This is a Next.js 15+ project using App Router, TypeScript, Tailwind CSS, and Su
 - Optimistic updates for instant feedback
 - Batch input support (multiple lines)
 - Recurrence support via TaskDateTimePicker
+
+# Projects System (Tags as Projects)
+
+## Architecture
+- **Projects are Tags**: Projects are represented as tags in the `tasks.tags` array column
+- **No separate table**: Uses existing `tasks.tags TEXT[]` column to avoid migrations
+- **Filtering**: Projects filter tasks using query parameters: `/tasks?tag=project-name`
+- **Storage**: Project icons stored in `project_icons` table (workspace_id, tag_name, icon_name)
+
+## Database Schema
+- `project_icons` table:
+  - `workspace_id` UUID (references workspaces)
+  - `tag_name` TEXT (the project tag name)
+  - `icon_name` TEXT (lucide-react icon name)
+  - Primary key: (workspace_id, tag_name)
+  - RLS policies: Members can read/write icons for their workspaces
+
+## Project Icons
+- **Icon Picker**: 30 minimalist icons from `lucide-react` in `components/projects/IconPicker.tsx`
+- **Design**: Background `#050815` (almost black blue), white icon, rounded borders
+- **Storage**: Icons stored in `project_icons` table via `setProjectIcon()` Server Action
+- **Display**: Icons shown in Sidebar and ProjectCard with consistent styling
+- **Default**: `Folder` icon if no icon specified
+
+## Server Actions
+- `lib/actions/projects.ts`:
+  - `getProjectIcon(workspaceId, tagName)` - Get icon for a specific project
+  - `getProjectIcons(workspaceId)` - Get all project icons for a workspace (returns Map)
+  - `setProjectIcon(workspaceId, tagName, iconName)` - Set/update project icon
+  - `deleteProjectIcon(workspaceId, tagName)` - Delete project icon
+- `lib/actions/tasks.ts`:
+  - `getWorkspaceTags(workspaceId)` - Returns tags from tasks AND project_icons table
+  - Includes projects without tasks yet (tags with saved icons)
+
+## Context-Aware Creation
+- When creating a task within a project context (`/tasks?tag=project-name`):
+  - `TaskDetailModal` receives `initialTags` prop with the project tag
+  - Tag field is pre-filled with the current project's tag
+  - Project selector in modal allows selecting/removing project tag
+
+## Sidebar Integration
+- **PROJETOS Section**: Shows all workspace tags (projects) with their icons
+- **Icon Display**: Each project shows its custom icon with `bg-[#050815]` background
+- **Active State**: Project is active when `searchParams.get('tag') === project-tag`
+- **Creation**: Modal with name input and icon picker (30 icons, no scroll)
+
+## Home Integration
+- **Project Cards**: `ProjectCard` component displays project statistics
+- **Icon Display**: Shows project icon with `bg-[#050815]` background (replaces gradient)
+- **Navigation**: Clicking card navigates to `/tasks?tag=project-name`
+- **Overview**: `HomeWorkspaceOverview` shows "Visão por Projeto" for professional workspaces
+
+# Workspace Hierarchy and Navigation
+
+## Workspace Types
+- **Personal Workspace**: Special workspace that aggregates information from all workspaces
+- **Professional Workspace**: Regular workspace with its own tasks and projects
+
+## Personal Workspace Rules
+- **No Tasks**: Personal workspace does NOT have its own tasks (`workspace_id = null` for personal tasks)
+- **Aggregation Only**: Shows tasks from all other workspaces when user is assignee
+- **Home View**: Shows "Visão por Workspace" (overview of all professional workspaces)
+- **Planner View**: Shows tasks from all workspaces when in personal context
+- **Sidebar**: Hides "Tarefas" and "Time" items (not applicable to personal workspace)
+
+## Professional Workspace Rules
+- **Own Tasks**: Has tasks with `workspace_id = workspace.id`
+- **Home View**: Shows "Visão por Projeto" (overview of projects/tags)
+- **Planner View**: Shows only tasks from the active workspace
+- **Sidebar**: Shows all management items including "Tarefas" and "Time"
+
+## Workspace Detection
+- **Helper Function**: `isPersonalWorkspace(workspace, allWorkspaces)` in `lib/utils/workspace-helpers.ts`
+- **Heuristics**:
+  1. Name is "Pessoal" (case-insensitive)
+  2. Slug starts with "pessoal-"
+  3. Only workspace and name/slug suggests personal
+- **Usage**: Always use helper function, never literal string comparison
+
+## Navigation Structure
+- **Top (Context)**: `<WorkspaceSwitcher />` - Access to Personal or Professional context
+- **GESTÃO Section**: Core management items (Home, Planner, Tasks, Finance, Team)
+- **PROJETOS Section**: Client work projects (tags with icons)
+- **URL Structure**: `/[workspaceSlug]/page` or `/page` (uses active workspace from context)
+
+## Planner Separation
+- **Personal Workspace**: 
+  - `PlannerClient` detects personal workspace using `isPersonalWorkspace()` helper
+  - Fetches tasks with `assigneeId: "current"` and no `workspaceId` (all workspaces)
+  - `PlannerCalendar` receives `workspaceId: undefined` to show all tasks
+- **Professional Workspace**:
+  - `PlannerClient` detects professional workspace
+  - Fetches tasks with `workspaceId: currentWorkspace.id` and `assigneeId: "current"`
+  - `PlannerCalendar` receives `workspaceId: workspace.id` to show only workspace tasks
+- **Synchronization**: Both `WeeklyView` and `PlannerCalendar` use same filtering logic

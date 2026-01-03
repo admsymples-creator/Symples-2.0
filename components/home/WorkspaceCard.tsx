@@ -60,9 +60,8 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
         // Atualizar workspace ativo no contexto
         setActiveWorkspaceId(id);
 
-        // Navegar para a página de tarefas do workspace
-        const workspaceBase = slug || id;
-        router.push(`/${workspaceBase}/tasks`);
+        // Navegar para a Home (novo ponto de entrada "Gestão/Home")
+        router.push("/home");
     };
 
     const handleOpenWorkspace = (e: React.MouseEvent) => {

@@ -21,9 +21,9 @@ import {
     updateAudioTranscription,
     generateTaskShareLink
 } from "@/lib/actions/task-details";
-import { getWorkspaceMembers, createTask } from "@/lib/actions/tasks";
-import { getUserWorkspaces } from "@/lib/actions/user";
+import { getWorkspaceMembers, createTask, getWorkspaceTags } from "@/lib/actions/tasks";
 import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 import {
     Dialog,
     DialogHeader,
@@ -191,6 +191,7 @@ interface TaskDetailModalProps {
         attachments?: FileAttachment[];
     };
     initialDueDate?: string;
+    initialTags?: string[];
 }
 
 // ------------------------------------------------------------------
@@ -387,12 +388,14 @@ export function TaskDetailModal({
     mode = "edit",
     task,
     initialDueDate,
+    initialTags,
     onTaskCreated,
     onTaskUpdated,
     onTaskUpdatedOptimistic,
 }: TaskDetailModalProps) {
     const isCreateMode = mode === "create";
     const isViewMode = mode === "view";
+    const { activeWorkspaceId } = useWorkspace();
 
     // State - Inicializar vazios para evitar flash de conteúdo antigo
     const [title, setTitle] = useState("");
@@ -438,7 +441,7 @@ export function TaskDetailModal({
     const [isUpdatingComment, setIsUpdatingComment] = useState(false);
     const [isDeletingComment, setIsDeletingComment] = useState<string | null>(null);
     const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-    const [availableWorkspaces, setAvailableWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
     // Usuário atual para padronizar exibição de comentários
     useEffect(() => {
         const supabase = createBrowserClient();
@@ -455,40 +458,40 @@ export function TaskDetailModal({
         });
     }, []);
 
-    // Buscar workspaces disponíveis
+    // Buscar tags disponíveis do workspace
     useEffect(() => {
-        if (open) {
-            const loadWorkspaces = async () => {
+        if (open && workspaceId) {
+            const loadTags = async () => {
                 try {
-                    const workspaces = await getUserWorkspaces();
-                    setAvailableWorkspaces(workspaces.map((ws: any) => ({
-                        id: ws.id,
-                        name: ws.name,
-                    })));
+                    const tags = await getWorkspaceTags(workspaceId);
+                    setAvailableTags(tags);
                 } catch (error) {
-                    console.error("Erro ao carregar workspaces:", error);
+                    console.error("Erro ao carregar tags do workspace:", error);
+                    setAvailableTags([]);
                 }
             };
-            loadWorkspaces();
+            loadTags();
+        } else {
+            setAvailableTags([]);
         }
-    }, [open]);
+    }, [open, workspaceId]);
 
     // Inicializar workspaceId quando task mudar ou modal abrir
     useEffect(() => {
         if (open) {
             if (isCreateMode) {
-                // Em modo create, usar o primeiro workspace disponível ou null
-                setWorkspaceId(null);
+                // Em modo create, usar o workspace ativo do contexto
+                setWorkspaceId(activeWorkspaceId);
             } else if (task?.workspaceId) {
                 setWorkspaceId(task.workspaceId);
             } else if (task?.id) {
                 // Se tem task.id mas não tem workspaceId, buscar do backend
                 // Isso será feito no loadBasicData
             } else {
-                setWorkspaceId(null);
+                setWorkspaceId(activeWorkspaceId);
             }
         }
-    }, [open, task, isCreateMode]);
+    }, [open, task, isCreateMode, activeWorkspaceId]);
 
     const mapCommentToActivity = useCallback(
         (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
@@ -729,6 +732,7 @@ export function TaskDetailModal({
                             due_date: dueDate || null,
                             workspace_id: workspaceId || null,
                             assignee_id: localMembers[0]?.id || null,
+                            tags: tags.length > 0 ? tags : undefined,
                             subtasks: subTasks.map(st => ({
                                 title: st.title,
                                 assignee_id: st.assignee_id || null,
@@ -854,8 +858,12 @@ export function TaskDetailModal({
         } else if (open && isCreateMode) {
             // Modo create - não precisa de loading
             setIsLoadingDetails(false);
+            // Preencher tags iniciais se fornecido (criação consciente de contexto)
+            if (initialTags && initialTags.length > 0) {
+                setTags(initialTags);
+            }
         }
-    }, [open, task?.id ?? null, isCreateMode, currentTaskId]);
+    }, [open, task?.id ?? null, isCreateMode, currentTaskId, initialTags]);
 
     // Load task details when modal opens - CARREGAMENTO PROGRESSIVO
     useEffect(() => {
@@ -900,8 +908,11 @@ export function TaskDetailModal({
                             setLocalMembers([]);
                         }
 
-                        if (cachedBasic.origin_context?.tags) {
+                        // Carregar tags de origin_context ou do campo tags direto
+                        if (cachedBasic.origin_context?.tags && Array.isArray(cachedBasic.origin_context.tags)) {
                             setTags(cachedBasic.origin_context.tags);
+                        } else if ((cachedBasic as any).tags && Array.isArray((cachedBasic as any).tags)) {
+                            setTags((cachedBasic as any).tags);
                         }
 
                         setIsDataReady(true);
@@ -965,8 +976,11 @@ export function TaskDetailModal({
                             setLocalMembers([]);
                         }
 
-                        if (basicDetails.origin_context?.tags) {
+                        // Carregar tags de origin_context ou do campo tags direto
+                        if (basicDetails.origin_context?.tags && Array.isArray(basicDetails.origin_context.tags)) {
                             setTags(basicDetails.origin_context.tags);
+                        } else if ((basicDetails as any).tags && Array.isArray((basicDetails as any).tags)) {
+                            setTags((basicDetails as any).tags);
                         }
 
                         setAvailableUsers(
@@ -2554,7 +2568,7 @@ export function TaskDetailModal({
                                         </div>
 
                                         {/* Properties */}
-                                        <div className="grid grid-cols-3 gap-6 mb-8 items-start">
+                                        <div className="grid grid-cols-4 gap-4 mb-8 items-start">
                                             {/* Status */}
                                             <div className="flex flex-col gap-1">
                                                 <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Status</label>
@@ -2590,6 +2604,66 @@ export function TaskDetailModal({
                                                 </Popover>
                                             </div>
 
+                                            {/* Projeto */}
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Projeto</label>
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <button className="flex items-center gap-2 text-sm hover:bg-gray-100 p-1.5 -ml-1.5 rounded transition-colors w-fit">
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="pointer-events-none font-normal px-2 py-0.5 text-gray-600"
+                                                            >
+                                                                {tags.length > 0 ? tags[0] : "Sem projeto"}
+                                                            </Badge>
+                                                            <ChevronDown className="h-3 w-3 text-gray-400" />
+                                                        </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-48 p-1" align="start">
+                                                        <div className="flex flex-col gap-0.5 max-h-60 overflow-y-auto">
+                                                            <button
+                                                                className={cn(
+                                                                    "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
+                                                                    tags.length === 0 && "bg-gray-50 font-medium"
+                                                                )}
+                                                                onClick={() => {
+                                                                    setTags([]);
+                                                                    if (currentTaskId && !isCreateMode) {
+                                                                        updateTaskTags(currentTaskId, []).catch(console.error);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <span className="text-gray-400">Sem projeto</span>
+                                                                {tags.length === 0 && <Check className="h-3 w-3 text-green-600" />}
+                                                            </button>
+                                                            {availableTags.map((tag) => {
+                                                                const isSelected = tags.includes(tag);
+                                                                return (
+                                                                    <button
+                                                                        key={tag}
+                                                                        className={cn(
+                                                                            "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
+                                                                            isSelected && "bg-gray-50 font-medium"
+                                                                        )}
+                                                                        onClick={() => {
+                                                                            // Permitir apenas uma tag por vez (projeto único)
+                                                                            const newTags = isSelected ? [] : [tag];
+                                                                            setTags(newTags);
+                                                                            if (currentTaskId && !isCreateMode) {
+                                                                                updateTaskTags(currentTaskId, newTags).catch(console.error);
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <span>{tag}</span>
+                                                                        {isSelected && <Check className="h-3 w-3 text-green-600" />}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
+
                                             {/* Assignee */}
                                             <div className="flex flex-col gap-1">
                                                 <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
@@ -2613,63 +2687,6 @@ export function TaskDetailModal({
                                             </div>
                                         </div>
 
-                                        {/* Workspace Selector */}
-                                        <div className="mb-8">
-                                            <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider mb-2 block">Workspace</label>
-                                            <Select
-                                                value={workspaceId || ""}
-                                                onValueChange={async (value) => {
-                                                    const newWorkspaceId = value || null;
-                                                    setWorkspaceId(newWorkspaceId);
-                                                    
-                                                    // Se estiver editando uma tarefa existente, atualizar no backend
-                                                    if (currentTaskId && !isCreateMode) {
-                                                        try {
-                                                            const result = await updateTaskField(currentTaskId, "workspace_id", newWorkspaceId);
-                                                            if (result.success) {
-                                                                invalidateCacheAndNotify(currentTaskId);
-                                                                toast.success("Workspace atualizado");
-                                                            } else {
-                                                                // Reverter em caso de erro
-                                                                setWorkspaceId(workspaceId);
-                                                                toast.error(result.error || "Erro ao atualizar workspace");
-                                                            }
-                                                        } catch (error) {
-                                                            console.error("Erro ao atualizar workspace:", error);
-                                                            setWorkspaceId(workspaceId);
-                                                            toast.error("Erro ao atualizar workspace");
-                                                        }
-                                                    }
-                                                    
-                                                    // Atualizar membros disponíveis quando workspace mudar
-                                                    if (newWorkspaceId) {
-                                                        try {
-                                                            const members = await getWorkspaceMembers(newWorkspaceId);
-                                                            setAvailableUsers(
-                                                                members.map((m: any) => ({
-                                                                    id: m.id,
-                                                                    name: m.full_name || m.email || "Sem nome",
-                                                                    avatar: m.avatar_url || undefined,
-                                                                }))
-                                                            );
-                                                        } catch (error) {
-                                                            console.error("Erro ao carregar membros do workspace:", error);
-                                                        }
-                                                    }
-                                                }}
-                                            >
-                                                <SelectTrigger className="w-full">
-                                                    <SelectValue placeholder="Selecione um workspace" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {availableWorkspaces.map((ws) => (
-                                                        <SelectItem key={ws.id} value={ws.id}>
-                                                            {ws.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
 
                                         {/* Description */}
                                         <div className="mb-8">

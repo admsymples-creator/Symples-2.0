@@ -286,6 +286,113 @@ export const getWorkspacesWeeklyStats = cache(async (
   }
 });
 
+/**
+ * Busca estatísticas semanais dos projetos (tags) de um workspace
+ * @param workspaceId - ID do workspace
+ * @param start - Data de início (início da semana)
+ * @param end - Data de fim (fim da semana)
+ */
+export const getProjectsWeeklyStats = cache(async (
+  workspaceId: string,
+  start: Date,
+  end: Date
+): Promise<Array<{
+  tag: string;
+  pendingCount: number;
+  totalCount: number;
+}>> => {
+  try {
+    const supabase = await createServerActionClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) return [];
+
+    // Verificar se usuário é membro do workspace
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership) return [];
+
+    // OTIMIZAÇÃO: Buscar apenas colunas necessárias e fazer queries em paralelo
+    // Buscar TODAS as tarefas do workspace que tenham tags (não apenas da semana)
+    // Isso garante que todos os projetos apareçam, mesmo sem tarefas na semana atual
+    const [tasksResult, projectIconsResult] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("tags, status") // Apenas colunas necessárias (não precisa de id nem due_date)
+        .eq("workspace_id", workspaceId)
+        .neq("status", "archived")
+        .not("tags", "is", null), // Apenas tarefas com tags
+      (supabase as any)
+        .from("project_icons")
+        .select("tag_name")
+        .eq("workspace_id", workspaceId)
+    ]);
+
+    const { data: tasks, error: tasksError } = tasksResult;
+    const { data: projectIcons, error: iconsError } = projectIconsResult;
+
+    if (tasksError) {
+      console.error("Erro ao buscar tarefas dos projetos:", tasksError);
+      return [];
+    }
+
+    // Agrupar por tag
+    const statsMap = new Map<string, { pendingCount: number; totalCount: number }>();
+
+    tasks?.forEach((task: any) => {
+      if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
+        task.tags.forEach((tag: string) => {
+          if (tag && tag.trim()) {
+            const tagKey = tag.trim();
+            if (!statsMap.has(tagKey)) {
+              statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+            }
+            const stats = statsMap.get(tagKey)!;
+            stats.totalCount++;
+            if (task.status !== "done" && task.status !== "archived") {
+              stats.pendingCount++;
+            }
+          }
+        });
+      }
+    });
+
+    // Adicionar projetos que têm ícones salvos mas ainda não têm tarefas
+    if (!iconsError && projectIcons) {
+      projectIcons.forEach((icon: any) => {
+        if (icon.tag_name && icon.tag_name.trim()) {
+          const tagKey = icon.tag_name.trim();
+          // Adicionar projeto mesmo sem tarefas (com contadores zerados)
+          if (!statsMap.has(tagKey)) {
+            statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+          }
+        }
+      });
+    }
+
+    // Converter para array e ordenar por nome
+    return Array.from(statsMap.entries())
+      .map(([tag, stats]) => ({
+        tag,
+        ...stats,
+      }))
+      .sort((a, b) => a.tag.localeCompare(b.tag));
+
+  } catch (error) {
+    console.error("Erro ao calcular estatísticas dos projetos:", error);
+    return [];
+  }
+});
+
 // getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 
 /**
