@@ -20,9 +20,11 @@ interface AppShellProps {
     user: any;
     workspaces: any[];
     initialSubscription?: SubscriptionData | null;
+    initialProjectsTags?: string[];
+    initialProjectsIcons?: Map<string, string>;
 }
 
-function LayoutContent({ children, user, workspaces, initialSubscription }: AppShellProps) {
+function LayoutContent({ children, user, workspaces, initialSubscription, initialProjectsTags, initialProjectsIcons }: AppShellProps) {
     const { isCollapsed } = useSidebar();
     const pathname = usePathname();
 
@@ -43,11 +45,16 @@ function LayoutContent({ children, user, workspaces, initialSubscription }: AppS
         <div className="min-h-screen bg-gray-50">
             <WorkspaceUrlSync workspaces={workspaces} />
             <WorkspaceSyncAfterInvite />
-            <Sidebar workspaces={workspaces} initialSubscription={initialSubscription} />
+            <Sidebar 
+                workspaces={workspaces} 
+                initialSubscription={initialSubscription}
+                initialProjectsTags={initialProjectsTags}
+                initialProjectsIcons={initialProjectsIcons}
+            />
             <div 
                 className={cn(
                     "flex flex-col min-h-screen transition-all duration-300 ease-in-out",
-                     isCollapsed ? "pl-[80px]" : "pl-[260px]"
+                     isCollapsed ? "pl-[64px]" : "pl-[260px]"
                 )}
             >
                 <Header user={user} />
