@@ -906,7 +906,30 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - Dropdown com lista de workspaces e opção de criar novo
 - Exibe badge de trial quando aplicável
 
-## 18. Journal Visual de Preview
+## 18. Padrão de Cards Unificado (v2.5)
+
+### 18.1. Estilo Padrão
+- **Todos os cards do sistema:** `border-none shadow-sm`
+- **Cards da Home:** `rounded-lg border-none shadow-sm` (mantém bordas arredondadas)
+- **Cards do Financeiro:** `border-none shadow-sm`
+- **Cards de Lista de Membros:** `border-none shadow-sm`
+- **Cards de Projetos/Workspaces:** `rounded-xl border-none shadow-sm`
+- **Card de Título da Home:** `rounded-lg border-none shadow-sm` (estilo de card próprio, separado do header)
+
+### 18.2. Background das Páginas
+- **Página de Tarefas:** `bg-white` (fundo branco)
+- **Página de Financeiro:** `bg-white` com scroll permitido
+- **Páginas gerais:** `bg-white` ou `bg-gray-50/50` conforme necessário
+
+### 18.3. Visão Lista de Tarefas
+- **Ghost Button "Novo Grupo":** Aparece sempre na visão lista quando `viewOption === "group"`
+- **Background:** `bg-white` (removido `bg-gray-50/50`)
+
+### 18.4. Lista de Membros do Time
+- **Fotos de Membros:** Exibe `avatar_url` quando disponível, fallback para iniciais
+- **Cards:** `border-none shadow-sm` seguindo padrão unificado
+
+## 19. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  
