@@ -298,15 +298,15 @@ export function FinanceTabsClient({
 
                 {/* RIGHT COLUMN: CATEGORIES */}
                 <div className="lg:col-span-1">
-                  <Card className="border-none shadow-sm">
-                    <CardHeader>
+                  <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
+                    <CardHeader className="flex-shrink-0">
                       <CardTitle className="text-base flex items-center gap-2">
                         <Wallet className="w-4 h-4 text-gray-500" />
                         Por Categoria
                       </CardTitle>
                       <CardDescription>Distribuição dos seus gastos</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-6">
+                    <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-6">
                       {categories.length === 0 ? (
                         <p className="text-gray-400 text-sm text-center">Sem dados de categorias</p>
                       ) : (
