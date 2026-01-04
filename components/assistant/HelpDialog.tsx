@@ -38,7 +38,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
         <DialogHeader>
           <div className="flex items-center gap-2 mb-2">
             <LifeBuoy className="w-5 h-5 text-green-600" />
-            <DialogTitle className="text-xl font-semibold text-slate-900">
+            <DialogTitle className="text-xl font-semibold text-[#050815]">
               Central de Ajuda
             </DialogTitle>
           </div>
@@ -62,7 +62,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
               <BookOpen className="w-5 h-5 text-slate-700" />
             </div>
             <div className="flex flex-col items-start text-left">
-              <span className="font-semibold text-slate-900">
+              <span className="font-semibold text-[#050815]">
                 Ler o Playbook
               </span>
               <span className="text-xs text-slate-500">
@@ -85,7 +85,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
               <MessageCircle className="w-5 h-5 text-slate-700" />
             </div>
             <div className="flex flex-col items-start text-left">
-              <span className="font-semibold text-slate-900">
+              <span className="font-semibold text-[#050815]">
                 Falar com Humano
               </span>
               <span className="text-xs text-slate-500">

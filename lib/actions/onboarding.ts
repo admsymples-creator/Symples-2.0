@@ -89,6 +89,7 @@ export async function createWorkspace(formData: FormData) {
   return {
     success: true,
     workspaceId: workspace.id,
+    workspaceSlug: workspace.slug,
     magicCode,
   }
 }

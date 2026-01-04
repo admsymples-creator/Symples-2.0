@@ -162,7 +162,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
           <CardContent className="text-center space-y-4">
             <div className="rounded-md bg-slate-50 p-3 text-sm">
               <p className="text-slate-500 mb-1">Logado como:</p>
-              <p className="font-medium text-slate-900">{user.email}</p>
+              <p className="font-medium text-[#050815]">{user.email}</p>
             </div>
             <p className="text-sm text-muted-foreground">
               Verifique se você está logado com o mesmo email que recebeu o convite.
@@ -213,11 +213,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
               <div className="rounded-md bg-slate-50 p-3 text-sm space-y-2">
                 <div>
                   <p className="text-slate-500 mb-1">Convite enviado para:</p>
-                  <p className="font-medium text-slate-900">{invite.email}</p>
+                  <p className="font-medium text-[#050815]">{invite.email}</p>
                 </div>
                 <div className="border-t border-slate-200 pt-2 mt-2">
                   <p className="text-slate-500 mb-1">Você está logado como:</p>
-                  <p className="font-medium text-slate-900">{user.email}</p>
+                  <p className="font-medium text-[#050815]">{user.email}</p>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">

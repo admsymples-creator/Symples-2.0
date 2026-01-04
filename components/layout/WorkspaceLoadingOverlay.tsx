@@ -9,7 +9,12 @@ const switchingPhrases = [
   "Estamos preparando tudo...",
 ];
 
-export function WorkspaceLoadingOverlay({ isVisible }: { isVisible: boolean }) {
+const initialLoadPhrases = [
+  "Carregando seu workspace...",
+  "Estamos preparando tudo...",
+];
+
+export function WorkspaceLoadingOverlay({ isVisible, isInitialLoad = false }: { isVisible: boolean; isInitialLoad?: boolean }) {
   const [currentPhraseIndex, setCurrentPhraseIndex] = React.useState(0);
   const previousVisibleRef = React.useRef(isVisible);
 
@@ -20,12 +25,13 @@ export function WorkspaceLoadingOverlay({ isVisible }: { isVisible: boolean }) {
 
     if (!isVisible) return;
 
+    const phrases = isInitialLoad ? initialLoadPhrases : switchingPhrases;
     const interval = setInterval(() => {
-      setCurrentPhraseIndex((prev) => (prev + 1) % switchingPhrases.length);
+      setCurrentPhraseIndex((prev) => (prev + 1) % phrases.length);
     }, 2000); // Rotaciona a cada 2 segundos
 
     return () => clearInterval(interval);
-  }, [isVisible]);
+  }, [isVisible, isInitialLoad]);
 
   if (!isVisible) return null;
 
@@ -69,7 +75,7 @@ export function WorkspaceLoadingOverlay({ isVisible }: { isVisible: boolean }) {
             className="text-base font-medium bg-gradient-to-r from-slate-600 via-slate-400 to-slate-600 bg-[length:200%_auto] bg-clip-text text-transparent animate-in fade-in duration-300"
             style={{ animation: "workspace-switch-shimmer 2s linear infinite" }}
           >
-            {switchingPhrases[currentPhraseIndex]}
+            {(isInitialLoad ? initialLoadPhrases : switchingPhrases)[currentPhraseIndex]}
           </span>
         </div>
       </div>

@@ -82,3 +82,4 @@ export function WorkspaceSkeleton({ isCollapsed = false }: WorkspaceSkeletonProp
 }
 
 
+

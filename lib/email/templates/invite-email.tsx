@@ -38,6 +38,7 @@ export function InviteEmail({
   // Extrair URL base do inviteLink para construir URL do logo
   const baseUrl = inviteLink ? new URL(inviteLink).origin : 'https://symples.com';
   const logoUrl = `${baseUrl}/logo-black.svg`;
+  const homeUrl = baseUrl;
 
   return (
     <Html>
@@ -48,13 +49,15 @@ export function InviteEmail({
       <Body style={main}>
         <Container style={container}>
           <Section style={logo}>
-            <Img
-              src={logoUrl}
-              alt="Symples"
-              width="120"
-              height="36"
-              style={logoImage}
-            />
+            <Link href={homeUrl} style={{ textDecoration: 'none' }}>
+              <Img
+                src={logoUrl}
+                alt="Symples"
+                width="120"
+                height="36"
+                style={logoImage}
+              />
+            </Link>
           </Section>
           
           <Heading style={heading}>

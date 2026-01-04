@@ -5,7 +5,7 @@ export default function LoginPage() {
     return (
         <Suspense fallback={
             <div className="h-screen w-full grid lg:grid-cols-2">
-                <div className="hidden lg:flex bg-slate-900 flex-col items-center justify-center p-12 relative">
+                <div className="hidden lg:flex bg-[#050815] flex-col items-center justify-center p-12 relative">
                     <div className="flex flex-col items-center justify-center flex-1">
                         <div className="w-[200px] h-[60px] bg-slate-800 rounded animate-pulse" />
                     </div>

@@ -43,7 +43,7 @@ export function FeatureTabs() {
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 
                 <div className="text-center max-w-3xl mx-auto mb-16">
-                    <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl mb-4">
+                    <h2 className="text-3xl font-bold tracking-tight text-[#050815] sm:text-4xl mb-4">
                         Do caos à ordem. Automaticamente.
                     </h2>
                     <p className="text-lg text-slate-600">
@@ -71,7 +71,7 @@ export function FeatureTabs() {
                                 >
                                     <div className={cn(
                                         "flex items-center gap-3 mb-2 font-semibold",
-                                        isActive ? "text-slate-900" : "text-slate-500 group-hover:text-slate-700"
+                                        isActive ? "text-[#050815]" : "text-slate-500 group-hover:text-slate-700"
                                     )}>
                                         <div className={cn(
                                             "p-2 rounded-lg transition-colors",
@@ -83,7 +83,7 @@ export function FeatureTabs() {
                                     </div>
                                     <p className={cn(
                                         "text-lg font-medium transition-colors mt-2 mb-1",
-                                        isActive ? "text-slate-900" : "text-slate-400 group-hover:text-slate-600"
+                                        isActive ? "text-[#050815]" : "text-slate-400 group-hover:text-slate-600"
                                     )}>
                                         {tab.title}
                                     </p>
@@ -102,7 +102,7 @@ export function FeatureTabs() {
                     </div>
 
                     {/* Visual Display (Right) */}
-                    <div className="w-full lg:w-2/3 h-[550px] relative bg-slate-900 rounded-[2.5rem] p-8 lg:p-12 overflow-hidden flex items-center justify-center shadow-2xl shadow-slate-900/20">
+                    <div className="w-full lg:w-2/3 h-[550px] relative bg-[#050815] rounded-[2.5rem] p-8 lg:p-12 overflow-hidden flex items-center justify-center shadow-2xl shadow-[#050815]/20">
 
                         {/* Background Effects */}
                         <div className="absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px] opacity-20" />

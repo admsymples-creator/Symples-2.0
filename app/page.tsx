@@ -32,7 +32,7 @@ export default async function LandingPage() {
             <section className="py-24 bg-slate-50/50">
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center max-w-3xl mx-auto mb-12">
-                        <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl mb-4">
+                        <h2 className="text-3xl font-bold tracking-tight text-[#050815] sm:text-4xl mb-4">
                             Pare de trabalhar para a ferramenta.
                         </h2>
                         <p className="text-lg text-slate-600">
@@ -56,7 +56,7 @@ export default async function LandingPage() {
             <PricingFAQ />
 
             {/* Footer */}
-            <footer className="bg-slate-900 border-t border-slate-800 py-16">
+            <footer className="bg-[#050815] border-t border-slate-800 py-16">
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center">
                     <div className="flex items-center gap-2 mb-8">
                         <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white font-bold text-sm">

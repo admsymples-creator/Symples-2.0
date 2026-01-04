@@ -54,31 +54,31 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
   const isWarning = daysRemaining <= 3 && daysRemaining > 0;
 
   // Determinar cor e mensagem baseado em dias restantes
-  let bgColor = "bg-blue-50";
-  let borderColor = "border-blue-200";
-  let textColor = "text-blue-900";
-  let iconColor = "text-blue-600";
+  let bgColor = "bg-green-50";
+  let borderColor = "border-green-200";
+  let textColor = "text-green-900";
+  let iconColor = "text-green-600";
   let icon = <Zap className={`w-5 h-5 ${iconColor}`} />;
   let message = "Você está testando o Symples Business";
 
   if (isExpired) {
-    bgColor = "bg-red-50";
-    borderColor = "border-red-200";
-    textColor = "text-red-900";
-    iconColor = "text-red-600";
+    bgColor = "bg-green-50";
+    borderColor = "border-green-200";
+    textColor = "text-green-900";
+    iconColor = "text-green-600";
     icon = <AlertCircle className={`w-5 h-5 ${iconColor}`} />;
     message = "Trial expirado. Escolha um plano para continuar";
   } else if (isWarning) {
-    bgColor = "bg-yellow-50";
-    borderColor = "border-yellow-200";
-    textColor = "text-yellow-900";
-    iconColor = "text-yellow-600";
+    bgColor = "bg-green-50";
+    borderColor = "border-green-200";
+    textColor = "text-green-900";
+    iconColor = "text-green-600";
     icon = <Clock className={`w-5 h-5 ${iconColor}`} />;
     message = `Seu teste acaba em breve${daysRemaining === 1 ? ' (amanhã)' : ` (${daysRemaining} dias)`}`;
   }
 
   return (
-    <div className={`${bgColor} ${borderColor} border-l-4 px-4 py-3 mb-6 rounded-r-md`}>
+    <div className={`${bgColor} ${borderColor} border px-4 py-3 mb-6 rounded-md`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {icon}

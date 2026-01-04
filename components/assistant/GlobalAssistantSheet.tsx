@@ -1534,7 +1534,7 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
           className={cn(
             "fixed bottom-6 right-6 z-[50]", // z-50 para não sobrepor modais críticos se houver
             "h-14 w-14 rounded-full p-0",
-            "bg-slate-950 hover:bg-slate-900 border-2 border-slate-800",
+            "bg-slate-950 hover:bg-[#050815] border-2 border-slate-800",
             "shadow-2xl shadow-black/20",
             "transition-transform duration-300 hover:scale-105 active:scale-95"
           )}
@@ -1603,10 +1603,10 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
                   </div>
                   
                   <div className="text-center space-y-1 mb-8">
-                    <h3 className="text-2xl font-bold text-slate-900">
+                    <h3 className="text-2xl font-bold text-[#050815]">
                       {greeting}, {name}!
                     </h3>
-                    <p className="text-xl font-normal text-slate-900">
+                    <p className="text-xl font-normal text-[#050815]">
                       Posso ajudar com alguma coisa?
                     </p>
                     <p className="text-sm text-slate-500 max-w-[250px] mx-auto mt-2">
@@ -1633,7 +1633,7 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
                             <Icon className="w-4 h-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-semibold text-slate-700 group-hover:text-slate-900">
+                            <span className="block text-xs font-semibold text-slate-700 group-hover:text-[#050815]">
                               {chip.label}
                             </span>
                             <span className="block text-[10px] text-slate-400 mt-0.5">
@@ -1728,7 +1728,7 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
                             ? "p-2" // Padding mínimo se for só imagem
                             : "px-4 py-3", // Padding normal para outras mensagens
                           message.role === "user"
-                            ? "bg-slate-900 text-white rounded-br-sm"
+                            ? "bg-[#050815] text-white rounded-br-sm"
                             : "bg-white border border-slate-100 text-slate-800 rounded-bl-sm"
                         )}
                       >

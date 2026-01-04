@@ -15,6 +15,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const UIContext = createContext<{
     isSwitchingWorkspace: boolean;
     setIsSwitchingWorkspace: (value: boolean) => void;
+    isInitialLoad: boolean;
 } | undefined>(undefined);
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
     const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(true); // Default TRUE para Splash Screen imediata
+    const [isInitialLoad, setIsInitialLoad] = useState(true); // Rastreia se é carregamento inicial
     const [isMounted, setIsMounted] = useState(false);
 
     // Hooks de navegação para detectar quando a rota mudou
@@ -48,6 +50,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         // Isso garante que o usuário veja o loading antes de qualquer conteúdo
         const timer = setTimeout(() => {
             setIsSwitchingWorkspace(false);
+            setIsInitialLoad(false); // Marcar que o carregamento inicial terminou
         }, 800);
 
         return () => clearTimeout(timer);
@@ -82,6 +85,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     const handleSetWorkspace = (id: string) => {
         // Ignora se for o mesmo ID
         if (id === activeWorkspaceId) return;
+
+        // Marcar que não é mais carregamento inicial (é uma troca real)
+        setIsInitialLoad(false);
 
         // Ativa o loading imediatamente
         setIsSwitchingWorkspace(true);
@@ -118,8 +124,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     // Contexto UI separado para evitar re-renders na Sidebar principal
     const uiContextValue = React.useMemo(() => ({
         isSwitchingWorkspace,
-        setIsSwitchingWorkspace
-    }), [isSwitchingWorkspace]);
+        setIsSwitchingWorkspace,
+        isInitialLoad
+    }), [isSwitchingWorkspace, isInitialLoad]);
 
     return (
         <AppContext.Provider value={contextValue}>

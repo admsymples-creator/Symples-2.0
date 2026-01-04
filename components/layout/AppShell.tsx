@@ -29,7 +29,7 @@ interface AppShellProps {
 
 function LayoutContent({ children, user, workspaces, initialSubscription, initialProjectsTags, initialProjectsIcons, initialWorkspaceId }: AppShellProps) {
     const { isCollapsed } = useSidebar();
-    const { isSwitchingWorkspace } = useWorkspaceLoading();
+    const { isSwitchingWorkspace, isInitialLoad } = useWorkspaceLoading();
     const pathname = usePathname();
     const previousPathnameRef = useRef(pathname);
 
@@ -73,7 +73,7 @@ function LayoutContent({ children, user, workspaces, initialSubscription, initia
             <GlobalAssistantSheet user={user} workspaces={workspaces} />
 
             {/* Workspace Loading Overlay appears ON TOP, without unmounting content */}
-            <WorkspaceLoadingOverlay isVisible={isSwitchingWorkspace} />
+            <WorkspaceLoadingOverlay isVisible={isSwitchingWorkspace} isInitialLoad={isInitialLoad} />
         </div>
     );
 }

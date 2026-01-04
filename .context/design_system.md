@@ -22,6 +22,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 | :--- | :--- | :--- |  
 | \`bg-brand-green\` | \*\*\#22C55E\*\* (Green-500) | Botões Primários ("Novo", "Comentar"), Ícone Chat |  
 | \`text-brand-green\` | \*\*\#15803D\*\* (Green-700) | Textos de sucesso, Valores positivos |  
+| \`bg-primary\` / \`bg-\[#050815\]\` | \*\*\#050815\*\* | Cor primária escura (fundos escuros, textos em fundo claro) |  
 | \`bg-sidebar-active\` | \*\*\#EEF2FF\*\* (Indigo-50) | Item selecionado na Sidebar |  
 | \`text-sidebar-active\` | \*\*\#4F46E5\*\* (Indigo-600) | Texto do item selecionado na Sidebar |  
 | \`bg-background\` | \*\*\#F9FAFB\*\* (Gray-50) | Fundo geral da aplicação |  
@@ -134,8 +135,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 6.1. Padrão de Telas de Autenticação (Auth)
 - **Layout:** Split-Screen Obrigatório.
-- **Lado Esquerdo (Branding):** Fundo `bg-slate-900`. Contém Logo e Elementos de Navegação/Status (ex: Stepper).
+- **Lado Esquerdo (Branding):** Fundo `bg-[#050815]`. Contém Logo e Elementos de Navegação/Status (ex: Stepper).
 - **Lado Direito (Ação):** Fundo `bg-white`. Formulários alinhados à esquerda (não centralizados).
+- **Logos:**
+  - Fundos escuros (`bg-[#050815]`): usar `logo.svg` (branco/claro)
+  - Fundos claros (`bg-white`): usar `logo-black.svg` (preto/escuro)
+  - Todos os logos devem estar envolvidos em `<Link href="/">` para serem clicáveis
 - **Ordem de Elementos (Login e Signup):**
   1. Botões sociais (Google, Magic Link) no topo
   2. Separador "ou" (linha com texto centralizado)
@@ -262,7 +267,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - **Hero Input:** O valor monetário é o protagonista. Fonte gigante (`text-5xl`), centralizado, sem bordas de input. A cor do texto muda conforme o tipo (Verde/Vermelho).
   - **Corpo:** Campos secundários (Data, Categoria, Descrição) agrupados em um bloco visualmente distinto (fundo cinza claro ou lista com ícones à esquerda).
 - **Ações:**
-  - Botão Principal: Neutro Escuro (`bg-slate-900`). Não usar verde/vermelho para o botão de salvar para evitar poluição visual.
+  - Botão Principal: Neutro Escuro (`bg-[#050815]`). Não usar verde/vermelho para o botão de salvar para evitar poluição visual.
 
 ### 8.3. Listas Financeiras (Extrato)
 - **Transaction Row:**
@@ -505,7 +510,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Hero Input: Valor monetário gigante (`text-6xl`)
   - Toggle Entrada/Saída (Verde/Vermelho)
   - Bloco de detalhes agrupado
-  - Botão primário neutro (`bg-slate-900`)
+  - Botão primário neutro (`bg-[#050815]`)
 
 ### 9.4. Componentes de IA
 - **AIOrb (`components/assistant/AIOrb.tsx`):**

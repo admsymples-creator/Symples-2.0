@@ -111,7 +111,7 @@ export function TaskConfirmationCard({
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4">
       <div className="flex items-center justify-between mb-2">
-        <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+        <h4 className="font-semibold text-[#050815] flex items-center gap-2">
           <FileText className="w-4 h-4 text-green-600" />
           Confirmar criação de tarefa
         </h4>

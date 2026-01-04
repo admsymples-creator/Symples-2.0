@@ -8,7 +8,7 @@ export function BentoGrid() {
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 
                 <div className="text-center mb-16">
-                    <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl mb-4">
+                    <h2 className="text-3xl font-bold tracking-tight text-[#050815] sm:text-4xl mb-4">
                         O Sistema Operacional
                     </h2>
                     <p className="text-lg text-slate-600 max-w-2xl mx-auto">
@@ -25,7 +25,7 @@ export function BentoGrid() {
                                 <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
                                     <Zap className="w-5 h-5" />
                                 </div>
-                                <h3 className="text-xl font-bold text-slate-900">Seu Segundo Cérebro</h3>
+                                <h3 className="text-xl font-bold text-[#050815]">Seu Segundo Cérebro</h3>
                             </div>
                             <p className="text-slate-600 max-w-md mb-8">
                                 Esqueça onde salvou aquele arquivo ou qual o prazo do projeto. Pergunte ao Symples e tenha respostas contextuais instantâneas.
@@ -47,7 +47,7 @@ export function BentoGrid() {
                                 <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
                                     <Wallet className="w-5 h-5" />
                                 </div>
-                                <h3 className="text-lg font-bold text-slate-900">Financeiro Invisível</h3>
+                                <h3 className="text-lg font-bold text-[#050815]">Financeiro Invisível</h3>
                             </div>
                             <p className="text-slate-600 text-sm mb-6">
                                 Transações extraídas automaticamente das suas conversas e comprovantes.
@@ -67,7 +67,7 @@ export function BentoGrid() {
                         </div>
 
                         {/* Card 3: Multi-Agência */}
-                        <div className="bg-slate-900 rounded-3xl p-8 border border-slate-800 shadow-sm flex-1 relative overflow-hidden group">
+                        <div className="bg-[#050815] rounded-3xl p-8 border border-slate-800 shadow-sm flex-1 relative overflow-hidden group">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-white border border-slate-700">
                                     <Users className="w-5 h-5" />

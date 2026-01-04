@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Building2, Check, CheckCircle2, Copy, Loader2, MessageCircle, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,8 @@ export function OnboardingWizard() {
     // Novos estados
     const [magicCode, setMagicCode] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+    const [newWorkspaceId, setNewWorkspaceId] = useState<string | null>(null);
+    const [newWorkspaceSlug, setNewWorkspaceSlug] = useState<string | null>(null);
     const router = useRouter();
 
     const steps = [
@@ -49,6 +52,8 @@ export function OnboardingWizard() {
 
                 if (result.success && result.magicCode) {
                     setMagicCode(result.magicCode);
+                    setNewWorkspaceId(result.workspaceId || null);
+                    setNewWorkspaceSlug(result.workspaceSlug || null);
                     setCurrentStep(2);
                 } else {
                     alert(result.error || "Erro ao criar workspace");
@@ -87,52 +92,48 @@ export function OnboardingWizard() {
     return (
         <div className="min-h-screen w-full grid lg:grid-cols-[400px_1fr]">
             {/* Left Sidebar - Stepper */}
-            <div className="bg-slate-900 text-white p-12 flex flex-col justify-between">
+            <div className="bg-[#050815] text-white p-12 flex flex-col justify-between">
                 <div>
                     {/* Logo */}
                     <div className="mb-16">
-                        <Image
-                            src="/logo.avif"
-                            alt="Symples"
-                            width={150}
-                            height={45}
-                            priority
-                        />
+                        <Link href="/">
+                            <Image
+                                src="/logo.svg"
+                                alt="Symples"
+                                width={150}
+                                height={45}
+                                priority
+                            />
+                        </Link>
                     </div>
 
                     {/* Vertical Stepper */}
-                    <div className="space-y-8">
+                    <div className="space-y-4">
                         {steps.map((step) => {
                             const Icon = step.icon;
                             const isActive = currentStep === step.number;
-                            const isCompleted = currentStep > step.number;
-                            const isFuture = currentStep < step.number;
 
                             return (
                                 <div
                                     key={step.number}
-                                    className={`flex items-start gap-4 ${currentStep >= step.number
-                                            ? "border-l-4 border-green-500 pl-4"
-                                            : "pl-5"
+                                    className={`flex items-center gap-3 ${isActive
+                                            ? "bg-white/20 rounded-lg px-3 py-2"
+                                            : ""
                                         }`}
                                 >
                                     <div className="flex-shrink-0">
                                         <Icon
-                                            className={`w-6 h-6 ${isCompleted
-                                                    ? "text-green-500 opacity-70"
-                                                    : isActive
-                                                        ? "text-green-500"
-                                                        : "text-slate-600"
+                                            className={`w-5 h-5 ${isActive
+                                                    ? "text-white"
+                                                    : "text-slate-400"
                                                 }`}
                                         />
                                     </div>
                                     <div>
                                         <p
-                                            className={`font-semibold ${isActive
-                                                    ? "text-white"
-                                                    : isCompleted
-                                                        ? "text-slate-400"
-                                                        : "text-slate-600"
+                                            className={`text-sm ${isActive
+                                                    ? "text-white font-medium"
+                                                    : "text-slate-400"
                                                 }`}
                                         >
                                             {step.label}
@@ -309,7 +310,16 @@ export function OnboardingWizard() {
                                 </div>
 
                                 <Button
-                                    onClick={() => router.push("/home")}
+                                    onClick={() => {
+                                        // Redirecionar para o workspace recém-criado
+                                        if (newWorkspaceSlug) {
+                                            router.push(`/${newWorkspaceSlug}/home`);
+                                        } else if (newWorkspaceId) {
+                                            router.push(`/${newWorkspaceId}/home`);
+                                        } else {
+                                            router.push("/home");
+                                        }
+                                    }}
                                     className="w-full h-11 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg"
                                 >
                                     Ir para o Dashboard
