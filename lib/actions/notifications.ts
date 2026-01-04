@@ -74,8 +74,6 @@ export async function getNotifications(
     }
 
     const { data: notifications, error } = await query;
-    const queryTime = Date.now() - queryStart;
-    console.log(`[PERF] getNotifications - Query: ${queryTime}ms`);
 
     if (error) {
       console.error("Error fetching notifications:", {
@@ -106,8 +104,7 @@ export async function getNotifications(
         .select("id, full_name, avatar_url")
         .in("id", triggeringUserIds);
       
-      const profilesTime = Date.now() - profilesStart;
-      console.log(`[PERF] getNotifications - Profiles fetch: ${profilesTime}ms (${triggeringUserIds.length} users)`);
+      // Performance logs removed for production
       
       if (profilesError) {
         console.error("Error fetching triggering user profiles:", {
@@ -203,12 +200,9 @@ export async function getNotifications(
         return false;
       }) as NotificationWithActor[];
 
-    const totalTime = Date.now() - perfStart;
-    console.log(`[PERF] getNotifications - Total: ${totalTime}ms (${result.length} notifications)`);
     return result;
   } catch (err) {
-    const totalTime = Date.now() - perfStart;
-    console.error(`[PERF] getNotifications - Error after ${totalTime}ms:`, {
+    console.error(`[getNotifications] Error:`, {
       error: err,
       message: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined,

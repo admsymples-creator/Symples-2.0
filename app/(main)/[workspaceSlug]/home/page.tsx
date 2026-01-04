@@ -62,11 +62,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
       workspaceId: isPersonal ? null : workspaceId,
     }),
   ]);
-  const criticalDataTime = Date.now() - criticalDataStartTime;
-  const tasksSize = JSON.stringify(initialTasks).length;
-  const notificationsSize = JSON.stringify(initialNotifications).length;
-  console.log(`[PERF] Home - Critical data (tasks + notifications): ${criticalDataTime}ms`);
-  console.log(`[PERF] Home - Data size: tasks=${(tasksSize / 1024).toFixed(2)}KB, notifications=${(notificationsSize / 1024).toFixed(2)}KB`);
+  // Performance logs removed for production
 
   // 5. Buscar dados secundários (stats) em paralelo - podem ser carregados depois
   const secondaryDataStartTime = Date.now();
@@ -89,10 +85,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
         })
       : Promise.resolve({}),
   ]);
-  const secondaryDataTime = Date.now() - secondaryDataStartTime;
-  const totalPageTime = Date.now() - pageStartTime;
-  console.log(`[PERF] Home - Secondary data (stats + icons): ${secondaryDataTime}ms`);
-  console.log(`[PERF] Home - Total page render time: ${totalPageTime}ms`);
+  // Performance logs removed for production
 
   return (
     <div className="min-h-screen bg-white pb-20">

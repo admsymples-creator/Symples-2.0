@@ -64,18 +64,14 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
     dueDateStart: startOfWeek.toISOString(),
     dueDateEnd: endOfWeek.toISOString(),
   });
-  const tasksTime = Date.now() - tasksStartTime;
-  const tasksSize = JSON.stringify(initialTasks).length;
-  console.log(`[PERF] Planner - Tasks fetch: ${tasksTime}ms`);
-  console.log(`[PERF] Planner - Data size: tasks=${(tasksSize / 1024).toFixed(2)}KB`);
+  // Performance logs removed for production
 
   // Filtrar por workspace se não for pessoal
   const filteredTasks = isPersonal
     ? initialTasks
     : initialTasks.filter(task => task.workspace_id === workspaceId);
 
-  const totalPageTime = Date.now() - pageStartTime;
-  console.log(`[PERF] Planner - Total page render time: ${totalPageTime}ms`);
+  // Performance logs removed for production
 
   return (
     <div className="min-h-screen bg-white pb-20">

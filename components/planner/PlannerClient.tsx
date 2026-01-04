@@ -47,7 +47,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   const initialWorkspaces = preloadedWorkspaces || contextWorkspaces;
 
   const [tasks, setTasks] = useState<Task[]>(initialTasks || []);
-  const [loading, setLoading] = useState(!initialTasks); // Não carregar se temos dados iniciais
+  const [loading, setLoading] = useState(false); // Sempre começar sem loading se temos dados iniciais
   const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(() => {
     // Inicializar com dados fornecidos se disponíveis
     if (initialWorkspaceId && initialWorkspaces) {

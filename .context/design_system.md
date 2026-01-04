@@ -929,7 +929,20 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Fotos de Membros:** Exibe `avatar_url` quando disponível, fallback para iniciais
 - **Cards:** `border-none shadow-sm` seguindo padrão unificado
 
-## 19. Journal Visual de Preview
+## 19. Performance e Debug (v2.5)
+
+### 19.1. Logs de Performance
+- **Produção:** Todos os logs de performance (`[PERF]`, `console.log` de timing) foram removidos do código de produção
+- **Desenvolvimento:** Logs de performance só aparecem quando `process.env.DEBUG_PERF === "1"` (configurado via variável de ambiente)
+- **Função `logPerf`:** Existe em `tasks.ts`, `finance.ts`, `user.ts` mas só funciona se `DEBUG_PERF=1`
+- **Regra:** Nunca incluir `console.log` de performance diretamente no código - usar sempre a função `logPerf` protegida
+
+### 19.2. Carregamento Imediato de Páginas
+- **Planner:** Agora carrega imediatamente usando `initialTasks` do Server Component, sem mostrar loading inicial
+- **Estado inicial:** `loading` sempre começa como `false` quando há dados iniciais disponíveis
+- **Padrão:** Todas as páginas devem usar Server Components para buscar dados e passar para Client Components via props `initial*`
+
+## 20. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  
