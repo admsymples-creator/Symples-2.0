@@ -61,7 +61,10 @@ export function DayColumn({
         case 'add':
           // Evitar duplicatas: verificar se a tarefa já existe
           const exists = state.some(t => t.id === action.task.id);
-          if (exists) return state;
+          if (exists) {
+            // Se já existe, atualizar ao invés de adicionar (pode ser substituição de temp por real)
+            return state.map(t => t.id === action.task.id ? action.task : t);
+          }
           return [...state, action.task];
         case 'update':
           return state.map(t => t.id === action.task.id ? { ...t, ...action.task } : t);

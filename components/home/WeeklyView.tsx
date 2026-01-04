@@ -62,10 +62,6 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         dateKey = `${utcDay}/${utcMonth}`;
       }
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/WeeklyView.tsx:42',message:'BUG-WEEKLY-HOUR: Task date grouping',data:{taskId:task.id,isPersonal,dueDate:task.due_date,taskDateISO:taskDate.toISOString(),taskDateLocal:taskDate.toString(),dateKey},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-weekly-hour',hypothesisId:'bug-weekly-hour'})}).catch(()=>{});
-      // #endregion
-      
       if (!grouped[dateKey]) grouped[dateKey] = [];
       grouped[dateKey].push(task);
     });
