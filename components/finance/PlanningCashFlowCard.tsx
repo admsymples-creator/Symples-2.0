@@ -20,7 +20,7 @@ const formatCurrency = (value: number) => {
 export function PlanningCashFlowCard({ forecast }: PlanningCashFlowCardProps) {
   if (!forecast || forecast.length === 0) {
     return (
-      <Card className="border-none shadow-sm ring-1 ring-gray-200">
+      <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
         <CardHeader>
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-gray-500" />
@@ -30,7 +30,7 @@ export function PlanningCashFlowCard({ forecast }: PlanningCashFlowCardProps) {
             Projeção do saldo dos próximos meses
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 overflow-y-auto min-h-0">
           <p className="text-center text-gray-400 py-4 text-sm">
             Nenhuma previsão disponível
           </p>
@@ -45,7 +45,7 @@ export function PlanningCashFlowCard({ forecast }: PlanningCashFlowCardProps) {
   const maxExpense = Math.max(...forecast.map(f => f.expense), 1);
 
   return (
-    <Card className="border-none shadow-sm ring-1 ring-gray-200">
+    <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
       <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-gray-500" />
@@ -55,7 +55,7 @@ export function PlanningCashFlowCard({ forecast }: PlanningCashFlowCardProps) {
           Projeção do saldo dos próximos {forecast.length} meses
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 overflow-y-auto min-h-0">
         <div className="space-y-6">
           {forecast.map((item, index) => {
             const isNegative = item.balance < 0;

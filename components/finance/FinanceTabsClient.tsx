@@ -276,7 +276,7 @@ export function FinanceTabsClient({
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* LEFT COLUMN: TABLES (SPAN 2) */}
-                <div className="lg:col-span-2 space-y-6">
+                <div className="lg:col-span-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FinanceTransactionsList
                       transactions={incomeTransactions}
@@ -298,7 +298,7 @@ export function FinanceTabsClient({
 
                 {/* RIGHT COLUMN: CATEGORIES */}
                 <div className="lg:col-span-1">
-                  <Card className="h-full border-none shadow-sm ring-1 ring-gray-200">
+                  <Card className="border-none shadow-sm">
                     <CardHeader>
                       <CardTitle className="text-base flex items-center gap-2">
                         <Wallet className="w-4 h-4 text-gray-500" />
@@ -328,7 +328,7 @@ export function FinanceTabsClient({
             </TabsContent>
 
             <TabsContent value="recurring" className="space-y-8 mt-0">
-              <Card className="border-none shadow-sm ring-1 ring-gray-200">
+              <Card className="border-none shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
                     <div className="p-1.5 bg-blue-100 rounded-full">
@@ -378,7 +378,7 @@ export function FinanceTabsClient({
               </Card>
             </TabsContent>
 
-            <TabsContent value="planning" className="space-y-8 mt-0">
+            <TabsContent value="planning" className="space-y-6 mt-0">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <PlanningBudgetCard
                   month={month}

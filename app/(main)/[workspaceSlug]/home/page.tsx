@@ -97,20 +97,24 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
   return (
     <div className="min-h-screen bg-white pb-20">
       {/* HEADER AREA - LINE 1 */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
-        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Bom dia, Usuário 👋
-            </h1>
-            <p className="text-sm text-gray-500">
-              Aqui está o panorama da sua semana.
-            </p>
+      <div className="px-6 pt-6">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="bg-white border-none shadow-sm rounded-lg px-6 py-4 sticky top-4 z-10">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Bom dia, Usuário 👋
+                </h1>
+                <p className="text-sm text-gray-500">
+                  Aqui está o panorama da sua semana.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="w-full bg-white px-6">
+      <div className="w-full bg-white px-6 mt-4">
         <div className="max-w-[1600px] mx-auto py-3">
           <div className="space-y-8">
             {/* Trial Banner */}

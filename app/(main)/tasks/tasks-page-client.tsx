@@ -2823,7 +2823,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     return (
         <div
             className={cn(
-                "bg-gray-50/50",
+                "bg-white",
                 viewMode === "kanban"
                     ? "h-screen flex flex-col overflow-hidden"
                     : "min-h-screen pb-20"
@@ -3150,8 +3150,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     />
                                                 );
                                             })}
-                                            {/* Ghost Group para cria├º├úo r├ípida - apenas na vis├úo de grupos e dentro de projetos */}
-                                            {viewOption === "group" && tagFilter && (
+                                            {/* Ghost Group para cria├º├úo r├ípida - apenas na vis├úo de grupos */}
+                                            {viewOption === "group" && (
                                                 <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
                                             )}
                                         </div>

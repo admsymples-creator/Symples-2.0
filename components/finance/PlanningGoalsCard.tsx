@@ -56,7 +56,7 @@ export function PlanningGoalsCard({ workspaceId }: PlanningGoalsCardProps) {
 
   return (
     <>
-      <Card className="border-none shadow-sm ring-1 ring-gray-200">
+      <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -81,7 +81,7 @@ export function PlanningGoalsCard({ workspaceId }: PlanningGoalsCardProps) {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 overflow-y-auto min-h-0">
           {isLoading ? (
             <p className="text-center text-gray-400 py-4 text-sm">Carregando...</p>
           ) : goals.length === 0 ? (

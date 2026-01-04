@@ -728,7 +728,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </Dialog>
           </div>
 
-          <Card>
+          <Card className="border-none shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
@@ -749,15 +749,24 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   {members.map((member) => {
                     const name = member.profiles?.full_name || "Usuário";
                     const email = member.profiles?.email || "";
-                    const initials = getInitials(name);
+                    const avatarUrl = member.profiles?.avatar_url;
+                    const hasAvatar = avatarUrl && avatarUrl.trim() !== '';
                     
                     return (
                         <tr key={member.user_id} className="bg-white hover:bg-gray-50/50 transition-colors">
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
-                                {initials}
-                            </div>
+                            {hasAvatar ? (
+                                <img 
+                                    src={avatarUrl} 
+                                    alt={name}
+                                    className="h-10 w-10 rounded-full object-cover"
+                                />
+                            ) : (
+                                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
+                                    {getInitials(name)}
+                                </div>
+                            )}
                             <div>
                                 <div className="font-medium text-gray-900">{name}</div>
                                 <div className="text-muted-foreground text-xs">{email}</div>
@@ -791,7 +800,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           {invites.length > 0 && (
               <div className="space-y-4">
                   <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Convites Pendentes</h3>
-                  <Card>
+                  <Card className="border-none shadow-sm">
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">

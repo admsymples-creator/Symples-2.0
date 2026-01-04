@@ -97,7 +97,7 @@ export function PlanningBudgetCard({
 
   return (
     <>
-      <Card className="border-none shadow-sm ring-1 ring-gray-200">
+      <Card className="border-none shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>

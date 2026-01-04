@@ -401,7 +401,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
 
   return (
     <>
-      <div className="card-surface h-[400px] flex flex-col">
+      <div className="rounded-lg border-none shadow-sm h-[400px] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border min-h-[56px] flex items-center">
           <div className="flex items-center justify-between gap-4 w-full">

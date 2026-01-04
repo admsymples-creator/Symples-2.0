@@ -42,6 +42,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
     \* \`rounded-xl\` (12px) para Cards do Dashboard e Modal.  
     \* \`rounded-full\` para Badges de Status e Avatares.  
 \* \*\*Shadow:\*\* \`shadow-sm\` para cards, \`shadow-lg\` para o Modal.
+\* \*\*Padrão de Cards:\*\* Todos os cards do sistema devem usar \`border-none shadow-sm\` para manter consistência visual:
+    \* Cards da Home: \`rounded-lg border-none shadow-sm\` (mantém bordas arredondadas)
+    \* Cards do Financeiro: \`border-none shadow-sm\`
+    \* Cards de Lista de Membros: \`border-none shadow-sm\`
+    \* Cards de Projetos/Workspaces: \`rounded-xl border-none shadow-sm\`
+    \* Exceção: Card de título da Home usa \`rounded-lg border-none shadow-sm\` como card separado
 
 \---
 

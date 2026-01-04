@@ -55,7 +55,7 @@ export function ProjectCard({ tag, pendingCount, totalCount, iconName, isFirst =
         <div
             onClick={handleCardClick}
             className={cn(
-                "group bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-300 cursor-pointer relative flex flex-col h-full",
+                "group bg-white rounded-xl p-5 border-none shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer relative flex flex-col h-full",
                 // Highlight Styles
                 isHighlighted && "ring-4 ring-green-400 ring-offset-2"
             )}
