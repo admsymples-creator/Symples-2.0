@@ -942,7 +942,26 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Estado inicial:** `loading` sempre começa como `false` quando há dados iniciais disponíveis
 - **Padrão:** Todas as páginas devem usar Server Components para buscar dados e passar para Client Components via props `initial*`
 
-## 20. Journal Visual de Preview
+## 20. Saudação Dinâmica (v2.5)
+
+### 20.1. Componente DynamicGreeting
+- **Localização:** `components/home/DynamicGreeting.tsx`
+- **Função utilitária:** `lib/utils/greeting.ts` - `getGreeting(userName)`
+- **Funcionalidade:** Gera saudação dinâmica baseada no horário do dia
+  - **Bom dia:** 5h às 11h59
+  - **Boa tarde:** 12h às 17h59
+  - **Boa noite:** 18h às 4h59
+- **Extração de nome:** Usa o primeiro nome do usuário ou "Usuário" como fallback
+- **Uso:** 
+  - Home page: `<DynamicGreeting userName={user?.full_name} />`
+  - Assistente IA: Usa a mesma função utilitária para consistência
+
+### 20.2. Integração
+- **Server Component:** Busca perfil do usuário via `getUserProfile()` na página home
+- **Client Component:** `DynamicGreeting` é renderizado no cliente para atualização dinâmica baseada na hora atual
+- **Reutilização:** A função `getGreeting` é compartilhada entre Home e Assistente IA
+
+## 21. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  

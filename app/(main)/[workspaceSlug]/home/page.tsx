@@ -4,12 +4,13 @@ import { getTasks } from "@/lib/actions/tasks";
 import { getNotifications } from "@/lib/actions/notifications";
 import { getProjectIcons } from "@/lib/actions/projects";
 import { getWorkspaceIdBySlug } from "@/lib/actions/tasks";
-import { getUserWorkspaces } from "@/lib/actions/user";
+import { getUserWorkspaces, getUserProfile } from "@/lib/actions/user";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { TrialBanner } from "@/components/home/TrialBanner";
 import { HomeTasksSection } from "@/components/home/HomeTasksSection";
 import { HomeInboxSection } from "@/components/home/HomeInboxSection";
 import { HomeWorkspaceOverview } from "@/components/home/HomeWorkspaceOverview";
+import { DynamicGreeting } from "@/components/home/DynamicGreeting";
 import { PageLoading } from "@/components/ui/page-loading";
 import { notFound } from "next/navigation";
 
@@ -21,19 +22,23 @@ interface PageProps {
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// ✅ Server Component otimizado - busca todos os dados no servidor
+  // ✅ Server Component otimizado - busca todos os dados no servidor
 export default async function WorkspaceHomePage({ params }: PageProps) {
   const pageStartTime = Date.now();
   const { workspaceSlug } = await params;
   
-  // 1. Obter workspaceId do slug
-  const workspaceId = await getWorkspaceIdBySlug(workspaceSlug);
+  // 1. Buscar dados do usuário e workspace em paralelo
+  const [workspaceId, workspaces, user] = await Promise.all([
+    getWorkspaceIdBySlug(workspaceSlug),
+    getUserWorkspaces(),
+    getUserProfile()
+  ]);
+  
   if (!workspaceId) {
     return notFound();
   }
 
-  // 2. Buscar workspaces para detectar se é pessoal
-  const workspaces = await getUserWorkspaces();
+  // 2. Detectar se é pessoal
   const workspace = workspaces.find(w => w.id === workspaceId);
   const isPersonal = workspace ? isPersonalWorkspace(workspace, workspaces) : false;
   
@@ -96,7 +101,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  Bom dia, Usuário 👋
+                  <DynamicGreeting userName={user?.full_name || null} />
                 </h1>
                 <p className="text-sm text-gray-500">
                   Aqui está o panorama da sua semana.

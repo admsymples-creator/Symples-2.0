@@ -45,6 +45,7 @@ import {
 } from "@/lib/actions/assistant";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { getGreeting } from "@/lib/utils/greeting";
 
 // Tipagem preparada para Generative UI
 interface Message {
@@ -82,22 +83,7 @@ interface GlobalAssistantSheetProps {
   workspaces?: Workspace[];
 }
 
-// Função para gerar saudação dinâmica baseada no horário
-function getGreeting(userName?: string | null): { greeting: string; name: string } {
-  const hour = new Date().getHours();
-  let greeting = "";
-  
-  if (hour >= 5 && hour < 12) {
-    greeting = "Bom dia";
-  } else if (hour >= 12 && hour < 18) {
-    greeting = "Boa tarde";
-  } else {
-    greeting = "Boa noite";
-  }
-  
-  const name = userName?.split(" ")[0] || "Julio"; // Pega o primeiro nome ou usa "Julio" como fallback
-  return { greeting, name };
-}
+import { getGreeting } from "@/lib/utils/greeting";
 
 const suggestionChips = [
   {
