@@ -916,6 +916,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Cards de Projetos/Workspaces:** `rounded-xl border-none shadow-sm`
 - **Card de Título da Home:** `rounded-lg border-none shadow-sm` (estilo de card próprio, separado do header)
 
+### 18.1.1. Altura de Cards que Preenchem Espaço
+- **Cards que precisam ter altura igual:** Usar `flex flex-col min-h-[400px]` no Card
+- **CardHeader:** `flex-shrink-0` para manter tamanho fixo
+- **CardContent:** `flex-1 min-h-0 overflow-y-auto` para preencher espaço e permitir scroll interno
+- **Aplicação:** Cards "Entradas", "Saídas" e "Por Categoria" no financeiro seguem este padrão
+
 ### 18.2. Background das Páginas
 - **Página de Tarefas:** `bg-white` (fundo branco)
 - **Página de Financeiro:** `bg-white` com scroll permitido
