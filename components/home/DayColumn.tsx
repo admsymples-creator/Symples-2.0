@@ -260,6 +260,12 @@ export function DayColumn({
         onTaskUpdate?.(); // Notificar atualizacao
         // Não fazer router.refresh() imediato - a atualização otimista já cobre a UI
         // O refresh será feito automaticamente quando necessário (ex: navegação)
+        
+        // Resetar recurrenceType após criação bem-sucedida
+        // Mas apenas se não estiver criando múltiplas tarefas ou se todas foram criadas
+        if (tasksToCreate.length === 1 || successCount === tasksToCreate.length) {
+          setRecurrenceType(null);
+        }
       }
 
       if (failedCount === results.length) {
@@ -273,6 +279,7 @@ export function DayColumn({
     } catch (error) {
       toast.error("Erro ao criar tarefa");
       setQuickAddValue(rawValue);
+      // Não resetar recurrenceType em caso de erro - deixar o usuário tentar novamente
     } finally {
       setIsCreating(false);
     }
