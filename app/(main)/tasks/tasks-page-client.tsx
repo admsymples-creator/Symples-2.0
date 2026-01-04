@@ -74,6 +74,8 @@ import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { useTasks, invalidateTasksCache } from "@/hooks/use-tasks";
 import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
+import { getProjectIcon } from "@/lib/actions/projects";
+import { getIconComponent } from "@/components/projects/IconPicker";
 
 type ViewMode = "list" | "kanban" | "calendar";
 type GroupBy = "status" | "priority" | "assignee" | "date";
@@ -148,8 +150,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ler sortBy da URL, com fallback para "position"
     const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
     
-    // Ler tag da URL para filtro de projeto
-    const tagFilter = searchParams.get("tag");
+    // Ler tag da URL para filtro de projeto (decodificar se presente)
+    const tagParam = searchParams.get("tag");
+    const tagFilter = tagParam ? decodeURIComponent(tagParam) : null;
     
     // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
@@ -235,6 +238,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const localTasksRef = useRef<Task[]>([]);
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
     const previousGroupOrderRef = useRef<string[]>([]);
+    const [projectIconName, setProjectIconName] = useState<string | null>(null);
     
     // ├ó┼ôÔÇª NOVO: Usar workspaceId da prop se fornecido, sen├â┬úo usar do contexto
     const effectiveWorkspaceId = propWorkspaceId ?? activeWorkspaceId;
@@ -309,14 +313,96 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ├ó┼ôÔÇª NOVO: Inicializar com initialTasks se fornecido
         if (initialTasks) {
             const mapped = initialTasks.map(mapTaskFromDB);
-            // Filtrar por tag se houver tagFilter
+            // ✅ Filtro adicional no cliente como fallback (caso o servidor não tenha filtrado)
+            // Isso garante que mesmo se houver problema no filtro do servidor, o cliente filtra
             if (tagFilter) {
-                return mapped.filter(task => task.tags?.includes(tagFilter));
+                const filtered = mapped.filter(task => {
+                    const hasTag = task.tags?.some(tag => tag === tagFilter);
+                    return hasTag;
+                });
+                // Debug log
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('[TasksPage] Filtro cliente aplicado:', { 
+                        tagFilter, 
+                        total: mapped.length, 
+                        filtered: filtered.length,
+                        sampleTags: mapped.slice(0, 3).map(t => t.tags)
+                    });
+                }
+                return filtered;
             }
             return mapped;
         }
         return [];
     });
+    
+    // ✅ Sincronizar localTasks quando initialTasks ou tagFilter mudarem (mudança de projeto)
+    const prevInitialTasksRef = useRef<string>('');
+    const prevTagFilterRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (initialTasks) {
+            // Criar string de IDs ordenados para comparação estável
+            const currentTaskIds = initialTasks
+                .map(t => t.id)
+                .sort()
+                .join(',');
+            
+            // Verificar se initialTasks ou tagFilter mudaram
+            const tasksChanged = prevInitialTasksRef.current !== currentTaskIds;
+            const tagFilterChanged = prevTagFilterRef.current !== tagFilter;
+            
+            if (tasksChanged || tagFilterChanged) {
+                prevInitialTasksRef.current = currentTaskIds;
+                prevTagFilterRef.current = tagFilter;
+                
+                // Mapear e filtrar tarefas
+                const mapped = initialTasks.map(mapTaskFromDB);
+                if (tagFilter) {
+                    const filtered = mapped.filter(task => {
+                        const hasTag = task.tags?.some(tag => tag === tagFilter);
+                        return hasTag;
+                    });
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('[TasksPage] Atualizando tarefas por mudança de projeto:', { 
+                            tagFilter, 
+                            total: mapped.length, 
+                            filtered: filtered.length 
+                        });
+                    }
+                    setLocalTasks(filtered);
+                } else {
+                    setLocalTasks(mapped);
+                }
+            }
+        }
+    }, [initialTasks, tagFilter, mapTaskFromDB]);
+    
+    // ✅ Buscar ícone do projeto quando tagFilter mudar
+    useEffect(() => {
+        const loadProjectIcon = async () => {
+            if (tagFilter && effectiveWorkspaceId) {
+                try {
+                    const iconName = await getProjectIcon(effectiveWorkspaceId, tagFilter);
+                    setProjectIconName(iconName);
+                } catch (error) {
+                    console.error("Erro ao buscar ícone do projeto:", error);
+                    setProjectIconName(null);
+                }
+            } else {
+                setProjectIconName(null);
+            }
+        };
+        
+        loadProjectIcon();
+    }, [tagFilter, effectiveWorkspaceId]);
+    
+    // ✅ Forçar atualização quando searchParams mudar (mudança de projeto)
+    useEffect(() => {
+        // Quando a tag na URL muda, forçar recarregamento dos dados do servidor
+        if (tagFilter !== prevTagFilterRef.current && tagFilter !== null) {
+            router.refresh();
+        }
+    }, [tagFilter, router]);
     
     // ├ó┼ôÔÇª CORRE├âÔÇí├âãÆO: Compara├â┬º├â┬úo profunda baseada em IDs para evitar loops infinitos
     // Compara apenas os IDs das tarefas, n├â┬úo as refer├â┬¬ncias dos arrays
@@ -355,7 +441,20 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     );
 
     const collisionDetectionStrategy = useCallback((args: Parameters<typeof pointerWithin>[0]) => {
-        const taskIds = new Set(localTasksRef.current.map((task) => String(task.id)));
+        // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio (pode acontecer com tagFilter)
+        const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
+        const taskIds = new Set(currentTasks.map((task) => String(task.id)));
+        
+        // ✅ DEBUG: Log quando há tagFilter para verificar se taskIds está correto
+        if (process.env.NODE_ENV === 'development' && tagFilter && taskIds.size === 0) {
+            console.warn('⚠️ [collisionDetectionStrategy] taskIds vazio com tagFilter:', {
+                tagFilter,
+                localTasksRefCount: localTasksRef.current.length,
+                localTasksCount: localTasks.length,
+                usingLocalTasks: localTasksRef.current.length === 0
+            });
+        }
+        
         const pointerCollisions = pointerWithin(args);
         if (pointerCollisions.length > 0) {
             const taskCollisions = pointerCollisions.filter((collision) => taskIds.has(String(collision.id)));
@@ -379,17 +478,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         return closestCenter(args);
-    }, []);
+    }, [localTasks, tagFilter]);
 
 
-    // Handler para criar grupo - apenas dentro de projetos (quando h├í tag ativa)
+    // Handler para criar grupo
     const handleCreateGroup = async () => {
-        // Verificar se h├í tag (projeto) ativo
-        if (!tagFilter) {
-            toast.error("Grupos personalizados s├│ podem ser criados dentro de projetos. Selecione um projeto primeiro.");
-            setIsCreateGroupModalOpen(false);
-            return;
-        }
         if (!newGroupName.trim()) {
             toast.error("Digite o nome do grupo");
             return;
@@ -604,6 +697,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         dueDate?: string;
         groupId?: string | null;
         workspaceId?: string | null;
+        tags?: string[];
         isPending?: boolean; // ? Marca se est├í sendo criada (para mostrar skeleton)
     }) => {
         const newTask: Task = {
@@ -615,7 +709,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             assignees: taskData.assignees || [],
             assigneeId: taskData.assignees?.[0]?.id || null,
             dueDate: taskData.dueDate,
-            tags: [],
+            tags: taskData.tags || [],
             hasUpdates: false,
             workspaceId: taskData.workspaceId || null,
             group: taskData.groupId ? {
@@ -673,7 +767,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         groupId: string,
         title: string,
         dueDate?: Date | null,
-        assigneeId?: string | null
+        assigneeId?: string | null,
+        tags?: string[]
     ) => {
         // ? 1. Snapshot do estado anterior (para rollback)
         const previousTasks = [...localTasksRef.current];
@@ -732,6 +827,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const assignee = assigneeId ? workspaceMembers.find(m => m.id === assigneeId) : undefined;
         
+        // ✅ Incluir tags do projeto se houver tagFilter
+        const finalTags = tags || (tagFilter ? [tagFilter] : []);
+        
         handleTaskCreatedOptimistic({
             id: tempId,
             title,
@@ -745,6 +843,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             dueDate: dueDate ? dueDate.toISOString() : undefined,
             groupId: finalGroupId,
             workspaceId: effectiveWorkspaceId || null,
+            tags: finalTags,
         });
 
         try {
@@ -757,6 +856,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 due_date: dueDate ? dueDate.toISOString() : undefined,
                 workspace_id: effectiveWorkspaceId || null,
                 group_id: finalGroupId,
+                tags: finalTags.length > 0 ? finalTags : undefined,
             });
 
             if (result.success && 'data' in result && result.data) {
@@ -793,7 +893,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             console.error("Erro ao criar tarefa:", error);
             toast.error("Erro ao criar tarefa");
         }
-    }, [viewOption, effectiveWorkspaceId, activeTab, router, workspaceMembers, handleTaskCreatedOptimistic, availableGroups]);
+    }, [viewOption, effectiveWorkspaceId, activeTab, router, workspaceMembers, handleTaskCreatedOptimistic, availableGroups, tagFilter]);
 
     // Handler para adicionar tarefa no kanban (TaskBoard) com Optimistic UI
     // Reutiliza a mesma l├│gica do handleAddTaskToGroup
@@ -801,11 +901,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         columnId: string,
         title: string,
         dueDate?: Date | null,
-        assigneeId?: string | null
+        assigneeId?: string | null,
+        tags?: string[]
     ) => {
         // Usar o mesmo handler que funciona para TaskGroup
         // O columnId funciona da mesma forma que groupId
-        return handleAddTaskToGroup(columnId, title, dueDate, assigneeId);
+        return handleAddTaskToGroup(columnId, title, dueDate, assigneeId, tags);
     }, [handleAddTaskToGroup]);
 
     // ? Handler para excluir tarefa com Optimistic UI e rollback
@@ -1461,8 +1562,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return groups;
     }, [viewOption, filteredTasks, availableGroups, workspaceMembers]);
 
-    // Atualizar ref para groupedData (ap├â┬│s groupedData ser definido)
-    groupedDataRef.current = groupedData;
+    // ✅ Atualizar ref para groupedData quando mudar (garantir sincronização)
+    useEffect(() => {
+        groupedDataRef.current = groupedData;
+        if (process.env.NODE_ENV === 'development' && tagFilter) {
+            console.log('🔍 [groupedDataRef] Atualizado:', {
+                tagFilter,
+                groupedDataKeys: Object.keys(groupedData),
+                totalTasks: Object.values(groupedData).reduce((sum, tasks) => sum + tasks.length, 0)
+            });
+        }
+    }, [groupedData, tagFilter]);
 
     // ? CORRE├ç├âO: Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
@@ -1801,8 +1911,21 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const entry = Object.entries(currentGroupedData).find(([_, tasks]) =>
             tasks.some((t) => String(t.id) === id)
         );
-        return entry ? entry[0] : null;
-    }, []);
+        const result = entry ? entry[0] : null;
+        
+        // ✅ DEBUG: Log quando tarefa não é encontrada
+        if (process.env.NODE_ENV === 'development' && !result && tagFilter) {
+            console.warn('⚠️ [findGroupKeyForId] Tarefa não encontrada:', {
+                id,
+                tagFilter,
+                groupedDataKeys: Object.keys(currentGroupedData),
+                allTaskIds: Object.values(currentGroupedData).flat().map(t => String(t.id)).slice(0, 10),
+                taskInLocalTasks: localTasksRef.current.find(t => String(t.id) === id) ? 'sim' : 'não'
+            });
+        }
+        
+        return result;
+    }, [tagFilter]);
 
     // Sincronizar sortBy quando URL mudar
     useEffect(() => {
@@ -2016,6 +2139,21 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return;
         }
         
+        // ✅ DEBUG: Log quando há tagFilter para verificar se a tarefa está sendo encontrada
+        if (process.env.NODE_ENV === 'development' && tagFilter) {
+            const activeIdStr = String(event.active.id);
+            const taskInRef = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
+            const taskInState = localTasks.find((t) => String(t.id) === activeIdStr);
+            console.log('🔍 [handleDragStart] DEBUG - tagFilter:', {
+                tagFilter,
+                activeIdStr,
+                taskInRef: !!taskInRef,
+                taskInState: !!taskInState,
+                localTasksRefCount: localTasksRef.current.length,
+                localTasksCount: localTasks.length
+            });
+        }
+        
         const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
         if (!isDragEnabled) {
             toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
@@ -2025,11 +2163,21 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const { active } = event;
         // ? CORRE├ç├âO: Normalizar ID para string
         const activeIdStr = String(active.id);
-        // Usar ref para busca mais r├ípida (evita re-render)
-        const task = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
+        // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio (pode acontecer com tagFilter)
+        const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
+        const task = currentTasks.find((t) => String(t.id) === activeIdStr);
         
         if (!task) {
-            console.warn("?? [handleDragStart] Tarefa n├úo encontrada para ID:", activeIdStr);
+            // ✅ DEBUG: Log quando tarefa não é encontrada
+            if (process.env.NODE_ENV === 'development') {
+                console.warn("?? [handleDragStart] Tarefa n├úo encontrada para ID:", {
+                    activeIdStr,
+                    tagFilter,
+                    localTasksRefCount: localTasksRef.current.length,
+                    localTasksCount: localTasks.length,
+                    usingLocalTasks: localTasksRef.current.length === 0
+                });
+            }
             return;
         }
 
@@ -2075,9 +2223,20 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         dragOverThrottleRef.current = requestAnimationFrame(() => {
             dragOverThrottleRef.current = null;
 
-            const current = localTasksRef.current;
+            // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio (pode acontecer com tagFilter)
+            const current = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
             const activeIndex = current.findIndex((t) => String(t.id) === activeIdStr);
-            if (activeIndex === -1) return;
+            if (activeIndex === -1) {
+                if (process.env.NODE_ENV === 'development' && tagFilter) {
+                    console.warn('⚠️ [handleDragOver] Tarefa não encontrada:', {
+                        activeIdStr,
+                        tagFilter,
+                        localTasksRefCount: localTasksRef.current.length,
+                        localTasksCount: localTasks.length
+                    });
+                }
+                return;
+            }
 
             const currentGroupKey = findGroupKeyForId(activeIdStr) || dragStartGroupKeyRef.current;
             const destinationGroupKey = findGroupKeyForId(overIdStr);
@@ -2212,6 +2371,22 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const activeIdStr = String(active.id);
         const overIdStr = String(over.id);
         
+        // ✅ DEBUG: Logs para identificar problema com tagFilter
+        if (process.env.NODE_ENV === 'development') {
+            const activeTaskInRef = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
+            const activeTaskInState = localTasks.find((t) => String(t.id) === activeIdStr);
+            console.log("🔍 [handleDragEnd] DEBUG - tagFilter:", {
+                tagFilter,
+                activeIdStr,
+                activeTaskInRef: !!activeTaskInRef,
+                activeTaskInState: !!activeTaskInState,
+                activeTaskTags: activeTaskInRef?.tags || activeTaskInState?.tags || [],
+                localTasksRefCount: localTasksRef.current.length,
+                localTasksCount: localTasks.length,
+                groupedDataKeys: Object.keys(groupedData),
+                groupedDataTaskCount: Object.values(groupedData).reduce((sum, tasks) => sum + tasks.length, 0)
+            });
+        }
 
         const sourceGroupKey = dragStartGroupKeyRef.current || findGroupKeyForId(activeIdStr);
         let destinationGroupKey = findGroupKeyForId(overIdStr);
@@ -2219,6 +2394,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ? CORRE├ç├âO: Valida├º├úo melhorada com logs
         if (!sourceGroupKey) {
             console.error("? [handleDragEnd] Grupo de origem n├úo encontrado para tarefa:", activeIdStr);
+            if (process.env.NODE_ENV === 'development') {
+                console.error("❌ [handleDragEnd] DEBUG - Tarefa não encontrada em groupedData:", {
+                    activeIdStr,
+                    tagFilter,
+                    groupedDataKeys: Object.keys(groupedData),
+                    allTaskIds: Object.values(groupedData).flat().map(t => String(t.id))
+                });
+            }
             toast.error("Erro: Tarefa de origem n├úo encontrada. Recarregue a p├ígina.");
             resetDragState();
             return;
@@ -2313,12 +2496,28 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         // Reordenar lista local e recalcular posi├º├Áes por grupo
         let finalState: Task[] = [];
-        const rollbackState = localTasksRef.current.map((t) => ({ ...t }));
+        // ✅ CORREÇÃO: Usar localTasks se localTasksRef estiver vazio (pode acontecer com tagFilter)
+        const sourceForRollback = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
+        const rollbackState = sourceForRollback.map((t) => ({ ...t }));
         
         // ? Calcular posi├º├úo ANTES de atualizar o estado (para usar fora do setState)
-        const current = [...localTasksRef.current];
+        // ✅ CORREÇÃO: Usar localTasks se localTasksRef estiver vazio (pode acontecer com tagFilter)
+        const current = localTasksRef.current.length > 0 ? [...localTasksRef.current] : [...localTasks];
         const movingIndex = current.findIndex((t) => String(t.id) === activeIdStr);
         if (movingIndex === -1) {
+            // ✅ DEBUG: Log quando tarefa não é encontrada
+            if (process.env.NODE_ENV === 'development') {
+                console.error("❌ [handleDragEnd] Tarefa não encontrada em localTasksRef/localTasks:", {
+                    activeIdStr,
+                    tagFilter,
+                    localTasksRefCount: localTasksRef.current.length,
+                    localTasksRefIds: localTasksRef.current.map(t => t.id).slice(0, 5),
+                    localTasksCount: localTasks.length,
+                    localTasksIds: localTasks.map(t => t.id).slice(0, 5),
+                    usingLocalTasks: localTasksRef.current.length === 0
+                });
+            }
+            toast.error("Erro: Tarefa não encontrada. Recarregue a página.");
             resetDragState();
             return;
         }
@@ -2410,9 +2609,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // Atualizar estado local
         setLocalTasks(finalState);
 
-        if (finalState.length) {
-            localTasksRef.current = finalState;
-        }
+        // ✅ CORREÇÃO: Sempre atualizar localTasksRef após drag (garantir sincronização)
+        localTasksRef.current = finalState;
 
         // ? Obter posi├º├úo calculada do item movido
         const movingFinal = finalState.find((t) => String(t.id) === activeIdStr);
@@ -2634,10 +2832,29 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         >
             {/* HEADER AREA - LINE 1 */}
             <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
-                <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
-                        <p className="text-sm text-gray-500">Gerencie o trabalho do dia a dia.</p>
+                <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-stretch justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        {/* Ícone do Projeto - proporção 1:1 */}
+                        {tagFilter && projectIconName && (() => {
+                            const ProjectIcon = getIconComponent(projectIconName);
+                            return (
+                                <div className="flex items-center">
+                                    <div className="w-10 h-10 rounded-lg bg-[#050815] flex items-center justify-center flex-shrink-0">
+                                        <ProjectIcon className="w-5 h-5 text-white" />
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        <div className="flex flex-col justify-center">
+                            <h1 className="text-2xl font-bold text-gray-900">
+                                {tagFilter || "Tarefas"}
+                            </h1>
+                            <p className="text-sm text-gray-500">
+                                {tagFilter 
+                                    ? "Gerencie as tarefas de um projeto aqui" 
+                                    : "Gerencie o trabalho do dia a dia."}
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2730,13 +2947,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
                                             onClick={() => {
-                                                if (!tagFilter) {
-                                                    toast.error("Grupos personalizados s├│ podem ser criados dentro de projetos. Selecione um projeto primeiro.");
-                                                    return;
-                                                }
                                                 setIsCreateGroupModalOpen(true);
                                             }}
-                                            disabled={!tagFilter}
                                         >
                                             <FolderPlus className="w-4 h-4 mr-2" />
                                             Grupo
@@ -2933,7 +3145,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                         canMoveToBottom={canMoveToBottom}
                                                         showGroupActions={viewOption === "group"}
                                                         onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
-                                                        showProjectTag={!!tagFilter}
+                                                        showProjectTag={true}
+                                                        tagFilter={tagFilter || undefined}
                                                     />
                                                 );
                                             })}
@@ -3000,6 +3213,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     showGroupActions={viewOption === "group"}
                                                     onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
                                                     showProjectTag={!!tagFilter}
+                                                    tagFilter={tagFilter || undefined}
                                                 />
                                             );
                                         })}

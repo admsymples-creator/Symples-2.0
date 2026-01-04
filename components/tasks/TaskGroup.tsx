@@ -54,19 +54,20 @@ interface TaskGroupProps {
     canMoveToTop?: boolean;
     canMoveToBottom?: boolean;
     showGroupActions?: boolean;
-    onAddTask?: (groupId: string, title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    onAddTask?: (groupId: string, title: string, dueDate?: Date | null, assigneeId?: string | null, tags?: string[]) => Promise<void> | void;
     showProjectTag?: boolean; // ✅ Mostrar tag de projeto ao invés de workspace
+    tagFilter?: string | null; // ✅ Tag do projeto atual (para incluir ao criar tarefa)
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false, tagFilter }: TaskGroupProps) {
     const [isAdding, setIsAdding] = useState(false);
     
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
     
-    const handleSubmitAdd = useCallback(async (title: string, dueDate?: Date | null, assigneeId?: string | null) => {
+    const handleSubmitAdd = useCallback(async (title: string, dueDate?: Date | null, assigneeId?: string | null, tags?: string[]) => {
         if (onAddTask) {
-            const result = onAddTask(id, title, dueDate, assigneeId);
+            const result = onAddTask(id, title, dueDate, assigneeId, tags);
             if (result && typeof result === 'object' && 'then' in result) {
                 await result;
             }
@@ -197,6 +198,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         members={members || []}
                                         variant="ghost"
                                         showDragHandle={true}
+                                        tagFilter={tagFilter}
                                     />
                                 </div>
                             )}
@@ -219,6 +221,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         members={members || []}
                                         variant="ghost"
                                         showDragHandle={true}
+                                        tagFilter={tagFilter}
                                     />
                                 </TaskGroupEmpty>
                             ) : isAdding ? (
@@ -230,6 +233,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         onSubmit={handleSubmitAdd}
                                         members={members || []}
                                         variant="default"
+                                        tagFilter={tagFilter}
                                     />
                                 </div>
                             ) : (

@@ -292,7 +292,7 @@ export const getWorkspacesWeeklyStats = cache(async (
  * @param start - Data de início (início da semana)
  * @param end - Data de fim (fim da semana)
  */
-export const getProjectsWeeklyStats = cache(async (
+export const getProjectsWeeklyStats = async (
   workspaceId: string,
   start: Date,
   end: Date
@@ -340,36 +340,41 @@ export const getProjectsWeeklyStats = cache(async (
     const { data: tasks, error: tasksError } = tasksResult;
     const { data: projectIcons, error: iconsError } = projectIconsResult;
 
+    // Não retornar vazio se houver erro - ainda podemos mostrar projetos com ícones
     if (tasksError) {
       console.error("Erro ao buscar tarefas dos projetos:", tasksError);
-      return [];
+      // Continuar mesmo com erro para mostrar projetos com ícones
     }
 
     // Agrupar por tag
     const statsMap = new Map<string, { pendingCount: number; totalCount: number }>();
 
-    tasks?.forEach((task: any) => {
-      if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
-        task.tags.forEach((tag: string) => {
-          if (tag && tag.trim()) {
-            const tagKey = tag.trim();
-            if (!statsMap.has(tagKey)) {
-              statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+    // Processar tarefas se disponíveis
+    if (tasks) {
+      tasks.forEach((task: any) => {
+        if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
+          task.tags.forEach((tag: string) => {
+            if (tag && tag.trim()) {
+              const tagKey = tag.trim();
+              if (!statsMap.has(tagKey)) {
+                statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+              }
+              const stats = statsMap.get(tagKey)!;
+              stats.totalCount++;
+              if (task.status !== "done" && task.status !== "archived") {
+                stats.pendingCount++;
+              }
             }
-            const stats = statsMap.get(tagKey)!;
-            stats.totalCount++;
-            if (task.status !== "done" && task.status !== "archived") {
-              stats.pendingCount++;
-            }
-          }
-        });
-      }
-    });
+          });
+        }
+      });
+    }
 
-    // Adicionar projetos que têm ícones salvos mas ainda não têm tarefas
-    if (!iconsError && projectIcons) {
+    // IMPORTANTE: Adicionar TODOS os projetos que têm ícones salvos
+    // Isso garante que projetos criados apareçam mesmo sem tarefas
+    if (!iconsError && projectIcons && Array.isArray(projectIcons)) {
       projectIcons.forEach((icon: any) => {
-        if (icon.tag_name && icon.tag_name.trim()) {
+        if (icon && icon.tag_name && icon.tag_name.trim()) {
           const tagKey = icon.tag_name.trim();
           // Adicionar projeto mesmo sem tarefas (com contadores zerados)
           if (!statsMap.has(tagKey)) {
@@ -377,21 +382,31 @@ export const getProjectsWeeklyStats = cache(async (
           }
         }
       });
+    } else if (iconsError) {
+      console.error("Erro ao buscar ícones dos projetos:", iconsError);
+      // Continuar mesmo com erro para mostrar projetos com tarefas
     }
 
     // Converter para array e ordenar por nome
-    return Array.from(statsMap.entries())
+    const result = Array.from(statsMap.entries())
       .map(([tag, stats]) => ({
         tag,
         ...stats,
       }))
       .sort((a, b) => a.tag.localeCompare(b.tag));
 
+    // Debug: Log apenas em desenvolvimento
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[getProjectsWeeklyStats] Workspace ${workspaceId}: ${result.length} projetos encontrados`);
+    }
+
+    return result;
+
   } catch (error) {
     console.error("Erro ao calcular estatísticas dos projetos:", error);
     return [];
   }
-});
+}
 
 // getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 

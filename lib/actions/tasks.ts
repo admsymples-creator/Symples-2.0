@@ -1263,7 +1263,7 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
  * @param workspaceId - ID do workspace (OBRIGATÓRIO)
  * @returns Array de tarefas filtradas ou array vazio se workspaceId for inválido
  */
-export async function getTasksForWorkspace(workspaceId: string): Promise<TaskWithDetails[]> {
+export async function getTasksForWorkspace(workspaceId: string, tag?: string | null): Promise<TaskWithDetails[]> {
   // ✅ 1. TRAVA: Garante que nunca faremos uma busca global se o ID for inválido
   if (!workspaceId) {
     console.warn("[getTasksForWorkspace] workspaceId não fornecido - retornando array vazio por segurança");
@@ -1292,7 +1292,7 @@ export async function getTasksForWorkspace(workspaceId: string): Promise<TaskWit
   }
 
   // ✅ 2. FILTROS OBRIGATÓRIOS: Scope, Status e Ordem
-  const { data, error } = await supabase
+  let query = supabase
     .from("tasks")
     .select(`
       *,
@@ -1320,13 +1320,48 @@ export async function getTasksForWorkspace(workspaceId: string): Promise<TaskWit
       )
     `)
     .eq("workspace_id", workspaceId) // ✅ Scope: Apenas tarefas do workspace
-    .neq("status", "archived") // ✅ Status: Exclui tarefas arquivadas (soft delete via status)
+    .neq("status", "archived"); // ✅ Status: Exclui tarefas arquivadas (soft delete via status)
+  
+  // ✅ Filtro de tag (projeto) se fornecido
+  if (tag) {
+    // Debug log (apenas em desenvolvimento)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[getTasksForWorkspace] Aplicando filtro de tag:', { tag, workspaceId });
+    }
+    query = query.contains("tags", [tag]);
+  }
+  
+  // ✅ Aplicar ordenação
+  query = query
     .order("position", { ascending: true }) // ✅ Ordem: Para DND
     .order("created_at", { ascending: false }); // ✅ Ordem: Mais recentes primeiro
+  
+  // ✅ Executar query
+  const { data, error } = await query;
 
   if (error) {
     console.error("[getTasksForWorkspace] Erro ao buscar tarefas:", error);
     return [];
+  }
+
+  // Debug log (apenas em desenvolvimento)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getTasksForWorkspace] Query executada:', { 
+      tag, 
+      totalTasks: data?.length || 0,
+      hasError: !!error 
+    });
+    if (tag && data && data.length > 0) {
+      // Verificar se as tarefas retornadas realmente têm a tag
+      const tasksWithTag = data.filter((task: any) => 
+        task.tags && Array.isArray(task.tags) && task.tags.includes(tag)
+      );
+      console.log('[getTasksForWorkspace] Tarefas com tag:', { 
+        expectedTag: tag, 
+        tasksWithTag: tasksWithTag.length,
+        allTasks: data.length 
+      });
+    }
   }
 
   if (!data || data.length === 0) {

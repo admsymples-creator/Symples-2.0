@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { MoreHorizontal, MessageSquare, CheckSquare, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { Avatar } from "@/components/tasks/Avatar";
 import {
@@ -33,6 +33,7 @@ interface WorkspaceCardProps {
 
 export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [], isFirst = false }: WorkspaceCardProps) {
     const router = useRouter();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
     const { setActiveWorkspaceId } = useWorkspace();
     const [isMounted, setIsMounted] = useState(false);
@@ -57,11 +58,24 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     const completedCount = totalCount - pendingCount;
 
     const handleCardClick = () => {
-        // Atualizar workspace ativo no contexto
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorkspaceCard.tsx:59',message:'WorkspaceCard clicked',data:{workspaceId:id,currentPathname:pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        
+        // CRÍTICO: setActiveWorkspaceId ativa o loading ANTES de navegar
+        // Isso garante que o loading apareça imediatamente
         setActiveWorkspaceId(id);
 
-        // Navegar para a Home (novo ponto de entrada "Gestão/Home")
-        router.push("/home");
+        // Usar setTimeout para garantir que o loading apareça antes da navegação
+        // Mesmo que seja 0ms, garante que o React processe o estado primeiro
+        setTimeout(() => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorkspaceCard.tsx:65',message:'router.push(/home) called',data:{targetPath:'/home',currentPathname:pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
+
+            // Navegar para a Home (novo ponto de entrada "Gestão/Home")
+            router.push("/home");
+        }, 0);
     };
 
     const handleOpenWorkspace = (e: React.MouseEvent) => {

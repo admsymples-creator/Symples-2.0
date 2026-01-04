@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
@@ -8,6 +8,7 @@ import { getTasks, getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { PlannerContent } from "@/components/planner/PlannerContent";
 import { Database } from "@/types/database.types";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
+import { getCachedPlannerTasks, setCachedPlannerTasks } from "@/lib/utils/planner-cache";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -147,21 +148,50 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     };
   }, [pendingWorkspaceSlug, initialWorkspaces]);
 
-  // OTIMIZAÇÃO: Buscar tarefas apenas se não tivermos dados iniciais
+  const hasLoadedOnceRef = useRef(false);
+  const { isSwitchingWorkspace } = useWorkspace();
+
+  // OTIMIZAÇÃO: Buscar tarefas apenas se não tivermos dados iniciais ou cache
   useEffect(() => {
-    // Se temos dados iniciais, não precisamos buscar novamente
-    if (initialTasks && initialTasks.length >= 0 && currentWorkspace) {
+    if (!currentWorkspace) return;
+
+    // Se está trocando de workspace, não mostrar skeleton - deixar workspace loading aparecer
+    if (isSwitchingWorkspace) {
+      return;
+    }
+
+    // Verificar cache primeiro
+    const cached = getCachedPlannerTasks(
+      currentWorkspace.isPersonal ? null : currentWorkspace.id,
+      currentWorkspace.isPersonal
+    );
+    
+    if (cached && hasLoadedOnceRef.current) {
+      // Usar dados do cache se já carregou uma vez
+      setTasks(cached);
+      setLoading(false);
+      return;
+    }
+
+    // Se temos dados iniciais, não precisamos buscar novamente na primeira carga
+    if (initialTasks && initialTasks.length >= 0 && !hasLoadedOnceRef.current) {
       // Usar dados iniciais se disponíveis
       if (initialTasks.length > 0) {
-        setTasks(initialTasks as unknown as Task[]);
+        const tasksArray = initialTasks as unknown as Task[];
+        setTasks(tasksArray);
         setLoading(false);
+        // Salvar no cache
+        setCachedPlannerTasks(
+          currentWorkspace.isPersonal ? null : currentWorkspace.id,
+          currentWorkspace.isPersonal,
+          tasksArray
+        );
+        hasLoadedOnceRef.current = true;
         return;
       }
     }
 
     const loadTasks = async () => {
-      if (!currentWorkspace) return;
-      
       setLoading(true);
       try {
         const today = new Date();
@@ -186,15 +216,24 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
 
         const fetchedTasks = await fetchPromise;
         
+        let finalTasks: Task[];
         if (currentWorkspace.isPersonal) {
-          setTasks(fetchedTasks as unknown as Task[] || []);
+          finalTasks = (fetchedTasks as unknown as Task[] || []);
         } else {
           // Filtrar apenas tarefas do workspace ativo (garantir escopo)
-          const scopedTasks = (fetchedTasks as unknown as Task[] || []).filter(
+          finalTasks = (fetchedTasks as unknown as Task[] || []).filter(
             (task) => task.workspace_id === currentWorkspace.id
           );
-          setTasks(scopedTasks);
         }
+        
+        setTasks(finalTasks);
+        // Salvar no cache
+        setCachedPlannerTasks(
+          currentWorkspace.isPersonal ? null : currentWorkspace.id,
+          currentWorkspace.isPersonal,
+          finalTasks
+        );
+        hasLoadedOnceRef.current = true;
       } catch (error) {
         console.error("Erro ao carregar tarefas:", error);
         setTasks([]);
@@ -204,9 +243,15 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     };
 
     loadTasks();
-  }, [currentWorkspace, initialTasks]);
+  }, [currentWorkspace, initialTasks, isSwitchingWorkspace]);
+  
+  // Resetar flag quando workspace muda
+  useEffect(() => {
+    hasLoadedOnceRef.current = false;
+  }, [currentWorkspace?.id, currentWorkspace?.isPersonal]);
 
-  if (loading || !currentWorkspace) {
+  // Não mostrar skeleton se está trocando workspace (deixar workspace loading aparecer)
+  if ((loading || !currentWorkspace) && !isSwitchingWorkspace) {
     return (
       <div className="space-y-8">
         {/* Skeleton para Visão Semanal */}
@@ -230,6 +275,11 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
         </div>
       </div>
     );
+  }
+  
+  // Se está trocando workspace, não renderizar nada (deixar workspace loading aparecer)
+  if (isSwitchingWorkspace || !currentWorkspace) {
+    return null;
   }
 
   return (

@@ -42,6 +42,14 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Melhor feedback visual durante gravação de áudio
 
 ### Fixed
+- **Correção de Drag-and-Drop em Tarefas de Projetos:**
+  - Corrigido problema onde DND não funcionava quando havia `tagFilter` (projetos)
+  - Adicionado fallback para `localTasks` quando `localTasksRef.current` está vazio
+  - Corrigida `collisionDetectionStrategy` para funcionar com tarefas filtradas
+  - Corrigidos `handleDragStart`, `handleDragOver` e `handleDragEnd` para usar fallback correto
+  - `groupedDataRef` agora sincronizado via `useEffect` para garantir atualização correta
+  - Adicionados logs de debug em desenvolvimento para facilitar troubleshooting
+  - Ver documentação completa em `docs/CORRECAO_DND_PROJETOS.md`
 - **Correção de Timezone em Datas:**
   - Função `formatDateLocal` criada para evitar problemas de UTC
   - Datas calculadas no timezone local do usuário

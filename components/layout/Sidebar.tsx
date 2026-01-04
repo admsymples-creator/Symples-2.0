@@ -22,6 +22,7 @@ import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { getWorkspaceTags } from "@/lib/actions/tasks";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { setProjectIcon, getProjectIcons } from "@/lib/actions/projects";
+import { clearProjectCache } from "@/lib/utils/project-cache";
 import dynamic from "next/dynamic";
 import { getIconComponent } from "@/components/projects/IconPicker";
 import {
@@ -295,8 +296,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     const router = useRouter();
     const searchParams = useSearchParams();
     const { isCollapsed } = useSidebar();
-    const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
-    const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
+    const { activeWorkspaceId, setActiveWorkspaceId, isSwitchingWorkspace, setIsSwitchingWorkspace } = useWorkspace();
     const [isProjectsOpen, setIsProjectsOpen] = useState(true); // Aberto por padrão
     // Inicializar com dados do servidor para exibição instantânea
     const [workspaceTags, setWorkspaceTags] = useState<string[]>(() => initialProjectsTags || []);
@@ -656,6 +656,11 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             // Recarregar ícones
             const updatedIcons = await getProjectIcons(activeWorkspaceId);
             setProjectIcons(updatedIcons);
+            
+            // Limpar cache de projetos para forçar recarregamento na home
+            if (activeWorkspaceId) {
+                clearProjectCache(activeWorkspaceId);
+            }
         } catch (error) {
             console.error("Erro ao recarregar tags:", error);
         }
@@ -759,16 +764,27 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                         onClick={() => {
                                             if (workspace.id === activeWorkspaceId) return;
 
-                                            setIsSwitchingWorkspace(true);
+                                            // #region agent log
+                                            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar.tsx:759',message:'Workspace clicked - before setActiveWorkspaceId',data:{workspaceId:workspace.id,activeWorkspaceId,currentPathname:pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                                            // #endregion
+
+                                            // CRÍTICO: setActiveWorkspaceId ativa o loading ANTES de navegar
+                                            // Isso garante que o loading apareça imediatamente
+                                            setActiveWorkspaceId(workspace.id);
+                                            
                                             const base = workspace.slug || workspace.id;
                                             if (base) {
-                                                startTransition(() => {
-                                                    router.push(`/${base}/home`);
-                                                    // Reset loading state after navigation
-                                                    setTimeout(() => setIsSwitchingWorkspace(false), 500);
-                                                });
-                                            } else {
-                                                setIsSwitchingWorkspace(false);
+                                                // Usar setTimeout para garantir que o loading apareça antes da navegação
+                                                // Mesmo que seja 0ms, garante que o React processe o estado primeiro
+                                                setTimeout(() => {
+                                                    // #region agent log
+                                                    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar.tsx:768',message:'router.push called',data:{targetPath:`/${base}/home`,currentPathname:pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                                                    // #endregion
+                                                    
+                                                    startTransition(() => {
+                                                        router.push(`/${base}/home`);
+                                                    });
+                                                }, 0);
                                             }
                                         }}
                                         className={cn(

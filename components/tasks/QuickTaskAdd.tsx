@@ -32,7 +32,7 @@ interface Member {
 
 interface QuickTaskAddProps {
     placeholder?: string;
-    onSubmit: (title: string, dueDate?: Date | null, assigneeId?: string | null) => Promise<void> | void;
+    onSubmit: (title: string, dueDate?: Date | null, assigneeId?: string | null, tags?: string[]) => Promise<void> | void;
     onCancel?: () => void;
     members?: Member[];
     defaultDueDate?: Date | null;
@@ -43,6 +43,7 @@ interface QuickTaskAddProps {
     groupColor?: string; // ✅ Cor do grupo para borda lateral
     showProjectTag?: boolean; // ✅ Se deve ter padding left para alinhar com tags
     showDragHandle?: boolean; // ✅ Se deve mostrar drag handle (para página de tarefas)
+    tagFilter?: string | null; // ✅ Tag do projeto atual (para incluir ao criar tarefa)
 }
 
 export function QuickTaskAdd({
@@ -58,6 +59,7 @@ export function QuickTaskAdd({
     groupColor,
     showProjectTag = false,
     showDragHandle = false,
+    tagFilter,
 }: QuickTaskAddProps) {
     const [isHydrated, setIsHydrated] = useState(false);
     const [value, setValue] = useState("");
@@ -200,6 +202,9 @@ export function QuickTaskAdd({
             inputRef.current?.focus();
         });
 
+        // ✅ Incluir tags do projeto se houver tagFilter
+        const tags = tagFilter ? [tagFilter] : undefined;
+
         try {
             if (tasks.length > 1) {
                 // Batch create: criar todas as tarefas com await
@@ -207,7 +212,7 @@ export function QuickTaskAdd({
                 
                 // Converter onSubmit para Promise se necessário
                 const promises = tasks.map((taskTitle) => {
-                    const result = onSubmit(taskTitle, dueDate, assigneeId);
+                    const result = onSubmit(taskTitle, dueDate, assigneeId, tags);
                     return Promise.resolve(result);
                 });
 
@@ -217,7 +222,7 @@ export function QuickTaskAdd({
             } else {
                 // ✅ Single create: não bloquear input, criar em background
                 setIsCreatingSingle(true);
-                const result = onSubmit(tasks[0], dueDate, assigneeId);
+                const result = onSubmit(tasks[0], dueDate, assigneeId, tags);
                 // Não esperar Promise - permite criação rápida
                 Promise.resolve(result).catch((error) => {
                     console.error("Erro ao criar tarefa:", error);

@@ -34,6 +34,7 @@ interface TasksViewProps {
   initialTasks: TaskWithDetails[];
   workspaceId: string;
   members: Member[];
+  tagFilter?: string | null;
 }
 
 type ContextTab = "minhas" | "time" | "todas";
@@ -125,7 +126,7 @@ const getDueDateForBucket = (bucket: string): string | null => {
     }
 };
 
-export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps) {
+export function TasksView({ initialTasks, workspaceId, members, tagFilter }: TasksViewProps) {
     // ✅ MINIFY v2: initialTasks só é usado para inicializar o estado local
     const [localTasks, setLocalTasks] = useState<Task[]>(() =>
         initialTasks.map((task) => mapTaskFromDB(task))
@@ -673,6 +674,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
         const previousTasks = [...localTasksRef.current];
 
         // ✅ 2. Atualização otimista no estado local
+        const tags = tagFilter ? [tagFilter] : [];
         setLocalTasks((prev) => [
             {
                 id: tempId,
@@ -681,7 +683,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 status: nextStatusLabel,
                 priority: context.priority as any,
                 assignees: [],
-                tags: [],
+                tags: tags,
                 hasUpdates: false,
                 dueDate: context.dueDate || undefined,
                 workspaceId,
@@ -698,6 +700,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             priority: context.priority as any,
             due_date: context.dueDate || undefined,
             is_personal: false,
+            tags: tags.length > 0 ? tags : undefined,
         })
             .then((result) => {
                 if (!result || !("success" in result)) {
@@ -721,7 +724,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             .finally(() => {
                 setIsSyncing(false);
             });
-    }, [workspaceId, mapTaskFromDB]);
+    }, [workspaceId, mapTaskFromDB, tagFilter]);
 
     // ✅ MINIFY v2: Handler de toggle com rollback
     const handleToggleComplete = useCallback((taskId: string, completed: boolean) => {

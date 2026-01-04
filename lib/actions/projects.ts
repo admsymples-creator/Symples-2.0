@@ -129,6 +129,10 @@ export async function setProjectIcon(
 
 /**
  * Remove o ícone de um projeto
+ * 
+ * Nota: Esta função remove apenas o ícone do projeto, não as tags das tarefas.
+ * As tags das tarefas são mantidas mesmo sem ícone, pois o projeto pode existir
+ * sem ícone (apenas com tarefas que usam a tag).
  */
 export async function deleteProjectIcon(
   workspaceId: string,

@@ -589,10 +589,16 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
             />
           </div>
           {/* Badge de Projeto (tag) ou Workspace */}
-          {showProjectTag && task.tags && task.tags.length > 0 ? (
-            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
-              {task.tags[0]}
-            </Badge>
+          {showProjectTag ? (
+            task.tags && task.tags.length > 0 ? (
+              <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+                {task.tags[0]}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs font-normal text-gray-400 border-gray-200 bg-gray-50 flex-shrink-0">
+                Sem projeto
+              </Badge>
+            )
           ) : showWorkspaceBadge && workspaceName ? (
             <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
               {workspaceName}

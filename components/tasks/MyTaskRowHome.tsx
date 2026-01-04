@@ -482,10 +482,16 @@ function MyTaskRowHomeComponent({
             />
           </div>
           
-          {showProjectTag && task.tags && task.tags.length > 0 ? (
-            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
-              {task.tags[0]}
-            </Badge>
+          {showProjectTag ? (
+            task.tags && task.tags.length > 0 ? (
+              <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+                {task.tags[0]}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs font-medium bg-gray-50 text-gray-400 hover:bg-gray-50 flex-shrink-0">
+                Sem projeto
+              </Badge>
+            )
           ) : showWorkspaceBadge && workspaceName ? (
             <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
               {workspaceName}
