@@ -59,6 +59,9 @@ export function DayColumn({
     (state: Task[], action: OptimisticAction) => {
       switch (action.type) {
         case 'add':
+          // Evitar duplicatas: verificar se a tarefa já existe
+          const exists = state.some(t => t.id === action.task.id);
+          if (exists) return state;
           return [...state, action.task];
         case 'update':
           return state.map(t => t.id === action.task.id ? { ...t, ...action.task } : t);
@@ -236,9 +239,8 @@ export function DayColumn({
 
       if (successCount > 0) {
         onTaskUpdate?.(); // Notificar atualizacao
-        startTransition(() => {
-          router.refresh();
-        });
+        // Não fazer router.refresh() imediato - a atualização otimista já cobre a UI
+        // O refresh será feito automaticamente quando necessário (ex: navegação)
       }
 
       if (failedCount === results.length) {
