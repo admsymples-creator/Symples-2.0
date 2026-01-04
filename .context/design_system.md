@@ -938,8 +938,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Regra:** Nunca incluir `console.log` de performance diretamente no código - usar sempre a função `logPerf` protegida
 
 ### 19.2. Carregamento Imediato de Páginas
-- **Planner:** Agora carrega imediatamente usando `initialTasks` do Server Component, sem mostrar loading inicial
-- **Estado inicial:** `loading` sempre começa como `false` quando há dados iniciais disponíveis
+- **Planner:** 
+  - Inicializa `loading` como `false` quando `initialTasks !== undefined` (mesmo se array vazio)
+  - Renderiza imediatamente quando tem dados iniciais, mesmo sem `currentWorkspace` definido
+  - `currentWorkspace` é resolvido de forma assíncrona mas não bloqueia renderização
+  - Skeleton só aparece se realmente não há dados iniciais (`initialTasks === undefined`)
+- **Home:** Usa dados iniciais do servidor para renderização imediata
 - **Padrão:** Todas as páginas devem usar Server Components para buscar dados e passar para Client Components via props `initial*`
 
 ## 20. Saudação Dinâmica (v2.5)
