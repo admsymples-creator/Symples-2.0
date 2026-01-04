@@ -635,10 +635,6 @@ export async function createTask(data: {
   // Garantir que subtasks seja um JSON válido
   const subtasks = data.subtasks ? JSON.parse(JSON.stringify(data.subtasks)) : [];
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'lib/actions/tasks.ts:479', message: 'BUG-RECURRENCE: createTask insert data', data: { title: data.title, recurrence_type: data.recurrence_type, recurrence_interval: data.recurrence_interval, is_personal }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'bug-investigation-recurrence', hypothesisId: 'bug-recurrence-create' }) }).catch(() => { });
-  // #endregion
-
   const { data: newTask, error } = await supabase.from("tasks").insert({
     title: data.title,
     description: data.description || null,

@@ -18,10 +18,6 @@ export function usePageReady(isSwitching: boolean, pathname: string) {
   const isCheckingRef = useRef(false);
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-page-ready.ts:20',message:'usePageReady effect triggered',data:{isSwitching,pathname,previousPathname:previousPathnameRef.current,isReady},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
-    
     // Limpar qualquer timeout pendente
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -36,10 +32,6 @@ export function usePageReady(isSwitching: boolean, pathname: string) {
       previousPathnameRef.current = pathname;
       return;
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-page-ready.ts:38',message:'Checking pathname change',data:{pathname,previousPathname:previousPathnameRef.current,isSwitching,pathnameChanged:pathname!==previousPathnameRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
     
     // Se o pathname mudou, atualizar a referência
     const pathnameChanged = pathname !== previousPathnameRef.current;
@@ -158,10 +150,6 @@ export function usePageReady(isSwitching: boolean, pathname: string) {
       const allChecksPass = Object.values(checks).every(check => check === true);
 
       if (allChecksPass) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-page-ready.ts:128',message:'All checks passed - waiting 400ms',data:{checkCount:checkCountRef.current,pathname,checks},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        
         // Todos os checks passaram, aguardar um pouco mais para garantir que componentes client-side renderizaram
         timeoutRef.current = setTimeout(() => {
           // Verificar novamente se ainda está trocando
@@ -181,10 +169,6 @@ export function usePageReady(isSwitching: boolean, pathname: string) {
           });
           
           if (visibleFinalSpinners.length === 0) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-page-ready.ts:148',message:'setIsReady(true) - page is ready',data:{pathname,checkCount:checkCountRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
-            
             setIsReady(true);
             isCheckingRef.current = false;
           } else {

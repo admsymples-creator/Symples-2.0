@@ -142,10 +142,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         effectiveWorkspaceId
       );
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:125',message:'HYP-A: Events received from getTasksForCalendar',data:{eventCount:calendarEvents.length,sampleEvent:calendarEvents[0]?{id:calendarEvents[0].id,start:calendarEvents[0].start}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
       // Salvar no cache
       eventsCacheRef.current.set(cacheKey, calendarEvents);
       
@@ -185,10 +181,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
   const handleEventDrop = useCallback(async (info: EventDropArg) => {
     const event = info.event;
     const newDate = event.start;
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:171',message:'BUG-2: handleEventDrop called',data:{eventId:event.id,newDate:newDate?.toString(),newDateISO:newDate?.toISOString(),eventAllDay:event.allDay},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-2'})}).catch(()=>{});
-    // #endregion
     
     if (!newDate) {
       info.revert();
@@ -307,10 +299,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
   // Handler para atualização de tarefa com optimistic UI
   const handleTaskUpdated = useCallback(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:285',message:'BUG-2: handleTaskUpdated called',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-2'})}).catch(()=>{});
-    // #endregion
-    
     // Recarregar eventos após atualização
     // Invalidar cache para forçar recarga
     eventsCacheRef.current.clear();
@@ -523,10 +511,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
             const recurrenceType = eventInfo.event.extendedProps.recurrence_type;
             const recurrenceParentId = eventInfo.event.extendedProps.recurrence_parent_id;
             const isRecurring = !!recurrenceType || !!recurrenceParentId;
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/calendar/planner-calendar.tsx:488',message:'BUG-1: FullCalendar event rendering',data:{eventId:eventInfo.event.id,eventStart:eventInfo.event.start,eventStartStr:eventInfo.event.startStr,eventAllDay:eventInfo.event.allDay,timeText:eventInfo.timeText,dateObj:eventInfo.event.start?.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-1'})}).catch(()=>{});
-            // #endregion
             
             // Ícone SVG de recorrência (RefreshCw)
             const recurrenceIcon = isRecurring ? `

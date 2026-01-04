@@ -58,10 +58,6 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     const completedCount = totalCount - pendingCount;
 
     const handleCardClick = () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorkspaceCard.tsx:59',message:'WorkspaceCard clicked',data:{workspaceId:id,currentPathname:pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        
         // CRÍTICO: setActiveWorkspaceId ativa o loading ANTES de navegar
         // Isso garante que o loading apareça imediatamente
         setActiveWorkspaceId(id);
@@ -69,10 +65,6 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
         // Usar setTimeout para garantir que o loading apareça antes da navegação
         // Mesmo que seja 0ms, garante que o React processe o estado primeiro
         setTimeout(() => {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WorkspaceCard.tsx:65',message:'router.push(/home) called',data:{targetPath:'/home',currentPathname:pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
-
             // Navegar para a Home (novo ponto de entrada "Gestão/Home")
             router.push("/home");
         }, 0);

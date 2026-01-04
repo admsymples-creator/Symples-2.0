@@ -305,10 +305,6 @@ export async function getTasksForCalendar(
     
     const classNames = isDone ? ["task-completed"] : [];
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/calendar.ts:304',message:'HYP-A: Raw due_date from DB',data:{taskId:task.id,due_date:task.due_date,due_date_type:typeof task.due_date},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-
     // Determinar se é um evento "all-day" (sem hora específica)
     // Para tarefas pessoais: sempre não-allDay para mostrar hora no calendário (mesmo que seja 00:00:00)
     // Para tarefas de workspace: considerar allDay se for 00:00:00 UTC
@@ -338,10 +334,6 @@ export async function getTasksForCalendar(
       }
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/calendar.ts:315',message:'BUG-1: allDay determination and start format',data:{taskId:task.id,due_date:task.due_date,isAllDay,startValue,hour:dueDate?.getUTCHours(),minute:dueDate?.getUTCMinutes()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-1'})}).catch(()=>{});
-    // #endregion
-
     const calendarEvent = {
       id: task.id,
       title: task.title,
@@ -361,10 +353,6 @@ export async function getTasksForCalendar(
       classNames,
     };
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/calendar.ts:340',message:'HYP-A: Calendar event start value',data:{taskId:task.id,start:calendarEvent.start,allDay:calendarEvent.allDay,start_type:typeof calendarEvent.start},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-
     return calendarEvent;
   });
 }
@@ -376,10 +364,6 @@ export async function updateTaskDate(
   taskId: string,
   newDate: Date
 ): Promise<{ success: boolean; error?: string }> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/actions/calendar.ts:352',message:'BUG-2: updateTaskDate called',data:{taskId,newDate:newDate.toString(),newDateISO:newDate.toISOString()},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation',hypothesisId:'bug-2'})}).catch(()=>{});
-  // #endregion
-
   // Converter Date para ISO string preservando o dia correto
   // Quando FullCalendar passa uma data via eventDrop, ela já está no timezone local
   // Para eventos allDay, sempre usar meia-noite UTC (00:00:00.000Z) para manter o dia correto
