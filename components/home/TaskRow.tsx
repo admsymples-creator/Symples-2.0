@@ -295,9 +295,11 @@ export function TaskRow({
                 {/* Badge do Projeto (primeira tag) ou Workspace */}
                 {workspace && !isPersonal && (() => {
                   // Extrair tags: pode estar em task.tags (coluna) ou em origin_context.tags
+                  // Type assertion necessário porque tags pode não estar no tipo base
+                  const taskWithTags = task as any;
                   let tags: string[] = [];
-                  if ((task as any).tags && Array.isArray((task as any).tags)) {
-                    tags = (task as any).tags;
+                  if (taskWithTags.tags && Array.isArray(taskWithTags.tags)) {
+                    tags = taskWithTags.tags;
                   } else if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
                     const contextTags = (task.origin_context as any).tags;
                     if (Array.isArray(contextTags)) {
