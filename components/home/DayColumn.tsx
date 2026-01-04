@@ -226,15 +226,27 @@ export function DayColumn({
       const failedCount = results.filter((r) => !r.success).length;
       const successCount = results.filter((r) => r.success).length;
 
+      // Substituir tarefas temporárias pelas tarefas reais
       results.forEach((result, index) => {
         const tempTask = tempTasks[index];
         if (!tempTask) return;
-        startTransition(() => {
-          addOptimisticTask({ type: 'delete', id: tempTask.id });
-          if (result.success && result.data) {
+        
+        if (result.success && result.data) {
+          // Substituir tarefa temporária pela real em uma única transição
+          startTransition(() => {
+            // Primeiro remover a temporária, depois adicionar a real
+            addOptimisticTask({ type: 'delete', id: tempTask.id });
+          });
+          // Adicionar a tarefa real em uma transição separada para garantir ordem
+          startTransition(() => {
             addOptimisticTask({ type: 'add', task: result.data });
-          }
-        });
+          });
+        } else {
+          // Se falhou, apenas remover a temporária
+          startTransition(() => {
+            addOptimisticTask({ type: 'delete', id: tempTask.id });
+          });
+        }
       });
 
       if (successCount > 0) {
