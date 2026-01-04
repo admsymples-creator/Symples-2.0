@@ -83,8 +83,6 @@ interface GlobalAssistantSheetProps {
   workspaces?: Workspace[];
 }
 
-import { getGreeting } from "@/lib/utils/greeting";
-
 const suggestionChips = [
   {
     id: "create-task",
