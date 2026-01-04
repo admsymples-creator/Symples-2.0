@@ -47,10 +47,13 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   const initialWorkspaces = preloadedWorkspaces || contextWorkspaces;
 
   const [tasks, setTasks] = useState<Task[]>(initialTasks || []);
-  const [loading, setLoading] = useState(false); // Sempre começar sem loading se temos dados iniciais
+  // Se temos dados iniciais (mesmo que array vazio), não mostrar loading inicial
+  const [loading, setLoading] = useState(initialTasks === undefined);
+  
+  // Inicializar currentWorkspace de forma síncrona quando temos dados iniciais
   const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(() => {
     // Inicializar com dados fornecidos se disponíveis
-    if (initialWorkspaceId && initialWorkspaces) {
+    if (initialWorkspaceId && initialWorkspaces && initialWorkspaces.length > 0) {
       const workspace = initialWorkspaces.find(w => w.id === initialWorkspaceId);
       if (workspace) {
         return {
@@ -181,22 +184,21 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
       return;
     }
 
-    // Se temos dados iniciais, não precisamos buscar novamente na primeira carga
-    if (initialTasks && initialTasks.length >= 0 && !hasLoadedOnceRef.current) {
-      // Usar dados iniciais se disponíveis
-      if (initialTasks.length > 0) {
-        const tasksArray = initialTasks as unknown as Task[];
-        setTasks(tasksArray);
-        setLoading(false);
-        // Salvar no cache
+    // Se temos dados iniciais, usar imediatamente na primeira carga (mesmo se array vazio)
+    if (initialTasks !== undefined && !hasLoadedOnceRef.current) {
+      const tasksArray = initialTasks as unknown as Task[];
+      setTasks(tasksArray);
+      setLoading(false);
+      // Salvar no cache se temos workspace definido
+      if (currentWorkspace) {
         setCachedPlannerTasks(
           currentWorkspace.isPersonal ? null : currentWorkspace.id,
           currentWorkspace.isPersonal,
           tasksArray
         );
-        hasLoadedOnceRef.current = true;
-        return;
       }
+      hasLoadedOnceRef.current = true;
+      return; // Não buscar novamente se temos dados iniciais
     }
 
     const loadTasks = async () => {
@@ -258,8 +260,30 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     hasLoadedOnceRef.current = false;
   }, [currentWorkspace?.id, currentWorkspace?.isPersonal]);
 
+  // Se temos dados iniciais e tasks, renderizar imediatamente mesmo sem currentWorkspace definido
+  // (currentWorkspace será resolvido pelo useEffect, mas não deve bloquear renderização)
+  if (initialTasks !== undefined && tasks.length >= 0 && !loading) {
+    // Renderizar mesmo se currentWorkspace ainda não estiver definido (será resolvido em breve)
+    // Mas só se não estamos trocando de workspace
+    if (!isSwitchingWorkspace) {
+      return (
+        <PlannerContent
+          tasks={tasks}
+          workspaces={initialWorkspaces}
+          workspaceId={currentWorkspace?.isPersonal ? undefined : currentWorkspace?.id}
+          isPersonal={currentWorkspace?.isPersonal ?? initialIsPersonal ?? false}
+        />
+      );
+    }
+  }
+
   // Não mostrar skeleton se está trocando workspace (deixar workspace loading aparecer)
-  if ((loading || !currentWorkspace)) {
+  if (isSwitchingWorkspace) {
+    return null;
+  }
+
+  // Mostrar skeleton apenas se realmente estiver carregando E não temos dados iniciais
+  if (loading && initialTasks === undefined) {
     return (
       <div className="space-y-8">
         {/* Skeleton para Visão Semanal */}
@@ -285,8 +309,8 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     );
   }
 
-  // Se está trocando workspace, não renderizar nada (deixar workspace loading aparecer)
-  if (!currentWorkspace) {
+  // Se não há currentWorkspace e não temos dados iniciais, retornar null
+  if (!currentWorkspace && initialTasks === undefined) {
     return null;
   }
 
