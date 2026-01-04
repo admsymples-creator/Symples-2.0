@@ -6,6 +6,40 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-04 11:45 - Otimização de UX de Loading e Performance do Planner
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🚀 Loading Overlay "Cinemático" (Sem Flash Branco)
+- **Mudança**: Implementada transição de loading global controlada manualmente pela Sidebar.
+- **Visual**: Fundo sólido branco (sem transparência) para cobrir totalmente a troca de layout.
+- **Timing**: Duração fixa ajustada (3.5s) para garantir suavidade e sensação de "app pesado/robusto" ao invés de glitch rápido.
+- **Técnica**: `isSwitching` state no Sidebar dispara overlay -> `router.push` -> Overlay desmonta apenas após nova página carregar.
+
+#### ⚡ Otimização do Planejador (Planner Page)
+- **Parallel Fetching**: `app/(main)/[slug]/planner/page.tsx` agora busca `WorkspaceID` e `UserWorkspaces` em paralelo via `Promise.all`.
+- **Hydration Imediata**: `PlannerClient` recebe lista de workspaces via props do servidor, eliminando dependência lenta do Context API na montagem inicial.
+- **Fim do Waterfall**: Redução significativa no tempo de bloqueio inicial da página.
+
+#### 🛡️ Correção de Tipos (TypeScript)
+- **Workspace Type**: Unificados tipos entre `database.types.ts` e `lib/actions/user.ts`.
+- **Compatibilidade**: `isPersonalWorkspace` e componentes agora aceitam interfaces parciais corretamente (`Pick<Workspace, "id" | "name" | "slug">`).
+
+#### ✅ Auditoria de Performance
+- **Tasks Page**: Validado uso de `initialTasks` para renderização imediata (sem skeleton desnecessário).
+- **Finance Page**: Confirmado Lazy Loading para abas pesadas ("Recorrentes" e "Planejamento").
+- **Settings/Team**: Cache de membros validado para evitar refetching ao navegar entre abas.
+
+### 2. O que está sendo trabalhado no momento
+
+- Validação final de build e monitoramento de logs em produção.
+
+### 3. Próximos passos imediatos
+
+- Deploy para produção e verificação de métricas reais (Vercel Analytics).
+
+---
+
 ## 2026-01-02 22:30 - Otimizações de Performance em Produção
 
 ### 1. Melhorias, bugs e features implementadas em preview

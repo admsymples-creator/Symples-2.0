@@ -203,6 +203,7 @@ symples-v2/
 │   │   ├── inline-text-edit.tsx
 │   │   ├── input.tsx
 │   │   ├── label.tsx
+│   │   ├── loading-overlay.tsx (✅ Overlay de carregamento global com transição suave)
 │   │   ├── popover.tsx
 │   │   ├── scroll-area.tsx
 │   │   ├── select.tsx
