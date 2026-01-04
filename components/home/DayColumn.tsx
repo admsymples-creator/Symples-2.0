@@ -209,6 +209,9 @@ export function DayColumn({
       fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:187',message:'BUG-RECURRENCE: Creating task with recurrence',data:{recurrenceType,selectedDateTime:selectedDateTime?.toISOString(),dueDateISO,tasksToCreateCount:tasksToCreate.length},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-recurrence',hypothesisId:'bug-recurrence-create'})}).catch(()=>{});
       // #endregion
 
+      // Capturar recurrenceType antes de resetar (evitar race condition)
+      const currentRecurrenceType = recurrenceType;
+      
       const createPromises = tasksToCreate.map((title) =>
         createTask({
           title,
@@ -216,12 +219,16 @@ export function DayColumn({
           workspace_id: null,
           status: "todo",
           is_personal: true,
-          recurrence_type: recurrenceType || undefined,
+          recurrence_type: currentRecurrenceType || undefined,
         })
       );
 
+      // Resetar apenas após criar (mas manter se estiver criando múltiplas tarefas)
+      // Se for apenas uma tarefa, resetar após criação
+      // Se for múltiplas, manter para aplicar a todas
       setSelectedDateTime(null);
-      setRecurrenceType(null);
+      // Não resetar recurrenceType imediatamente - deixar o usuário criar múltiplas tarefas recorrentes
+      // setRecurrenceType(null);
       const results = await Promise.all(createPromises);
       const failedCount = results.filter((r) => !r.success).length;
       const successCount = results.filter((r) => r.success).length;
