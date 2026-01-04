@@ -96,9 +96,21 @@ function transformTaskWithMembers(task: any): any {
     });
   }
 
+  // Extrair tags do origin_context ou da coluna tags
+  let tags: string[] = [];
+  if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
+    const contextTags = (task.origin_context as any).tags;
+    if (Array.isArray(contextTags)) {
+      tags = contextTags;
+    }
+  } else if ((task as any).tags && Array.isArray((task as any).tags)) {
+    tags = (task as any).tags;
+  }
+
   return {
     ...task,
     assignees,
+    tags, // Garantir que tags sempre está presente
   };
 }
 

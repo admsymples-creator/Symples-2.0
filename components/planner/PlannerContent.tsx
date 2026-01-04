@@ -29,10 +29,9 @@ export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = fa
         calendarReloadRef.current?.();
       }, 100);
     }
-    // Recarregar a página para atualizar WeeklyView
-    setTimeout(() => {
-      router.refresh();
-    }, 200);
+    // NÃO fazer router.refresh() imediato - a atualização otimista já cobre a UI
+    // O refresh será feito automaticamente quando necessário (ex: navegação)
+    // router.refresh() estava causando a tarefa a desaparecer
   };
 
   // Handler para quando controles do calendário estão prontos

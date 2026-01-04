@@ -168,11 +168,16 @@ export function DayColumn({
     if (inputRef.current) inputRef.current.style.height = 'auto';
     setIsCreating(true);
 
+    // Capturar selectedDateTime e recurrenceType antes de qualquer operação assíncrona
+    const currentRecurrenceType = recurrenceType;
+    const currentSelectedDateTime = selectedDateTime;
+    
     let dueDateISO: string | undefined = undefined;
-    if (selectedDateTime) {
-      dueDateISO = selectedDateTime.toISOString();
+    if (currentSelectedDateTime) {
+      // Usar o horário exato selecionado pelo usuário
+      dueDateISO = currentSelectedDateTime.toISOString();
     } else if (dateObj) {
-      // Usar meio-dia (12:00) para evitar problemas de timezone
+      // Usar meio-dia (12:00) apenas quando não há horário específico selecionado
       // Meio-dia em qualquer timezone mantém o mesmo dia ao converter para UTC
       const d = new Date(dateObj);
       d.setHours(12, 0, 0, 0);
@@ -180,12 +185,13 @@ export function DayColumn({
     }
 
     // Optimistic Update
+    // IMPORTANTE: Usar o mesmo due_date que será enviado ao servidor para evitar diferenças
     const baseId = Date.now();
     const tempTasks = tasksToCreate.map((title, index) => ({
       id: `temp-${baseId}-${index}-${Math.random()}`,
       title,
       status: "todo",
-      due_date: dueDateISO || null,
+      due_date: dueDateISO || null, // Usar o mesmo valor que será enviado
       workspace_id: null,
       is_personal: true,
       created_at: new Date().toISOString(),
@@ -195,7 +201,9 @@ export function DayColumn({
       assignee_id: null,
       priority: null,
       created_by: null,
-      origin_context: null
+      origin_context: null,
+      // Incluir campos de recorrência no estado otimista para feedback visual
+      recurrence_type: currentRecurrenceType || null,
     } as Task));
 
     tempTasks.forEach((tempTask) => {
@@ -205,21 +213,15 @@ export function DayColumn({
     });
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/DayColumn.tsx:187',message:'BUG-RECURRENCE: Creating task with recurrence',data:{recurrenceType,selectedDateTime:selectedDateTime?.toISOString(),dueDateISO,tasksToCreateCount:tasksToCreate.length},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-recurrence',hypothesisId:'bug-recurrence-create'})}).catch(()=>{});
-      // #endregion
-
-      // Capturar recurrenceType antes de resetar (evitar race condition)
-      const currentRecurrenceType = recurrenceType;
-      
+      // Usar valores já capturados antes de qualquer reset
       const createPromises = tasksToCreate.map((title) =>
         createTask({
           title,
-          due_date: dueDateISO,
+          due_date: dueDateISO, // Já usa currentSelectedDateTime ou dateObj com 12:00
           workspace_id: null,
           status: "todo",
           is_personal: true,
-          recurrence_type: currentRecurrenceType || undefined,
+          recurrence_type: currentRecurrenceType || undefined, // Já capturado antes
         })
       );
 
@@ -234,26 +236,22 @@ export function DayColumn({
       const successCount = results.filter((r) => r.success).length;
 
       // Substituir tarefas temporárias pelas tarefas reais
-      results.forEach((result, index) => {
-        const tempTask = tempTasks[index];
-        if (!tempTask) return;
-        
-        if (result.success && result.data) {
-          // Substituir tarefa temporária pela real em uma única transição
-          startTransition(() => {
-            // Primeiro remover a temporária, depois adicionar a real
+      // IMPORTANTE: Fazer substituição atômica (remover temp + adicionar real) em uma única transição
+      startTransition(() => {
+        results.forEach((result, index) => {
+          const tempTask = tempTasks[index];
+          if (!tempTask) return;
+          
+          if (result.success && result.data) {
+            // Remover tarefa temporária e adicionar a real na mesma transição
+            // Isso evita que a tarefa desapareça entre as operações
             addOptimisticTask({ type: 'delete', id: tempTask.id });
-          });
-          // Adicionar a tarefa real em uma transição separada para garantir ordem
-          startTransition(() => {
             addOptimisticTask({ type: 'add', task: result.data });
-          });
-        } else {
-          // Se falhou, apenas remover a temporária
-          startTransition(() => {
+          } else {
+            // Se falhou, apenas remover a temporária
             addOptimisticTask({ type: 'delete', id: tempTask.id });
-          });
-        }
+          }
+        });
       });
 
       if (successCount > 0) {

@@ -293,29 +293,44 @@ export function TaskRow({
                     </TooltipProvider>
                 )}
                 {/* Badge do Projeto (primeira tag) ou Workspace */}
-                {workspace && !isPersonal && (
+                {workspace && !isPersonal && (() => {
+                  // Extrair tags: pode estar em task.tags (coluna) ou em origin_context.tags
+                  let tags: string[] = [];
+                  if ((task as any).tags && Array.isArray((task as any).tags)) {
+                    tags = (task as any).tags;
+                  } else if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
+                    const contextTags = (task.origin_context as any).tags;
+                    if (Array.isArray(contextTags)) {
+                      tags = contextTags;
+                    }
+                  }
+                  
+                  // Para workspace profissional: mostrar primeira tag (projeto) se existir
+                  const firstTag = tags.length > 0 ? tags[0] : null;
+                  
+                  return (
                     <>
-                        {/* Para workspace profissional: mostrar primeira tag (projeto) se existir */}
-                        {task.tags && Array.isArray(task.tags) && task.tags.length > 0 ? (
-                            <span
-                                className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
-                                style={{ backgroundColor: workspaceColor }}
-                                title={task.tags[0]}
-                            >
-                                {task.tags[0]}
-                            </span>
-                        ) : (
-                            /* Fallback: mostrar nome do workspace se não houver tags */
-                            <span
-                                className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
-                                style={{ backgroundColor: workspaceColor }}
-                                title={workspace.name}
-                            >
-                                {workspace.name}
-                            </span>
-                        )}
+                      {firstTag ? (
+                        <span
+                          className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
+                          style={{ backgroundColor: workspaceColor }}
+                          title={firstTag}
+                        >
+                          {firstTag}
+                        </span>
+                      ) : (
+                        /* Fallback: mostrar nome do workspace se não houver tags */
+                        <span
+                          className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
+                          style={{ backgroundColor: workspaceColor }}
+                          title={workspace.name}
+                        >
+                          {workspace.name}
+                        </span>
+                      )}
                     </>
-                )}
+                  );
+                })()}
             </div>
         )}
       </div>
