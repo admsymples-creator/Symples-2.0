@@ -292,15 +292,29 @@ export function TaskRow({
                         </Tooltip>
                     </TooltipProvider>
                 )}
-                {/* Badge do Workspace */}
+                {/* Badge do Projeto (primeira tag) ou Workspace */}
                 {workspace && !isPersonal && (
-                    <span
-                        className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
-                        style={{ backgroundColor: workspaceColor }}
-                        title={workspace.name}
-                    >
-                        {workspace.name}
-                    </span>
+                    <>
+                        {/* Para workspace profissional: mostrar primeira tag (projeto) se existir */}
+                        {task.tags && Array.isArray(task.tags) && task.tags.length > 0 ? (
+                            <span
+                                className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
+                                style={{ backgroundColor: workspaceColor }}
+                                title={task.tags[0]}
+                            >
+                                {task.tags[0]}
+                            </span>
+                        ) : (
+                            /* Fallback: mostrar nome do workspace se não houver tags */
+                            <span
+                                className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
+                                style={{ backgroundColor: workspaceColor }}
+                                title={workspace.name}
+                            >
+                                {workspace.name}
+                            </span>
+                        )}
+                    </>
                 )}
             </div>
         )}
