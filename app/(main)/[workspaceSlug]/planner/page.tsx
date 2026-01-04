@@ -3,7 +3,7 @@ import { getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { getTasks } from "@/lib/actions/tasks";
 import { notFound } from "next/navigation";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
-import { getUserWorkspaces } from "@/lib/actions/user";
+import { getUserWorkspaces, Profile, Workspace } from "@/lib/actions/user";
 
 interface PageProps {
   params: Promise<{ workspaceSlug: string }>;
@@ -37,15 +37,17 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
   const pageStartTime = Date.now();
   const { workspaceSlug } = await params;
 
-  // 1. Obter workspaceId do slug
-  const workspaceId = await getWorkspaceIdBySlug(workspaceSlug);
+  // 1. Obter dados iniciais em paralelo (Workspace ID e Lista de Workspaces)
+  const [workspaceId, workspaces] = await Promise.all([
+    getWorkspaceIdBySlug(workspaceSlug),
+    getUserWorkspaces(),
+  ]);
 
   if (!workspaceId) {
     return notFound();
   }
 
-  // 2. Buscar workspaces para detectar se é pessoal
-  const workspaces = await getUserWorkspaces();
+  // 2. Detectar se é pessoal
   const workspace = workspaces.find(w => w.id === workspaceId);
   const isPersonal = workspace ? isPersonalWorkspace(workspace, workspaces) : false;
 
@@ -68,10 +70,10 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
   console.log(`[PERF] Planner - Data size: tasks=${(tasksSize / 1024).toFixed(2)}KB`);
 
   // Filtrar por workspace se não for pessoal
-  const filteredTasks = isPersonal 
-    ? initialTasks 
+  const filteredTasks = isPersonal
+    ? initialTasks
     : initialTasks.filter(task => task.workspace_id === workspaceId);
-  
+
   const totalPageTime = Date.now() - pageStartTime;
   console.log(`[PERF] Planner - Total page render time: ${totalPageTime}ms`);
 
@@ -89,10 +91,11 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
       <div className="w-full bg-white px-6">
         <div className="max-w-[1600px] mx-auto">
           <div className="py-3 space-y-8">
-            <PlannerPageClient 
+            <PlannerPageClient
               initialTasks={filteredTasks}
               workspaceId={workspaceId}
               isPersonal={isPersonal}
+              workspaces={workspaces}
             />
           </div>
         </div>

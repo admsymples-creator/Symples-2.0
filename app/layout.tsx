@@ -25,8 +25,10 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <UIScaleProvider>
+          {/* React Scan - Profiling Tool */}
+          <script src="https://unpkg.com/react-scan/dist/auto.global.js" async />
           {children}
-          <Toaster 
+          <Toaster
             theme="light"
             className="font-sans"
             toastOptions={{

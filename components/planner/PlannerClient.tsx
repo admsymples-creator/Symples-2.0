@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
 import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { getTasks, getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { PlannerContent } from "@/components/planner/PlannerContent";
 import { Database } from "@/types/database.types";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { getCachedPlannerTasks, setCachedPlannerTasks } from "@/lib/utils/planner-cache";
+
+import { Workspace } from "@/lib/actions/user";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -28,16 +30,22 @@ function getEndOfWeek(date: Date): Date {
   return end;
 }
 
+// ... (imports)
+
 interface PlannerClientProps {
   initialTasks?: Task[];
   initialWorkspaceId?: string;
   initialIsPersonal?: boolean;
+  preloadedWorkspaces?: Workspace[];
 }
 
-export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPersonal }: PlannerClientProps = {}) {
+export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPersonal, preloadedWorkspaces }: PlannerClientProps = {}) {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
-  const initialWorkspaces = useWorkspaces();
+  // Se preloadedWorkspaces foi passado, usar como "initial data" para o hook também se possível, mas aqui vamos priorizar
+  const contextWorkspaces = useWorkspaces();
+  const initialWorkspaces = preloadedWorkspaces || contextWorkspaces;
+
   const [tasks, setTasks] = useState<Task[]>(initialTasks || []);
   const [loading, setLoading] = useState(!initialTasks); // Não carregar se temos dados iniciais
   const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(() => {
@@ -68,7 +76,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     const workspaces = initialWorkspaces;
     const segments = pathname.split("/").filter(Boolean);
     const isWorkspaceScoped = segments.length > 0 && segments[0] !== "planner";
-    
+
     // Se estamos em /planner (sem workspace), usar workspace ativo do contexto
     let workspaceId = isWorkspaceScoped ? undefined : activeWorkspaceId;
     if (isWorkspaceScoped) {
@@ -82,7 +90,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
         setPendingWorkspaceSlug(workspaceSlug);
       }
     }
-    
+
     if (workspaceId) {
       const workspace = workspaces.find(w => w.id === workspaceId);
       const isPersonal = isPersonalWorkspace(workspace, workspaces);
@@ -149,7 +157,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   }, [pendingWorkspaceSlug, initialWorkspaces]);
 
   const hasLoadedOnceRef = useRef(false);
-  const { isSwitchingWorkspace } = useWorkspace();
+  const { isSwitchingWorkspace } = useWorkspaceLoading();
 
   // OTIMIZAÇÃO: Buscar tarefas apenas se não tivermos dados iniciais ou cache
   useEffect(() => {
@@ -165,7 +173,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
       currentWorkspace.isPersonal ? null : currentWorkspace.id,
       currentWorkspace.isPersonal
     );
-    
+
     if (cached && hasLoadedOnceRef.current) {
       // Usar dados do cache se já carregou uma vez
       setTasks(cached);
@@ -201,21 +209,21 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
         // OTIMIZAÇÃO: Usar Promise para não bloquear UI
         const fetchPromise = currentWorkspace.isPersonal
           ? // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário da semana
-            getTasks({
-              assigneeId: "current",
-              dueDateStart: startOfWeek.toISOString(),
-              dueDateEnd: endOfWeek.toISOString(),
-            })
+          getTasks({
+            assigneeId: "current",
+            dueDateStart: startOfWeek.toISOString(),
+            dueDateEnd: endOfWeek.toISOString(),
+          })
           : // Workspace profissional: buscar apenas tarefas do workspace ativo da semana
-            getTasks({
-              workspaceId: currentWorkspace.id,
-              assigneeId: "current",
-              dueDateStart: startOfWeek.toISOString(),
-              dueDateEnd: endOfWeek.toISOString(),
-            });
+          getTasks({
+            workspaceId: currentWorkspace.id,
+            assigneeId: "current",
+            dueDateStart: startOfWeek.toISOString(),
+            dueDateEnd: endOfWeek.toISOString(),
+          });
 
         const fetchedTasks = await fetchPromise;
-        
+
         let finalTasks: Task[];
         if (currentWorkspace.isPersonal) {
           finalTasks = (fetchedTasks as unknown as Task[] || []);
@@ -225,7 +233,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
             (task) => task.workspace_id === currentWorkspace.id
           );
         }
-        
+
         setTasks(finalTasks);
         // Salvar no cache
         setCachedPlannerTasks(
@@ -244,14 +252,14 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
 
     loadTasks();
   }, [currentWorkspace, initialTasks, isSwitchingWorkspace]);
-  
+
   // Resetar flag quando workspace muda
   useEffect(() => {
     hasLoadedOnceRef.current = false;
   }, [currentWorkspace?.id, currentWorkspace?.isPersonal]);
 
   // Não mostrar skeleton se está trocando workspace (deixar workspace loading aparecer)
-  if ((loading || !currentWorkspace) && !isSwitchingWorkspace) {
+  if ((loading || !currentWorkspace)) {
     return (
       <div className="space-y-8">
         {/* Skeleton para Visão Semanal */}
@@ -276,15 +284,15 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
       </div>
     );
   }
-  
+
   // Se está trocando workspace, não renderizar nada (deixar workspace loading aparecer)
-  if (isSwitchingWorkspace || !currentWorkspace) {
+  if (!currentWorkspace) {
     return null;
   }
 
   return (
-    <PlannerContent 
-      tasks={tasks} 
+    <PlannerContent
+      tasks={tasks}
       workspaces={initialWorkspaces}
       workspaceId={currentWorkspace?.isPersonal ? undefined : currentWorkspace?.id}
       isPersonal={currentWorkspace?.isPersonal ?? false}

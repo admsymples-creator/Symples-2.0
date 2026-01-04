@@ -30,171 +30,173 @@ interface HomeTasksSectionProps {
 type TaskStatusFilter = "upcoming" | "overdue" | "completed";
 
 export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, initialIsPersonal }: HomeTasksSectionProps) {
-  // Inicializar com dados do servidor para exibição instantânea
-  const [tasks, setTasks] = useState<TaskWithDetails[]>(() => initialTasks || []);
-  const [loading, setLoading] = useState(() => !initialTasks || initialTasks.length === 0); // Não mostrar loading se já temos dados iniciais
-  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("upcoming");
+  // CACHES DE DADOS (Minimiza round-trips ao servidor)
+  // activeTasksCache: Tarefas não concluídas (todo, in_progress, review, etc)
+  const [activeTasksCache, setActiveTasksCache] = useState<TaskWithDetails[] | null>(
+    () => {
+      if (!initialTasks) return null;
+      // Se initialTasks existe, filtra as ativas.
+      return initialTasks.filter(t => t.status !== "done");
+    }
+  );
+  const [completedTasksCache, setCompletedTasksCache] = useState<TaskWithDetails[] | null>(null);
+
+  // Estado derivado para tarefas a exibir
+  // DECLARAÇÃO UNIFICADA ABAIXO (linhas 110+)
+  // Removido duplicatas aqui para corrigir erro de build
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [members, setMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
   const [workspaceMap, setWorkspaceMap] = useState<Map<string, string>>(new Map());
-  const [displayLimit, setDisplayLimit] = useState(10); // Limite inicial de 10 itens
+  const [displayLimit, setDisplayLimit] = useState(10);
   const shouldReduceMotion = useReducedMotion();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
   const workspaces = useWorkspaces();
   const pathname = usePathname();
   const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(null);
 
-  // Calcular range de datas baseado no período (apenas para "Próximas")
+  // Calcular range - Mantido para consistência visual se necessário, mas o fetch será amplo
   const dateRange = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     if (period === "week") {
-      // Fim da semana atual (domingo)
       const dayOfWeek = today.getDay();
       const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
       const endOfWeek = new Date(today);
       endOfWeek.setDate(today.getDate() + daysUntilSunday);
       endOfWeek.setHours(23, 59, 59, 999);
-
-      return {
-        start: today.toISOString(),
-        end: endOfWeek.toISOString(),
-      };
+      return { start: today.toISOString(), end: endOfWeek.toISOString() };
     } else {
-      // Fim do mês atual
       const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
       endOfMonth.setHours(23, 59, 59, 999);
-
-      return {
-        start: today.toISOString(),
-        end: endOfMonth.toISOString(),
-      };
+      return { start: today.toISOString(), end: endOfMonth.toISOString() };
     }
   }, [period]);
 
-  // Detectar workspace atual da URL e verificar se é pessoal
+  // Detectar workspace (Mantido igual)
   useEffect(() => {
     if (!isLoaded) return;
     if (!workspaces || workspaces.length === 0) {
       setCurrentWorkspace(null);
       return;
     }
-
     const segments = pathname.split("/").filter(Boolean);
-    
-    // Priorizar workspace da URL sobre contexto
     let workspaceId = activeWorkspaceId;
     let workspace = null;
-    
-    // Se estamos em /home (sem workspace na URL), usar workspace ativo do contexto
     if (segments.length === 0 || segments[0] === "home") {
-      // Usar workspace ativo do contexto
       workspace = workspaces.find(w => w.id === activeWorkspaceId);
     } else {
-      // Estamos em um workspace específico na URL
       const workspaceSlug = segments[0];
       workspace = workspaces.find(w => w.slug === workspaceSlug || w.id === workspaceSlug);
-      if (workspace) {
-        workspaceId = workspace.id;
-      }
+      if (workspace) workspaceId = workspace.id;
     }
-    
     if (workspaceId && workspace) {
       const isPersonal = isPersonalWorkspace(workspace, workspaces);
-      setCurrentWorkspace({
-        id: workspaceId,
-        name: workspace.name || "Workspace",
-        isPersonal
-      });
+      setCurrentWorkspace({ id: workspaceId, name: workspace.name || "Workspace", isPersonal });
     } else {
-      // Se não há workspace ativo, usar o primeiro workspace ou criar lógica padrão
-      const firstWorkspace = workspaces[0];
-      if (firstWorkspace) {
-        const isPersonal = isPersonalWorkspace(firstWorkspace, workspaces);
-        setCurrentWorkspace({
-          id: firstWorkspace.id,
-          name: firstWorkspace.name,
-          isPersonal
-        });
+      const first = workspaces[0];
+      if (first) {
+        setCurrentWorkspace({ id: first.id, name: first.name, isPersonal: isPersonalWorkspace(first, workspaces) });
       } else {
         setCurrentWorkspace(null);
       }
     }
   }, [pathname, activeWorkspaceId, isLoaded, workspaces]);
 
-  // Sincronizar dados iniciais quando workspace corresponder
-  // IMPORTANTE: Este useEffect deve sempre ser chamado (não condicional)
-  useEffect(() => {
-    // Verificar condições dentro do useEffect, não condicionalmente
-    if (initialTasks !== undefined && 
-        currentWorkspace?.id === initialWorkspaceId && 
-        currentWorkspace?.isPersonal === initialIsPersonal &&
-        statusFilter === "upcoming" &&
-        period === "week") {
-      // Atualizar tarefas com dados iniciais se workspace corresponde
-      setTasks(initialTasks);
-      setLoading(false);
+  // Estado derivado para tarefas a exibir
+  const [tasks, setTasks] = useState<TaskWithDetails[]>(() => {
+    // Inicializar com dados do servidor SE disponíveis
+    if (initialTasks && initialTasks.length > 0) {
+      const active = initialTasks.filter(t => t.status !== "done");
+      return active;
     }
-  }, [initialTasks, initialWorkspaceId, initialIsPersonal, currentWorkspace, statusFilter, period]);
+    return [];
+  });
 
-  // Buscar tarefas - workspace pessoal mostra todas as tarefas dos outros workspaces
-  // OTIMIZAÇÃO: Só fazer fetch se não tiver dados iniciais ou se workspace/filtro mudar
+  const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("upcoming");
+
+  // ... (rest of state)
+
+  // REMOVIDO: Effect que limpava caches agressivamente. 
+  // Agora confiamos no ID do workspace que vem da prop initialWorkspaceId ou do hook.
+  // Se mudar, o fetch normal cuidará de atualizar.
+
+
+  // LÓGICA DE FETCH OTIMIZADA
+  // Busca dados sob demanda e preenche as caches
   useEffect(() => {
     const loadTasks = async () => {
       if (!currentWorkspace) return;
-      
-      // Se temos dados iniciais e workspace/filtro não mudou, não fazer fetch
-      // Verificar se os dados iniciais são válidos e correspondem ao workspace atual
-      if (initialTasks !== undefined && 
-          initialTasks.length >= 0 && // Aceita array vazio também
-          currentWorkspace.id === initialWorkspaceId && 
-          currentWorkspace.isPersonal === initialIsPersonal &&
-          statusFilter === "upcoming" &&
-          period === "week") { // Só usar dados iniciais para período "week"
-        // Usar dados iniciais - não fazer fetch
-        return;
-      }
-      
-      setLoading(true);
-      try {
-        // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário (de todos os workspaces)
-        if (currentWorkspace.isPersonal) {
-          const fetchedTasks = await getTasks({
-            assigneeId: "current",
-            // Não aplicar filtro de data para workspace pessoal (mostra todas)
-          });
-          setTasks(fetchedTasks || []);
-          setLoading(false);
+
+      const isCompletedTab = statusFilter === "completed";
+
+      // CENÁRIO 1: Abas "Próximas" ou "Atrasadas" (Usam cache de ativos)
+      if (!isCompletedTab) {
+        // Se já temos cache, não faz fetch! (Switch instantâneo)
+        if (activeTasksCache) {
+          setTasks(activeTasksCache);
           return;
         }
-        
-        // Workspace profissional: buscar apenas tarefas do workspace ativo
-        // Aplicar filtro de data apenas para "Próximas" (statusFilter === "upcoming")
-        const fetchedTasks = await getTasks({
-          workspaceId: currentWorkspace.id,
-          assigneeId: "current",
-          // Aplicar filtro de data apenas para "Próximas"
-          ...(statusFilter === "upcoming" ? {
-            dueDateStart: dateRange.start,
-            dueDateEnd: dateRange.end,
-          } : {}),
-        });
-        const scopedTasks = (fetchedTasks || []).filter(
-          (task) => task.workspace_id === currentWorkspace.id
-        );
-        setTasks(scopedTasks);
-      } catch (error) {
-        console.error("Erro ao carregar tarefas:", error);
-        setTasks([]);
-      } finally {
-        setLoading(false);
+
+        setLoading(true);
+        try {
+          const fetchParams = {
+            workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
+            assigneeId: "current" as const, // Forçar literal type
+            excludeStatus: ["done", "archived"] // BUSCAR TUDO QUE ESTÁ EM ABERTO
+          };
+
+          const fetchedTasks = await getTasks(fetchParams);
+
+          // Filtragem extra de segurança para workspace
+          const validTasks = currentWorkspace.isPersonal
+            ? (fetchedTasks || [])
+            : (fetchedTasks || []).filter(t => t.workspace_id === currentWorkspace.id);
+
+          setActiveTasksCache(validTasks);
+          setTasks(validTasks);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setLoading(false);
+        }
+      }
+      // CENÁRIO 2: Aba "Concluídas" (Usa cache de concluídos)
+      else {
+        if (completedTasksCache) {
+          setTasks(completedTasksCache);
+          return;
+        }
+
+        setLoading(true);
+        try {
+          const fetchParams = {
+            workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
+            assigneeId: "current" as const,
+            status: "done",
+            limit: 50 // Limite para não pesar
+          };
+
+          const fetchedTasks = await getTasks(fetchParams);
+
+          const validTasks = currentWorkspace.isPersonal
+            ? (fetchedTasks || [])
+            : (fetchedTasks || []).filter(t => t.workspace_id === currentWorkspace.id);
+
+          setCompletedTasksCache(validTasks);
+          setTasks(validTasks);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setLoading(false);
+        }
       }
     };
 
     loadTasks();
-  }, [period, currentWorkspace, statusFilter, dateRange, initialTasks, initialWorkspaceId, initialIsPersonal]); // Recarregar quando o período, workspace ou filtro mudar
+  }, [currentWorkspace, statusFilter]); // Dependências: Workspace e Filtro (para trocar o bucket)
 
   // Buscar workspaces para criar mapa workspace_id -> name
   useEffect(() => {
@@ -211,7 +213,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   useEffect(() => {
     const loadMembers = async () => {
       if (!currentWorkspace) return;
-      
+
       try {
         // Se for workspace profissional, buscar membros diretamente do workspace ativo
         // Isso garante que mesmo sem tarefas, os membros estarão disponíveis
@@ -229,7 +231,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
             console.error(`Erro ao buscar membros do workspace ${currentWorkspace.id}:`, error);
           }
         }
-        
+
         // Para workspace pessoal: buscar membros de todos os workspaces das tarefas em BATCH
         const workspaceIds = Array.from(
           new Set(tasks.map((t) => t.workspace_id).filter(Boolean) as string[])
@@ -238,10 +240,10 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
         if (workspaceIds.length > 0) {
           // OTIMIZAÇÃO: Buscar todos os membros de uma vez em vez de loop sequencial
           const membersMap = await getWorkspaceMembersBatch(workspaceIds);
-          
+
           // Combinar todos os membros únicos (por ID)
           const allMembersMap = new Map<string, { id: string; name: string; avatar?: string }>();
-          
+
           membersMap.forEach((members, workspaceId) => {
             members.forEach((m) => {
               if (!allMembersMap.has(m.id)) {
@@ -249,7 +251,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
               }
             });
           });
-          
+
           setMembers(Array.from(allMembersMap.values()));
         } else {
           setMembers([]);
@@ -271,14 +273,14 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
     const filtered = tasks.filter((task) => {
       const isCompleted = task.status === "done";
       const dueDate = task.due_date ? new Date(task.due_date) : null;
-      
+
       // Normalizar datas para comparação (apenas data, sem hora)
       let taskDate: Date | null = null;
       if (dueDate) {
         taskDate = new Date(dueDate);
         taskDate.setHours(0, 0, 0, 0);
       }
-      
+
       const isOverdue = taskDate && taskDate < today && !isCompleted;
 
       if (statusFilter === "completed") {
@@ -294,7 +296,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
         return !isCompleted;
       }
     });
-    
+
     return filtered;
   }, [tasks, statusFilter, dateRange]);
 
@@ -337,7 +339,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
       return prevTasks.map((task) => {
         if (String(task.id) === String(taskId)) {
           const updatedTask = { ...task };
-          
+
           if (updates.title !== undefined) {
             updatedTask.title = updates.title;
           }
@@ -354,7 +356,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
             // Atualizar assignees mantendo estrutura TaskWithDetails
             (updatedTask as any).assignees = updates.assignees;
           }
-          
+
           return updatedTask;
         }
         return task;
@@ -362,49 +364,41 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
     });
   }, []);
 
-  const handleTaskCreated = useCallback(() => {
+  // Funções de invalidação de cache
+  const invalidateCaches = () => {
+    setActiveTasksCache(null);
+    setCompletedTasksCache(null);
+  };
+
+  const handleTaskCreatedOptimistic = useCallback(async () => {
     setIsModalOpen(false);
-    // Recarregar tarefas apenas após criação (necessário para pegar ID e dados completos)
-    const loadTasks = async () => {
-      if (!currentWorkspace) return;
-      
-      setLoading(true);
-      try {
-        if (currentWorkspace.isPersonal) {
-          const fetchedTasks = await getTasks({
-            assigneeId: "current",
-          });
-          setTasks(fetchedTasks || []);
-        } else {
-          const fetchedTasks = await getTasks({
-            workspaceId: currentWorkspace.id,
-            assigneeId: "current",
-            ...(statusFilter === "upcoming" ? {
-              dueDateStart: dateRange.start,
-              dueDateEnd: dateRange.end,
-            } : {}),
-          });
-          const scopedTasks = (fetchedTasks || []).filter(
-            (task) => task.workspace_id === currentWorkspace.id
-          );
-          setTasks(scopedTasks);
-        }
-      } catch (error) {
-        console.error("Erro ao recarregar tarefas:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadTasks();
-  }, [currentWorkspace, statusFilter, dateRange]);
+    invalidateCaches();
+
+    // Fetch silencioso para atualizar sem loading full
+    if (!currentWorkspace) return;
+    try {
+      const fetchParams = {
+        workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
+        assigneeId: "current" as const,
+        excludeStatus: ["done", "archived"]
+      };
+      const fetched = await getTasks(fetchParams);
+
+      const valid = currentWorkspace.isPersonal
+        ? fetched
+        : fetched.filter((t: any) => t.workspace_id === currentWorkspace.id);
+
+      setActiveTasksCache(valid);
+      if (statusFilter !== "completed") setTasks(valid);
+    } catch (e) { console.error(e); }
+  }, [currentWorkspace, statusFilter]);
 
   const handleTaskUpdated = useCallback(() => {
-    // Não recarregar tudo - atualização otimista já foi feita
-    // Apenas revalidar se necessário (ex: mudança de status que afeta filtros)
-    // Por enquanto, deixar vazio pois onTaskUpdatedOptimistic já atualiza o estado
+    // Manter vazio ou recarrregar se necessário
+    // invalidateCaches(); // Opcional
   }, []);
 
-  
+
   return (
     <>
       <div className="card-surface h-[400px] flex flex-col">
@@ -419,7 +413,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
                 </span>
               )}
             </h3>
-            
+
             {/* Tabs internos */}
             <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as TaskStatusFilter)}>
               <TabsList variant="default">
@@ -442,149 +436,149 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
               transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
               className="h-full"
             >
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-            </div>
-          ) : sortedTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4">
-              {currentWorkspace?.isPersonal && workspaces.length === 1 ? (
-                // Caso especial: workspace pessoal sem outros workspaces
-                <>
-                  <div className="bg-gray-50 p-3 rounded-full mb-3">
-                    <CheckSquare className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1">Workspace pessoal não possui tarefas</p>
-                  <p className="text-xs text-gray-500 text-center">
-                    Crie um workspace profissional para começar a gerenciar tarefas
-                  </p>
-                </>
-              ) : statusFilter === "upcoming" ? (
-                <>
-                  <div className="bg-gray-50 p-3 rounded-full mb-3">
-                    <Clock className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa próxima</p>
-                  <p className="text-xs text-gray-500 text-center">
-                    Você não tem tarefas para este período
-                  </p>
-                </>
-              ) : statusFilter === "overdue" ? (
-                <>
-                  <div className="bg-red-50 p-3 rounded-full mb-3">
-                    <AlertCircle className="w-6 h-6 text-red-400" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa atrasada</p>
-                  <p className="text-xs text-gray-500 text-center">
-                    Ótimo! Você está em dia com suas tarefas
-                  </p>
-                </>
+              {loading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                </div>
+              ) : sortedTasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4">
+                  {currentWorkspace?.isPersonal && workspaces.length === 1 ? (
+                    // Caso especial: workspace pessoal sem outros workspaces
+                    <>
+                      <div className="bg-gray-50 p-3 rounded-full mb-3">
+                        <CheckSquare className="w-6 h-6 text-gray-400" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 mb-1">Workspace pessoal não possui tarefas</p>
+                      <p className="text-xs text-gray-500 text-center">
+                        Crie um workspace profissional para começar a gerenciar tarefas
+                      </p>
+                    </>
+                  ) : statusFilter === "upcoming" ? (
+                    <>
+                      <div className="bg-gray-50 p-3 rounded-full mb-3">
+                        <Clock className="w-6 h-6 text-gray-400" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa próxima</p>
+                      <p className="text-xs text-gray-500 text-center">
+                        Você não tem tarefas para este período
+                      </p>
+                    </>
+                  ) : statusFilter === "overdue" ? (
+                    <>
+                      <div className="bg-red-50 p-3 rounded-full mb-3">
+                        <AlertCircle className="w-6 h-6 text-red-400" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa atrasada</p>
+                      <p className="text-xs text-gray-500 text-center">
+                        Ótimo! Você está em dia com suas tarefas
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-green-50 p-3 rounded-full mb-3">
+                        <CheckSquare className="w-6 h-6 text-green-400" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa concluída</p>
+                      <p className="text-xs text-gray-500 text-center">
+                        Tarefas concluídas aparecerão aqui
+                      </p>
+                    </>
+                  )}
+                </div>
               ) : (
-                <>
-                  <div className="bg-green-50 p-3 rounded-full mb-3">
-                    <CheckSquare className="w-6 h-6 text-green-400" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1">Nenhuma tarefa concluída</p>
-                  <p className="text-xs text-gray-500 text-center">
-                    Tarefas concluídas aparecerão aqui
-                  </p>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="px-2 py-2">
-              {/* Ghost TaskRow para criação rápida - apenas para workspaces profissionais */}
-              {!currentWorkspace?.isPersonal && (
-                <QuickTaskAdd
-                  placeholder="Adicionar tarefa aqui..."
-                  variant="ghost"
-                  members={members}
-                  showProjectTag={true}
-                  onSubmit={async (title, dueDate, assigneeId) => {
-                    try {
-                      // Criar no workspace ativo (não pode ser pessoal aqui)
-                      const workspaceId = currentWorkspace?.id || null;
-                      
-                      const result = await createTask({
-                        title,
-                        description: "",
-                        status: "todo",
-                        due_date: dueDate ? dueDate.toISOString() : null,
-                        assignee_id: assigneeId || null,
-                        workspace_id: workspaceId,
-                      });
-                      
-                      if (result.success) {
-                        // Recarregar tarefas do workspace ativo (após criação, necessário para pegar dados completos)
-                        const fetchedTasks = await getTasks({
-                          workspaceId: currentWorkspace?.id,
-                          assigneeId: "current",
-                          ...(statusFilter === "upcoming" ? {
-                            dueDateStart: dateRange.start,
-                            dueDateEnd: dateRange.end,
-                          } : {}),
-                        });
-                        setTasks(fetchedTasks || []);
-                      } else {
-                        console.error("Erro ao criar tarefa:", result.error);
-                      }
-                    } catch (error) {
-                      console.error("Erro ao criar tarefa:", error);
-                    }
-                  }}
-                />
-              )}
+                <div className="px-2 py-2">
+                  {/* Ghost TaskRow para criação rápida - apenas para workspaces profissionais */}
+                  {!currentWorkspace?.isPersonal && (
+                    <QuickTaskAdd
+                      placeholder="Adicionar tarefa aqui..."
+                      variant="ghost"
+                      members={members}
+                      showProjectTag={true}
+                      onSubmit={async (title, dueDate, assigneeId) => {
+                        try {
+                          // Criar no workspace ativo (não pode ser pessoal aqui)
+                          const workspaceId = currentWorkspace?.id || null;
 
-              {displayedTasks.map((task: any) => {
-                // getTasks já retorna assignees através de transformTaskWithMembers
-                const assignees = (task as any).assignees || [];
-                const commentCount = task.comment_count || 0;
-                const workspaceName = task.workspace_id ? workspaceMap.get(task.workspace_id) : undefined;
-                const projectTag = task.tags && task.tags.length > 0 ? task.tags[0] : undefined;
+                          const result = await createTask({
+                            title,
+                            description: "",
+                            status: "todo",
+                            due_date: dueDate ? dueDate.toISOString() : null,
+                            assignee_id: assigneeId || null,
+                            workspace_id: workspaceId,
+                          });
 
-                return (
-                  <MyTaskRowHome
-                    key={task.id}
-                    task={{
-                      id: task.id,
-                      title: task.title,
-                      status: task.status || "todo",
-                      dueDate: task.due_date || undefined,
-                      completed: task.status === "done",
-                      priority: task.priority as "low" | "medium" | "high" | "urgent" | undefined,
-                      assignees: assignees,
-                      workspace_id: task.workspace_id || null,
-                      commentCount: commentCount,
-                      tags: task.tags || [],
-                    }}
-                    groupColor={task.group?.color || undefined}
-                    onClick={handleTaskClick}
-                    onTaskUpdated={handleTaskUpdated}
-                    onTaskUpdatedOptimistic={handleTaskUpdatedOptimistic}
-                    members={members}
-                    disabled={true}
-                    showProjectTag={true}
-                    showWorkspaceBadge={false}
-                    workspaceName={workspaceName}
-                  />
-                );
-              })}
-              
-              {hasMore && (
-                <div className="px-6 py-3 border-t border-gray-200">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDisplayLimit(prev => prev + 10)}
-                    className="w-full text-sm text-gray-600 hover:text-gray-900"
-                  >
-                    Carregar mais ({sortedTasks.length - displayLimit} restantes)
-                    <ChevronDown className="w-4 h-4 ml-1" />
-                  </Button>
+                          if (result.success) {
+                            // Recarregar tarefas do workspace ativo (após criação, necessário para pegar dados completos)
+                            const fetchedTasks = await getTasks({
+                              workspaceId: currentWorkspace?.id,
+                              assigneeId: "current",
+                              ...(statusFilter === "upcoming" ? {
+                                dueDateStart: dateRange.start,
+                                dueDateEnd: dateRange.end,
+                              } : {}),
+                            });
+                            setTasks(fetchedTasks || []);
+                          } else {
+                            console.error("Erro ao criar tarefa:", result.error);
+                          }
+                        } catch (error) {
+                          console.error("Erro ao criar tarefa:", error);
+                        }
+                      }}
+                    />
+                  )}
+
+                  {displayedTasks.map((task: any) => {
+                    // getTasks já retorna assignees através de transformTaskWithMembers
+                    const assignees = (task as any).assignees || [];
+                    const commentCount = task.comment_count || 0;
+                    const workspaceName = task.workspace_id ? workspaceMap.get(task.workspace_id) : undefined;
+                    const projectTag = task.tags && task.tags.length > 0 ? task.tags[0] : undefined;
+
+                    return (
+                      <MyTaskRowHome
+                        key={task.id}
+                        task={{
+                          id: task.id,
+                          title: task.title,
+                          status: task.status || "todo",
+                          dueDate: task.due_date || undefined,
+                          completed: task.status === "done",
+                          priority: task.priority as "low" | "medium" | "high" | "urgent" | undefined,
+                          assignees: assignees,
+                          workspace_id: task.workspace_id || null,
+                          commentCount: commentCount,
+                          tags: task.tags || [],
+                        }}
+                        groupColor={task.group?.color || undefined}
+                        onClick={handleTaskClick}
+                        onTaskUpdated={handleTaskUpdated}
+                        onTaskUpdatedOptimistic={handleTaskUpdatedOptimistic}
+                        members={members}
+                        disabled={true}
+                        showProjectTag={true}
+                        showWorkspaceBadge={false}
+                        workspaceName={workspaceName}
+                      />
+                    );
+                  })}
+
+                  {hasMore && (
+                    <div className="px-6 py-3 border-t border-gray-200">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDisplayLimit(prev => prev + 10)}
+                        className="w-full text-sm text-gray-600 hover:text-gray-900"
+                      >
+                        Carregar mais ({sortedTasks.length - displayLimit} restantes)
+                        <ChevronDown className="w-4 h-4 ml-1" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -596,7 +590,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
           open={isModalOpen}
           onOpenChange={setIsModalOpen}
           task={sortedTasks.find((t) => String(t.id) === selectedTaskId) as any}
-          onTaskCreated={handleTaskCreated}
+          onTaskCreated={handleTaskCreatedOptimistic}
           onTaskUpdated={handleTaskUpdated}
         />
       )}

@@ -4,8 +4,22 @@ import { FeatureTabs } from "@/components/landing-page/FeatureTabs";
 import { BentoGrid } from "@/components/landing-page/BentoGrid";
 import { PricingFAQ } from "@/components/landing-page/PricingFAQ";
 import { MockComparison } from "@/components/ui-mocks/MockComparison";
+import { createServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
-export default function LandingPage() {
+export default async function LandingPage() {
+    // Check if user is authenticated and redirect to home
+    try {
+        const supabase = await createServerClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (user) {
+            redirect("/home");
+        }
+    } catch (error) {
+        // Ignore errors during auth check on landing page
+    }
+
     return (
         <main className="min-h-screen bg-white font-sans selection:bg-emerald-100 selection:text-emerald-900 overflow-x-hidden">
             <HeroSection />

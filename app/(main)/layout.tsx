@@ -33,10 +33,10 @@ export default async function MainLayout({
         }
         // Usar workspaces atualizados
         const activeWorkspace = updatedWorkspaces[0];
-        const subscription = activeWorkspace 
+        const subscription = activeWorkspace
             ? await getCurrentSubscription(activeWorkspace.id)
             : null;
-        
+
         const uiUser = user ? {
             name: user.full_name || "Usuário",
             email: user.email || "",
@@ -51,12 +51,13 @@ export default async function MainLayout({
         ]);
 
         return (
-            <AppShell 
-                user={uiUser} 
-                workspaces={updatedWorkspaces} 
+            <AppShell
+                user={uiUser}
+                workspaces={updatedWorkspaces}
                 initialSubscription={subscription}
                 initialProjectsTags={initialProjectsTagsUpdated}
                 initialProjectsIcons={initialProjectsIconsUpdated}
+                initialWorkspaceId={activeWorkspace.id}
             >
                 {children}
             </AppShell>
@@ -71,10 +72,10 @@ export default async function MainLayout({
     // Determine active workspace (do cookie ou primeiro workspace)
     const cookieStore = await cookies();
     const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
-    const activeWorkspace = activeWorkspaceIdCookie?.value 
+    const activeWorkspace = activeWorkspaceIdCookie?.value
         ? workspaces.find(w => w.id === activeWorkspaceIdCookie.value) || workspaces[0]
         : workspaces[0];
-    
+
     const isPersonal = activeWorkspace ? isPersonalWorkspace(activeWorkspace, workspaces) : false;
 
     // Fetch subscription data e projetos em paralelo
@@ -93,9 +94,9 @@ export default async function MainLayout({
     } : null;
 
     return (
-        <AppShell 
-            user={uiUser} 
-            workspaces={workspaces} 
+        <AppShell
+            user={uiUser}
+            workspaces={workspaces}
             initialSubscription={subscription}
             initialProjectsTags={initialProjectsTags}
             initialProjectsIcons={initialProjectsIcons}

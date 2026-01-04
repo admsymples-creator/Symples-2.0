@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
 import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { WorkspaceCard } from "@/components/home/WorkspaceCard";
 import { ProjectCard } from "@/components/home/ProjectCard";
@@ -33,15 +33,16 @@ export interface HomeWorkspaceOverviewProps {
   initialIsPersonal?: boolean;
 }
 
-export function HomeWorkspaceOverview({ 
-  workspaceStats, 
-  weekStart, 
-  weekEnd, 
-  initialProjectStats = [], 
-  initialProjectIcons = {}, 
-  initialIsPersonal = false 
+export function HomeWorkspaceOverview({
+  workspaceStats,
+  weekStart,
+  weekEnd,
+  initialProjectStats = [],
+  initialProjectIcons = {},
+  initialIsPersonal = false
 }: HomeWorkspaceOverviewProps) {
-  const { activeWorkspaceId, isLoaded, isSwitchingWorkspace } = useWorkspace();
+  const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const { isSwitchingWorkspace } = useWorkspaceLoading();
   const workspaces = useWorkspaces();
   const hasLoadedOnceRef = useRef(false);
   const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number }>>(initialProjectStats || []);
@@ -83,7 +84,9 @@ export function HomeWorkspaceOverview({
       }
 
       // Se está trocando de workspace, não mostrar skeleton - deixar o workspace loading aparecer
+      // Se está trocando de workspace, não mostrar skeleton - deixar o workspace loading aparecer
       if (isSwitchingWorkspace) {
+        // Apenas abortar o fetch, mas não alterar o estado visual
         return;
       }
 
@@ -119,7 +122,7 @@ export function HomeWorkspaceOverview({
           getProjectsWeeklyStats(activeWorkspaceId, weekStart, weekEnd),
           getProjectIcons(activeWorkspaceId)
         ]);
-        
+
         setProjectStats(stats);
         setProjectIcons(icons);
         // Salvar no cache
@@ -139,7 +142,7 @@ export function HomeWorkspaceOverview({
 
     loadProjectStats();
   }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd, initialProjectStats, initialIsPersonal, workspaces, isSwitchingWorkspace]);
-  
+
   // Resetar flag quando workspace muda
   useEffect(() => {
     hasLoadedOnceRef.current = false;
@@ -181,7 +184,7 @@ export function HomeWorkspaceOverview({
   // Workspace profissional: mostrar projetos
   if (!isPersonal) {
     // Não mostrar skeleton se está trocando workspace (deixar workspace loading aparecer)
-    if (loadingProjects && !isSwitchingWorkspace) {
+    if (loadingProjects) {
       return (
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">

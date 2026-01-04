@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
 type AppContextType = {
     isCollapsed: boolean;
@@ -8,25 +9,27 @@ type AppContextType = {
     activeWorkspaceId: string | null;
     setActiveWorkspaceId: (id: string) => void;
     isLoaded: boolean;
-    isSwitchingWorkspace: boolean;
-    setIsSwitchingWorkspace: (value: boolean) => void;
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+const UIContext = createContext<{
+    isSwitchingWorkspace: boolean;
+    setIsSwitchingWorkspace: (value: boolean) => void;
+} | undefined>(undefined);
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
     // --- ESTADOS ---
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
-    const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(true); // Começa TRUE (Loading inicial)
+    const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(true); // Default TRUE para Splash Screen imediata
     const [isMounted, setIsMounted] = useState(false);
 
-    // --- REFS DE CONTROLE (O Segredo da Estabilidade) ---
-    const isSwitchingRef = useRef(true);
+    // Hooks de navegação para detectar quando a rota mudou
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
 
-    // TIMESTAMP LOCK: Guarda o tempo absoluto (Unix ms) de quando o loading deve ser libertado.
-    // Imune a re-renders do React.
-    const unlockTimeRef = useRef<number>(0);
+    // Ref para rastrear o pathname anterior e detectar mudanças reais
+    const prevPathnameRef = useRef(pathname);
 
     // 1. Hidratação Inicial
     useEffect(() => {
@@ -35,17 +38,19 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 
         const savedWorkspace = localStorage.getItem("active-workspace-id");
         if (savedWorkspace) {
-            setActiveWorkspaceId(savedWorkspace);
-            // AUMENTADO PARA 3500ms: Garante que o usuário veja a marca e o app tenha tempo de sobra para hidratar
-            unlockTimeRef.current = Date.now() + 3500;
-            console.log(`[Symples UX] Load inicial: Lock ativado por 3500ms`);
-        } else {
-            // Se não tem workspace, não estamos a carregar nada (ex: Login page)
-            setIsSwitchingWorkspace(false);
-            isSwitchingRef.current = false;
+            // Usa update funcional para não sobrescrever se o URLSync já definiu o workspace correto
+            setActiveWorkspaceId(prev => prev || savedWorkspace);
         }
 
         setIsMounted(true);
+
+        // Desligar o Splash Screen inicial após hidratação e pequeno delay
+        // Isso garante que o usuário veja o loading antes de qualquer conteúdo
+        const timer = setTimeout(() => {
+            setIsSwitchingWorkspace(false);
+        }, 800);
+
+        return () => clearTimeout(timer);
     }, []);
 
     const toggleSidebar = () => {
@@ -54,102 +59,73 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("sidebar-state", String(newState));
     };
 
-    // 2. Função de Troca de Workspace (Ativa o Lock)
+    // 2. Monitorar mudanças de rota para desligar o loading
+    useEffect(() => {
+        // Se o pathname mudou, significa que a navegação do Next.js completou
+        if (pathname !== prevPathnameRef.current) {
+            if (isSwitchingWorkspace) {
+                // Pequeno delay para garantir que o render aconteceu
+                // Isso evita "flash" de conteúdo antigo antes do novo pintar
+                // Pequeno delay para garantir que a UI estabilize e mascarar esqueletos
+                // 800ms é rápido o suficiente para parecer responsivo, mas lento o suficiente para cobrir o paint inicial
+                // 3500ms cobre o tempo total de render (3.5s) visto nos logs de pior caso
+                // Isso garante que NUNCA mostremos esqueletos na troca
+                setTimeout(() => {
+                    setIsSwitchingWorkspace(false);
+                }, 3500);
+            }
+            prevPathnameRef.current = pathname;
+        }
+    }, [pathname, isSwitchingWorkspace]);
+
+    // 3. Função de Troca de Workspace
     const handleSetWorkspace = (id: string) => {
-        // Ignora se for o mesmo ID (a menos que seja o primeiro load null->id)
-        if (id === activeWorkspaceId && activeWorkspaceId !== null) return;
+        // Ignora se for o mesmo ID
+        if (id === activeWorkspaceId) return;
 
-        const now = Date.now();
-
-        // --- CALIBRAÇÃO DE TEMPO (UX) - AUMENTADO PARA SENSATION DE ROBUSTEZ ---
-        // Primeiro Load (null -> ID): 3500ms (Cold start - garante hidratação completa)
-        // Troca (ID -> ID): 2000ms (Pausa deliberada para limpar contexto mental)
-        const lockDuration = activeWorkspaceId === null ? 3500 : 2000;
-
-        // Define a hora exata do futuro para desbloqueio
-        unlockTimeRef.current = now + lockDuration;
-
-        console.log(`[Symples UX] Lock ativado por ${lockDuration}ms`);
-
-        // Trava a UI imediatamente
+        // Ativa o loading imediatamente
         setIsSwitchingWorkspace(true);
-        isSwitchingRef.current = true;
 
         // Atualiza o estado
         setActiveWorkspaceId(id);
         localStorage.setItem("active-workspace-id", id);
     };
 
-    // 3. O RELEASER (O único useEffect autorizado a remover o loading)
-    useEffect(() => {
-        // Se a UI não está travada, não fazemos nada
-        if (!isSwitchingWorkspace) return;
-
-        const checkLock = () => {
-            const now = Date.now();
-
-            // Proteção para F5: Se unlockTime for 0 mas estamos carregando, força 2500ms
-            if (unlockTimeRef.current === 0) {
-                unlockTimeRef.current = now + 2500;
-                console.log(`[Symples UX] Fallback: Lock ativado por 2500ms (refresh F5)`);
-            }
-
-            const timeRemaining = unlockTimeRef.current - now;
-
-            // LOG DE CONTAGEM REGRESSIVA (Debug visual)
-            // Log a cada ~500ms para não poluir o console
-            // Verifica se está próximo de múltiplos de 500ms (3500, 3000, 2500, 2000, 1500, 1000, 500)
-            if (timeRemaining > 0) {
-                const remainder = timeRemaining % 500;
-                // Log quando estiver próximo de múltiplos de 500ms (com margem de 50ms)
-                if (remainder < 50 || remainder > 450) {
-                    console.log(`⏳ [Symples Loading] Restam: ~${Math.round(timeRemaining)}ms`);
-                }
-            }
-
-            if (timeRemaining <= 0) {
-                // O TEMPO ACABOU -> LIBERTAR UI
-                console.log("✅ [Symples Loading] Tempo esgotado. Abrindo app.");
-                setIsSwitchingWorkspace(false);
-                isSwitchingRef.current = false;
-                unlockTimeRef.current = 0; // Reset
-            } else {
-                // AINDA FALTA TEMPO -> REAGENDAR
-                // Isso cria um loop recursivo que sobrevive a re-renders
-                timeoutId = setTimeout(checkLock, timeRemaining);
-            }
-        };
-
-        let timeoutId = setTimeout(checkLock, 50); // Tick inicial
-
-        return () => clearTimeout(timeoutId);
-    }, [isSwitchingWorkspace]); // Dependência mínima
-
-    // 4. Emergency Eject (Segurança contra bugs)
+    // 4. Emergency Eject (Segurança contra bugs de navegação)
+    // Se por algum motivo a navegação falhar ou não disparar mudança de rota
     useEffect(() => {
         if (isSwitchingWorkspace) {
             const emergencyTimer = setTimeout(() => {
-                if (isSwitchingRef.current) {
-                    console.warn("[Symples] Emergency Eject: Loading removido por timeout (4s).");
+                if (isSwitchingWorkspace) {
+                    console.warn("[Symples] Emergency Eject: Loading removido por timeout (8s).");
                     setIsSwitchingWorkspace(false);
-                    isSwitchingRef.current = false;
                 }
-            }, 4000); // 4s é o limite máximo tolerável (ajustado para cobrir o novo tempo de 3.5s)
+            }, 8000); // 8s timeout de segurança
             return () => clearTimeout(emergencyTimer);
         }
     }, [isSwitchingWorkspace]);
 
+    const contextValue = React.useMemo(() => ({
+        isCollapsed,
+        toggleSidebar,
+        activeWorkspaceId,
+        setActiveWorkspaceId: handleSetWorkspace,
+        isLoaded: isMounted,
+        isSwitchingWorkspace, // Mantendo por compatibilidade temporária mas hooks devem migrar
+        setIsSwitchingWorkspace // Mantendo por compatibilidade temporária
+    }), [isCollapsed, activeWorkspaceId, isMounted, isSwitchingWorkspace, handleSetWorkspace]); // Include handleSetWorkspace in deps or keep it stable
+
+    // Contexto UI separado para evitar re-renders na Sidebar principal
+    const uiContextValue = React.useMemo(() => ({
+        isSwitchingWorkspace,
+        setIsSwitchingWorkspace
+    }), [isSwitchingWorkspace]);
+
     return (
-        <AppContext.Provider value={{
-            isCollapsed,
-            toggleSidebar,
-            activeWorkspaceId,
-            setActiveWorkspaceId: handleSetWorkspace,
-            isLoaded: isMounted,
-            isSwitchingWorkspace,
-            setIsSwitchingWorkspace
-        }}>
-            {children}
+        <AppContext.Provider value={contextValue}>
+            <UIContext.Provider value={uiContextValue}>
+                {children}
+            </UIContext.Provider>
         </AppContext.Provider>
     );
 }
@@ -162,12 +138,23 @@ export function useSidebar() {
 
 export function useWorkspace() {
     const context = useContext(AppContext);
+
+    // Tentar pegar do UIContext se disponível para componentes otimizados
+    // Hooks devem ser chamados incondicionalmente
+    const uiContext = useContext(UIContext);
+
     if (!context) throw new Error("useWorkspace must be used within a SidebarProvider");
+
     return {
         activeWorkspaceId: context.activeWorkspaceId,
         setActiveWorkspaceId: context.setActiveWorkspaceId,
         isLoaded: context.isLoaded,
-        isSwitchingWorkspace: context.isSwitchingWorkspace,
-        setIsSwitchingWorkspace: context.setIsSwitchingWorkspace
     };
+}
+
+// Hook otimizado APENAS para quem precisa saber do loading (Overlay, Switcher)
+export function useWorkspaceLoading() {
+    const context = useContext(UIContext);
+    if (!context) throw new Error("useWorkspaceLoading must be used within a SidebarProvider");
+    return context;
 }

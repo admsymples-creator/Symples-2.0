@@ -4,11 +4,13 @@ import dynamic from "next/dynamic";
 import { PlannerClient } from "@/components/planner/PlannerClient";
 import { Database } from "@/types/database.types";
 
+import { Workspace } from "@/lib/actions/user";
+
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
 const PlannerClientDynamic = dynamic(
   () => import("@/components/planner/PlannerClient").then((mod) => mod.PlannerClient),
-  { 
+  {
     ssr: false,
     loading: () => (
       <div className="space-y-8">
@@ -40,20 +42,22 @@ interface PlannerPageClientProps {
   initialTasks?: Task[];
   workspaceId?: string;
   isPersonal?: boolean;
+  workspaces?: Workspace[];
 }
 
-export function PlannerPageClient({ initialTasks, workspaceId, isPersonal }: PlannerPageClientProps = {}) {
+export function PlannerPageClient({ initialTasks, workspaceId, isPersonal, workspaces }: PlannerPageClientProps = {}) {
   // Se temos dados iniciais, passar para o componente
   if (initialTasks !== undefined) {
     return (
-      <PlannerClient 
+      <PlannerClient
         initialTasks={initialTasks}
         initialWorkspaceId={workspaceId}
         initialIsPersonal={isPersonal}
+        preloadedWorkspaces={workspaces}
       />
     );
   }
-  
+
   // Fallback para carregamento dinâmico (quando não há dados iniciais)
   return <PlannerClientDynamic />;
 }
