@@ -609,8 +609,8 @@ export async function createTask(data: {
   description?: string;
   assignee_id?: string | null;
   recurrence_type?: string;
-  recurrence_interval?: number;
-  recurrence_end_date?: string;
+  recurrence_interval?: number | null;
+  recurrence_end_date?: string | null;
   group_id?: string | null;
   tags?: string[];
   origin_context?: any;
