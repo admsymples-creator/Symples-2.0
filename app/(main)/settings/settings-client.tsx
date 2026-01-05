@@ -311,6 +311,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       setIsRemovingMember(true);
       try {
           const result = await removeMember(workspace.id, memberToRemove);
+          
+          // Atualizar estado local imediatamente (otimistic update)
           setMembers(members.filter(m => m.user_id !== memberToRemove));
           
           if (result.warning) {
@@ -323,11 +325,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             });
           }
           
-          // Aguardar um pouco antes de fazer refresh para evitar erro de render
-          // O revalidatePath já foi chamado na server action
-          setTimeout(() => {
-            router.refresh();
-          }, 300);
+          // Não chamar router.refresh() - revalidatePath já foi chamado na server action
+          // O estado local já foi atualizado, então a UI está sincronizada
+          // Chamar router.refresh() pode causar erro de Server Components render
       } catch (error: any) {
           console.error("Erro ao remover membro:", error);
           toast.error("Erro ao remover membro", { 
