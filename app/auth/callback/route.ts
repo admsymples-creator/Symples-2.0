@@ -1,7 +1,7 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from 'next/server'
 import { acceptInvite, getInviteDetails } from "@/lib/actions/members";
-import { getUserWorkspaces } from "@/lib/actions/user";
+import { getUserWorkspaces, ensurePersonalWorkspace } from "@/lib/actions/user";
 import { revalidatePath } from "next/cache";
 import { cookies } from 'next/headers';
 
@@ -95,18 +95,26 @@ export async function GET(request: Request) {
               workspaceSlug: acceptResult.workspaceSlug,
             });
             
+            // ✅ GARANTIR workspace pessoal após aceitar convite (novo usuário precisa dos 2 workspaces)
+            // Isso garante que usuários novos tenham workspace pessoal + workspace convidado
+            console.log('[Auth Callback] Garantindo workspace pessoal para novo usuário...');
+            await ensurePersonalWorkspace();
+            
             // Limpar cookie apos aceitar com sucesso
             const cookieStore = await cookies();
             cookieStore.delete('pending_invite');
             
-            // Revalidar cache
+            // Revalidar cache para garantir que ambos os workspaces apareçam
             revalidatePath("/", "layout");
             revalidatePath("/home");
+            
+            // Aguardar um pouco para garantir que o banco propagou os dados
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             // Redirecionar diretamente para o workspace usando o slug retornado
             if (acceptResult.success && acceptResult.workspaceSlug) {
               const redirectUrl = `${origin}/${acceptResult.workspaceSlug}/tasks?invite_accepted=true`;
-              console.log('[Auth Callback] Redirecionando para workspace:', acceptResult.workspaceSlug);
+              console.log('[Auth Callback] Redirecionando para workspace convidado:', acceptResult.workspaceSlug);
               return NextResponse.redirect(redirectUrl);
             } else {
               console.warn('[Auth Callback] WorkspaceSlug não disponível, usando fallback. Result:', acceptResult);

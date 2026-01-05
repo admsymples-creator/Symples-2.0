@@ -22,9 +22,13 @@ export default async function MainLayout({
         return null;
     }
 
-    // Garantir que o usuário tenha workspace pessoal
+    // Garantir que o usuário tenha workspace pessoal (apenas se não tiver nenhum workspace)
+    // Se o usuário já tem workspaces (ex: acabou de aceitar um convite), não criar pessoal aqui
+    // O workspace pessoal será criado quando necessário, mas não deve bloquear acesso ao workspace convidado
     const hasPersonalWorkspace = workspaces.some(w => w.name?.toLowerCase().trim() === "pessoal");
-    if (!hasPersonalWorkspace) {
+    if (!hasPersonalWorkspace && workspaces.length === 0) {
+        // Só criar workspace pessoal se não tiver NENHUM workspace
+        // Se tem workspace (ex: convidado), o pessoal será criado em outro momento se necessário
         await ensurePersonalWorkspace();
         // Recarregar workspaces após criar o pessoal
         const updatedWorkspaces = await getUserWorkspaces();
