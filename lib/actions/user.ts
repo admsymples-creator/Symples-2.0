@@ -240,7 +240,8 @@ export async function ensurePersonalWorkspace(): Promise<{ success: boolean; wor
     // Não retornamos erro aqui, pois o workspace foi criado
   }
 
-  revalidatePath("/", "layout");
+  // Não chamar revalidatePath durante render - será invalidado na próxima requisição
+  // O cache do React será limpo naturalmente na próxima renderização
   return { success: true, workspaceId: newWorkspace.id };
 }
 
