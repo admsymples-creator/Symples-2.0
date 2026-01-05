@@ -88,6 +88,7 @@ export type Database = {
           recurrence_count: number | null
           subtasks: Json | null
           tags: string[] | null
+          group_id: string | null
         }
         Insert: {
           assignee_id?: string | null
@@ -110,6 +111,7 @@ export type Database = {
           recurrence_count?: number | null
           subtasks?: Json | null
           tags?: string[] | null
+          group_id?: string | null
         }
         Update: {
           assignee_id?: string | null
@@ -132,6 +134,7 @@ export type Database = {
           recurrence_count?: number | null
           subtasks?: Json | null
           tags?: string[] | null
+          group_id?: string | null
         }
         Relationships: [
           {
