@@ -6,7 +6,9 @@ import { useEffect, useState } from "react";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import type { SubscriptionData } from "@/lib/types/subscription";
 
-type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'>;
+type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'> & {
+  userRole?: string;
+};
 
 interface TrialBannerProps {
   workspace?: WorkspaceSubscription | null;
@@ -37,6 +39,12 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
 
   // Se não há workspace ou não está em trial, não mostrar banner
   if (!subscriptionData || subscriptionData.subscription_status !== 'trialing') {
+    return null;
+  }
+
+  // Só mostrar banner para owners e admins (não para membros/viewers)
+  const userRole = subscriptionData.userRole;
+  if (userRole && userRole !== 'owner' && userRole !== 'admin') {
     return null;
   }
 
