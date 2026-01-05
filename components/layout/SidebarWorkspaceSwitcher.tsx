@@ -93,8 +93,8 @@ export function SidebarWorkspaceSwitcher({
                             {!isCollapsed && (
                                 <>
                                     <div className="flex flex-col items-start text-left flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 w-full">
-                                            <span className="font-semibold text-sm text-gray-900 truncate">
+                                        <div className="flex items-center gap-2 w-full min-w-0">
+                                            <span className="font-semibold text-sm text-gray-900 truncate min-w-0 flex-1">
                                                 {currentWorkspace?.name || "Selecione"}
                                             </span>
                                             {isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
@@ -112,7 +112,7 @@ export function SidebarWorkspaceSwitcher({
                                                 </Link>
                                             )}
                                         </div>
-                                        <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors">
+                                        <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors w-full">
                                             {isTrialing ? "Plano Trial" : initialSubscription?.plan ? `Plano ${initialSubscription.plan.charAt(0).toUpperCase() + initialSubscription.plan.slice(1)}` : "Workspace"}
                                         </span>
                                     </div>
