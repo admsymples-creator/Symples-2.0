@@ -1480,23 +1480,22 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             "low": "Baixa",
         };
 
-        // ? Buckets First: Inicializar grupos vazios baseado no viewOption
+        // ✅ CORREÇÃO: Inicializar grupos vazios se viewOption for "group"
         if (viewOption === "group") {
-            // Inicializar grupo "Inbox" (tarefas sem grupo)
+            // Sempre inicializar Inbox
             groups["inbox"] = [];
 
-            // Inicializar grupos do banco (mesmo que vazios)
-            availableGroups.forEach((group) => {
+            // Inicializar todos os grupos disponíveis
+            availableGroups.forEach(group => {
                 groups[group.id] = [];
             });
-        } else if (viewOption === "assignee") {
-            // Inicializar grupos para todos os membros (mesmo sem tarefas)
-            workspaceMembers.forEach((member) => {
-                const memberName = member.name || "Membro";
-                groups[memberName] = [];
+        } else if (viewOption === "status") {
+            // Inicializar status padrão
+            const statusOrder = ["todo", "in_progress", "review", "correction", "blocked", "done", "archived"];
+            statusOrder.forEach(status => {
+                const label = STATUS_TO_LABEL[status as keyof typeof STATUS_TO_LABEL];
+                if (label) groups[label] = [];
             });
-            // Grupo para tarefas sem respons├ível
-            groups["Sem respons├ível"] = [];
         }
 
         filteredTasks.forEach((task) => {
