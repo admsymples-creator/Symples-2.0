@@ -442,34 +442,41 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     );
 
     const collisionDetectionStrategy = useCallback((args: Parameters<typeof pointerWithin>[0]) => {
-        // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio (pode acontecer com tagFilter)
+        // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio
         const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
         const taskIds = new Set(currentTasks.map((task) => String(task.id)));
 
-        // ✅ DEBUG: Log quando há tagFilter para verificar se taskIds está correto
+        // ✅ CORREÇÃO: Incluir IDs dos grupos como containers válidos
+        // Isso garante que grupos vazios sejam detectados como targets de drop
+        const groupIds = Object.keys(groupedDataRef.current);
+        const validIds = new Set([...taskIds, ...groupIds, "inbox", "Inbox"]);
+
+        // ✅ DEBUG: Log se tiver tagFilter
         if (process.env.NODE_ENV === 'development' && tagFilter && taskIds.size === 0) {
             console.warn('⚠️ [collisionDetectionStrategy] taskIds vazio com tagFilter:', {
                 tagFilter,
                 localTasksRefCount: localTasksRef.current.length,
                 localTasksCount: localTasks.length,
-                usingLocalTasks: localTasksRef.current.length === 0
+                usingLocalTasks: localTasksRef.current.length === 0,
+                groupIds
             });
         }
 
         const pointerCollisions = pointerWithin(args);
         if (pointerCollisions.length > 0) {
-            const taskCollisions = pointerCollisions.filter((collision) => taskIds.has(String(collision.id)));
-            if (taskCollisions.length > 0) {
-                return taskCollisions;
+            // Permitir colisão com tasks E grupos
+            const validCollisions = pointerCollisions.filter((collision) => validIds.has(String(collision.id)));
+            if (validCollisions.length > 0) {
+                return validCollisions;
             }
         }
 
         const taskContainers = args.droppableContainers.filter((container) =>
-            taskIds.has(String(container.id))
+            validIds.has(String(container.id))
         );
         if (taskContainers.length > 0) {
             const taskRects = new Map(
-                Array.from(args.droppableRects.entries()).filter(([id]) => taskIds.has(String(id)))
+                Array.from(args.droppableRects.entries()).filter(([id]) => validIds.has(String(id)))
             );
             return closestCenter({
                 ...args,
