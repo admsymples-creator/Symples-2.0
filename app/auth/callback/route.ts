@@ -89,6 +89,12 @@ export async function GET(request: Request) {
             console.log('[Auth Callback] Aceitando convite valido:', inviteToken.substring(0, 8) + '...');
             const acceptResult = await acceptInvite(inviteToken);
             
+            console.log('[Auth Callback] Resultado do acceptInvite:', {
+              success: acceptResult.success,
+              workspaceId: acceptResult.workspaceId,
+              workspaceSlug: acceptResult.workspaceSlug,
+            });
+            
             // Limpar cookie apos aceitar com sucesso
             const cookieStore = await cookies();
             cookieStore.delete('pending_invite');
@@ -103,6 +109,7 @@ export async function GET(request: Request) {
               console.log('[Auth Callback] Redirecionando para workspace:', acceptResult.workspaceSlug);
               return NextResponse.redirect(redirectUrl);
             } else {
+              console.warn('[Auth Callback] WorkspaceSlug não disponível, usando fallback. Result:', acceptResult);
               // Fallback: aguardar e tentar buscar workspace
               await new Promise(resolve => setTimeout(resolve, 500));
               const { data: memberWorkspaces } = await supabase

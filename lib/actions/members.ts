@@ -1128,7 +1128,7 @@ export async function acceptInvite(inviteId: string) {
   });
 
   // Limpar cache de workspaces do usuário para forçar recarregamento
-  clearUserWorkspacesCache(user.id);
+  await clearUserWorkspacesCache(user.id);
   
   // Revalidar caminhos importantes para garantir que o layout encontre os workspaces
   revalidatePath("/", "layout");
@@ -1139,13 +1139,32 @@ export async function acceptInvite(inviteId: string) {
   // Isso evita race condition onde o usuário é redirecionado para /home antes
   // da propagação do banco de dados, o que causava redirect falso para onboarding
   // Usar supabaseAdmin para garantir que a busca funcione mesmo com cache/RLS
-  const { data: workspaceData } = await supabaseAdmin
+  const { data: workspaceData, error: workspaceError } = await supabaseAdmin
     .from('workspaces')
     .select('slug')
     .eq('id', invite.workspace_id)
     .single();
 
+  if (workspaceError) {
+    console.error("❌ Erro ao buscar slug do workspace:", {
+      workspaceId: invite.workspace_id,
+      error: workspaceError.message,
+      code: workspaceError.code,
+    });
+  }
+
   const workspaceSlug = workspaceData?.slug || null;
+
+  if (!workspaceSlug) {
+    console.warn("⚠️ Workspace slug não encontrado para workspace:", invite.workspace_id);
+  }
+
+  console.log("✅ Convite aceito com sucesso:", {
+    inviteId,
+    workspaceId: invite.workspace_id,
+    workspaceSlug,
+    userId: user.id,
+  });
 
   return {
     success: true,
