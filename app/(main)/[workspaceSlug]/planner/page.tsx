@@ -51,18 +51,26 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
   const workspace = workspaces.find(w => w.id === workspaceId);
   const isPersonal = workspace ? isPersonalWorkspace(workspace, workspaces) : false;
 
-  // 3. Calcular range da semana
+  // 3. Calcular range da semana expandido
+  // A WeeklyView usa uma janela deslizante (Today - 2 a Today + 2) ou mais.
+  // Buscamos um range maior (-7 a +7 dias) para garantir que dias futuros/passados próximos estejam cobertos
+  // e evitar que tarefas sumam quando o dia atual é Domingo (e a query original buscava só até Domingo)
   const today = new Date();
-  const startOfWeek = getStartOfWeek(today);
-  const endOfWeek = getEndOfWeek(today);
+  const startRange = new Date(today);
+  startRange.setDate(today.getDate() - 7);
+  startRange.setHours(0, 0, 0, 0);
+
+  const endRange = new Date(today);
+  endRange.setDate(today.getDate() + 7);
+  endRange.setHours(23, 59, 59, 999);
 
   // 4. Buscar tarefas iniciais da semana
   const tasksStartTime = Date.now();
   const initialTasks = await getTasks({
     workspaceId: isPersonal ? undefined : workspaceId,
     assigneeId: "current",
-    dueDateStart: startOfWeek.toISOString(),
-    dueDateEnd: endOfWeek.toISOString(),
+    dueDateStart: startRange.toISOString(),
+    dueDateEnd: endRange.toISOString(),
   });
   // Performance logs removed for production
 

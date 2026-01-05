@@ -61,10 +61,10 @@ interface TaskGroupProps {
 
 function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false, tagFilter }: TaskGroupProps) {
     const [isAdding, setIsAdding] = useState(false);
-    
+
     // Normalizar IDs para string (dnd-kit requer strings)
     const taskIds = useMemo(() => tasks.map((t) => String(t.id)), [tasks]);
-    
+
     const handleSubmitAdd = useCallback(async (title: string, dueDate?: Date | null, assigneeId?: string | null, tags?: string[]) => {
         if (onAddTask) {
             const result = onAddTask(id, title, dueDate, assigneeId, tags);
@@ -87,12 +87,12 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
     // Converter groupColor (nome ou hex) para cor válida para o indicador
     const colorForIndicator = useMemo(() => {
         if (!groupColor) return undefined;
-        
+
         // Se já for hex, retornar direto
         if (groupColor.startsWith('#')) {
             return groupColor;
         }
-        
+
         // Mapear nomes de cores para valores hex
         const colorMap: Record<string, string> = {
             "red": "#ef4444",
@@ -106,7 +106,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
             "cyan": "#06b6d4",
             "indigo": "#6366f1",
         };
-        
+
         return colorMap[groupColor] || undefined;
     }, [groupColor]);
 
@@ -119,10 +119,8 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                     count={tasks.length}
                     color={colorForIndicator}
                     actions={
-                        showGroupActions && 
-                        id !== "inbox" && 
-                        id !== "Inbox" &&
-                        (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup || onReorderGroup) ? (
+                        showGroupActions &&
+                            (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup || onReorderGroup) ? (
                             <GroupActionMenu
                                 groupId={id}
                                 groupTitle={title}
@@ -137,6 +135,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                 canMoveDown={canMoveDown}
                                 canMoveToTop={canMoveToTop}
                                 canMoveToBottom={canMoveToBottom}
+                                isInbox={id.toLowerCase() === "inbox"}
                             />
                         ) : undefined
                     }
@@ -151,8 +150,8 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                     // Altura dinâmica: abraça o conteúdo (h-fit) com altura mínima apenas quando vazio
                     // Inbox: altura mínima muito baixa para empty state compacto
                     // Outros grupos: altura mínima maior para melhor área de drop
-                    id === "inbox" || id === "Inbox" 
-                        ? "h-fit min-h-[60px]" 
+                    id === "inbox" || id === "Inbox"
+                        ? "h-fit min-h-[60px]"
                         : "h-fit min-h-[100px]",
                     isOver && "bg-blue-50 border-blue-300 border-solid"
                 )}
@@ -164,7 +163,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                 <TaskRowMinify
                                     key={task.id}
                                     task={{
-                                        ...task, 
+                                        ...task,
                                         workspace_id: workspaceId || null,
                                         tags: task.tags || []
                                     }}
@@ -181,12 +180,12 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                     showProjectTag={showProjectTag}
                                 />
                             ))}
-                            
+
                             {/* ✅ Skeleton adicional durante criação batch (mostrar apenas se não houver tarefas pending visíveis) */}
                             {isAdding && tasks.filter(t => t.isPending).length === 0 && (
                                 <TaskRowSkeleton groupColor={groupColor} />
                             )}
-                            
+
                             {/* Quick Add no final da lista quando há tarefas */}
                             {onAddTask && tasks.length > 0 && (
                                 <div className="pt-1">
@@ -205,7 +204,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                         </div>
                     </SortableContext>
                 ) : null}
-                
+
                 {/* Estado vazio: mostra botão ou QuickTaskAdd */}
                 {tasks.length === 0 && (
                     <>
@@ -261,7 +260,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
 // Memo para estabilidade do DnD
 export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
     // Log para debug
-    const shouldRender = 
+    const shouldRender =
         prev.tasks !== next.tasks ||
         prev.id !== next.id ||
         prev.title !== next.title ||
@@ -280,6 +279,6 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
         prev.onDeleteGroup !== next.onDeleteGroup ||
         prev.onClearGroup !== next.onClearGroup ||
         prev.showGroupActions !== next.showGroupActions;
-    
+
     return !shouldRender; // Retorna true se NÃO deve re-renderizar
 });

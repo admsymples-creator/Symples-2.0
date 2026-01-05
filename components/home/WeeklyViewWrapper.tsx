@@ -64,8 +64,9 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
   };
 
   const handleTaskUpdated = () => {
-    // Recarregar dados da página para mostrar as tarefas atualizadas
-    router.refresh();
+    // NÃO fazer router.refresh() imediato - a atualização otimista já cobre a UI
+    // O refresh será feito automaticamente quando necessário (ex: navegação)
+    // router.refresh() estava causando a tarefa a desaparecer
   };
 
   // Determinar o que mostrar: EmptyState ou WeeklyView
@@ -118,6 +119,7 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
                 tasks={tasks}
                 workspaces={workspaces}
                 highlightInput={isTutorialActive}
+                onTaskUpdate={handleTaskUpdated}
               />
             </motion.div>
           ) : (

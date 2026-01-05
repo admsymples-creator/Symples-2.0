@@ -22,18 +22,18 @@ interface PageProps {
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-  // ✅ Server Component otimizado - busca todos os dados no servidor
+// ✅ Server Component otimizado - busca todos os dados no servidor
 export default async function WorkspaceHomePage({ params }: PageProps) {
   const pageStartTime = Date.now();
   const { workspaceSlug } = await params;
-  
+
   // 1. Buscar dados do usuário e workspace em paralelo
   const [workspaceId, workspaces, user] = await Promise.all([
     getWorkspaceIdBySlug(workspaceSlug),
     getUserWorkspaces(),
     getUserProfile()
   ]);
-  
+
   if (!workspaceId) {
     return notFound();
   }
@@ -41,7 +41,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
   // 2. Detectar se é pessoal
   const workspace = workspaces.find(w => w.id === workspaceId);
   const isPersonal = workspace ? isPersonalWorkspace(workspace, workspaces) : false;
-  
+
   // 3. Calcular range da semana (Segunda a Domingo) para stats
   const today = new Date();
   const day = today.getDay();
@@ -51,6 +51,14 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   endOfWeek.setHours(23, 59, 59, 999);
 
+  // Range estendido para buscar tarefas (buffer de timezone)
+  // Isso evita que tarefas criadas em UTC-X, que caem no dia anterior/seguinte em UTC, sejam filtradas
+  const taskFetchStart = new Date(startOfWeek);
+  taskFetchStart.setDate(taskFetchStart.getDate() - 2);
+
+  const taskFetchEnd = new Date(endOfWeek);
+  taskFetchEnd.setDate(taskFetchEnd.getDate() + 2);
+
   // 4. Buscar dados críticos primeiro (tarefas e notificações) para exibição imediata
   const criticalDataStartTime = Date.now();
   const [initialTasks, initialNotifications] = await Promise.all([
@@ -58,11 +66,11 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
     getTasks({
       workspaceId: isPersonal ? null : workspaceId,
       assigneeId: "current",
-      dueDateStart: startOfWeek.toISOString(),
-      dueDateEnd: endOfWeek.toISOString(),
+      dueDateStart: taskFetchStart.toISOString(),
+      dueDateEnd: taskFetchEnd.toISOString(),
     }),
     // Buscar notificações iniciais no servidor
-    getNotifications({ 
+    getNotifications({
       limit: 30,
       workspaceId: isPersonal ? null : workspaceId,
     }),
@@ -74,20 +82,20 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
   const [workspaceStats, projectStats, projectIcons] = await Promise.all([
     getWorkspacesWeeklyStats(startOfWeek, endOfWeek),
     // Buscar stats de projetos se for workspace profissional
-    !isPersonal 
+    !isPersonal
       ? getProjectsWeeklyStats(workspaceId, startOfWeek, endOfWeek)
       : Promise.resolve([]),
     // Buscar ícones de projetos se for workspace profissional
     // Converter Map para objeto serializável
     !isPersonal
       ? getProjectIcons(workspaceId).then(icons => {
-          // Converter Map para objeto para serialização
-          const iconsObj: Record<string, string> = {};
-          icons.forEach((value, key) => {
-            iconsObj[key] = value;
-          });
-          return iconsObj;
-        })
+        // Converter Map para objeto para serialização
+        const iconsObj: Record<string, string> = {};
+        icons.forEach((value, key) => {
+          iconsObj[key] = value;
+        });
+        return iconsObj;
+      })
       : Promise.resolve({}),
   ]);
   // Performance logs removed for production
@@ -122,8 +130,8 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
 
             {/* Cards: Minhas tarefas e Caixa de entrada - Carregar imediatamente com dados do servidor */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <HomeTasksSection 
-                period="week" 
+              <HomeTasksSection
+                period="week"
                 initialTasks={initialTasks}
                 initialWorkspaceId={workspaceId}
                 initialIsPersonal={isPersonal}
@@ -133,8 +141,8 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
 
             {/* Workspaces Overview - Carregar com Suspense para não bloquear render */}
             <Suspense fallback={<div className="h-64 animate-pulse bg-gray-100 rounded-lg" />}>
-              <HomeWorkspaceOverview 
-                workspaceStats={workspaceStats} 
+              <HomeWorkspaceOverview
+                workspaceStats={workspaceStats}
                 weekStart={startOfWeek}
                 weekEnd={endOfWeek}
                 initialProjectStats={projectStats}

@@ -52,16 +52,18 @@ export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = fa
   return (
     <>
       {/* Visão Semanal */}
-      <WeeklyView 
-        tasks={tasks} 
+      <WeeklyView
+        tasks={tasks}
         workspaces={workspaces}
         onTaskUpdate={handleWeeklyViewUpdate}
+        currentWorkspaceId={workspaceId}
+        isPersonal={isPersonal}
       />
 
       {/* Calendário */}
       <div className="relative h-full w-full">
         <div className="h-[calc(100vh-300px)]">
-          <PlannerCalendar 
+          <PlannerCalendar
             workspaceId={workspaceId}
             hideViewTabs={true}
             onControlsReady={handleCalendarControlsReady}

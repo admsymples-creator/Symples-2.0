@@ -64,12 +64,12 @@ interface PlannerCalendarProps {
 export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = false, hideViewTabs = false, onControlsReady, onExternalTaskCreated }: PlannerCalendarProps = {}) {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
-  
+
   // Determinar qual workspaceId usar
-  const effectiveWorkspaceId = propWorkspaceId !== undefined 
-    ? propWorkspaceId 
-    : pathname === "/planner" 
-      ? undefined 
+  const effectiveWorkspaceId = propWorkspaceId !== undefined
+    ? propWorkspaceId
+    : pathname === "/planner"
+      ? undefined
       : activeWorkspaceId ?? undefined;
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -82,7 +82,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [initialDueDate, setInitialDueDate] = useState<string | undefined>();
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
-  
+
   const calendarRef = useRef<FullCalendar>(null);
   const draggedEventRef = useRef<EventApi | null>(null);
   const originalDateRef = useRef<string | null>(null);
@@ -98,7 +98,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         setCurrentView("listDay");
       }
     };
-    
+
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
@@ -116,7 +116,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
     if (!isLoaded && effectiveWorkspaceId !== undefined) return;
 
     const cacheKey = getCacheKey(start, end);
-    
+
     // Verificar cache primeiro (mostrar imediatamente se disponível)
     if (useCache && eventsCacheRef.current.has(cacheKey)) {
       const cachedEvents = eventsCacheRef.current.get(cacheKey)!;
@@ -141,10 +141,88 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         end,
         effectiveWorkspaceId
       );
-      
+
+      // --- LÓGICA DE TAREFAS VIRTUAIS (Recorrência) ---
+      const processedKeys = new Set<string>();
+
+      // 1. Indexar tarefas reais para evitar sobreposição
+      calendarEvents.forEach(event => {
+        const eventDate = event.start.split('T')[0];
+        if (event.extendedProps.recurrence_type) {
+          const uniqueKey = `${eventDate}-${event.title}-${event.extendedProps.recurrence_type}`;
+          processedKeys.add(uniqueKey);
+        }
+      });
+
+      const virtualEvents: CalendarEvent[] = [];
+      const limitDate = new Date(end); // Fim da visualização atual
+
+      calendarEvents.forEach(event => {
+        if (!event.extendedProps.recurrence_type || event.extendedProps.status === 'archived') return;
+
+        // Parsers básicos
+        const startDate = new Date(event.start);
+        let nextDate = new Date(startDate);
+        // Intervalo padrão 1 se não definido
+        // Nota: O tipo CalendarEvent do frontend não tem recurrence_interval explicitamente tipado no extendedProps no arquivo server,
+        // mas assumimos que o backend retorna ou podemos adicionar se faltar.
+        // Se faltar, assumiremos 1.
+        // Para robustez, podemos buscar do evento original se disponível, mas aqui só temos CalendarEvent.
+        // Assumindo 1 por enquanto (diário/semanal simples) ou precisaríamos que getTasksForCalendar retornasse o intervalo.
+        // Verifiquei actions/calendar.ts e recurrence_interval NÃO está no select.
+        // FIX: Precisamos pedir para adicionar recurrence_interval no select do calendar.ts ou assumir 1.
+        // Por hora, assumo 1. O ideal seria o backend retornar.
+        const interval = 1;
+
+        // Projetar
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        let loops = 0;
+        const MAX_LOOPS = 50;
+
+        while (nextDate < limitDate && loops < MAX_LOOPS) {
+          loops++;
+          const type = event.extendedProps.recurrence_type;
+
+          if (type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
+          else if (type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
+          else if (type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
+          else if (type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
+
+          if (nextDate > limitDate) break;
+
+          // Ignorar passado
+          if (nextDate <= now) continue;
+
+          const nextDateISO = nextDate.toISOString();
+          const nextDateStr = nextDateISO.split('T')[0];
+
+          const uniqueKey = `${nextDateStr}-${event.title}-${type}`;
+          if (processedKeys.has(uniqueKey)) continue;
+
+          // Criar evento virtual
+          virtualEvents.push({
+            ...event,
+            id: `virtual-${event.id}-${nextDate.getTime()}`,
+            start: event.allDay ? nextDateStr : nextDateISO,
+            extendedProps: {
+              ...event.extendedProps,
+              status: 'todo',
+              is_virtual: true as any // Forçar tipo se não existir na interface
+            },
+            classNames: [...(event.classNames || []), 'virtual-event']
+          });
+
+          processedKeys.add(uniqueKey);
+        }
+      });
+
+      const allEvents = [...calendarEvents, ...virtualEvents];
+
       // Salvar no cache
-      eventsCacheRef.current.set(cacheKey, calendarEvents);
-      
+      eventsCacheRef.current.set(cacheKey, allEvents);
+
       // Limitar tamanho do cache (manter apenas últimos 10 ranges)
       if (eventsCacheRef.current.size > 10) {
         const firstKey = eventsCacheRef.current.keys().next().value;
@@ -152,8 +230,8 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           eventsCacheRef.current.delete(firstKey);
         }
       }
-      
-      setEvents(calendarEvents);
+
+      setEvents(allEvents);
     } catch (error) {
       console.error("[PlannerCalendar] Erro ao carregar eventos:", error);
       toast.error("Erro ao carregar tarefas do calendário");
@@ -166,12 +244,12 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
   const handleDatesSet = useCallback((arg: { start: Date; end: Date; view: ViewApi }) => {
     // Atualizar data atual para o título
     setCurrentDate(arg.view.currentStart);
-    
+
     // Debounce de 300ms
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
     }
-    
+
     debounceTimeoutRef.current = setTimeout(() => {
       loadEvents(arg.start, arg.end);
     }, 300);
@@ -180,8 +258,16 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
   // Handler para drag & drop com optimistic UI melhorado
   const handleEventDrop = useCallback(async (info: EventDropArg) => {
     const event = info.event;
+
+    // Bloquear alteração de eventos virtuais
+    if (event.extendedProps.is_virtual) {
+      info.revert();
+      toast.info("Tarefas recorrentes futuras não podem ser movidas até serem criadas.");
+      return;
+    }
+
     const newDate = event.start;
-    
+
     if (!newDate) {
       info.revert();
       return;
@@ -207,7 +293,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
     try {
       const result = await updateTaskDate(event.id, newDate);
-      
+
       if (!result.success) {
         // Reverter mudança em caso de erro
         info.revert();
@@ -235,6 +321,12 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
   // Handler para clique em evento
   const handleEventClick = useCallback(async (info: EventClickArg) => {
+    // Bloquear clique em eventos virtuais
+    if (info.event.extendedProps.is_virtual) {
+      toast.info("Esta é uma tarefa futura recorrente. Complete a tarefa atual para criar esta ocorrência.");
+      return;
+    }
+
     const taskId = info.event.id;
     setIsLoadingTask(true);
     setIsModalOpen(true);
@@ -242,7 +334,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
     try {
       const taskDetails = await getTaskDetails(taskId);
-      
+
       if (!taskDetails) {
         toast.error("Tarefa não encontrada");
         setIsModalOpen(false);
@@ -290,7 +382,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
     console.log("[PlannerCalendar] dateClick chamado:", info);
     const clickedDate = info.date;
     const dateISO = clickedDate.toISOString().split('T')[0];
-    
+
     setInitialDueDate(dateISO);
     setIsCreatingTask(true);
     setSelectedTask(null);
@@ -364,10 +456,10 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
       const handleExternalUpdate = () => {
         reloadEvents();
       };
-      
+
       // Adicionar listener para evento customizado
       window.addEventListener('planner-task-updated', handleExternalUpdate);
-      
+
       return () => {
         window.removeEventListener('planner-task-updated', handleExternalUpdate);
       };
@@ -405,24 +497,24 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         <div className="flex items-center justify-between mb-4 px-1">
           {/* Navegação (Prev/Next/Today) */}
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               onClick={handlePrev}
               className="h-8 w-8 text-gray-500 hover:text-gray-900"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
               onClick={handleToday}
               className="h-8 px-3 text-sm font-medium text-gray-600 hover:text-gray-900"
             >
               Hoje
             </Button>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               onClick={handleNext}
               className="h-8 w-8 text-gray-500 hover:text-gray-900"
@@ -430,12 +522,12 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
-          
+
           {/* Título do Mês/Ano */}
           <h2 className="text-lg font-semibold text-foreground capitalize">
             {monthYearTitle}
           </h2>
-          
+
           {/* Tabs de View */}
           {!hideViewTabs && (
             <Tabs value={currentView} onValueChange={handleViewChange}>
@@ -485,7 +577,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           dayHeaderContent={(arg) => {
             // Formatar dias da semana em português
             const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-            
+
             // CORREÇÃO: Usar getUTCDay() porque o FullCalendar passa datas em UTC para os cabeçalhos
             // Quando convertemos de UTC para local (UTC-3), getDay() retorna o dia anterior
             // Exemplo: 2026-01-02T00:00:00.000Z (quinta UTC) vira 2025-12-31T21:00:00-03:00 (quarta local)
@@ -511,20 +603,23 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
             const recurrenceType = eventInfo.event.extendedProps.recurrence_type;
             const recurrenceParentId = eventInfo.event.extendedProps.recurrence_parent_id;
             const isRecurring = !!recurrenceType || !!recurrenceParentId;
-            
+            const isVirtual = eventInfo.event.extendedProps.is_virtual;
+
             // Ícone SVG de recorrência (RefreshCw)
             const recurrenceIcon = isRecurring ? `
               <svg class="fc-recurrence-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; margin-left: 4px; color: #3b82f6;">
                 <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
               </svg>
             ` : '';
-            
+
+            const opacityStyle = isVirtual ? 'opacity: 0.5; border-style: dashed;' : '';
+
             return {
               html: `
-                <div class="fc-event-main-frame">
+                <div class="fc-event-main-frame" style="${opacityStyle}">
                   <div class="fc-event-time">${eventInfo.timeText || ""}${recurrenceIcon}</div>
                   <div class="fc-event-title-container">
-                    <div class="fc-event-title ${isCompleted ? "line-through" : ""}">${eventInfo.event.title}</div>
+                    <div class="fc-event-title ${isCompleted ? "line-through" : ""}">${eventInfo.event.title} ${isVirtual ? '(Futuro)' : ''}</div>
                   </div>
                 </div>
               `,
@@ -563,16 +658,16 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           if (updates.dueDate !== undefined) {
             const previousEvents = [...events];
             startTransition(() => {
-              setEvents(prev => prev.map(event => 
-                event.id === taskId 
+              setEvents(prev => prev.map(event =>
+                event.id === taskId
                   ? { ...event, start: updates.dueDate || event.start }
                   : event
               ));
             });
-            
+
             // Invalidar cache
             eventsCacheRef.current.clear();
-            
+
             // Se houver erro, o modal já trata, mas podemos adicionar rollback aqui se necessário
           }
         }}

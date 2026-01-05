@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useOptimistic, startTransition } from "react";
-import { FolderOpen, Calendar as CalendarIcon } from "lucide-react";
+import { FolderOpen, Calendar as CalendarIcon, Repeat } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
 import { createTask, deleteTask, updateTask, getTaskRecurrenceInfo } from "@/lib/actions/tasks";
@@ -25,9 +25,12 @@ interface DayColumnProps {
   dateObj?: Date;
   tasks: Task[];
   isToday?: boolean;
+
   workspaces?: { id: string; name: string }[];
   highlightInput?: boolean;
-  onTaskUpdate?: () => void; // Callback para notificar atualizações
+  onTaskUpdate?: () => void;
+  currentWorkspaceId?: string | null;
+  isPersonalContext?: boolean;
 }
 
 export function DayColumn({
@@ -39,6 +42,8 @@ export function DayColumn({
   workspaces = [],
   highlightInput = false,
   onTaskUpdate,
+  currentWorkspaceId,
+  isPersonalContext = true,
 }: DayColumnProps) {
   const router = useRouter();
   const [quickAddValue, setQuickAddValue] = useState("");
@@ -51,24 +56,52 @@ export function DayColumn({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
+  /* --- STATE: Local Persistence for Created Tasks --- */
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Mantém tarefas criadas visíveis até que o servidor as retorne (evita desaparecimento)
+  const [createdTasks, setCreatedTasks] = useState<Task[]>([]);
+
+  // Limpar tarefas criadas localmente quando elas aparecem na prop tasks (vindas do servidor)
+  useEffect(() => {
+    if (createdTasks.length > 0) {
+      const persistedIds = new Set(tasks.map(t => t.id));
+      const remaining = createdTasks.filter(t => !persistedIds.has(t.id));
+      if (remaining.length !== createdTasks.length) {
+        setCreatedTasks(remaining);
+      }
+    }
+  }, [tasks, createdTasks]);
+
 
   const [optimisticTasks, addOptimisticTask] = useOptimistic(
     tasks,
     (state: Task[], action: OptimisticAction) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:59', message: 'HYP-REDUCER: Optimistic reducer called', data: { actionType: action.type, stateCount: state.length, actionId: action.type === 'add' ? action.task.id : action.type === 'delete' ? action.id : action.task.id }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
+      // #endregion
       switch (action.type) {
         case 'add':
           // Evitar duplicatas: verificar se a tarefa já existe
           const exists = state.some(t => t.id === action.task.id);
           if (exists) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:65', message: 'HYP-REDUCER: Task exists, updating', data: { taskId: action.task.id }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
+            // #endregion
             // Se já existe, atualizar ao invés de adicionar (pode ser substituição de temp por real)
             return state.map(t => t.id === action.task.id ? action.task : t);
           }
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:69', message: 'HYP-REDUCER: Adding new task', data: { taskId: action.task.id, newStateCount: state.length + 1 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
+          // #endregion
           return [...state, action.task];
         case 'update':
           return state.map(t => t.id === action.task.id ? { ...t, ...action.task } : t);
         case 'delete':
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:73', message: 'HYP-REDUCER: Deleting task', data: { taskId: action.id, stateCount: state.length, willBeRemoved: state.filter(t => t.id === action.id).length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
+          // #endregion
           return state.filter(t => t.id !== action.id);
         default:
           return state;
@@ -121,7 +154,18 @@ export function DayColumn({
   };
 
   const sortedTasks = useMemo(() => {
-    return [...optimisticTasks].sort((a, b) => {
+    // Mesclar optimisticTasks com createdTasks (priorizando optimistic se duplicado)
+    // createdTasks só existem se NÃO estiverem em optimisticTasks (que é derivado de tasks prop + optimistic actions)
+    const optimisticIds = new Set(optimisticTasks.map(t => t.id));
+    const uniqueCreatedTasks = createdTasks.filter(t => !optimisticIds.has(t.id));
+
+    if (uniqueCreatedTasks.length > 0) {
+      console.log(`[DayColumn ${dayName}] Merging createdTasks:`, uniqueCreatedTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date })));
+    }
+
+    const combined = [...optimisticTasks, ...uniqueCreatedTasks];
+
+    return combined.sort((a, b) => {
       const aIsPersonal = a.is_personal || !a.workspace_id;
       const bIsPersonal = b.is_personal || !b.workspace_id;
 
@@ -153,16 +197,25 @@ export function DayColumn({
 
       return 0;
     });
-  }, [optimisticTasks]);
+  }, [optimisticTasks, createdTasks]);
 
   const pendingCount = useMemo(() =>
-    optimisticTasks.filter(t => t.status !== 'done').length,
-    [optimisticTasks]);
+    // Contar também as createdTasks pendentes
+    sortedTasks.filter(t => t.status !== 'done').length,
+    [sortedTasks]);
 
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const rawValue = quickAddValue;
     if (!rawValue.trim()) return;
+
+    console.log("[DayColumn] handleQuickAddSubmit started", {
+      val: rawValue,
+      selectedDate: selectedDateTime,
+      recurrence: recurrenceType,
+      isPersonal: isPersonalContext,
+      wsId: currentWorkspaceId
+    });
 
     const tasksToCreate = processBatchInput(rawValue);
     if (tasksToCreate.length === 0) return;
@@ -174,29 +227,31 @@ export function DayColumn({
     // Capturar selectedDateTime e recurrenceType antes de qualquer operação assíncrona
     const currentRecurrenceType = recurrenceType;
     const currentSelectedDateTime = selectedDateTime;
-    
+
     let dueDateISO: string | undefined = undefined;
     if (currentSelectedDateTime) {
-      // Usar o horário exato selecionado pelo usuário
       dueDateISO = currentSelectedDateTime.toISOString();
     } else if (dateObj) {
-      // Usar meio-dia (12:00) apenas quando não há horário específico selecionado
-      // Meio-dia em qualquer timezone mantém o mesmo dia ao converter para UTC
       const d = new Date(dateObj);
-      d.setHours(12, 0, 0, 0);
+      d.setHours(0, 0, 0, 0);
       dueDateISO = d.toISOString();
     }
 
+    console.log("[DayColumn] Prepared data", {
+      tasksToCreate,
+      dueDateISO,
+      currentRecurrenceType
+    });
+
     // Optimistic Update
-    // IMPORTANTE: Usar o mesmo due_date que será enviado ao servidor para evitar diferenças
     const baseId = Date.now();
     const tempTasks = tasksToCreate.map((title, index) => ({
       id: `temp-${baseId}-${index}-${Math.random()}`,
       title,
       status: "todo",
-      due_date: dueDateISO || null, // Usar o mesmo valor que será enviado
-      workspace_id: null,
-      is_personal: true,
+      due_date: dueDateISO || null,
+      workspace_id: isPersonalContext ? null : currentWorkspaceId,
+      is_personal: isPersonalContext,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       description: null,
@@ -205,7 +260,6 @@ export function DayColumn({
       priority: null,
       created_by: null,
       origin_context: null,
-      // Incluir campos de recorrência no estado otimista para feedback visual
       recurrence_type: currentRecurrenceType || null,
     } as Task));
 
@@ -216,71 +270,65 @@ export function DayColumn({
     });
 
     try {
-      // Usar valores já capturados antes de qualquer reset
-      const createPromises = tasksToCreate.map((title) =>
-        createTask({
+      const createPromises = tasksToCreate.map((title) => {
+        const payload = {
           title,
-          due_date: dueDateISO, // Já usa currentSelectedDateTime ou dateObj com 12:00
-          workspace_id: null,
-          status: "todo",
-          is_personal: true,
-          recurrence_type: currentRecurrenceType || undefined, // Já capturado antes
-        })
-      );
+          due_date: dueDateISO,
+          workspace_id: isPersonalContext ? null : currentWorkspaceId,
+          status: "todo" as any,
+          is_personal: isPersonalContext,
+          recurrence_type: currentRecurrenceType || undefined,
+        };
+        console.log("[DayColumn] Calling createTask with payload:", payload);
+        return createTask(payload);
+      });
 
-      // Resetar apenas após criar (mas manter se estiver criando múltiplas tarefas)
-      // Se for apenas uma tarefa, resetar após criação
-      // Se for múltiplas, manter para aplicar a todas
-      setSelectedDateTime(null);
-      // Não resetar recurrenceType imediatamente - deixar o usuário criar múltiplas tarefas recorrentes
-      // setRecurrenceType(null);
       const results = await Promise.all(createPromises);
+      console.log("[DayColumn] createTask results:", results);
+
       const failedCount = results.filter((r) => !r.success).length;
       const successCount = results.filter((r) => r.success).length;
 
       // Substituir tarefas temporárias pelas tarefas reais
-      // IMPORTANTE: Fazer substituição atômica (remover temp + adicionar real) em uma única transição
       startTransition(() => {
-        results.forEach((result, index) => {
-          const tempTask = tempTasks[index];
-          if (!tempTask) return;
-          
-          if (result.success && result.data) {
-            // Remover tarefa temporária e adicionar a real na mesma transição
-            // Isso evita que a tarefa desapareça entre as operações
-            addOptimisticTask({ type: 'delete', id: tempTask.id });
-            addOptimisticTask({ type: 'add', task: result.data });
-          } else {
-            // Se falhou, apenas remover a temporária
-            addOptimisticTask({ type: 'delete', id: tempTask.id });
-          }
+        tempTasks.forEach((tempTask) => {
+          addOptimisticTask({ type: 'delete', id: tempTask.id });
         });
       });
 
       if (successCount > 0) {
-        onTaskUpdate?.(); // Notificar atualizacao
-        // Não fazer router.refresh() imediato - a atualização otimista já cobre a UI
-        // O refresh será feito automaticamente quando necessário (ex: navegação)
-        
-        // Resetar recurrenceType após criação bem-sucedida
-        // Mas apenas se não estiver criando múltiplas tarefas ou se todas foram criadas
+        const newRealTasks = results
+          .filter(r => r.success && r.data)
+          .map(r => r.data!);
+
+        console.log("[DayColumn] Success! Adding to createdTasks:", newRealTasks);
+        setCreatedTasks(prev => [...prev, ...newRealTasks]);
+
         if (tasksToCreate.length === 1 || successCount === tasksToCreate.length) {
+          setSelectedDateTime(null);
           setRecurrenceType(null);
         }
+
+        onTaskUpdate?.();
+        router.refresh();
       }
 
       if (failedCount === results.length) {
         setQuickAddValue(rawValue);
-        throw new Error("Falha ao criar");
+        const firstError = results.find(r => !r.success)?.error;
+        console.error("[DayColumn] All failed:", firstError);
+        throw new Error(firstError || "Falha ao criar");
       }
       if (failedCount > 0) {
-        toast.error(`Falha ao criar ${failedCount} tarefa(s)`);
+        console.warn("[DayColumn] Partial failure", { failedCount, results });
+        const firstError = results.find(r => !r.success)?.error;
+        toast.error(firstError ? `Erro: ${firstError}` : `Falha ao criar ${failedCount} tarefa(s)`);
       }
 
     } catch (error) {
-      toast.error("Erro ao criar tarefa");
+      console.error("[DayColumn] Catch error:", error);
+      toast.error(error instanceof Error ? error.message : "Erro ao criar tarefa");
       setQuickAddValue(rawValue);
-      // Não resetar recurrenceType em caso de erro - deixar o usuário tentar novamente
     } finally {
       setIsCreating(false);
     }
@@ -305,51 +353,68 @@ export function DayColumn({
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const task = optimisticTasks.find(t => t.id === id);
-    if (!task) return;
-    
-    setTaskToDelete({ id, title: task.title || "Tarefa" });
-    
-    // Verificar se a tarefa e recorrente
-    try {
-      const recurrenceInfo = await getTaskRecurrenceInfo(id);
-      
-      if (recurrenceInfo.isRecurring && recurrenceInfo.relatedTasksCount > 1) {
-        setShowRecurringModal(true);
-      } else {
-        setShowDeleteModal(true);
-      }
-    } catch (error) {
-      console.error("Erro ao verificar recorrencia:", error);
-      toast.error("Erro ao verificar recorrencia");
-      setShowDeleteModal(true);
+  const handleDelete = (taskId: string) => {
+    // Verificar se é recorrente
+    const task = tasks.find(t => t.id === taskId);
+    const isRecurring = !!task?.recurrence_type || !!(task as any)?.recurrence_parent_id;
+
+    if (isRecurring && task) {
+      setTaskToDelete({ id: taskId, title: task.title || "" });
+      setShowRecurringModal(true);
+      return;
     }
+
+    setTaskToDelete({ id: taskId, title: task?.title || "" });
+    setShowDeleteModal(true);
   };
 
-  const confirmDelete = async (deleteAll: boolean = false) => {
+  const confirmDelete = async (deleteAllFuture: boolean = false) => {
     if (!taskToDelete) return;
-    
+
     setIsDeleting(true);
-    
+
     try {
       startTransition(() => {
         addOptimisticTask({ type: 'delete', id: taskToDelete.id });
       });
-      
-      const result = await deleteTask(taskToDelete.id, deleteAll);
-      
-      if (result.success) {
-        toast.success(deleteAll ? "Tarefas excluídas com sucesso" : "Tarefa excluída com sucesso");
-        onTaskUpdate?.(); // Notificar atualização
-        router.refresh();
+
+      // Se for "Excluir apenas esta" (Pular) para recorrente
+      if (showRecurringModal && !deleteAllFuture) {
+        // Lógica de update da data para "pular"
+        const task = tasks.find(t => t.id === taskToDelete.id);
+        if (task && task.recurrence_type) {
+          const current = new Date(task.due_date || new Date());
+          const interval = task.recurrence_interval || 1;
+
+          let nextDate = new Date(current);
+          if (task.recurrence_type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
+          else if (task.recurrence_type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
+          else if (task.recurrence_type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
+          else if (task.recurrence_type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
+
+          // Atualizar data para pular ocorrência atual
+          await updateTask({ id: taskToDelete.id, due_date: nextDate.toISOString() });
+          toast.success("Ocorrência pulada com sucesso");
+        } else {
+          // Fallback
+          await deleteTask(taskToDelete.id);
+          toast.success("Tarefa excluída");
+        }
       } else {
-        toast.error(result.error || "Erro ao excluir tarefa");
-        router.refresh();
+        // Excluir (Normal ou Série)
+        // Se for série, backend deveria tratar, mas aqui estamos chamando delete simples por enquanto
+        // Até termos action específica 'deleteSeries', delete normal já quebra a série futura
+        const result = await deleteTask(taskToDelete.id);
+        if (!result.success) throw new Error(result.error);
+        toast.success("Tarefa excluída");
       }
+
+      onTaskUpdate?.();
+      router.refresh();
+
     } catch (error) {
       console.error("Erro ao excluir:", error);
-      toast.error("Erro ao excluir tarefa");
+      toast.error("Erro ao processar exclusão");
       router.refresh();
     } finally {
       setIsDeleting(false);
@@ -540,8 +605,14 @@ export function DayColumn({
                       "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
                       selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
                     )}>
-                      <CalendarIcon className="w-3.5 h-3.5" />
-                      {selectedDateTime ? "Data definida" : "Agendar"}
+                      {recurrenceType ? <Repeat className="w-3.5 h-3.5" /> : <CalendarIcon className="w-3.5 h-3.5" />}
+                      {recurrenceType ? (
+                        recurrenceType === 'daily' ? 'Diário' :
+                          recurrenceType === 'weekly' ? 'Semanal' :
+                            recurrenceType === 'monthly' ? 'Mensal' : 'Personalizado'
+                      ) : (
+                        selectedDateTime ? "Data definida" : "Agendar"
+                      )}
                     </button>
                   }
                 />

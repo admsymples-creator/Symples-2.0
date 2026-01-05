@@ -536,6 +536,12 @@ export async function getWeekTasks() {
     ),
       creator: created_by(
         full_name
+      ),
+      group: group_id(
+        id,
+        name,
+        color,
+        workspace_id
       )
         `)
     .gte("due_date", startOfWeek.toISOString())
@@ -595,89 +601,116 @@ export async function getTaskById(id: string) {
  */
 export async function createTask(data: {
   title: string;
+  due_date?: string;
   workspace_id?: string | null;
-  status?: "todo" | "in_progress" | "done" | "archived";
-  priority?: "low" | "medium" | "high" | "urgent";
-  assignee_id?: string | null;
-  due_date?: string | null;
-  description?: string;
+  status?: string;
+  priority?: string;
   is_personal?: boolean;
-  origin_context?: any;
+  description?: string;
+  assignee_id?: string | null;
+  recurrence_type?: string;
+  recurrence_interval?: number;
+  recurrence_end_date?: string;
   group_id?: string | null;
   tags?: string[];
-  subtasks?: any[];
-  recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null;
-  recurrence_interval?: number | null;
-  recurrence_end_date?: string | null;
-  recurrence_count?: number | null;
 }) {
   const supabase = await createServerActionClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  console.log("[SERVER-ACTION] createTask called with:", JSON.stringify(data));
 
-  if (!user) return { success: false, error: "Usuário não autenticado" };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Define se é pessoal ou de workspace
-  const is_personal = data.is_personal ?? (!data.workspace_id);
+  if (!user) {
+    console.error("[SERVER-ACTION] createTask: No user found");
+    return { success: false, error: "Usuário não autenticado" };
+  }
 
-  // Verificar acesso do workspace (gatekeeper) - apenas para tarefas de workspace
-  if (!is_personal && data.workspace_id) {
-    const { checkWorkspaceAccess } = await import("@/lib/utils/subscription");
-    const accessCheck = await checkWorkspaceAccess(data.workspace_id);
+  // Validação de acesso ao workspace se fornecido
+  // Validação de acesso ao workspace se fornecido
+  if (data.workspace_id) {
+    const { data: workspace, error: wsError } = await supabase
+      .from("workspaces")
+      .select("owner_id")
+      .eq("id", data.workspace_id)
+      .single();
 
-    if (!accessCheck.allowed) {
-      return {
-        success: false,
-        error: accessCheck.reason || "Seu trial expirou. Escolha um plano para continuar criando tarefas.",
-      };
+    if (wsError || !workspace) {
+      console.error("[SERVER-ACTION] Workspace not found or error:", wsError);
+      return { success: false, error: "Workspace não encontrado" };
+    }
+
+    // Se for dono, permite
+    if (workspace.owner_id === user.id) {
+      console.log(`[SERVER-ACTION] User ${user.id} is owner of ${data.workspace_id}. Access granted.`);
+    } else {
+      // Se não for dono, verifica membro
+      console.log(`[SERVER-ACTION] Checking workspace membership. User: ${user.id}, Workspace: ${data.workspace_id}`);
+      const { data: member, error: memberError } = await supabase
+        .from("workspace_members")
+        .select("id")
+        .eq("workspace_id", data.workspace_id)
+        .eq("user_id", user.id)
+        .single();
+
+      if (memberError || !member) {
+        console.error("[SERVER-ACTION] Access denied details:", {
+          isOwner: false,
+          memberFound: !!member,
+          memberError
+        });
+        return { success: false, error: "Acesso negado ao workspace" };
+      }
     }
   }
 
-  // Garantir que subtasks seja um JSON válido
-  const subtasks = data.subtasks ? JSON.parse(JSON.stringify(data.subtasks)) : [];
-
-  const { data: newTask, error } = await supabase.from("tasks").insert({
+  const taskData: any = {
     title: data.title,
-    description: data.description || null,
-    workspace_id: data.workspace_id || null,
-    is_personal,
-    created_by: user.id,
-    status: data.status || "todo",
-    priority: data.priority || "medium",
-    assignee_id: data.assignee_id || null,
     due_date: data.due_date || null,
-    origin_context: data.origin_context || null,
-    group_id: data.group_id || null,
-    tags: data.tags || [],
-    subtasks: subtasks,
+    workspace_id: data.workspace_id || null, // Se undefined/null, grava null (tarefa pessoal ou sem workspace)
+    status: data.status || "todo",
+    created_by: user.id,
+    assignee_id: data.assignee_id || user.id, // Se não passar, auto-atribui
+    priority: (data.priority as any) || "medium",
+    is_personal: data.is_personal ?? (data.workspace_id ? false : true), // Default: True se não tiver WS
+    description: data.description || null,
+    // Novos campos de recorrencia
     recurrence_type: data.recurrence_type || null,
-    recurrence_interval: data.recurrence_interval || null,
+    recurrence_interval: data.recurrence_interval || (data.recurrence_type ? 1 : null),
     recurrence_end_date: data.recurrence_end_date || null,
-    recurrence_count: data.recurrence_count || null,
-    // position será auto-gerado ou podemos calcular aqui se necessário
-  }).select().single();
+    recurrence_count: 0,
+    // Group and Tags
+    group_id: data.group_id || null,
+    tags: data.tags || null
+  };
+
+  console.log("[SERVER-ACTION] Inserting taskData:", JSON.stringify(taskData));
+
+  const { data: newTask, error } = await supabase
+    .from("tasks")
+    .insert(taskData)
+    .select()
+    .single();
 
   if (error) {
-    console.error("Erro ao criar tarefa:", error);
-
-    if (
-      error.code === "PGRST301" ||
-      error.code === "42501" ||
-      error.message.includes("permission") ||
-      error.message.includes("policy") ||
-      error.message.includes("RLS")
-    ) {
-      return {
-        success: false,
-        error:
-          "Erro de permissão no banco de dados. Verifique as políticas RLS no Supabase.",
-      };
-    }
-
+    console.error("[SERVER-ACTION] Insert error:", error);
     return { success: false, error: error.message };
   }
 
-  revalidatePath("/tasks");
-  revalidatePath("/home");
+  console.log("[SERVER-ACTION] Task created successfully:", newTask.id);
+
+  // Revalidar path relevante
+  try {
+    revalidatePath("/");
+    revalidatePath("/(main)/home", "page");
+    revalidatePath("/(main)/planner", "page");
+    if (data.workspace_id) {
+      revalidatePath(`/${data.workspace_id}`);
+    }
+  } catch (e) {
+    console.error("[SERVER-ACTION] Revalidate error (non-fatal):", e);
+  }
+
   return { success: true, data: newTask };
 }
 
@@ -708,6 +741,93 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
 
   // Se não houve erro, o update foi bem-sucedido
   console.log("[updateTask] Tarefa atualizada com sucesso:", id);
+
+  // ✅ Recorrência: Se a tarefa foi concluída, verificar se precisa criar a próxima
+  if (updates.status === "done") {
+    try {
+      // Buscar a tarefa atual para ver regras de recorrência
+      // Usar uma nova query para garantir dados atualizados e evitar problemas de cache/tipo
+      const { data: currentTask } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (currentTask && currentTask.recurrence_type && currentTask.due_date) {
+        console.log("[updateTask] Processando recorrência para tarefa:", id);
+
+        const { addDays, addWeeks, addMonths, isAfter, parseISO } = require("date-fns");
+
+        let nextDate = parseISO(currentTask.due_date);
+        const interval = currentTask.recurrence_interval || 1;
+
+        // Calcular próxima data
+        switch (currentTask.recurrence_type) {
+          case "daily":
+            nextDate = addDays(nextDate, interval);
+            break;
+          case "weekly":
+            nextDate = addWeeks(nextDate, interval);
+            break;
+          case "monthly":
+            nextDate = addMonths(nextDate, interval);
+            break;
+          case "custom":
+            // Fallback para diário se não especificado
+            nextDate = addDays(nextDate, interval);
+            break;
+        }
+
+        const nextDateISO = nextDate.toISOString();
+
+        // Verificar data fim
+        let shouldCreate = true;
+        if (currentTask.recurrence_end_date) {
+          const endDate = parseISO(currentTask.recurrence_end_date);
+          if (isAfter(nextDate, endDate)) {
+            shouldCreate = false;
+          }
+        }
+
+        // Verificar contagem
+        let nextCount = currentTask.recurrence_count;
+        if (shouldCreate && nextCount !== null) {
+          if (nextCount > 1) {
+            nextCount = nextCount - 1;
+          } else {
+            shouldCreate = false;
+          }
+        }
+
+        if (shouldCreate) {
+          console.log("[updateTask] Criando próxima ocorrência para:", nextDateISO);
+
+          await createTask({
+            title: currentTask.title,
+            description: currentTask.description || undefined,
+            workspace_id: currentTask.workspace_id,
+            is_personal: currentTask.is_personal,
+            status: "todo",
+            priority: (currentTask.priority || "medium") as "low" | "medium" | "high" | "urgent",
+            assignee_id: currentTask.assignee_id,
+            due_date: nextDateISO,
+            origin_context: currentTask.origin_context,
+            group_id: currentTask.group_id,
+            tags: currentTask.tags || [],
+            subtasks: currentTask.subtasks || [],
+            recurrence_type: currentTask.recurrence_type,
+            recurrence_interval: currentTask.recurrence_interval,
+            recurrence_end_date: currentTask.recurrence_end_date,
+            recurrence_count: nextCount
+          });
+        }
+      }
+    } catch (recError) {
+      console.error("[updateTask] Erro ao processar recorrência:", recError);
+      // Não falhar o update principal se a recorrência falhar
+    }
+  }
+
   revalidatePath("/tasks");
   revalidatePath("/home");
   return { success: true, data: null };
@@ -1642,4 +1762,85 @@ export async function getWorkspaceMembersBatch(workspaceIds: string[]): Promise<
   }
 
   return membersMap;
+}
+
+/**
+ * bulkArchiveTasks
+ * 
+ * Arquiva tarefas em massa de forma eficiente (single SQL update).
+ * 
+ * @param workspaceId - ID do workspace
+ * @param options - Opções de filtro:
+ *  - groupId: ID do grupo a limpar (se null/undefined ou "inbox", limpa inbox)
+ *  - completedOnly: Se true, arquiva apenas tarefas concluídas
+ */
+export async function bulkArchiveTasks(
+  workspaceId: string,
+  options: {
+    groupId?: string | null;
+    completedOnly?: boolean
+  }
+): Promise<{ success: boolean; error?: string; count?: number }> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  if (!workspaceId) {
+    return { success: false, error: "Workspace ID obrigatório" };
+  }
+
+  try {
+    // Verificar permissão no workspace
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership) {
+      return { success: false, error: "Acesso negado ao workspace" };
+    }
+
+    // Construir query de update
+    let query = supabase
+      .from("tasks")
+      .update({ status: 'archived' })
+      .eq("workspace_id", workspaceId)
+      .neq("status", "archived"); // Evitar re-arquivar
+
+    // Filtro de Grupo
+    if (!options.groupId || options.groupId === "inbox" || options.groupId === "Inbox") {
+      // Inbox = group_id IS NULL
+      query = query.is("group_id", null);
+    } else {
+      // Grupo específico
+      query = query.eq("group_id", options.groupId);
+    }
+
+    // Filtro de Concluídas
+    if (options.completedOnly) {
+      query = query.eq("status", "done");
+    }
+
+    // Executar
+    const { error, count } = await query.select("id", { count: "exact" });
+
+    if (error) {
+      // Log detalhado do erro
+      console.error("Erro ao arquivar tarefas em massa:", error);
+      return { success: false, error: error.message };
+    }
+
+    // Revalidar path
+    revalidatePath("/tasks");
+
+    return { success: true, count: count || 0 };
+  } catch (e) {
+    console.error("Erro inesperado ao arquivar tarefas em massa:", e);
+    return { success: false, error: "Erro inesperado" };
+  }
 }

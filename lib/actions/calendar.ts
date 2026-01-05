@@ -18,6 +18,11 @@ export interface CalendarEvent {
     workspace_id?: string | null;
     is_personal?: boolean;
     workspace_name?: string | null;
+    recurrence_type?: string | null;
+    recurrence_parent_id?: string | null;
+    recurrence_interval?: number | null;
+    is_virtual?: boolean;
+    tags?: string[];
   };
   backgroundColor?: string;
   textColor?: string;
@@ -45,7 +50,7 @@ export async function getTasksForCalendar(
   startDate.setHours(12, 0, 0, 0);
   const startDateStr = startDate.toISOString().split('T')[0];
   const startISO = startDateStr + 'T00:00:00.000Z';
-  
+
   // Para end: usar 23:59:59 do timezone local, depois converter para UTC
   const endDate = new Date(end);
   endDate.setHours(23, 59, 59, 999);
@@ -59,7 +64,7 @@ export async function getTasksForCalendar(
       .eq("workspace_id", workspaceId)
       .eq("user_id", user.id)
       .single();
-    
+
     if (!membership) {
       console.warn(`[getTasksForCalendar] Acesso negado: Usuário ${user.id} tentou acessar workspace ${workspaceId} sem ser membro`);
       return [];
@@ -75,7 +80,7 @@ export async function getTasksForCalendar(
     // Query 1: Tarefas atribuídas ao usuário via assignee_id (de todos os workspaces)
     const query1 = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .eq("assignee_id", user.id)
@@ -85,7 +90,7 @@ export async function getTasksForCalendar(
     // Query 2: Tarefas pessoais (sem workspace)
     const query2 = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .is("workspace_id", null)
@@ -107,7 +112,8 @@ export async function getTasksForCalendar(
           workspace_id,
           is_personal,
           recurrence_type,
-          recurrence_parent_id
+          recurrence_parent_id,
+          tags
         )
       `)
       .eq("user_id", user.id);
@@ -137,7 +143,7 @@ export async function getTasksForCalendar(
           const taskDate = new Date(task.due_date);
           const startDateObj = new Date(startISO);
           const endDateObj = new Date(endISO);
-          
+
           if (
             task.status !== "archived" &&
             task.due_date &&
@@ -161,25 +167,25 @@ export async function getTasksForCalendar(
     // Tarefas pessoais (sem workspace)
     const query = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .is("workspace_id", null)
       .eq("created_by", user.id)
       .gte("due_date", startISO)
       .lte("due_date", endISO);
-    
+
     const result = await query;
     data = result.data || [];
     error = result.error;
   } else {
     // Tarefas do workspace (já verificamos membership acima)
     // Incluir tarefas via assignee_id e task_members
-    
+
     // Query 1: Tarefas atribuídas via assignee_id
     const query1 = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .eq("workspace_id", workspaceId)
@@ -201,7 +207,8 @@ export async function getTasksForCalendar(
           workspace_id,
           is_personal,
           recurrence_type,
-          recurrence_parent_id
+          recurrence_parent_id,
+          tags
         )
       `)
       .eq("user_id", user.id)
@@ -209,7 +216,7 @@ export async function getTasksForCalendar(
 
     // Executar queries em paralelo
     const [result1, result2] = await Promise.all([query1, query2]);
-    
+
     if (result1.error) {
       console.error("[getTasksForCalendar] Erro na query 1:", result1.error);
       error = result1.error;
@@ -231,7 +238,7 @@ export async function getTasksForCalendar(
           const taskDate = new Date(task.due_date);
           const startDateObj = new Date(startISO);
           const endDateObj = new Date(endISO);
-          
+
           if (taskDate >= startDateObj && taskDate <= endDateObj) {
             allTasks.push(task);
             taskIdsSet.add(task.id);
@@ -253,13 +260,13 @@ export async function getTasksForCalendar(
   // Buscar workspaces para mapear nomes (apenas se houver tarefas de workspace)
   const workspaceIds = Array.from(new Set(data.filter(t => t.workspace_id).map(t => t.workspace_id)));
   const workspaceMap = new Map<string, string>();
-  
+
   if (workspaceIds.length > 0) {
     const { data: workspaces } = await supabase
       .from("workspaces")
       .select("id, name")
       .in("id", workspaceIds);
-    
+
     if (workspaces) {
       workspaces.forEach(ws => {
         workspaceMap.set(ws.id, ws.name);
@@ -267,42 +274,35 @@ export async function getTasksForCalendar(
     }
   }
 
-  // Função helper para gerar cor baseada no workspace_id (similar a TaskRow.tsx)
-  const getWorkspaceColor = (workspaceId: string | null): string => {
-    if (!workspaceId) return "#22C55E"; // Verde padrão para tarefas pessoais
-
-    let hash = 0;
-    for (let i = 0; i < workspaceId.length; i++) {
-      hash = workspaceId.charCodeAt(i) + ((hash << 5) - hash);
-    }
-
-    const hue = Math.abs(hash % 360);
-    const saturation = 60 + (Math.abs(hash) % 20);
-    const lightness = 45 + (Math.abs(hash) % 15);
-
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-  };
-
   // Mapear para formato do FullCalendar
   return data.map((task) => {
     const isDone = task.status === "done";
     const isPersonal = task.is_personal || !task.workspace_id;
-    
+
     // Aplicar cor diferente para workspace vs pessoal
     let backgroundColor: string;
     let textColor: string;
-    
+
+    // Verificar se tem tags de projeto
+    const hasProjectTags = task.tags && Array.isArray(task.tags) && task.tags.length > 0;
+
     if (isDone) {
       backgroundColor = "#f3f4f6"; // Cinza para tarefas completadas
       textColor = "#6b7280";
     } else if (isPersonal) {
-      backgroundColor = "#f3f4f6"; // Cinza para tarefas pessoais
-      textColor = "#000000"; // Preto para tarefas pessoais
+      backgroundColor = "#22C55E"; // Verde para tarefas pessoais (match TaskRow)
+      textColor = "#ffffff";
     } else {
-      backgroundColor = getWorkspaceColor(task.workspace_id); // Cor baseada no workspace
-      textColor = "#ffffff"; // Branco para tarefas de workspace
+      // Tarefas de Workspace Profissional
+      if (hasProjectTags) {
+        backgroundColor = "#050815"; // Escuro para tarefas com projeto
+        textColor = "#ffffff";
+      } else {
+        backgroundColor = "#e5e7eb"; // Cinza claro (Light Gray) para tarefas sem projeto
+        textColor = "#1f2937"; // Texto escuro para contraste
+      }
     }
-    
+
     const classNames = isDone ? ["task-completed"] : [];
 
     // Determinar se é um evento "all-day" (sem hora específica)
@@ -311,7 +311,7 @@ export async function getTasksForCalendar(
     const dueDate = task.due_date ? new Date(task.due_date) : null;
     let isAllDay = false;
     let startValue: string = task.due_date;
-    
+
     if (dueDate) {
       if (isPersonal) {
         // Para tarefas pessoais: sempre não-allDay para exibir hora no calendário
@@ -325,7 +325,7 @@ export async function getTasksForCalendar(
         const second = dueDate.getUTCSeconds();
         // Considerar allDay se for meia-noite UTC (00:00:00)
         isAllDay = hour === 0 && minute === 0 && second === 0;
-        
+
         // Para eventos allDay, FullCalendar requer formato YYYY-MM-DD (sem hora)
         // Para eventos com hora, usar ISO string completa
         if (isAllDay) {
@@ -347,6 +347,7 @@ export async function getTasksForCalendar(
         workspace_name: task.workspace_id ? workspaceMap.get(task.workspace_id) || null : null,
         recurrence_type: (task as any).recurrence_type || null,
         recurrence_parent_id: (task as any).recurrence_parent_id || null,
+        tags: task.tags || [], // Adicionar tags nas props estendidas
       },
       backgroundColor,
       textColor,

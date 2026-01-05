@@ -55,15 +55,16 @@ import {
     SortableContext,
     verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { 
-    getTasks, 
-    createTask, 
+import {
+    getTasks,
+    createTask,
     updateTask,
     updateTaskPosition,
     updateTaskPositionsBulk,
     getWorkspaceMembers,
     deleteTask,
-    type Task as TaskFromDB 
+    bulkArchiveTasks,
+    type Task as TaskFromDB
 } from "@/lib/actions/tasks";
 import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups, reorderTaskGroup } from "@/lib/actions/task-groups";
 import { getTaskDetails } from "@/lib/actions/task-details";
@@ -146,17 +147,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const router = useRouter();
     const searchParams = useSearchParams();
     const pathname = usePathname();
-    
+
     // Ler sortBy da URL, com fallback para "position"
     const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
-    
+
     // Ler tag da URL para filtro de projeto (decodificar se presente)
     const tagParam = searchParams.get("tag");
     const tagFilter = tagParam ? decodeURIComponent(tagParam) : null;
-    
+
     // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"));
-    
+
     const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
@@ -182,14 +183,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         reloadEvents?: () => void;
     } | null>(null);
     const shouldReduceMotion = useReducedMotion();
-    
+
     // Ref para throttling do handleDragOver
     const dragOverThrottleRef = useRef<number | null>(null);
     const lastDragOverStateRef = useRef<string>("");
     const dragStartGroupKeyRef = useRef<string | null>(null);
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
-    
+
     // ? CORRE├ç├âO: Inicializar availableGroups com initialGroups se dispon├¡vel (evita flicker)
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>(() => {
         if (initialGroups && initialGroups.length > 0) {
@@ -201,7 +202,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
         return [];
     });
-    
+
     // ? CORRE├ç├âO: Inicializar groupOrder com base em initialGroups ou localStorage (evita flicker)
     const [groupOrder, setGroupOrder] = useState<string[]>(() => {
         if (initialViewOption === "group") {
@@ -239,14 +240,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
     const previousGroupOrderRef = useRef<string[]>([]);
     const [projectIconName, setProjectIconName] = useState<string | null>(null);
-    
+
     // ├ó┼ôÔÇª NOVO: Usar workspaceId da prop se fornecido, sen├â┬úo usar do contexto
     const effectiveWorkspaceId = propWorkspaceId ?? activeWorkspaceId;
 
     // ├ó┼ôÔÇª NOVO: Se initialTasks foi fornecido, n├â┬úo usar o hook para buscar dados iniciais
     // O hook s├â┬│ ser├â┬í usado para refetch quando necess├â┬írio
     const shouldUseHook = !initialTasks;
-    
+
     // Usar hook customizado para gerenciar tarefas (apenas se n├â┬úo tiver initialTasks)
     const { tasks: tasksFromHook, isLoading: isLoadingTasks, error: tasksError, refetch: refetchTasks } = useTasks({
         workspaceId: effectiveWorkspaceId,
@@ -254,7 +255,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         enabled: isLoaded && shouldUseHook, // ├ó┼ôÔÇª Desabilitar hook se initialTasks foi fornecido
         tag: tagFilter || undefined,
     });
-    
+
     // Fun├â┬º├â┬úo para mapear dados do banco para interface local (mantida para compatibilidade com outras partes do c├â┬│digo)
     const mapTaskFromDB = (task: TaskFromDB | TaskWithDetails): Task => {
         // Extrair tags do origin_context se existir
@@ -262,7 +263,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context && Array.isArray((task.origin_context as any).tags)) {
             tags.push(...(task.origin_context as any).tags);
         } else if ((task as any).tags && Array.isArray((task as any).tags)) {
-             tags.push(...(task as any).tags);
+            tags.push(...(task as any).tags);
         }
 
         // Mapear assignees - usar array assignees se dispon├¡vel (inclui task_members), sen├úo usar assignee
@@ -307,7 +308,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             position: (task as any).position ?? (task as any).order ?? undefined,
         };
     };
-    
+
     // Manter estado local para atualiza├â┬º├â┬Áes otimistas
     const [localTasks, setLocalTasks] = useState<Task[]>(() => {
         // ├ó┼ôÔÇª NOVO: Inicializar com initialTasks se fornecido
@@ -322,9 +323,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 });
                 // Debug log
                 if (process.env.NODE_ENV === 'development') {
-                    console.log('[TasksPage] Filtro cliente aplicado:', { 
-                        tagFilter, 
-                        total: mapped.length, 
+                    console.log('[TasksPage] Filtro cliente aplicado:', {
+                        tagFilter,
+                        total: mapped.length,
                         filtered: filtered.length,
                         sampleTags: mapped.slice(0, 3).map(t => t.tags)
                     });
@@ -335,7 +336,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
         return [];
     });
-    
+
     // ✅ Sincronizar localTasks quando initialTasks ou tagFilter mudarem (mudança de projeto)
     const prevInitialTasksRef = useRef<string>('');
     const prevTagFilterRef = useRef<string | null>(null);
@@ -346,15 +347,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 .map(t => t.id)
                 .sort()
                 .join(',');
-            
+
             // Verificar se initialTasks ou tagFilter mudaram
             const tasksChanged = prevInitialTasksRef.current !== currentTaskIds;
             const tagFilterChanged = prevTagFilterRef.current !== tagFilter;
-            
+
             if (tasksChanged || tagFilterChanged) {
                 prevInitialTasksRef.current = currentTaskIds;
                 prevTagFilterRef.current = tagFilter;
-                
+
                 // Mapear e filtrar tarefas
                 const mapped = initialTasks.map(mapTaskFromDB);
                 if (tagFilter) {
@@ -363,10 +364,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         return hasTag;
                     });
                     if (process.env.NODE_ENV === 'development') {
-                        console.log('[TasksPage] Atualizando tarefas por mudança de projeto:', { 
-                            tagFilter, 
-                            total: mapped.length, 
-                            filtered: filtered.length 
+                        console.log('[TasksPage] Atualizando tarefas por mudança de projeto:', {
+                            tagFilter,
+                            total: mapped.length,
+                            filtered: filtered.length
                         });
                     }
                     setLocalTasks(filtered);
@@ -376,7 +377,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }
         }
     }, [initialTasks, tagFilter, mapTaskFromDB]);
-    
+
     // ✅ Buscar ícone do projeto quando tagFilter mudar
     useEffect(() => {
         const loadProjectIcon = async () => {
@@ -392,10 +393,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 setProjectIconName(null);
             }
         };
-        
+
         loadProjectIcon();
     }, [tagFilter, effectiveWorkspaceId]);
-    
+
     // ✅ Forçar atualização quando searchParams mudar (mudança de projeto)
     useEffect(() => {
         // Quando a tag na URL muda, forçar recarregamento dos dados do servidor
@@ -403,7 +404,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             router.refresh();
         }
     }, [tagFilter, router]);
-    
+
     // ├ó┼ôÔÇª CORRE├âÔÇí├âãÆO: Compara├â┬º├â┬úo profunda baseada em IDs para evitar loops infinitos
     // Compara apenas os IDs das tarefas, n├â┬úo as refer├â┬¬ncias dos arrays
     const prevTaskIdsRef = useRef<string>('');
@@ -412,13 +413,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (initialTasks) {
             return;
         }
-        
+
         // Criar string de IDs ordenados para compara├â┬º├â┬úo est├â┬ível
         const currentTaskIds = tasksFromHook
             .map(t => t.id)
             .sort()
             .join(',');
-        
+
         // S├â┬│ atualizar se os IDs realmente mudaram (evita re-renders desnecess├â┬írios)
         if (prevTaskIdsRef.current !== currentTaskIds) {
             prevTaskIdsRef.current = currentTaskIds;
@@ -444,7 +445,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio (pode acontecer com tagFilter)
         const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
         const taskIds = new Set(currentTasks.map((task) => String(task.id)));
-        
+
         // ✅ DEBUG: Log quando há tagFilter para verificar se taskIds está correto
         if (process.env.NODE_ENV === 'development' && tagFilter && taskIds.size === 0) {
             console.warn('⚠️ [collisionDetectionStrategy] taskIds vazio com tagFilter:', {
@@ -454,7 +455,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 usingLocalTasks: localTasksRef.current.length === 0
             });
         }
-        
+
         const pointerCollisions = pointerWithin(args);
         if (pointerCollisions.length > 0) {
             const taskCollisions = pointerCollisions.filter((collision) => taskIds.has(String(collision.id)));
@@ -487,17 +488,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             toast.error("Digite o nome do grupo");
             return;
         }
-        
+
         setIsCreatingGroup(true);
-        
+
         try {
             let targetWorkspaceId: string | null = effectiveWorkspaceId;
-            
+
             // Se n├â┬úo encontrou (improv├â┬ível com o novo Sidebar), usar o primeiro workspace do contexto
             if (!targetWorkspaceId && workspaces.length > 0) {
                 targetWorkspaceId = workspaces[0].id;
             }
-            
+
             if (!targetWorkspaceId) {
                 toast.error("N├â┬úo foi poss├â┬¡vel identificar o workspace. Certifique-se de que voc├â┬¬ ├â┬® membro de um workspace.");
                 setIsCreatingGroup(false);
@@ -505,7 +506,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }
 
             const result = await createTaskGroup(newGroupName.trim(), targetWorkspaceId, newGroupColor);
-            
+
             if (result.success) {
                 toast.success("Grupo criado com sucesso!");
                 setNewGroupName("");
@@ -580,7 +581,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             toast.error("N├â┬úo ├â┬® poss├â┬¡vel editar o nome de grupos autom├â┬íticos.");
             return;
         }
-        
+
         if (groupId === "inbox" || groupId === "Inbox") {
             toast.error("O grupo padr├â┬úo Inbox n├â┬úo pode ser renomeado.");
             return;
@@ -593,7 +594,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         const oldTasks = [...currentLocalTasks];
-        setLocalTasks((prev) => prev.map((t) => 
+        setLocalTasks((prev) => prev.map((t) =>
             t.group?.id === groupId ? { ...t, group: { ...t.group!, name: newTitle } } : t
         ));
 
@@ -631,8 +632,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const oldTasks = [...currentLocalTasks];
         const oldGroupColors = { ...currentGroupColors };
-        
-        setLocalTasks((prev) => prev.map((t) => 
+
+        setLocalTasks((prev) => prev.map((t) =>
             t.group?.id === groupId ? { ...t, group: { ...t.group!, color } } : t
         ));
         setGroupColors((prev) => ({ ...prev, [groupId]: color }));
@@ -734,16 +735,16 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 const tasksInSameGroup = viewOption === "group" && taskData.groupId
                     ? prev.filter(t => (t.group?.id || null) === taskData.groupId)
                     : prev;
-                
-                const maxPosition = tasksInSameGroup.length > 0 
+
+                const maxPosition = tasksInSameGroup.length > 0
                     ? Math.max(...tasksInSameGroup.map(t => t.position ?? 0))
                     : 0;
-                
+
                 const taskWithPosition = {
                     ...newTask,
                     position: maxPosition + 1000 // Adicionar no final da lista/grupo
                 };
-                
+
                 // Adicionar no final do array completo (a ordena├º├úo ser├í reaplicada)
                 return [...prev, taskWithPosition];
             } else {
@@ -826,10 +827,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ? 2. Atualiza├º├úo otimista: adicionar tarefa ao estado local imediatamente
         const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const assignee = assigneeId ? workspaceMembers.find(m => m.id === assigneeId) : undefined;
-        
+
         // ✅ Incluir tags do projeto se houver tagFilter
         const finalTags = tags || (tagFilter ? [tagFilter] : []);
-        
+
         handleTaskCreatedOptimistic({
             id: tempId,
             title,
@@ -912,10 +913,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // ? Handler para excluir tarefa com Optimistic UI e rollback
     const handleDeleteTaskWithOptimistic = useCallback(async (taskId: string | number) => {
         const id = String(taskId);
-        
+
         // ? 1. Snapshot do estado anterior (para rollback)
         const previousTasks = [...localTasksRef.current];
-        
+
         // ? 2. Optimistic UI: Remover tarefa do estado local imediatamente
         handleOptimisticDelete(id);
 
@@ -950,23 +951,19 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const groupedDataRef = useRef<Record<string, Task[]>>({});
 
     const handleClearGroup = useCallback(async (groupId: string, type?: "all" | "completed") => {
-        const currentViewOption = viewOptionRef.current;
-        const currentGroupedData = groupedDataRef.current; // Usar ref (atualizado ap├â┬│s groupedData)
+        const currentGroupedData = groupedDataRef.current; // Usar ref (atualizado após groupedData)
         const currentLocalTasks = localTasksRef.current;
 
         let groupTasks = currentGroupedData[groupId] || [];
-        
+
         // Filtrar tarefas baseado no tipo de limpeza
-        // Nota: t.status ├® o label da UI (ex: "Concluido"), n├úo o status do banco (ex: "done")
-        // Usamos t.completed que ├® calculado como task.status === "done" no mapTaskFromDB
         if (type === "completed") {
             groupTasks = groupTasks.filter((t: Task) => t.completed === true);
         }
-        // Se type === "all" ou undefined, usa todas as tarefas (comportamento padr├úo)
-        
+
         if (groupTasks.length === 0) {
-            const message = type === "completed" 
-                ? "Nenhuma tarefa conclu├¡da para limpar neste grupo"
+            const message = type === "completed"
+                ? "Nenhuma tarefa concluída para limpar neste grupo"
                 : "Nenhuma tarefa para limpar neste grupo";
             toast.info(message);
             return;
@@ -974,9 +971,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const previousTasks = [...currentLocalTasks];
         const taskIdsToArchive = groupTasks.map((t: Task) => t.id);
-        
+
+        // Optimistic UI: Remove tasks immediately
         setLocalTasks((prev) => prev.filter((t: Task) => {
-            // Se a tarefa est├í na lista de tarefas a arquivar, remov├¬-la
             if (taskIdsToArchive.includes(t.id)) {
                 return false;
             }
@@ -984,18 +981,31 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }));
 
         try {
-            await Promise.all(taskIdsToArchive.map((taskId: string) =>
-                updateTask({ id: taskId, status: "archived" })
-            ));
-            invalidateTasksCache(activeWorkspaceId, activeTab);
-            refetchTasksRef.current();
-            const message = type === "completed"
-                ? `${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} conclu├¡da${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`
-                : `${groupTasks.length} tarefa${groupTasks.length > 1 ? 's' : ''} arquivada${groupTasks.length > 1 ? 's' : ''} com sucesso`;
-            toast.success(message);
+            // ✅ Use server-side bulk action for performance
+            // Normalize groupId "Inbox" -> "inbox" just in case, though the action handles both
+            const normalizedGroupId = (groupId === "Inbox" || groupId === "inbox") ? "inbox" : groupId;
+
+            const result = await bulkArchiveTasks(effectiveWorkspaceId!, {
+                groupId: normalizedGroupId,
+                completedOnly: type === "completed"
+            });
+
+            if (result.success) {
+                invalidateTasksCache(effectiveWorkspaceId, activeTab);
+                refetchTasksRef.current();
+
+                const count = result.count ?? groupTasks.length;
+                const message = type === "completed"
+                    ? `${count} tarefa${count !== 1 ? 's' : ''} concluída${count !== 1 ? 's' : ''} arquivada${count !== 1 ? 's' : ''} com sucesso`
+                    : `${count} tarefa${count !== 1 ? 's' : ''} arquivada${count !== 1 ? 's' : ''} com sucesso`;
+                toast.success(message);
+            } else {
+                throw new Error(result.error);
+            }
         } catch (error) {
-            setLocalTasks(previousTasks);
-            invalidateTasksCache(activeWorkspaceId, activeTab);
+            console.error("Erro ao limpar grupo:", error);
+            setLocalTasks(previousTasks); // Rollback
+            invalidateTasksCache(effectiveWorkspaceId, activeTab);
             refetchTasksRef.current();
             toast.error("Erro ao limpar grupo");
         }
@@ -1026,7 +1036,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // Por seguran├â┬ºa, vamos manter o estado anterior se n├â┬úo for "group"
         // Mas se mudarmos para "status", os IDs mudam, ent├â┬úo as cores antigas n├â┬úo servem
         // Melhor deixar o usu├â┬írio redefinir cores se necess├â┬írio ou manter cache
-        
+
         // const currentGroupIds = Object.keys(groupedData);
         // setGroupColors((prev) => {
         //     const cleaned: Record<string, string> = {};
@@ -1051,7 +1061,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             if (result.success && result.data) {
                 const groupsData = result.data;
                 setAvailableGroups(groupsData);
-                
+
                 // Preservar ordem existente ou inicializar se n├úo existir
                 // Usar fun├â┬º├â┬úo de callback do setState para acessar o valor atual de groupOrder
                 setGroupOrder((currentOrder) => {
@@ -1075,7 +1085,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             // Ordem j├í est├í completa, n├úo precisa modificar
                             return currentOrder;
                         }
-                        
+
                         // Se n├úo existe ordem, tentar carregar do localStorage primeiro
                         if (typeof window !== "undefined") {
                             const savedOrder = localStorage.getItem("taskGroupOrder");
@@ -1166,14 +1176,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 console.warn("[updateLocalTask] Tarefa n├úo encontrada:", id);
                 return prev;
             }
-            
+
             const updated = prev.map((task, index) => {
                 if (index === taskIndex) {
                     return { ...task, ...updates };
                 }
                 return task;
             });
-            
+
             return updated;
         });
     }, []);
@@ -1203,7 +1213,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             previousGroupOrderRef.current = [...currentOrder]; // Salvar para rollback
             const previousOrder = [...currentOrder];
             const currentIndex = previousOrder.findIndex(id => id === groupId);
-            
+
             if (currentIndex === -1) {
                 toast.error("Grupo n├úo encontrado.");
                 return currentOrder;
@@ -1215,7 +1225,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
             // Verificar limites e calcular novo ├¡ndice
             let newIndex: number;
-            
+
             if (direction === "top") {
                 // Mover para o topo (ap├│s inbox se existir)
                 if (currentIndex === minIndex) {
@@ -1263,12 +1273,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 const currentIndex = currentOrder.findIndex(id => id === groupId);
                 const minIndex = currentOrder[0] === "inbox" ? 1 : 0;
                 const maxIndex = currentOrder.length - 1;
-                
+
                 if (direction === "top") {
                     // Mover para o topo: fazer m├║ltiplas chamadas "up"
                     const steps = currentIndex - minIndex;
                     let lastSuccessfulOrder = [...currentOrder];
-                    
+
                     for (let i = 0; i < steps; i++) {
                         const result = await reorderTaskGroup(groupId, "up", activeWorkspaceId);
                         if (!result.success) {
@@ -1285,7 +1295,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             toast.error(result.error || "Erro ao reordenar grupo");
                             return;
                         }
-                        
+
                         // Atualizar ordem local ap├│s cada chamada bem-sucedida
                         setGroupOrder((prevOrder) => {
                             const updatedOrder = [...prevOrder];
@@ -1300,7 +1310,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             }
                             return updatedOrder;
                         });
-                        
+
                         // Pequeno delay para garantir que a mudan├ºa foi processada
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
@@ -1308,7 +1318,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     // Mover para o final: fazer m├║ltiplas chamadas "down"
                     const steps = maxIndex - currentIndex;
                     let lastSuccessfulOrder = [...currentOrder];
-                    
+
                     for (let i = 0; i < steps; i++) {
                         const result = await reorderTaskGroup(groupId, "down", activeWorkspaceId);
                         if (!result.success) {
@@ -1325,7 +1335,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             toast.error(result.error || "Erro ao reordenar grupo");
                             return;
                         }
-                        
+
                         // Atualizar ordem local ap├│s cada chamada bem-sucedida
                         setGroupOrder((prevOrder) => {
                             const updatedOrder = [...prevOrder];
@@ -1340,12 +1350,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             }
                             return updatedOrder;
                         });
-                        
+
                         // Pequeno delay para garantir que a mudan├ºa foi processada
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
                 }
-                
+
                 // N├úo recarregar grupos aqui - a ordem j├í foi atualizada otimisticamente
                 // e as m├║ltiplas chamadas j├í atualizaram o servidor
                 toast.success("Grupo reordenado");
@@ -1447,7 +1457,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (!searchQuery.trim()) {
             return localTasks;
         }
-        
+
         const query = searchQuery.toLowerCase().trim();
         return localTasks.filter((task) => {
             return (
@@ -1474,7 +1484,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (viewOption === "group") {
             // Inicializar grupo "Inbox" (tarefas sem grupo)
             groups["inbox"] = [];
-            
+
             // Inicializar grupos do banco (mesmo que vazios)
             availableGroups.forEach((group) => {
                 groups[group.id] = [];
@@ -1500,7 +1510,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     } else {
                         groupKey = "inbox";
                     }
-                    
+
                     // Garantir que o grupo existe (caso n├â┬úo tenha sido inicializado ou seja um novo grupo)
                     if (!groups[groupKey]) {
                         // Se for um ID de grupo v├â┬ílido do banco que n├â┬úo estava em availableGroups
@@ -1529,7 +1539,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
                         // Normalizar data da tarefa para compara├â┬º├â┬úo (sem hora)
                         const taskDate = new Date(date);
-                        taskDate.setHours(0,0,0,0);
+                        taskDate.setHours(0, 0, 0, 0);
 
                         if (taskDate < today && !task.completed) {
                             groupKey = "Atrasadas";
@@ -1582,21 +1592,21 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             if (groupOrder.length > 0) {
                 // Criar um novo objeto ordenado baseado em groupOrder
                 const ordered: Record<string, Task[]> = {};
-                
+
                 // Primeiro, adicionar grupos na ordem especificada
                 groupOrder.forEach(groupId => {
                     if (groupedData[groupId]) {
                         ordered[groupId] = groupedData[groupId];
                     }
                 });
-                
+
                 // Depois, adicionar grupos que n├úo est├úo em groupOrder (caso existam)
                 Object.keys(groupedData).forEach(key => {
                     if (!ordered[key]) {
                         ordered[key] = groupedData[key];
                     }
                 });
-                
+
                 return ordered;
             }
             // Se groupOrder est├í vazio mas temos groupedData, retornar groupedData
@@ -1610,12 +1620,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Otimizado: usa refer├¬ncias est├íveis e evita recria├º├úo quando dados n├úo mudam
     const kanbanColumns = useMemo(() => {
         const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
-        
+
         // Early return se n├úo h├í dados
         if (!dataToUse || Object.keys(dataToUse).length === 0) {
             return [];
         }
-        
+
         const columns = Object.entries(dataToUse)
             .filter(([key, tasks]) => {
                 // ? Filtrar grupos deletados: se viewOption === "group" e n├úo for "inbox",
@@ -1630,47 +1640,47 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 return true;
             })
             .map(([key, tasks]) => {
-            let title = key;
-            let color: string | undefined;
-            
-            // Recuperar t├â┬¡tulo real se a chave for um ID (modo group)
-            if (viewOption === "group") {
-                if (key === "inbox") {
-                    title = "Inbox";
-                    color = "#64748b"; // Slate 500 para Inbox
-                } else {
-                    // Tentar primeiro das tarefas
-                    const groupFromTask = tasks[0]?.group;
-                    if (groupFromTask) {
-                        title = groupFromTask.name || "Sem Nome";
-                        color = groupFromTask.color || undefined;
+                let title = key;
+                let color: string | undefined;
+
+                // Recuperar t├â┬¡tulo real se a chave for um ID (modo group)
+                if (viewOption === "group") {
+                    if (key === "inbox") {
+                        title = "Inbox";
+                        color = "#64748b"; // Slate 500 para Inbox
                     } else {
-                        // Se n├â┬úo h├â┬í tarefas, buscar do availableGroups
-                        const groupFromDB = availableGroups.find(g => g.id === key);
-                        if (groupFromDB) {
-                            title = groupFromDB.name || "Sem Nome";
-                            color = groupFromDB.color || undefined;
+                        // Tentar primeiro das tarefas
+                        const groupFromTask = tasks[0]?.group;
+                        if (groupFromTask) {
+                            title = groupFromTask.name || "Sem Nome";
+                            color = groupFromTask.color || undefined;
                         } else {
-                            title = "Sem Nome";
+                            // Se n├â┬úo h├â┬í tarefas, buscar do availableGroups
+                            const groupFromDB = availableGroups.find(g => g.id === key);
+                            if (groupFromDB) {
+                                title = groupFromDB.name || "Sem Nome";
+                                color = groupFromDB.color || undefined;
+                            } else {
+                                title = "Sem Nome";
+                            }
+                        }
+
+                        // Fallback para cor do mapa de cores se dispon├â┬¡vel
+                        if (groupColors[key] && groupColors[key] !== color) {
+                            color = groupColors[key];
                         }
                     }
-                    
-                    // Fallback para cor do mapa de cores se dispon├â┬¡vel
-                    if (groupColors[key] && groupColors[key] !== color) {
-                         color = groupColors[key];
-                    }
+                } else if (viewOption === "date") {
+                    color = DATE_COLOR_MAP[title] || color;
                 }
-            } else if (viewOption === "date") {
-                color = DATE_COLOR_MAP[title] || color;
-            }
 
-            return {
-                id: key,
-                title,
-                tasks,
-                color,
-            };
-        });
+                return {
+                    id: key,
+                    title,
+                    tasks,
+                    color,
+                };
+            });
 
         if (viewOption === "status") {
             const statusOrder = ORDERED_STATUSES.map(s => STATUS_TO_LABEL[s]);
@@ -1739,7 +1749,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         const key = Object.keys(STATUS_TO_LABEL)[index];
                         return statusOrder.indexOf(key as any);
                     };
-                    
+
                     const aIndex = mapStatus(a.status);
                     const bIndex = mapStatus(b.status);
                     return aIndex - bIndex;
@@ -1763,7 +1773,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
             let title = key;
             let groupColor = undefined;
-            
+
             // Recuperar t├â┬¡tulo e cor real se a chave for um ID (modo group)
             if (viewOption === "group") {
                 if (key === "inbox") {
@@ -1867,7 +1877,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const shouldShowLoadingSkeleton = !initialTasks
         && localTasks.length === 0
         && (!isLoaded || !effectiveWorkspaceId || isLoadingTasks);
-// Mapear status customiz├â┬íveis para status do banco (usando config centralizado)
+    // Mapear status customiz├â┬íveis para status do banco (usando config centralizado)
     const mapStatusToDb = (status: string): "todo" | "in_progress" | "done" | "archived" => {
         return mapLabelToStatus(status) as "todo" | "in_progress" | "done" | "archived";
     };
@@ -1912,7 +1922,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             tasks.some((t) => String(t.id) === id)
         );
         const result = entry ? entry[0] : null;
-        
+
         // ✅ DEBUG: Log quando tarefa não é encontrada
         if (process.env.NODE_ENV === 'development' && !result && tagFilter) {
             console.warn('⚠️ [findGroupKeyForId] Tarefa não encontrada:', {
@@ -1923,7 +1933,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 taskInLocalTasks: localTasksRef.current.find(t => String(t.id) === id) ? 'sim' : 'não'
             });
         }
-        
+
         return result;
     }, [tagFilter]);
 
@@ -2011,7 +2021,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // Pega as tarefas na ordem visual atual (como aparecem na tela)
         // Precisamos usar a ordem dos grupos para garantir que pegamos na ordem correta
         const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
-        
+
         if (currentTasks.length === 0) {
             toast.info("Nenhuma tarefa para salvar");
             return;
@@ -2020,7 +2030,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // Se h├í ordena├º├úo aplicada, precisamos reordenar as tarefas conforme a ordem visual
         // A ordem visual ├® determinada pelo sortBy e pelos grupos
         let tasksInVisualOrder: Task[] = [];
-        
+
         if (sortBy !== "position") {
             // Aplicar a mesma l├│gica de ordena├º├úo que ├® usada no listGroups
             const compare = (a: Task, b: Task) => {
@@ -2138,7 +2148,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             console.warn("?? [handleDragStart] viewOption est├í undefined. Bloqueando drag.");
             return;
         }
-        
+
         // ✅ DEBUG: Log quando há tagFilter para verificar se a tarefa está sendo encontrada
         if (process.env.NODE_ENV === 'development' && tagFilter) {
             const activeIdStr = String(event.active.id);
@@ -2153,7 +2163,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 localTasksCount: localTasks.length
             });
         }
-        
+
         const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
         if (!isDragEnabled) {
             toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
@@ -2166,7 +2176,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio (pode acontecer com tagFilter)
         const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
         const task = currentTasks.find((t) => String(t.id) === activeIdStr);
-        
+
         if (!task) {
             // ✅ DEBUG: Log quando tarefa não é encontrada
             if (process.env.NODE_ENV === 'development') {
@@ -2342,7 +2352,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             resetDragState();
             return;
         }
-        
+
         const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
         if (!isDragEnabled) {
             toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
@@ -2353,14 +2363,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const { active, over } = event;
         setActiveTask(null);
-        
+
         // ? CORRE├ç├âO: Validar se over existe e tem ID v├ílido
         if (!over) {
             console.log("?? [handleDragEnd] Drag cancelado: over ├® null/undefined");
             resetDragState();
             return;
         }
-        
+
         // ? CORRE├ç├âO: Validar se active existe
         if (!active) {
             console.warn("?? [handleDragEnd] active ├® null/undefined");
@@ -2370,7 +2380,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const activeIdStr = String(active.id);
         const overIdStr = String(over.id);
-        
+
         // ✅ DEBUG: Logs para identificar problema com tagFilter
         if (process.env.NODE_ENV === 'development') {
             const activeTaskInRef = localTasksRef.current.find((t) => String(t.id) === activeIdStr);
@@ -2390,7 +2400,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const sourceGroupKey = dragStartGroupKeyRef.current || findGroupKeyForId(activeIdStr);
         let destinationGroupKey = findGroupKeyForId(overIdStr);
-        
+
         // ? CORRE├ç├âO: Valida├º├úo melhorada com logs
         if (!sourceGroupKey) {
             console.error("? [handleDragEnd] Grupo de origem n├úo encontrado para tarefa:", activeIdStr);
@@ -2406,7 +2416,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             resetDragState();
             return;
         }
-        
+
         // ? CORRE├ç├âO: Se overIdStr ├® uma coluna (n├úo uma tarefa), usar diretamente
         // No modo kanban, o over.id pode ser o ID da coluna (DroppableColumn)
         if (!destinationGroupKey) {
@@ -2422,7 +2432,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 destinationGroupKey = overIdStr;
             }
         }
-        
+
         if (!destinationGroupKey) {
             toast.error("Erro: Destino inv├ílido. Tente arrastar para uma coluna v├ílida.");
             resetDragState();
@@ -2430,12 +2440,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         const destinationTasks = groupedData[destinationGroupKey] || [];
-        
+
         // ? CORRE├ç├âO: Se overIdStr ├® o ID de uma coluna (n├úo uma tarefa), adicionar no final
         // Se overIdStr ├® uma chave de groupedData, significa que arrastou para a coluna vazia
         const isOverColumn = Object.keys(groupedData).includes(overIdStr);
         let overIndex = -1;
-        
+
         if (isOverColumn) {
             // Arrastou para a coluna vazia, adicionar no final
             overIndex = -1;
@@ -2443,7 +2453,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             // Arrastou sobre uma tarefa, encontrar o ├¡ndice
             overIndex = destinationTasks.findIndex((t) => String(t.id) === overIdStr);
         }
-        
+
         const targetIndex = overIndex >= 0 ? overIndex : destinationTasks.length;
 
         const isSameGroup = sourceGroupKey === destinationGroupKey;
@@ -2499,7 +2509,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         // ✅ CORREÇÃO: Usar localTasks se localTasksRef estiver vazio (pode acontecer com tagFilter)
         const sourceForRollback = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
         const rollbackState = sourceForRollback.map((t) => ({ ...t }));
-        
+
         // ? Calcular posi├º├úo ANTES de atualizar o estado (para usar fora do setState)
         // ✅ CORREÇÃO: Usar localTasks se localTasksRef estiver vazio (pode acontecer com tagFilter)
         const current = localTasksRef.current.length > 0 ? [...localTasksRef.current] : [...localTasks];
@@ -2537,13 +2547,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             if (updateData.group_id !== undefined) {
                 moving.group = updateData.group_id
                     ? {
-                          id: updateData.group_id,
-                          name:
-                              availableGroups.find((g) => g.id === updateData.group_id)?.name ||
-                              moving.group?.name ||
-                              "Grupo",
-                          color: availableGroups.find((g) => g.id === updateData.group_id)?.color || moving.group?.color,
-                      }
+                        id: updateData.group_id,
+                        name:
+                            availableGroups.find((g) => g.id === updateData.group_id)?.name ||
+                            moving.group?.name ||
+                            "Grupo",
+                        color: availableGroups.find((g) => g.id === updateData.group_id)?.color || moving.group?.color,
+                    }
                     : undefined;
             }
             if (updateData.assignee_id !== undefined) {
@@ -2689,7 +2699,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         try {
             // Buscar dados completos da tarefa usando getTaskDetails
             const taskDetails = await getTaskDetails(String(taskId));
-            
+
             if (!taskDetails) {
                 console.error("Tarefa n├â┬úo encontrada");
                 setIsModalOpen(false);
@@ -2781,9 +2791,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 status: modalStatus,
                 assignee: taskDetails.assignee
                     ? {
-                          name: taskDetails.assignee.full_name || taskDetails.assignee.email || "Sem nome",
-                          avatar: taskDetails.assignee.avatar_url || undefined,
-                      }
+                        name: taskDetails.assignee.full_name || taskDetails.assignee.email || "Sem nome",
+                        avatar: taskDetails.assignee.avatar_url || undefined,
+                    }
                     : undefined,
                 dueDate: taskDetails.due_date
                     ? new Date(taskDetails.due_date).toISOString().split("T")[0]
@@ -2808,9 +2818,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     const handleViewModeChange = useCallback((value: string) => {
         if (value === "kanban") {
-            preloadTaskBoard().catch(() => {});
+            preloadTaskBoard().catch(() => { });
         } else if (value === "calendar") {
-            preloadPlannerCalendar().catch(() => {});
+            preloadPlannerCalendar().catch(() => { });
         }
 
         setViewMode(value as ViewMode);
@@ -2850,8 +2860,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 {tagFilter || "Tarefas"}
                             </h1>
                             <p className="text-sm text-gray-500">
-                                {tagFilter 
-                                    ? "Gerencie as tarefas de um projeto aqui" 
+                                {tagFilter
+                                    ? "Gerencie as tarefas de um projeto aqui"
                                     : "Gerencie o trabalho do dia a dia."}
                             </p>
                         </div>
@@ -2874,10 +2884,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                     variant="default"
                                     className="flex items-center gap-1"
                                     onMouseEnter={() => {
-                                        preloadTaskBoard().catch(() => {});
+                                        preloadTaskBoard().catch(() => { });
                                     }}
                                     onFocus={() => {
-                                        preloadTaskBoard().catch(() => {});
+                                        preloadTaskBoard().catch(() => { });
                                     }}
                                 >
                                     <LayoutGrid className="w-4 h-4" />
@@ -2888,10 +2898,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                     variant="default"
                                     className="flex items-center gap-1"
                                     onMouseEnter={() => {
-                                        preloadPlannerCalendar().catch(() => {});
+                                        preloadPlannerCalendar().catch(() => { });
                                     }}
                                     onFocus={() => {
-                                        preloadPlannerCalendar().catch(() => {});
+                                        preloadPlannerCalendar().catch(() => { });
                                     }}
                                 >
                                     <Calendar className="w-4 h-4" />
@@ -2912,7 +2922,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         <div className="flex items-center gap-4">
                             {/* Bot├úo Novo */}
                             <div className="flex items-center border border-green-600 rounded-lg overflow-hidden">
-                                <Button 
+                                <Button
                                     onClick={() => {
                                         setSelectedTaskId(null);
                                         setTaskDetails(null);
@@ -2925,7 +2935,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 </Button>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button 
+                                        <Button
                                             className="bg-green-600 hover:bg-green-700 text-white rounded-l-none px-2 border-0"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -3001,7 +3011,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             )}
                             {/* Filtro de Visualiza├º├úo - apenas Calend├írio */}
                             {viewMode === "calendar" && calendarControls && (
-                                <CalendarViewMenu 
+                                <CalendarViewMenu
                                     currentView={calendarControls.currentView as "dayGridMonth" | "timeGridWeek" | "listDay"}
                                     onViewChange={(view) => calendarControls.handleViewChange(view)}
                                 />
@@ -3011,7 +3021,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                             {(viewMode === "list" || viewMode === "kanban") && (
                                 <div className="h-4 w-[1px] bg-gray-300" />
                             )}
-                            
+
                             {/* Busca - apenas ├¡cone (sempre vis├¡vel) */}
                             {!isSearchOpen ? (
                                 <Button
@@ -3053,361 +3063,361 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             >
                 <div className={cn("mx-auto w-full max-w-[1600px]", viewMode === "kanban" && "h-full")}>
                     <div className="relative h-full w-full py-3">
-                    {/* Overlay de carregamento ao trocar de workspace / filtros */}
-                    {isLoadingTasks && (
-                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
-                            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-sm border border-gray-200">
-                                <Loader2 className="w-4 h-4 animate-spin text-green-600" />
-                                <span className="text-xs font-medium text-gray-600">
-                                    Atualizando tarefas...
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    <AnimatePresence mode="sync" initial={false}>
-                        <motion.div
-                            key={viewMode}
-                            initial={shouldReduceMotion ? false : { opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
-                            transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
-                            className="h-full"
-                        >
-                        {viewMode === "list" ? (
-                            <div className="h-full">
-                                <DndContext
-                                    sensors={sensors}
-                                    collisionDetection={collisionDetectionStrategy}
-                                    onDragStart={handleDragStart}
-                                    onDragOver={handleDragOver}
-                                    onDragEnd={handleDragEnd}
-                                    onDragCancel={handleDragCancel}
-                                >
-                                {viewOption === "group" && groupOrder.length > 0 ? (
-                                    <SortableContext
-                                        items={groupOrder}
-                                        strategy={verticalListSortingStrategy}
-                                    >
-                                        <div className="space-y-0">
-                                            {listGroups.length === 0 && (
-                                                <div className="h-[calc(100vh-200px)] flex items-center justify-center">
-                                                    <EmptyState
-                                                        icon={CheckSquare}
-                                                        title="Nenhuma tarefa encontrada"
-                                                        description="Que tal criar sua primeira tarefa agora?"
-                                                        actionLabel="Criar Tarefa"
-                                                        onClick={() => setIsModalOpen(true)}
-                                                    />
-                                                </div>
-                                            )}
-                                            {listGroups.map((group, index) => {
-                                                // Calcular posi├º├Áes para ordena├º├úo baseado em groupOrder
-                                                let canMoveToTop = false;
-                                                let canMoveToBottom = false;
-                                                if (viewOption === "group") {
-                                                    const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
-                                                    if (groupIndexInOrder !== -1) {
-                                                        const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
-                                                        const maxIndex = groupOrder.length - 1;
-                                                        canMoveToTop = groupIndexInOrder > minIndex;
-                                                        canMoveToBottom = groupIndexInOrder < maxIndex;
-                                                    }
-                                                }
-                                                const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
-                                                const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
-                                                const canMoveUp = viewOption === "group" ? (groupIndexInOrder > minIndex) : true;
-                                                const maxIndex = groupOrder.length - 1;
-                                                const canMoveDown = viewOption === "group" ? (groupIndexInOrder < maxIndex && groupIndexInOrder !== -1) : true;
-                                                
-                                                return (
-                                                    <TaskGroup
-                                                        key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
-                                                        id={group.id}
-                                                        title={group.title}
-                                                        tasks={group.tasks}
-                                                        groupColor={group.groupColor || groupColors[group.id]}
-                                                        onTaskClick={handleTaskClick}
-                                                        isDragDisabled={isDragDisabled}
-                                                        onTaskUpdated={handleTaskUpdated}
-                                                        onTaskUpdatedOptimistic={handleOptimisticUpdate}
-                                                        onTaskDeletedOptimistic={handleOptimisticDelete}
-                                                        onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
-                                                        members={workspaceMembers}
-                                                        onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
-                                                        onColorChange={viewOption === "group" ? handleColorChange : undefined}
-                                                        onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
-                                                        onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
-                                                        onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
-                                                        canMoveUp={canMoveUp}
-                                                        canMoveDown={canMoveDown}
-                                                        canMoveToTop={canMoveToTop}
-                                                        canMoveToBottom={canMoveToBottom}
-                                                        showGroupActions={viewOption === "group"}
-                                                        onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
-                                                        showProjectTag={true}
-                                                        tagFilter={tagFilter || undefined}
-                                                    />
-                                                );
-                                            })}
-                                            {/* Ghost Group para cria├º├úo r├ípida - apenas na vis├úo de grupos */}
-                                            {viewOption === "group" && (
-                                                <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
-                                            )}
-                                        </div>
-                                    </SortableContext>
-                                ) : (
-                                    <div className="space-y-0">
-                                        {listGroups.length === 0 && (
-                                            <div className="h-[calc(100vh-200px)] flex items-center justify-center">
-                                                <EmptyState
-                                                    icon={CheckSquare}
-                                                    title="Nenhuma tarefa encontrada"
-                                                    description="Que tal criar sua primeira tarefa agora?"
-                                                    actionLabel="Criar Tarefa"
-                                                    onClick={() => setIsModalOpen(true)}
-                                                />
-                                            </div>
-                                        )}
-                                        {listGroups.map((group, index) => {
-                                            // Calcular posi├º├Áes para ordena├º├úo baseado em groupOrder
-                                            let canMoveToTop = false;
-                                            let canMoveToBottom = false;
-                                            let canMoveUp = true;
-                                            let canMoveDown = true;
-                                            if (viewOption === "group") {
-                                                const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
-                                                if (groupIndexInOrder !== -1) {
-                                                    const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
-                                                    const maxIndex = groupOrder.length - 1;
-                                                    canMoveToTop = groupIndexInOrder > minIndex;
-                                                    canMoveToBottom = groupIndexInOrder < maxIndex;
-                                                    canMoveUp = groupIndexInOrder > minIndex;
-                                                    canMoveDown = groupIndexInOrder < maxIndex;
-                                                }
-                                            }
-                                            
-                                            return (
-                                                <TaskGroup
-                                                    key={group.id}
-                                                    id={group.id}
-                                                    title={group.title}
-                                                    tasks={group.tasks}
-                                                    groupColor={group.groupColor || groupColors[group.id]}
-                                                    onTaskClick={handleTaskClick}
-                                                    isDragDisabled={isDragDisabled}
-                                                    onTaskUpdated={handleTaskUpdated}
-                                                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
-                                                    onTaskDeletedOptimistic={handleOptimisticDelete}
-                                                    onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
-                                                    members={workspaceMembers}
-                                                    onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
-                                                    onColorChange={viewOption === "group" ? handleColorChange : undefined}
-                                                    onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
-                                                    onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
-                                                    onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
-                                                    canMoveUp={canMoveUp}
-                                                    canMoveDown={canMoveDown}
-                                                    canMoveToTop={canMoveToTop}
-                                                    canMoveToBottom={canMoveToBottom}
-                                                    showGroupActions={viewOption === "group"}
-                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
-                                                    showProjectTag={!!tagFilter}
-                                                    tagFilter={tagFilter || undefined}
-                                                />
-                                            );
-                                        })}
-                                        {/* Ghost Group para cria├º├úo r├ípida - apenas na vis├úo de grupos */}
-                                        {viewOption === "group" && (
-                                            <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
-                                        )}
-                                    </div>
-                                )}
-                    {typeof document !== "undefined"
-                        ? createPortal(
-                              <DragOverlay
-                                  adjustScale={false}
-                                  dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.2, 1)" }}
-                              >
-                                  {activeTask ? (
-                                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-2xl rotate-2 scale-105 cursor-grabbing">
-                                          <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
-                                      </div>
-                                  ) : null}
-                              </DragOverlay>,
-                              document.body
-                          )
-                        : null}
-                                </DndContext>
-                            </div>
-                        ) : viewMode === "calendar" ? (
-                            <div className="h-[calc(100vh-300px)]" key={`calendar-${effectiveWorkspaceId}`}>
-                                <PlannerCalendar 
-                                    workspaceId={effectiveWorkspaceId} 
-                                    hideHeader={true}
-                                    onControlsReady={setCalendarControls}
-                                />
-                            </div>
-                        ) : (
-                            <div className="h-full min-h-0" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
-                                {/* ? CORRE├ç├âO CR├ìTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
-                                <DndContext
-                                    sensors={sensors}
-                                    collisionDetection={collisionDetectionStrategy}
-                                    onDragStart={handleDragStart}
-                                    onDragOver={handleDragOver}
-                                    onDragEnd={handleDragEnd}
-                                    onDragCancel={handleDragCancel}
-                                >
-                                    <TaskBoard
-                                        columns={kanbanColumns}
-                                        onTaskClick={handleTaskClick}
-                                        onTaskMoved={reloadTasks}
-                                        onToggleComplete={handleToggleComplete}
-                                        onTaskUpdatedOptimistic={handleOptimisticUpdate}
-                                        isDragDisabled={isDragDisabled}
-                                        onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
-                                        onColorChange={viewOption === "group" ? handleColorChange : undefined}
-                                        onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
-                                        onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
-                                        showGroupActions={viewOption === "group"}
-                                        viewOption={viewOption}
-                                        onAddTask={handleAddTaskToKanban}
-                                        onCreateGroup={viewOption === "group" ? () => setIsCreateGroupModalOpen(true) : undefined}
-                                        members={workspaceMembers}
-                                        groupBy={viewOption}
-                                />
-                                    {typeof document !== "undefined"
-                                        ? createPortal(
-                                              <DragOverlay
-                                                  adjustScale={false}
-                                                  dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.2, 1)" }}
-                                              >
-                                                  {activeTask ? (
-                                                      <div className="bg-white rounded-lg border border-gray-200 shadow-2xl p-3 rotate-2 scale-105 cursor-grabbing">
-                                                          <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
-                                                      </div>
-                                                  ) : null}
-                                              </DragOverlay>,
-                                              document.body
-                                          )
-                                        : null}
-                                </DndContext>
+                        {/* Overlay de carregamento ao trocar de workspace / filtros */}
+                        {isLoadingTasks && (
+                            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
+                                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-sm border border-gray-200">
+                                    <Loader2 className="w-4 h-4 animate-spin text-green-600" />
+                                    <span className="text-xs font-medium text-gray-600">
+                                        Atualizando tarefas...
+                                    </span>
+                                </div>
                             </div>
                         )}
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
 
-            {/* Modal de Detalhes */}
-            {isModalOpen && (
-                <TaskDetailModal
-                    key={selectedTaskId}
-                    open={isModalOpen}
-                    onOpenChange={(open) => {
-                        setIsModalOpen(open);
-                        if (!open) {
-                            setTaskDetails(null);
-                            setSelectedTaskId(null);
-                        }
-                    }}
-                    task={taskDetails}
-                    mode={selectedTaskId ? "edit" : "create"}
-                    initialTags={!selectedTaskId && tagFilter ? [tagFilter] : undefined}
-                    onTaskCreated={async () => {
-                        await reloadTasks();
-                        // Recarregar calend┬ário se estiver na view de calend┬ário
-                        // Usar setTimeout para garantir que o reloadTasks terminou
-                        setTimeout(() => {
-                            if (viewMode === "calendar" && calendarControls?.reloadEvents) {
-                                calendarControls.reloadEvents();
-                            }
-                        }, 300);
-                    }}
-                    onTaskUpdated={handleTaskUpdated}
-                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
-                />
-            )}
+                        <AnimatePresence mode="sync" initial={false}>
+                            <motion.div
+                                key={viewMode}
+                                initial={shouldReduceMotion ? false : { opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
+                                transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
+                                className="h-full"
+                            >
+                                {viewMode === "list" ? (
+                                    <div className="h-full">
+                                        <DndContext
+                                            sensors={sensors}
+                                            collisionDetection={collisionDetectionStrategy}
+                                            onDragStart={handleDragStart}
+                                            onDragOver={handleDragOver}
+                                            onDragEnd={handleDragEnd}
+                                            onDragCancel={handleDragCancel}
+                                        >
+                                            {viewOption === "group" && groupOrder.length > 0 ? (
+                                                <SortableContext
+                                                    items={groupOrder}
+                                                    strategy={verticalListSortingStrategy}
+                                                >
+                                                    <div className="space-y-0">
+                                                        {listGroups.length === 0 && (
+                                                            <div className="h-[calc(100vh-200px)] flex items-center justify-center">
+                                                                <EmptyState
+                                                                    icon={CheckSquare}
+                                                                    title="Nenhuma tarefa encontrada"
+                                                                    description="Que tal criar sua primeira tarefa agora?"
+                                                                    actionLabel="Criar Tarefa"
+                                                                    onClick={() => setIsModalOpen(true)}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                        {listGroups.map((group, index) => {
+                                                            // Calcular posi├º├Áes para ordena├º├úo baseado em groupOrder
+                                                            let canMoveToTop = false;
+                                                            let canMoveToBottom = false;
+                                                            if (viewOption === "group") {
+                                                                const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
+                                                                if (groupIndexInOrder !== -1) {
+                                                                    const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
+                                                                    const maxIndex = groupOrder.length - 1;
+                                                                    canMoveToTop = groupIndexInOrder > minIndex;
+                                                                    canMoveToBottom = groupIndexInOrder < maxIndex;
+                                                                }
+                                                            }
+                                                            const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
+                                                            const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
+                                                            const canMoveUp = viewOption === "group" ? (groupIndexInOrder > minIndex) : true;
+                                                            const maxIndex = groupOrder.length - 1;
+                                                            const canMoveDown = viewOption === "group" ? (groupIndexInOrder < maxIndex && groupIndexInOrder !== -1) : true;
 
-            {/* Modal de Cria├â┬º├â┬úo de Grupo */}
-            <Dialog open={isCreateGroupModalOpen} onOpenChange={setIsCreateGroupModalOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Novo Grupo de Tarefas</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                        <div className="grid gap-2">
-                            <label htmlFor="group-name" className="text-sm font-medium">
-                                Nome do Grupo
-                            </label>
-                            <Input
-                                id="group-name"
-                                value={newGroupName}
-                                onChange={(e) => setNewGroupName(e.target.value)}
-                                placeholder="Ex: Marketing, Design, Sprint 1..."
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !isCreatingGroup) {
-                                        e.preventDefault();
-                                        handleCreateGroup();
-                                    }
-                                }}
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <label className="text-sm font-medium">
-                                Cor do Grupo
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                                {[
-                                    { name: "Vermelho", value: "#ef4444", class: "bg-red-500" },
-                                    { name: "Azul", value: "#3b82f6", class: "bg-blue-500" },
-                                    { name: "Verde", value: "#22c55e", class: "bg-green-500" },
-                                    { name: "Amarelo", value: "#eab308", class: "bg-yellow-500" },
-                                    { name: "Roxo", value: "#a855f7", class: "bg-purple-500" },
-                                    { name: "Rosa", value: "#ec4899", class: "bg-pink-500" },
-                                    { name: "Laranja", value: "#f97316", class: "bg-orange-500" },
-                                    { name: "Cinza", value: "#64748b", class: "bg-slate-500" },
-                                    { name: "Ciano", value: "#06b6d4", class: "bg-cyan-500" },
-                                    { name: "├â┬ìndigo", value: "#6366f1", class: "bg-indigo-500" },
-                                ].map((color) => (
-                                    <button
-                                        key={color.value}
-                                        type="button"
-                                        onClick={() => setNewGroupColor(color.value)}
-                                        className={cn(
-                                            "w-8 h-8 rounded-full border-2 transition-all",
-                                            color.class,
-                                            newGroupColor === color.value
-                                                ? "border-gray-900 scale-110 ring-2 ring-offset-2 ring-gray-400"
-                                                : "border-gray-300 hover:border-gray-400"
-                                        )}
-                                        title={color.name}
-                                    />
-                                ))}
-                            </div>
-                        </div>
+                                                            return (
+                                                                <TaskGroup
+                                                                    key={`${effectiveWorkspaceId}-${viewOption}-${group.id}`}
+                                                                    id={group.id}
+                                                                    title={group.title}
+                                                                    tasks={group.tasks}
+                                                                    groupColor={group.groupColor || groupColors[group.id]}
+                                                                    onTaskClick={handleTaskClick}
+                                                                    isDragDisabled={isDragDisabled}
+                                                                    onTaskUpdated={handleTaskUpdated}
+                                                                    onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                                    onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                                    onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
+                                                                    members={workspaceMembers}
+                                                                    onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                                    onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                                    onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                                    onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                                    onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
+                                                                    canMoveUp={canMoveUp}
+                                                                    canMoveDown={canMoveDown}
+                                                                    canMoveToTop={canMoveToTop}
+                                                                    canMoveToBottom={canMoveToBottom}
+                                                                    showGroupActions={viewOption === "group"}
+                                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                                    showProjectTag={true}
+                                                                    tagFilter={tagFilter || undefined}
+                                                                />
+                                                            );
+                                                        })}
+                                                        {/* Ghost Group para cria├º├úo r├ípida - apenas na vis├úo de grupos */}
+                                                        {viewOption === "group" && (
+                                                            <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
+                                                        )}
+                                                    </div>
+                                                </SortableContext>
+                                            ) : (
+                                                <div className="space-y-0">
+                                                    {listGroups.length === 0 && (
+                                                        <div className="h-[calc(100vh-200px)] flex items-center justify-center">
+                                                            <EmptyState
+                                                                icon={CheckSquare}
+                                                                title="Nenhuma tarefa encontrada"
+                                                                description="Que tal criar sua primeira tarefa agora?"
+                                                                actionLabel="Criar Tarefa"
+                                                                onClick={() => setIsModalOpen(true)}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    {listGroups.map((group, index) => {
+                                                        // Calcular posi├º├Áes para ordena├º├úo baseado em groupOrder
+                                                        let canMoveToTop = false;
+                                                        let canMoveToBottom = false;
+                                                        let canMoveUp = true;
+                                                        let canMoveDown = true;
+                                                        if (viewOption === "group") {
+                                                            const groupIndexInOrder = groupOrder.findIndex(id => id === group.id);
+                                                            if (groupIndexInOrder !== -1) {
+                                                                const minIndex = groupOrder[0] === "inbox" || groupOrder[0] === "Inbox" ? 1 : 0;
+                                                                const maxIndex = groupOrder.length - 1;
+                                                                canMoveToTop = groupIndexInOrder > minIndex;
+                                                                canMoveToBottom = groupIndexInOrder < maxIndex;
+                                                                canMoveUp = groupIndexInOrder > minIndex;
+                                                                canMoveDown = groupIndexInOrder < maxIndex;
+                                                            }
+                                                        }
+
+                                                        return (
+                                                            <TaskGroup
+                                                                key={group.id}
+                                                                id={group.id}
+                                                                title={group.title}
+                                                                tasks={group.tasks}
+                                                                groupColor={group.groupColor || groupColors[group.id]}
+                                                                onTaskClick={handleTaskClick}
+                                                                isDragDisabled={isDragDisabled}
+                                                                onTaskUpdated={handleTaskUpdated}
+                                                                onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                                onTaskDeletedOptimistic={handleOptimisticDelete}
+                                                                onTaskCreatedOptimistic={handleTaskCreatedOptimistic}
+                                                                members={workspaceMembers}
+                                                                onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                                onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                                onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                                onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                                onReorderGroup={viewOption === "group" ? handleReorderGroup : undefined}
+                                                                canMoveUp={canMoveUp}
+                                                                canMoveDown={canMoveDown}
+                                                                canMoveToTop={canMoveToTop}
+                                                                canMoveToBottom={canMoveToBottom}
+                                                                showGroupActions={viewOption === "group"}
+                                                                onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                                showProjectTag={!!tagFilter}
+                                                                tagFilter={tagFilter || undefined}
+                                                            />
+                                                        );
+                                                    })}
+                                                    {/* Ghost Group para cria├º├úo r├ípida - apenas na vis├úo de grupos */}
+                                                    {viewOption === "group" && (
+                                                        <GhostGroup onClick={() => setIsCreateGroupModalOpen(true)} />
+                                                    )}
+                                                </div>
+                                            )}
+                                            {typeof document !== "undefined"
+                                                ? createPortal(
+                                                    <DragOverlay
+                                                        adjustScale={false}
+                                                        dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.2, 1)" }}
+                                                    >
+                                                        {activeTask ? (
+                                                            <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-2xl rotate-2 scale-105 cursor-grabbing">
+                                                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                                                            </div>
+                                                        ) : null}
+                                                    </DragOverlay>,
+                                                    document.body
+                                                )
+                                                : null}
+                                        </DndContext>
+                                    </div>
+                                ) : viewMode === "calendar" ? (
+                                    <div className="h-[calc(100vh-300px)]" key={`calendar-${effectiveWorkspaceId}`}>
+                                        <PlannerCalendar
+                                            workspaceId={effectiveWorkspaceId}
+                                            hideHeader={true}
+                                            onControlsReady={setCalendarControls}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="h-full min-h-0" key={`kanban-${effectiveWorkspaceId}-${viewOption}`}>
+                                        {/* ? CORRE├ç├âO CR├ìTICA: TaskBoard precisa estar dentro de DndContext para drag funcionar */}
+                                        <DndContext
+                                            sensors={sensors}
+                                            collisionDetection={collisionDetectionStrategy}
+                                            onDragStart={handleDragStart}
+                                            onDragOver={handleDragOver}
+                                            onDragEnd={handleDragEnd}
+                                            onDragCancel={handleDragCancel}
+                                        >
+                                            <TaskBoard
+                                                columns={kanbanColumns}
+                                                onTaskClick={handleTaskClick}
+                                                onTaskMoved={reloadTasks}
+                                                onToggleComplete={handleToggleComplete}
+                                                onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                                                isDragDisabled={isDragDisabled}
+                                                onRenameGroup={viewOption === "group" ? handleRenameGroup : undefined}
+                                                onColorChange={viewOption === "group" ? handleColorChange : undefined}
+                                                onDeleteGroup={viewOption === "group" ? handleDeleteGroup : undefined}
+                                                onClearGroup={viewOption === "group" ? handleClearGroup : undefined}
+                                                showGroupActions={viewOption === "group"}
+                                                viewOption={viewOption}
+                                                onAddTask={handleAddTaskToKanban}
+                                                onCreateGroup={viewOption === "group" ? () => setIsCreateGroupModalOpen(true) : undefined}
+                                                members={workspaceMembers}
+                                                groupBy={viewOption}
+                                            />
+                                            {typeof document !== "undefined"
+                                                ? createPortal(
+                                                    <DragOverlay
+                                                        adjustScale={false}
+                                                        dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.2, 1)" }}
+                                                    >
+                                                        {activeTask ? (
+                                                            <div className="bg-white rounded-lg border border-gray-200 shadow-2xl p-3 rotate-2 scale-105 cursor-grabbing">
+                                                                <div className="font-medium text-gray-900 text-sm">{activeTask.title}</div>
+                                                            </div>
+                                                        ) : null}
+                                                    </DragOverlay>,
+                                                    document.body
+                                                )
+                                                : null}
+                                        </DndContext>
+                                    </div>
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
                     </div>
-                    <DialogFooter>
-                        <Button 
-                            variant="outline" 
-                            onClick={() => {
-                                setIsCreateGroupModalOpen(false);
-                                setNewGroupName("");
-                                setNewGroupColor("#e5e7eb");
+
+                    {/* Modal de Detalhes */}
+                    {isModalOpen && (
+                        <TaskDetailModal
+                            key={selectedTaskId}
+                            open={isModalOpen}
+                            onOpenChange={(open) => {
+                                setIsModalOpen(open);
+                                if (!open) {
+                                    setTaskDetails(null);
+                                    setSelectedTaskId(null);
+                                }
                             }}
-                            disabled={isCreatingGroup}
-                        >
-                            Cancelar
-                        </Button>
-                        <Button 
-                            onClick={handleCreateGroup}
-                            disabled={isCreatingGroup || !newGroupName.trim()}
-                        >
-                            {isCreatingGroup ? "Criando..." : "Criar Grupo"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                            task={taskDetails}
+                            mode={selectedTaskId ? "edit" : "create"}
+                            initialTags={!selectedTaskId && tagFilter ? [tagFilter] : undefined}
+                            onTaskCreated={async () => {
+                                await reloadTasks();
+                                // Recarregar calend┬ário se estiver na view de calend┬ário
+                                // Usar setTimeout para garantir que o reloadTasks terminou
+                                setTimeout(() => {
+                                    if (viewMode === "calendar" && calendarControls?.reloadEvents) {
+                                        calendarControls.reloadEvents();
+                                    }
+                                }, 300);
+                            }}
+                            onTaskUpdated={handleTaskUpdated}
+                            onTaskUpdatedOptimistic={handleOptimisticUpdate}
+                        />
+                    )}
+
+                    {/* Modal de Cria├â┬º├â┬úo de Grupo */}
+                    <Dialog open={isCreateGroupModalOpen} onOpenChange={setIsCreateGroupModalOpen}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Novo Grupo de Tarefas</DialogTitle>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <label htmlFor="group-name" className="text-sm font-medium">
+                                        Nome do Grupo
+                                    </label>
+                                    <Input
+                                        id="group-name"
+                                        value={newGroupName}
+                                        onChange={(e) => setNewGroupName(e.target.value)}
+                                        placeholder="Ex: Marketing, Design, Sprint 1..."
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !isCreatingGroup) {
+                                                e.preventDefault();
+                                                handleCreateGroup();
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <label className="text-sm font-medium">
+                                        Cor do Grupo
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[
+                                            { name: "Vermelho", value: "#ef4444", class: "bg-red-500" },
+                                            { name: "Azul", value: "#3b82f6", class: "bg-blue-500" },
+                                            { name: "Verde", value: "#22c55e", class: "bg-green-500" },
+                                            { name: "Amarelo", value: "#eab308", class: "bg-yellow-500" },
+                                            { name: "Roxo", value: "#a855f7", class: "bg-purple-500" },
+                                            { name: "Rosa", value: "#ec4899", class: "bg-pink-500" },
+                                            { name: "Laranja", value: "#f97316", class: "bg-orange-500" },
+                                            { name: "Cinza", value: "#64748b", class: "bg-slate-500" },
+                                            { name: "Ciano", value: "#06b6d4", class: "bg-cyan-500" },
+                                            { name: "├â┬ìndigo", value: "#6366f1", class: "bg-indigo-500" },
+                                        ].map((color) => (
+                                            <button
+                                                key={color.value}
+                                                type="button"
+                                                onClick={() => setNewGroupColor(color.value)}
+                                                className={cn(
+                                                    "w-8 h-8 rounded-full border-2 transition-all",
+                                                    color.class,
+                                                    newGroupColor === color.value
+                                                        ? "border-gray-900 scale-110 ring-2 ring-offset-2 ring-gray-400"
+                                                        : "border-gray-300 hover:border-gray-400"
+                                                )}
+                                                title={color.name}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setIsCreateGroupModalOpen(false);
+                                        setNewGroupName("");
+                                        setNewGroupColor("#e5e7eb");
+                                    }}
+                                    disabled={isCreatingGroup}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    onClick={handleCreateGroup}
+                                    disabled={isCreatingGroup || !newGroupName.trim()}
+                                >
+                                    {isCreatingGroup ? "Criando..." : "Criar Grupo"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
         </div>

@@ -49,7 +49,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   const [tasks, setTasks] = useState<Task[]>(initialTasks || []);
   // Se temos dados iniciais (mesmo que array vazio), não mostrar loading inicial
   const [loading, setLoading] = useState(initialTasks === undefined);
-  
+
   // Inicializar currentWorkspace de forma síncrona quando temos dados iniciais
   const [currentWorkspace, setCurrentWorkspace] = useState<{ id: string; name: string; isPersonal: boolean } | null>(() => {
     // Inicializar com dados fornecidos se disponíveis
@@ -162,6 +162,25 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   const hasLoadedOnceRef = useRef(false);
   const { isSwitchingWorkspace } = useWorkspaceLoading();
 
+  // CORREÇÃO: Sincronizar tasks com initialTasks sempre que o prop mudar (ex: router.refresh())
+  // Isso garante que atualizações vindas do servidor (após criação de tarefa) sejam refletidas no estado
+  useEffect(() => {
+    if (initialTasks !== undefined) {
+      setTasks(initialTasks);
+      // Se recebemos dados novos do servidor, podemos considerar carregado
+      setLoading(false);
+
+      // Atualizar cache também para manter consistência se o usuário navegar
+      if (currentWorkspace) {
+        setCachedPlannerTasks(
+          currentWorkspace.isPersonal ? null : currentWorkspace.id,
+          currentWorkspace.isPersonal,
+          initialTasks
+        );
+      }
+    }
+  }, [initialTasks, currentWorkspace]);
+
   // OTIMIZAÇÃO: Buscar tarefas apenas se não tivermos dados iniciais ou cache
   useEffect(() => {
     if (!currentWorkspace) return;
@@ -204,24 +223,31 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     const loadTasks = async () => {
       setLoading(true);
       try {
+        // CORREÇÃO: Usar range expandido para corresponder ao server component
+        // A WeeklyView usa janela deslizante, então precisamos de mais dias que apenas a semana civil
         const today = new Date();
-        const startOfWeek = getStartOfWeek(today);
-        const endOfWeek = getEndOfWeek(today);
+        const startRange = new Date(today);
+        startRange.setDate(today.getDate() - 7);
+        startRange.setHours(0, 0, 0, 0);
+
+        const endRange = new Date(today);
+        endRange.setDate(today.getDate() + 7);
+        endRange.setHours(23, 59, 59, 999);
 
         // OTIMIZAÇÃO: Usar Promise para não bloquear UI
         const fetchPromise = currentWorkspace.isPersonal
-          ? // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário da semana
+          ? // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário do range
           getTasks({
             assigneeId: "current",
-            dueDateStart: startOfWeek.toISOString(),
-            dueDateEnd: endOfWeek.toISOString(),
+            dueDateStart: startRange.toISOString(),
+            dueDateEnd: endRange.toISOString(),
           })
-          : // Workspace profissional: buscar apenas tarefas do workspace ativo da semana
+          : // Workspace profissional: buscar apenas tarefas do workspace ativo do range
           getTasks({
             workspaceId: currentWorkspace.id,
             assigneeId: "current",
-            dueDateStart: startOfWeek.toISOString(),
-            dueDateEnd: endOfWeek.toISOString(),
+            dueDateStart: startRange.toISOString(),
+            dueDateEnd: endRange.toISOString(),
           });
 
         const fetchedTasks = await fetchPromise;
