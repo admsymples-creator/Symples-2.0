@@ -535,7 +535,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
           metadata: {
             invite_id: newInvite.id,
             workspace_id: workspaceId,
-            workspace_name: workspaceData?.name || null,
+            workspace_name: workspaceData?.name || undefined,
             role,
           },
         });
