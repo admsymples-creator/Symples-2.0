@@ -329,7 +329,11 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             });
           }
           
-          router.refresh();
+          // Aguardar um pouco antes de fazer refresh para evitar erro de render
+          // O revalidatePath já foi chamado na server action
+          setTimeout(() => {
+            router.refresh();
+          }, 300);
       } catch (error: any) {
           console.error("Erro ao remover membro:", error);
           toast.error("Erro ao remover membro", { 
