@@ -611,7 +611,7 @@ export async function createTask(data: {
   recurrence_type?: string;
   recurrence_interval?: number | null;
   recurrence_end_date?: string | null;
-  recurrence_count?: number;
+  recurrence_count?: number | null;
   group_id?: string | null;
   tags?: string[];
   origin_context?: any;
