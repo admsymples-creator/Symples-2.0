@@ -21,13 +21,23 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // quando o usuário acessa /invite/[token]. Isso permite que o token sobreviva
   // a redirects OAuth e Magic Link sem depender de localStorage ou parâmetros de URL.
 
-  const supabase = await createServerActionClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  let user = null;
+  let invite = null;
 
-  // Tentar buscar detalhes do convite
-  // Nota: Se o usuário não estiver logado, getInviteDetails falhará devido ao RLS.
-  // Se o email do usuário não bater com o convite, também falhará.
-  const invite = await getInviteDetails(inviteId);
+  try {
+    const supabase = await createServerActionClient();
+    const { data: { user: userData } } = await supabase.auth.getUser();
+    user = userData;
+
+    // Tentar buscar detalhes do convite
+    // Nota: Se o usuário não estiver logado, getInviteDetails pode retornar null devido ao RLS.
+    // Se o email do usuário não bater com o convite, também retornará null.
+    invite = await getInviteDetails(inviteId);
+  } catch (error) {
+    // Se houver erro ao buscar dados, tratar como se não tivesse encontrado o convite
+    console.error("Erro ao buscar dados do convite:", error);
+    invite = null;
+  }
 
   // Se o convite foi encontrado e já foi aceito
   if (invite && invite.status === 'accepted') {
