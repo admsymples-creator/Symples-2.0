@@ -159,6 +159,17 @@ export function useWorkspace() {
     };
 }
 
+export function useOptionalWorkspace() {
+    const context = useContext(AppContext);
+    if (!context) return null;
+
+    return {
+        activeWorkspaceId: context.activeWorkspaceId,
+        setActiveWorkspaceId: context.setActiveWorkspaceId,
+        isLoaded: context.isLoaded,
+    };
+}
+
 // Hook otimizado APENAS para quem precisa saber do loading (Overlay, Switcher)
 export function useWorkspaceLoading() {
     const context = useContext(UIContext);

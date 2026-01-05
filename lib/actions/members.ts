@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { sendInviteEmail } from "@/lib/email/send-invite";
 import { clearUserWorkspacesCache } from "@/lib/actions/user";
+import { createNotification } from "@/lib/actions/notifications";
 
 // Tipo para os membros retornados
 export type Member = {
@@ -30,6 +31,30 @@ export type Invite = {
   created_at: string;
   invited_by: string | null;
 };
+
+async function revalidateWorkspaceTeamPaths(workspaceId: string) {
+  revalidatePath("/settings");
+  revalidatePath("/team");
+
+  try {
+    const supabase = await createServerActionClient();
+    const { data, error } = await supabase
+      .from("workspaces")
+      .select("slug")
+      .eq("id", workspaceId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao buscar slug para revalidatePath:", error);
+      return;
+    }
+
+    const slugOrId = data?.slug || workspaceId;
+    revalidatePath(`/${slugOrId}/team`);
+  } catch (error) {
+    console.error("Erro ao revalidar rota de time:", error);
+  }
+}
 
 /**
  * Busca a role do usuário atual em um workspace
@@ -495,6 +520,30 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       environment: process.env.NODE_ENV,
     });
 
+    // 7.5. Notificacao interna para usuarios existentes (nao falhar o fluxo se der erro)
+    if (existingProfile?.id) {
+      try {
+        await createNotification({
+          recipientId: existingProfile.id,
+          triggeringUserId: user.id,
+          category: "admin",
+          resourceType: "member",
+          resourceId: newInvite.id,
+          title: `${inviterProfile?.full_name || "Alguem"} convidou voce para ${workspaceData?.name || "um workspace"}`,
+          content: `Voce foi convidado como ${role}`,
+          actionUrl: `/invite/${newInvite.id}`,
+          metadata: {
+            invite_id: newInvite.id,
+            workspace_id: workspaceId,
+            workspace_name: workspaceData?.name || null,
+            role,
+          },
+        });
+      } catch (notificationError: any) {
+        console.error("Erro ao criar notificacao de convite:", notificationError);
+      }
+    }
+
     // 8. Enviar email de convite via Resend
     // ✅ DIFERENCIAÇÃO: Email diferente para usuários novos vs existentes
     const isNewUser = !existingProfile;
@@ -563,8 +612,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       }
     }
 
-    revalidatePath("/settings");
-    revalidatePath("/team");
+    await revalidateWorkspaceTeamPaths(workspaceId);
 
     return {
       success: true,
@@ -649,8 +697,7 @@ export async function revokeInvite(inviteId: string) {
     }
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(invite.workspace_id);
   return { success: true };
 }
 
@@ -767,8 +814,7 @@ export async function resendInvite(inviteId: string) {
     throw new Error(`Erro ao reenviar email: ${emailError.message}`);
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(invite.workspace_id);
   return { success: true, message: "Convite reenviado com sucesso!" };
 }
 
@@ -876,8 +922,7 @@ export async function removeMember(workspaceId: string, userId: string) {
     throw new Error("Erro ao remover membro");
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(workspaceId);
 
   return {
     success: true,
@@ -944,8 +989,7 @@ export async function updateMemberRole(
     throw new Error("Erro ao atualizar função do membro");
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(workspaceId);
   return { success: true };
 }
 
@@ -1174,6 +1218,49 @@ export async function acceptInvite(inviteId: string) {
 }
 
 /**
+ * Recusa um convite (para usuarios convidados)
+ */
+export async function declineInvite(inviteId: string) {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Nao autenticado");
+  }
+
+  const { data: invite, error: inviteError } = await supabase
+    .from("workspace_invites")
+    .select("*")
+    .eq("id", inviteId)
+    .single();
+
+  if (inviteError || !invite) {
+    throw new Error("Convite invalido ou nao encontrado.");
+  }
+
+  if (invite.status !== "pending") {
+    throw new Error("Este convite nao esta mais pendente.");
+  }
+
+  if (invite.email.toLowerCase() !== user.email?.toLowerCase()) {
+    throw new Error(`Este convite foi enviado para ${invite.email}, mas voce esta logado como ${user.email}.`);
+  }
+
+  const supabaseAdmin = await createServiceRoleClient();
+  const { error: updateError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ status: "cancelled" })
+    .eq("id", inviteId);
+
+  if (updateError) {
+    console.error("Erro ao recusar convite:", updateError);
+    throw new Error("Erro ao recusar convite.");
+  }
+
+  return { success: true };
+}
+
+/**
  * Busca dados do convite (público/protegido) para a página de aceite
  * Essa função precisa ser capaz de ler o convite mesmo se o usuário não estiver logado
  * ou se o usuário logado for diferente (para mostrar "Você foi convidado como X").
@@ -1312,4 +1399,3 @@ export async function getInviteDetails(inviteId: string) {
     return null;
   }
 }
-

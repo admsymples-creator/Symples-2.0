@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
   getUnreadCount,
   NotificationWithActor 
 } from "@/lib/actions/notifications";
+import { acceptInvite, declineInvite } from "@/lib/actions/members";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 interface NotificationsPopoverProps {
@@ -262,6 +264,7 @@ const getMockNotifications = (): NotificationWithActor[] => {
 };
 
 export function NotificationsPopover({ userRole, useMockData = false }: NotificationsPopoverProps) {
+  const router = useRouter();
   // Se usar mock, inicializar com dados imediatamente
   const initialMockData = useMockData ? getMockNotifications() : [];
   const [notifications, setNotifications] = useState<NotificationWithActor[]>(initialMockData);
@@ -269,7 +272,8 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
   const [activeTab, setActiveTab] = useState("all");
   const initialUnread = useMockData ? initialMockData.filter(n => !n.read_at).length : 0;
   const [unreadCount, setUnreadCount] = useState(initialUnread);
-  const [loading, setLoading] = useState(!useMockData); // Não carregar se já temos mock
+  const [loading, setLoading] = useState(!useMockData); // Nao carregar se ja temos mock
+  const [inviteActionState, setInviteActionState] = useState<Record<string, "accept" | "decline" | undefined>>({});
 
   const isAdmin = userRole === 'owner' || userRole === 'admin';
 
@@ -377,6 +381,69 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
       setNotifications(previousNotifications);
       setUnreadCount((prev) => prev + 1);
       toast.error(result.error || "Erro ao marcar como lida");
+    }
+  };
+
+  const handleAcceptInvite = async (inviteId: string, notificationId: string) => {
+    setInviteActionState((prev) => ({ ...prev, [inviteId]: "accept" }));
+    try {
+      if (useMockData) {
+        await handleMarkAsRead(notificationId);
+        toast.success("Convite aceito");
+        return;
+      }
+
+      const result = await acceptInvite(inviteId);
+      await handleMarkAsRead(notificationId);
+      toast.success("Convite aceito");
+      setIsOpen(false);
+
+      if (result?.workspaceSlug) {
+        router.push(`/${result.workspaceSlug}/tasks?invite_accepted=true`);
+      } else {
+        router.push("/home?invite_accepted=true");
+      }
+    } catch (error: any) {
+      console.error("Erro ao aceitar convite:", error);
+      toast.error("Erro ao aceitar convite", {
+        description: error?.message || "Tente novamente.",
+      });
+    } finally {
+      setInviteActionState((prev) => {
+        const next = { ...prev };
+        delete next[inviteId];
+        return next;
+      });
+    }
+  };
+
+  const handleDeclineInvite = async (inviteId: string, notificationId: string) => {
+    setInviteActionState((prev) => ({ ...prev, [inviteId]: "decline" }));
+    try {
+      if (useMockData) {
+        await handleMarkAsRead(notificationId);
+        toast.success("Convite recusado");
+        return;
+      }
+
+      const result = await declineInvite(inviteId);
+      if (!result?.success) {
+        throw new Error("Erro ao recusar convite");
+      }
+
+      await handleMarkAsRead(notificationId);
+      toast.success("Convite recusado");
+    } catch (error: any) {
+      console.error("Erro ao recusar convite:", error);
+      toast.error("Erro ao recusar convite", {
+        description: error?.message || "Tente novamente.",
+      });
+    } finally {
+      setInviteActionState((prev) => {
+        const next = { ...prev };
+        delete next[inviteId];
+        return next;
+      });
     }
   };
 
@@ -513,6 +580,9 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
                         key={notification.id}
                         notification={notification}
                         onMarkAsRead={handleMarkAsRead}
+                        onAcceptInvite={handleAcceptInvite}
+                        onDeclineInvite={handleDeclineInvite}
+                        inviteActionState={inviteActionState}
                       />
                     );
                   })}
@@ -525,4 +595,3 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
     </Popover>
   );
 }
-

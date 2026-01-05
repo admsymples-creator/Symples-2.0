@@ -44,7 +44,7 @@ import {
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
-import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useOptionalWorkspace } from "@/components/providers/SidebarProvider";
 import { getPlanName } from "@/lib/utils/subscription-helpers";
 import type { SubscriptionData } from "@/lib/types/subscription";
 
@@ -70,7 +70,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     return tabParam || "general";
   }, [effectiveMode, searchParams]);
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => initialTab);
-  const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const workspaceContext = useOptionalWorkspace();
+  const activeWorkspaceId = workspaceContext?.activeWorkspaceId || null;
+  const isLoaded = workspaceContext?.isLoaded || false;
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
 
@@ -116,6 +118,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
   // Carregar workspace ativo quando o contexto mudar (apenas se não temos dados iniciais)
   useEffect(() => {
+    if (effectiveMode === "team") {
+      return;
+    }
+
     if (!isLoaded || !activeWorkspaceId) {
       return;
     }
@@ -154,7 +160,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     };
 
     loadActiveWorkspace();
-  }, [activeWorkspaceId, isLoaded, initialWorkspace]);
+  }, [activeWorkspaceId, isLoaded, initialWorkspace, effectiveMode]);
 
   // Carregar dados de subscription quando workspace mudar ou tab billing for aberta
   useEffect(() => {

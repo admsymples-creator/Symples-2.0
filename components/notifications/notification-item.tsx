@@ -14,6 +14,7 @@ import {
   MessageSquare, 
   CheckCircle2,
   AlertCircle,
+  Loader2,
   LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,10 +22,14 @@ import { NotificationWithActor } from "@/lib/actions/notifications";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 
 interface NotificationItemProps {
   notification: NotificationWithActor;
   onMarkAsRead: (id: string) => void;
+  onAcceptInvite?: (inviteId: string, notificationId: string) => void;
+  onDeclineInvite?: (inviteId: string, notificationId: string) => void;
+  inviteActionState?: Record<string, "accept" | "decline" | undefined>;
 }
 
 // Mapeamento de ícones Lucide
@@ -42,9 +47,37 @@ const iconMap: Record<string, LucideIcon> = {
   AlertCircle,
 };
 
-function NotificationItemComponent({ notification, onMarkAsRead }: NotificationItemProps) {
+function NotificationItemComponent({
+  notification,
+  onMarkAsRead,
+  onAcceptInvite,
+  onDeclineInvite,
+  inviteActionState,
+}: NotificationItemProps) {
   const isRead = !!notification.read_at;
   const metadata = notification.metadata || {};
+
+  const inviteId = useMemo(() => {
+    if (typeof (metadata as any).invite_id === "string") {
+      return (metadata as any).invite_id as string;
+    }
+
+    if (typeof notification.resource_id === "string" && notification.resource_id.trim()) {
+      return notification.resource_id.trim();
+    }
+
+    if (typeof notification.action_url === "string") {
+      const match = notification.action_url.match(/invite=([^&]+)/);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }, [metadata, notification.resource_id, notification.action_url]);
+
+  const isInviteNotification = Boolean(inviteId) && notification.resource_type === "member";
+  const isInviteActionable = isInviteNotification && (!!onAcceptInvite || !!onDeclineInvite);
   
   // Memoizar cálculo de timeAgo para evitar recálculos desnecessários
   const timeAgo = useMemo(() => {
@@ -222,6 +255,54 @@ function NotificationItemComponent({ notification, onMarkAsRead }: NotificationI
         <p className="text-xs text-gray-400 mt-1">
           {timeAgo}
         </p>
+
+        {isInviteActionable && (
+          <div className="flex items-center gap-2 pt-2">
+            <Button
+              size="sm"
+              className="h-7 px-2"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (inviteId) {
+                  onAcceptInvite?.(inviteId, notification.id);
+                }
+              }}
+              disabled={inviteId ? !!inviteActionState?.[inviteId] : false}
+            >
+              {inviteId && inviteActionState?.[inviteId] === "accept" ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Aceitando...
+                </>
+              ) : (
+                "Aceitar"
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (inviteId) {
+                  onDeclineInvite?.(inviteId, notification.id);
+                }
+              }}
+              disabled={inviteId ? !!inviteActionState?.[inviteId] : false}
+            >
+              {inviteId && inviteActionState?.[inviteId] === "decline" ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Recusando...
+                </>
+              ) : (
+                "Recusar"
+              )}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Unread Dot */}
@@ -236,7 +317,7 @@ function NotificationItemComponent({ notification, onMarkAsRead }: NotificationI
   );
 
   // Envolver em Link se action_url existir
-  if (notification.action_url) {
+  if (notification.action_url && !isInviteActionable) {
     return (
       <Link href={notification.action_url} className="block">
         {content}
@@ -255,7 +336,10 @@ export const NotificationItem = memo(NotificationItemComponent, (prev, next) => 
     prev.notification.read_at === next.notification.read_at &&
     prev.notification.title === next.notification.title &&
     prev.notification.content === next.notification.content &&
-    prev.onMarkAsRead === next.onMarkAsRead
+    prev.onMarkAsRead === next.onMarkAsRead &&
+    prev.onAcceptInvite === next.onAcceptInvite &&
+    prev.onDeclineInvite === next.onDeclineInvite &&
+    prev.inviteActionState === next.inviteActionState
   );
 });
 

@@ -60,13 +60,18 @@ export function UserNav({ user }: UserNavProps) {
         // toast.loading("Saindo..."); 
         
         try {
-            await signOut();
-            // Redirection is handled by the server action, 
-            // but we can also force a client-side redirect just in case
-            // or simply wait.
-        } catch (error) {
+            const result = await signOut();
+            if (!result?.success) {
+                throw new Error(result?.message || "Falha ao fazer logout");
+            }
+            router.replace("/login");
+            router.refresh();
+        } catch (error: any) {
             console.error("Erro ao sair:", error);
             setIsSigningOut(false);
+            toast.error("Erro ao sair", {
+                description: error?.message || "Tente novamente.",
+            });
         }
     };
 

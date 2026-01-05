@@ -4,6 +4,7 @@ import { createServerActionClient } from "@/lib/supabase/server";
 import { Database } from "@/types/database.types";
 import { revalidatePath } from "next/cache";
 import { cache } from "react";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 
 const perfEnabled = process.env.DEBUG_PERF === "1";
 const perfNow = () => Date.now();
@@ -18,7 +19,10 @@ const logPerf = (label: string, startMs: number, meta?: Record<string, unknown>)
 };
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & { logo_url?: string | null };
+export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & {
+  logo_url?: string | null;
+  created_at?: string | null;
+};
 
 type CacheEntry<T> = { value: T; expiresAt: number };
 const IN_MEMORY_TTL_MS = 10_000;
@@ -111,7 +115,8 @@ export const getUserWorkspaces = cache(async () => {
         id,
         name,
         slug,
-        logo_url
+        logo_url,
+        created_at
       )
     `)
     .eq("user_id", user.id);
@@ -140,11 +145,27 @@ export const getUserWorkspaces = cache(async () => {
     })
     .filter((ws): ws is any => ws !== null && typeof ws === "object") as Workspace[] || [];
 
-  console.log("✅ [getUserWorkspaces] Workspaces transformados:", workspaces.length);
+  const sortedWorkspaces = [...workspaces].sort((a, b) => {
+    const aPersonal = isPersonalWorkspace(a, workspaces);
+    const bPersonal = isPersonalWorkspace(b, workspaces);
+    if (aPersonal != bPersonal) {
+      return aPersonal ? -1 : 1;
+    }
 
-  writeCache(workspacesCache, user.id, workspaces);
-  logPerf("getUserWorkspaces", perfStart, { count: workspaces.length });
-  return workspaces;
+    const aCreatedAt = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bCreatedAt = b.created_at ? new Date(b.created_at).getTime() : 0;
+    if (aCreatedAt != bCreatedAt) {
+      return aCreatedAt - bCreatedAt;
+    }
+
+    return (a.name || "").localeCompare(b.name || "", "pt-BR", { sensitivity: "base" });
+  });
+
+  console.log("? [getUserWorkspaces] Workspaces transformados:", sortedWorkspaces.length);
+
+  writeCache(workspacesCache, user.id, sortedWorkspaces);
+  logPerf("getUserWorkspaces", perfStart, { count: sortedWorkspaces.length });
+  return sortedWorkspaces;
 });
 
 /**
