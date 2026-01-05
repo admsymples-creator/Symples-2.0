@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { TaskWithDetails, createTask, updateTask, updateTaskPosition } from "@/lib/actions/tasks";
-import { mapStatusToLabel } from "@/lib/config/tasks";
+import { mapStatusToLabel, LABEL_TO_STATUS } from "@/lib/config/tasks";
 import { arrayMove } from "@dnd-kit/sortable";
 import { Member } from "@/lib/actions/members";
 import { TaskGroup } from "@/components/tasks/TaskGroup";
@@ -590,21 +590,14 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
             }
 
             // ✅ MINIFY v2: mover apenas no estado local, backend em background
-            const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
-                Backlog: "todo",
-                Triagem: "in_progress",
-                Execução: "in_progress",
-                Revisão: "done",
-                Arquivado: "archived",
-            };
-
+            // Usar statusMap centralizado
             const currentGroupBy = groupBy;
             let nextStatusLabel = taskInGroup.status;
 
             if (currentGroupBy === "status") {
                 nextStatusLabel = destinationGroupKey;
 
-                const nextStatusDb = statusMap[nextStatusLabel] || "todo";
+                const nextStatusDb = LABEL_TO_STATUS[nextStatusLabel] || "todo";
 
                 // ✅ 2. Atualização otimista local
                 setLocalTasks((prev) =>
@@ -677,16 +670,10 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
         title: string,
         context: { status?: string; priority?: string; assignee?: string; dueDate?: string | null }
     ) => {
-        const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
-            Backlog: "todo",
-            Triagem: "in_progress",
-            Execução: "in_progress",
-            Revisão: "done",
-        };
-
+        // Usar mapStatusToLabel e LABEL_TO_STATUS centralizados
         const tempId = `temp-${Date.now()}`;
-        const nextStatusLabel = context.status || "Backlog";
-        const nextStatusDb = statusMap[nextStatusLabel] || "todo";
+        const nextStatusLabel = context.status || "Não iniciado";
+        const nextStatusDb = LABEL_TO_STATUS[nextStatusLabel] || "todo";
 
         // ✅ 1. Snapshot do estado anterior (para rollback)
         const previousTasks = [...localTasksRef.current];
