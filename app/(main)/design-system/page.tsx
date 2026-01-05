@@ -78,6 +78,7 @@ export default function DesignSystemPage() {
         recurrence_end_date: null,
         recurrence_count: 0,
         group_id: null,
+        subtasks: null,
         tags: []
     };
 
