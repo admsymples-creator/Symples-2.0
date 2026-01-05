@@ -151,7 +151,7 @@ export const getUserWorkspaces = cache(async () => {
  * Limpa o cache de workspaces para um usuário específico
  * Útil quando um workspace é adicionado ou removido
  */
-export function clearUserWorkspacesCache(userId: string) {
+export async function clearUserWorkspacesCache(userId: string) {
   workspacesCache.delete(userId);
   console.log(`🗑️ [clearUserWorkspacesCache] Cache limpo para usuário: ${userId}`);
 }
