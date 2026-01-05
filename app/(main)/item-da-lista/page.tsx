@@ -42,6 +42,14 @@ export default function ItemDaListaPage() {
         due_date: "2024-12-18",
         position: 1,
         origin_context: null,
+        // Novos campos obrigatórios
+        recurrence_type: null,
+        recurrence_interval: null,
+        recurrence_end_date: null,
+        recurrence_count: 0,
+        group_id: null,
+        subtasks: null,
+        tags: []
     };
 
     // Mock data para KanbanCard
