@@ -45,6 +45,7 @@ export function HomeWorkspaceOverview({
   const { isSwitchingWorkspace } = useWorkspaceLoading();
   const workspaces = useWorkspaces();
   const hasLoadedOnceRef = useRef(false);
+  const [isMounted, setIsMounted] = useState(false);
   const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number }>>(initialProjectStats || []);
   const [loadingProjects, setLoadingProjects] = useState(false);
   // Converter objeto para Map se necessário
@@ -55,12 +56,23 @@ export function HomeWorkspaceOverview({
     return new Map();
   });
 
+  // Detectar montagem no cliente
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Detectar se é workspace pessoal (usando função helper robusta)
+  // Usar initialIsPersonal no servidor/primeira renderização para evitar mismatch
   const isPersonal = useMemo(() => {
+    // No servidor ou primeira renderização, usar initialIsPersonal
+    if (!isMounted && initialIsPersonal !== undefined) {
+      return initialIsPersonal;
+    }
+    // Após montagem, usar dados do provider
     if (!activeWorkspaceId || !isLoaded) return false;
     const currentWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
     return isPersonalWorkspace(currentWorkspace, workspaces);
-  }, [activeWorkspaceId, isLoaded, workspaces]);
+  }, [activeWorkspaceId, isLoaded, workspaces, isMounted, initialIsPersonal]);
 
   // Sincronizar dados iniciais quando disponíveis
   useEffect(() => {
@@ -160,26 +172,6 @@ export function HomeWorkspaceOverview({
     }
     return [];
   }, [workspaceStats, isPersonal, workspaces]);
-
-  // Mostrar skeleton/loading enquanto carrega (evita desaparecimento do card)
-  // IMPORTANTE: Este return está DEPOIS de todos os hooks, então está correto
-  if (!isLoaded) {
-    return (
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Carregando...
-        </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-white rounded-xl p-5 border border-gray-200 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-              <div className="h-2 bg-gray-200 rounded w-1/2"></div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   // Workspace profissional: mostrar projetos
   if (!isPersonal) {
