@@ -255,6 +255,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
     }
 
     // Email bate - verificar se já é membro
+    const supabase = await createServerActionClient();
     const { data: existingMember } = await supabase
       .from("workspace_members")
       .select("user_id")
