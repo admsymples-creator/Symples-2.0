@@ -8,6 +8,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { sendInviteEmail } from "@/lib/email/send-invite";
+import { clearUserWorkspacesCache } from "@/lib/actions/user";
 
 // Tipo para os membros retornados
 export type Member = {
@@ -1126,6 +1127,9 @@ export async function acceptInvite(inviteId: string) {
     path: '/',
   });
 
+  // Limpar cache de workspaces do usuário para forçar recarregamento
+  clearUserWorkspacesCache(user.id);
+  
   // Revalidar caminhos importantes para garantir que o layout encontre os workspaces
   revalidatePath("/", "layout");
   revalidatePath("/home");
