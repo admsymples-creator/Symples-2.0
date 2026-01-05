@@ -236,14 +236,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
   
-  // Atualizar membros e convites quando dados iniciais mudarem ou quando workspace mudar
-  useEffect(() => {
-    // Se temos dados iniciais e o workspace inicial corresponde ao workspace ativo, usar dados iniciais
-    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id && (initialMembers.length > 0 || initialInvites.length > 0)) {
-      setMembers(initialMembers);
-      setInvites(initialInvites);
-    }
-  }, [initialMembers, initialInvites, initialWorkspace, activeWorkspaceId]);
+  // NOTA: Removido useEffect que sobrescrevia membros - causava perda de dados quando initialMembers mudava
+  // Os dados iniciais já são passados no useState acima, e membros são atualizados apenas quando workspace muda (linha 145)
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
