@@ -219,8 +219,15 @@ export async function ensurePersonalWorkspace(): Promise<{ success: boolean; wor
     .single();
 
   if (createError) {
-    console.error("Erro ao criar workspace pessoal:", createError);
-    return { success: false, error: createError.message };
+    console.error("Erro ao criar workspace pessoal:", {
+      error: createError,
+      message: createError.message,
+      code: createError.code,
+      details: createError.details,
+      hint: createError.hint,
+      userId: user.id,
+    });
+    return { success: false, error: createError.message || "Erro desconhecido ao criar workspace pessoal" };
   }
 
   // O trigger já adiciona o owner como membro, mas garantimos aqui também
