@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { LayoutGrid, Check, X } from "lucide-react" // Ícone mais adequado para "Agrupar"
+import { LayoutGrid, Check, X } from "lucide-react"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,8 @@ export function GroupingMenu() {
 
   // 2. Mapeamento de Labels para exibição no Badge
   const groupLabels: Record<string, string> = {
-    none: "Nenhum",
+    none: "Personalizado",
+    project: "Projeto",
     status: "Status",
     date: "Data",
     assignee: "Responsável"
@@ -36,7 +37,7 @@ export function GroupingMenu() {
   // 3. Handler Instantâneo (Reactive Pattern)
   const handleGroupChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString())
-    
+
     if (value === "none") {
       params.delete("group")
     } else {
@@ -60,13 +61,13 @@ export function GroupingMenu() {
     <div className="flex items-center gap-1">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             className={cn(
               "h-9 px-3 transition-all flex items-center justify-center",
-              isGrouped 
-                ? "text-green-700 hover:text-green-800 hover:bg-green-50" 
+              isGrouped
+                ? "text-green-700 hover:text-green-800 hover:bg-green-50"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             )}
           >
@@ -75,8 +76,8 @@ export function GroupingMenu() {
             {isGrouped && (
               <>
                 <div className="mx-2 h-4 w-[1px] bg-green-200" />
-                <Badge 
-                  variant="secondary" 
+                <Badge
+                  variant="secondary"
                   className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
                 >
                   {groupLabels[currentGroup] || "Status"}
@@ -85,16 +86,20 @@ export function GroupingMenu() {
             )}
           </Button>
         </DropdownMenuTrigger>
-        
+
         <DropdownMenuContent className="w-48" align="start">
           <DropdownMenuLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
             AGRUPAR POR
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          
+
           <DropdownMenuRadioGroup value={currentGroup} onValueChange={handleGroupChange}>
+            {/* Renomeado de "Nenhum (Lista)" para "Projeto" pois é o agrupamento padrão */}
             <DropdownMenuRadioItem value="none" className="cursor-pointer">
-              Nenhum (Lista)
+              Personalizado
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="project" className="cursor-pointer">
+              Projeto
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="status" className="cursor-pointer">
               Status
@@ -108,7 +113,7 @@ export function GroupingMenu() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      
+
       {isGrouped && (
         <Button
           variant="ghost"

@@ -40,6 +40,7 @@ import {
     DndContext,
     closestCenter,
     pointerWithin,
+    rectIntersection,
     MouseSensor,
     PointerSensor,
     TouchSensor,
@@ -80,7 +81,7 @@ import { getIconComponent } from "@/components/projects/IconPicker";
 
 type ViewMode = "list" | "kanban" | "calendar";
 type GroupBy = "status" | "priority" | "assignee" | "date";
-type ViewOption = "group" | "status" | "date" | "priority" | "assignee";
+type ViewOption = "group" | "status" | "date" | "priority" | "assignee" | "project";
 
 const DATE_COLOR_MAP: Record<string, string> = {
     "Atrasadas": "#ef4444",
@@ -138,6 +139,7 @@ function getInitialViewOption(groupParam: string | null): ViewOption {
     if (groupParam === "priority") return "priority";
     if (groupParam === "date") return "date";
     if (groupParam === "assignee") return "assignee";
+    if (groupParam === "project") return "project";
     // "none", null ou undefined -> "group" (padr├úo: grupos do banco)
     // Tamb├®m trata qualquer outro valor inv├ílido como "group"
     return "group";
@@ -441,52 +443,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         })
     );
 
-    const collisionDetectionStrategy = useCallback((args: Parameters<typeof pointerWithin>[0]) => {
-        // ✅ CORREÇÃO: Usar localTasks como fallback se localTasksRef estiver vazio
-        const currentTasks = localTasksRef.current.length > 0 ? localTasksRef.current : localTasks;
-        const taskIds = new Set(currentTasks.map((task) => String(task.id)));
-
-        // ✅ CORREÇÃO: Incluir IDs dos grupos como containers válidos
-        // Isso garante que grupos vazios sejam detectados como targets de drop
-        const groupIds = Object.keys(groupedDataRef.current);
-        const validIds = new Set([...taskIds, ...groupIds, "inbox", "Inbox"]);
-
-        // ✅ DEBUG: Log se tiver tagFilter
-        if (process.env.NODE_ENV === 'development' && tagFilter && taskIds.size === 0) {
-            console.warn('⚠️ [collisionDetectionStrategy] taskIds vazio com tagFilter:', {
-                tagFilter,
-                localTasksRefCount: localTasksRef.current.length,
-                localTasksCount: localTasks.length,
-                usingLocalTasks: localTasksRef.current.length === 0,
-                groupIds
-            });
-        }
-
-        const pointerCollisions = pointerWithin(args);
-        if (pointerCollisions.length > 0) {
-            // Permitir colisão com tasks E grupos
-            const validCollisions = pointerCollisions.filter((collision) => validIds.has(String(collision.id)));
-            if (validCollisions.length > 0) {
-                return validCollisions;
-            }
-        }
-
-        const taskContainers = args.droppableContainers.filter((container) =>
-            validIds.has(String(container.id))
-        );
-        if (taskContainers.length > 0) {
-            const taskRects = new Map(
-                Array.from(args.droppableRects.entries()).filter(([id]) => validIds.has(String(id)))
-            );
-            return closestCenter({
-                ...args,
-                droppableContainers: taskContainers,
-                droppableRects: taskRects,
-            });
-        }
-
-        return closestCenter(args);
-    }, [localTasks, tagFilter]);
+    // rectIntersection é ainda melhor que pointerWithin para áreas grandes, pois detecta
+    // interseção entre o retângulo arrastado e o alvo, não apenas o cursor.
+    // Isso torna o drop muito mais "magnético" e indulgente.
+    const collisionDetectionStrategy = rectIntersection;
 
 
     // Handler para criar grupo
@@ -1396,7 +1356,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, [activeWorkspaceId, loadGroups]);
 
     // ? Callback memoizado para optimistic updates
-    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+    const handleOptimisticUpdate = useCallback((taskId: string | number, updates: Partial<{
+        title?: string;
+        status?: string;
+        dueDate?: string;
+        priority?: string;
+        assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        tags?: string[];
+        group?: { id: string; name: string; color?: string };
+    }>) => {
         const localUpdates: Partial<Task> = {};
         if (updates.title) localUpdates.title = updates.title;
         if (updates.status) {
@@ -1409,6 +1377,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             // ? Tamb├®m atualizar assigneeId para manter consist├¬ncia
             localUpdates.assigneeId = updates.assignees[0]?.id || null;
         }
+        if (updates.tags) localUpdates.tags = updates.tags;
+        if (updates.group) localUpdates.group = updates.group;
+
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
 
@@ -1564,6 +1535,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     // Agrupar por nome do primeiro respons├ível
                     const assigneeName = task.assignees?.[0]?.name;
                     groupKey = assigneeName ? assigneeName.trim() : "Sem respons├ível";
+                    break;
+                case "project":
+                    // Agrupar por TAG (que representa o projeto)
+                    if (task.tags && task.tags.length > 0) {
+                        groupKey = task.tags[0]; // Considera a primeira tag como o projeto principal
+                    } else {
+                        groupKey = "Sem Projeto";
+                    }
                     break;
                 default:
                     groupKey = "Inbox";
@@ -2423,23 +2402,37 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return;
         }
 
-        // ? CORRE├ç├âO: Se overIdStr ├® uma coluna (n├úo uma tarefa), usar diretamente
-        // No modo kanban, o over.id pode ser o ID da coluna (DroppableColumn)
         if (!destinationGroupKey) {
-            // Verificar se ├® uma coluna do kanban
-            if (viewMode === "kanban") {
-                const kanbanColumn = kanbanColumns.find(col => col.id === overIdStr);
-                if (kanbanColumn) {
-                    destinationGroupKey = kanbanColumn.id;
-                } else if (Object.keys(groupedData).includes(overIdStr)) {
-                    destinationGroupKey = overIdStr;
-                }
-            } else if (Object.keys(groupedData).includes(overIdStr)) {
+            // ? CORREÇÃO: Verificar diretamente se o ID é uma chave de grupo (funciona para Kanban e Lista)
+            // Usando ref para garantir dados mais recentes
+            const currentGroupedData = groupedDataRef.current;
+
+            // Log para debug do erro no Kanban
+            console.log("🔍 [handleDragEnd] Verificando colunas:", {
+                overIdStr,
+                viewMode,
+                isKey: Object.keys(currentGroupedData).includes(overIdStr),
+                keys: Object.keys(currentGroupedData)
+            });
+
+            if (Object.keys(currentGroupedData).includes(overIdStr)) {
+                destinationGroupKey = overIdStr;
+            } else if (viewMode === "kanban") {
+                // FALLBACK ROBUSTO PARA KANBAN
+                // Se o dnd-kit detectou collision com overIdStr, e não é uma tarefa (já verificado antes),
+                // e estamos no Kanban, ENTÃO overIdStr SÓ PODE SER uma coluna.
+                // Mesmo que groupedDataRef esteja desatualizado (race condition), confie no dnd-kit.
+                console.warn("⚠️ [handleDragEnd] Usando fallback de Kanban para coluna:", overIdStr);
                 destinationGroupKey = overIdStr;
             }
         }
 
         if (!destinationGroupKey) {
+            console.error("❌ [handleDragEnd] Falha fatal: Destino inválido", {
+                overIdStr,
+                viewMode,
+                validKeys: Object.keys(groupedDataRef.current)
+            });
             toast.error("Erro: Destino inv├ílido. Tente arrastar para uma coluna v├ílida.");
             resetDragState();
             return;

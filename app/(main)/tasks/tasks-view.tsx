@@ -1012,7 +1012,7 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
 
                     <DragOverlay>
                         {activeTask ? (
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-4 opacity-90">
+                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-4 opacity-90 pointer-events-none cursor-grabbing">
                                 <p className="text-sm font-medium">{activeTask.title}</p>
                             </div>
                         ) : null}
