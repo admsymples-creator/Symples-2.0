@@ -1830,7 +1830,8 @@ export async function bulkArchiveTasks(
     }
 
     // Executar
-    const { error, count } = await query.select("id", { count: "exact" });
+    const { data, error } = await query.select("id");
+    const count = data ? data.length : 0;
 
     if (error) {
       // Log detalhado do erro
