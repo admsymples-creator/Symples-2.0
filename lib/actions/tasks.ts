@@ -605,7 +605,7 @@ export async function createTask(data: {
   workspace_id?: string | null;
   status?: string;
   priority?: string;
-  is_personal?: boolean;
+  is_personal?: boolean | null;
   description?: string;
   assignee_id?: string | null;
   recurrence_type?: string;
