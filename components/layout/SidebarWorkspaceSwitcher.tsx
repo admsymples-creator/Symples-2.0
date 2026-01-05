@@ -157,12 +157,12 @@ export function SidebarWorkspaceSwitcher({
                                     }
                                 }}
                                 className={cn(
-                                    "gap-2 cursor-pointer",
+                                    "gap-2 cursor-pointer min-w-0",
                                     isSwitchingWorkspace && workspace.id !== activeWorkspaceId && "opacity-50"
                                 )}
                                 disabled={isSwitchingWorkspace}
                             >
-                                <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
+                                <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
                                     {workspace.logo_url ? (
                                         <img
                                             src={workspace.logo_url}
@@ -173,9 +173,9 @@ export function SidebarWorkspaceSwitcher({
                                         <Building2 className="w-3 h-3 text-gray-500" />
                                     )}
                                 </div>
-                                <span className="flex-1 truncate">{workspace.name}</span>
+                                <span className="flex-1 truncate min-w-0">{workspace.name}</span>
                                 {workspace.id === activeWorkspaceId && (
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#050815]" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#050815] flex-shrink-0" />
                                 )}
                             </DropdownMenuItem>
                         ))}
