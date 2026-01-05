@@ -152,7 +152,7 @@ export async function GET(request: Request) {
                 return NextResponse.redirect(`${origin}/home?invite_accepted=true`);
               }
             }
-            } catch (inviteError: any) {
+          } catch (inviteError: any) {
             console.error('❌ [Auth Callback] Erro ao aceitar convite:', inviteError);
             // Limpar cookie em caso de erro
             const cookieStore = await cookies();
