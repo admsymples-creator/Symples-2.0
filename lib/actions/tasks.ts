@@ -601,7 +601,7 @@ export async function getTaskById(id: string) {
  */
 export async function createTask(data: {
   title: string;
-  due_date?: string;
+  due_date?: string | null;
   workspace_id?: string | null;
   status?: string;
   priority?: string;
