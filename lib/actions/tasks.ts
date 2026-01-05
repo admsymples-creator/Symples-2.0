@@ -613,6 +613,7 @@ export async function createTask(data: {
   recurrence_end_date?: string;
   group_id?: string | null;
   tags?: string[];
+  origin_context?: any;
 }) {
   const supabase = await createServerActionClient();
   console.log("[SERVER-ACTION] createTask called with:", JSON.stringify(data));
