@@ -316,14 +316,25 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       if (!memberToRemove || !workspace) return;
       setIsRemovingMember(true);
       try {
-          await removeMember(workspace.id, memberToRemove);
+          const result = await removeMember(workspace.id, memberToRemove);
           setMembers(members.filter(m => m.user_id !== memberToRemove));
-          toast.success("Membro removido", { 
+          
+          if (result.warning) {
+            toast.success("Membro removido", { 
+              description: result.warning
+            });
+          } else {
+            toast.success("Membro removido", { 
               description: "O usuário perdeu acesso ao workspace." 
-          });
+            });
+          }
+          
           router.refresh();
       } catch (error: any) {
-          toast.error("Erro ao remover membro", { description: error.message });
+          console.error("Erro ao remover membro:", error);
+          toast.error("Erro ao remover membro", { 
+            description: error?.message || "Ocorreu um erro inesperado. Tente novamente." 
+          });
       } finally {
           setIsRemovingMember(false);
           setMemberToRemove(null);

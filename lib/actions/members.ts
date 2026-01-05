@@ -1,6 +1,7 @@
 "use server";
 
 import { createServerActionClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { cache } from "react";
@@ -836,20 +837,7 @@ export async function removeMember(workspaceId: string, userId: string) {
   }
 
   // Usar supabaseAdmin para garantir que a remoção funcione mesmo com RLS restritivo
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!serviceRoleKey) {
-    console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
-    throw new Error("Configuração do servidor inválida. Contate o suporte.");
-  }
-
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  const supabaseAdmin = await createServiceRoleClient();
 
   // ✅ AUDIT: Registrar ação antes de remover
   try {
