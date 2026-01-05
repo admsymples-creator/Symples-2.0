@@ -1146,7 +1146,8 @@ export async function acceptInvite(inviteId: string) {
   // ✅ Buscar slug do workspace para redirecionar diretamente
   // Isso evita race condition onde o usuário é redirecionado para /home antes
   // da propagação do banco de dados, o que causava redirect falso para onboarding
-  const { data: workspaceData } = await supabase
+  // Usar supabaseAdmin para garantir que a busca funcione mesmo com cache/RLS
+  const { data: workspaceData } = await supabaseAdmin
     .from('workspaces')
     .select('slug')
     .eq('id', invite.workspace_id)

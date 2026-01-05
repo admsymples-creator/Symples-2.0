@@ -87,61 +87,49 @@ export async function GET(request: Request) {
             
             // ✅ TASK 3: Convite válido e pendente - ACEITAR IMEDIATAMENTE
             console.log('✅ [Auth Callback] Aceitando convite válido:', inviteToken.substring(0, 8) + '...');
-            await acceptInvite(inviteToken);
+            const acceptResult = await acceptInvite(inviteToken);
             
             // Limpar cookie após aceitar com sucesso
             const cookieStore = await cookies();
             cookieStore.delete('pending_invite');
             
-            // Criar cookie temporário para indicar que acabou de aceitar convite
-            cookieStore.set('just_accepted_invite', 'true', {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              sameSite: 'lax',
-              maxAge: 60, // 1 minuto
-              path: '/',
-            });
-            
             // Revalidar cache
             revalidatePath("/", "layout");
             revalidatePath("/home");
             
-            // Aguardar para garantir que workspace_members foi criado
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Verificar se o workspace foi adicionado com sucesso
-            const { data: memberWorkspaces } = await supabase
-              .from('workspace_members')
-              .select('workspace_id')
-              .eq('user_id', user.id);
-            
-            if (memberWorkspaces && memberWorkspaces.length > 0) {
-              // ✅ Buscar slug do workspace para redirecionar diretamente
-              const acceptedWorkspaceId = inviteDetails.workspace_id;
-              const { data: workspaceData } = await supabase
-                .from('workspaces')
-                .select('id, slug')
-                .eq('id', acceptedWorkspaceId)
-                .single();
-              
-              // Redirecionar para o workspace específico ou /home
-              let redirectUrl = `${origin}/home?invite_accepted=true`;
-              if (workspaceData) {
-                const workspacePath = workspaceData.slug || workspaceData.id;
-                redirectUrl = `${origin}/${workspacePath}/tasks?invite_accepted=true`;
-                console.log('✅ [Auth Callback] Redirecionando para workspace:', workspacePath);
-              } else {
-                console.log('⚠️ [Auth Callback] Workspace não encontrado, redirecionando para /home');
-              }
-              
+            // ✅ Redirecionar diretamente para o workspace usando o slug retornado
+            if (acceptResult.success && acceptResult.workspaceSlug) {
+              const redirectUrl = `${origin}/${acceptResult.workspaceSlug}/tasks?invite_accepted=true`;
+              console.log('✅ [Auth Callback] Redirecionando para workspace:', acceptResult.workspaceSlug);
               return NextResponse.redirect(redirectUrl);
             } else {
-              // Retry após delay maior
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              const { data: memberWorkspacesRetry } = await supabase
+              // Fallback: aguardar e tentar buscar workspace
+              await new Promise(resolve => setTimeout(resolve, 500));
+              const { data: memberWorkspaces } = await supabase
                 .from('workspace_members')
                 .select('workspace_id')
                 .eq('user_id', user.id);
+              
+              if (memberWorkspaces && memberWorkspaces.length > 0) {
+                const acceptedWorkspaceId = inviteDetails.workspace_id;
+                const { data: workspaceData } = await supabase
+                  .from('workspaces')
+                  .select('id, slug')
+                  .eq('id', acceptedWorkspaceId)
+                  .single();
+                
+                let redirectUrl = `${origin}/home?invite_accepted=true`;
+                if (workspaceData?.slug) {
+                  redirectUrl = `${origin}/${workspaceData.slug}/tasks?invite_accepted=true`;
+                }
+                return NextResponse.redirect(redirectUrl);
+              } else {
+                // Retry após delay maior
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const { data: memberWorkspacesRetry } = await supabase
+                  .from('workspace_members')
+                  .select('workspace_id')
+                  .eq('user_id', user.id);
               
               if (memberWorkspacesRetry && memberWorkspacesRetry.length > 0) {
                 const acceptedWorkspaceId = inviteDetails.workspace_id;
