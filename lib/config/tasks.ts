@@ -43,9 +43,9 @@ export const TASK_CONFIG: Record<string, TaskStatusConfig> = {
     lightColor: 'bg-blue-100 text-blue-700',
   },
   [TASK_STATUS.CORRECTION]: { 
-    label: 'Correção',
-    color: 'fill-orange-500',
-    lightColor: 'bg-orange-100 text-orange-700',
+    label: 'Bloqueado',
+    color: 'fill-red-500',
+    lightColor: 'bg-red-100 text-red-700',
   },
   [TASK_STATUS.BLOCKED]: { 
     label: 'Bloqueado',
@@ -94,7 +94,7 @@ export const STATUS_TO_LABEL: Record<TaskStatus, string> = {
   [TASK_STATUS.TODO]: 'Não iniciado',
   [TASK_STATUS.IN_PROGRESS]: 'Em progresso',
   [TASK_STATUS.REVIEW]: 'Revisão',
-  [TASK_STATUS.CORRECTION]: 'Correção',
+  [TASK_STATUS.CORRECTION]: 'Bloqueado',
   [TASK_STATUS.BLOCKED]: 'Bloqueado',
   [TASK_STATUS.DONE]: 'Concluido',
   [TASK_STATUS.ARCHIVED]: 'Arquivado',
