@@ -13,7 +13,7 @@ export function WelcomeEmptyState({ workspaceName, onAction }: WelcomeEmptyState
   const displayName = workspaceName || "Minha Semana";
 
   return (
-    <Card className="bg-white border border-gray-200 shadow-sm p-12 max-w-2xl mx-auto">
+    <Card className="bg-white border-none shadow-sm p-12 max-w-2xl mx-auto">
       <div className="flex flex-col items-center text-center space-y-6">
         {/* Icon */}
         <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-50">

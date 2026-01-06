@@ -4,6 +4,7 @@ import { createServerActionClient } from "@/lib/supabase/server";
 import { Database } from "@/types/database.types";
 import { revalidatePath } from "next/cache";
 import { cache } from "react";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 
 const perfEnabled = process.env.DEBUG_PERF === "1";
 const perfNow = () => Date.now();
@@ -18,7 +19,10 @@ const logPerf = (label: string, startMs: number, meta?: Record<string, unknown>)
 };
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & { logo_url?: string | null };
+export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & {
+  logo_url?: string | null;
+  created_at?: string | null;
+};
 
 type CacheEntry<T> = { value: T; expiresAt: number };
 const IN_MEMORY_TTL_MS = 10_000;
@@ -111,7 +115,8 @@ export const getUserWorkspaces = cache(async () => {
         id,
         name,
         slug,
-        logo_url
+        logo_url,
+        created_at
       )
     `)
     .eq("user_id", user.id);
@@ -140,12 +145,37 @@ export const getUserWorkspaces = cache(async () => {
     })
     .filter((ws): ws is any => ws !== null && typeof ws === "object") as Workspace[] || [];
 
-  console.log("✅ [getUserWorkspaces] Workspaces transformados:", workspaces.length);
+  const sortedWorkspaces = [...workspaces].sort((a, b) => {
+    const aPersonal = isPersonalWorkspace(a, workspaces);
+    const bPersonal = isPersonalWorkspace(b, workspaces);
+    if (aPersonal != bPersonal) {
+      return aPersonal ? -1 : 1;
+    }
 
-  writeCache(workspacesCache, user.id, workspaces);
-  logPerf("getUserWorkspaces", perfStart, { count: workspaces.length });
-  return workspaces;
+    const aCreatedAt = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bCreatedAt = b.created_at ? new Date(b.created_at).getTime() : 0;
+    if (aCreatedAt != bCreatedAt) {
+      return aCreatedAt - bCreatedAt;
+    }
+
+    return (a.name || "").localeCompare(b.name || "", "pt-BR", { sensitivity: "base" });
+  });
+
+  console.log("? [getUserWorkspaces] Workspaces transformados:", sortedWorkspaces.length);
+
+  writeCache(workspacesCache, user.id, sortedWorkspaces);
+  logPerf("getUserWorkspaces", perfStart, { count: sortedWorkspaces.length });
+  return sortedWorkspaces;
 });
+
+/**
+ * Limpa o cache de workspaces para um usuário específico
+ * Útil quando um workspace é adicionado ou removido
+ */
+export async function clearUserWorkspacesCache(userId: string) {
+  workspacesCache.delete(userId);
+  console.log(`🗑️ [clearUserWorkspacesCache] Cache limpo para usuário: ${userId}`);
+}
 
 /**
  * Garante que o usuário tenha um workspace pessoal
@@ -201,17 +231,24 @@ export async function ensurePersonalWorkspace(): Promise<{ success: boolean; wor
       name: "Pessoal",
       owner_id: user.id,
       slug,
-      plan: "business",
+      plan: "pro",
       subscription_status: "trialing",
       trial_ends_at: trialEndsAt,
-      member_limit: 15,
+      member_limit: 5,
     })
     .select()
     .single();
 
   if (createError) {
-    console.error("Erro ao criar workspace pessoal:", createError);
-    return { success: false, error: createError.message };
+    console.error("Erro ao criar workspace pessoal:", {
+      error: createError,
+      message: createError.message,
+      code: createError.code,
+      details: createError.details,
+      hint: createError.hint,
+      userId: user.id,
+    });
+    return { success: false, error: createError.message || "Erro desconhecido ao criar workspace pessoal" };
   }
 
   // O trigger já adiciona o owner como membro, mas garantimos aqui também
@@ -231,7 +268,8 @@ export async function ensurePersonalWorkspace(): Promise<{ success: boolean; wor
     // Não retornamos erro aqui, pois o workspace foi criado
   }
 
-  revalidatePath("/", "layout");
+  // Não chamar revalidatePath durante render - será invalidado na próxima requisição
+  // O cache do React será limpo naturalmente na próxima renderização
   return { success: true, workspaceId: newWorkspace.id };
 }
 

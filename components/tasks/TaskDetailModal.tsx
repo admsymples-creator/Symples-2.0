@@ -167,6 +167,7 @@ interface TaskDetailModalProps {
         dueDate?: string;
         priority?: string;
         assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        tags?: string[];
     }>) => void;
     task?: {
         id: string;
@@ -2628,6 +2629,9 @@ export function TaskDetailModal({
                                                                 )}
                                                                 onClick={() => {
                                                                     setTags([]);
+                                                                    if (currentTaskId) {
+                                                                        onTaskUpdatedOptimistic?.(currentTaskId, { tags: [] });
+                                                                    }
                                                                     if (currentTaskId && !isCreateMode) {
                                                                         updateTaskTags(currentTaskId, []).catch(console.error);
                                                                     }
@@ -2649,6 +2653,9 @@ export function TaskDetailModal({
                                                                             // Permitir apenas uma tag por vez (projeto único)
                                                                             const newTags = isSelected ? [] : [tag];
                                                                             setTags(newTags);
+                                                                            if (currentTaskId) {
+                                                                                onTaskUpdatedOptimistic?.(currentTaskId, { tags: newTags });
+                                                                            }
                                                                             if (currentTaskId && !isCreateMode) {
                                                                                 updateTaskTags(currentTaskId, newTags).catch(console.error);
                                                                             }

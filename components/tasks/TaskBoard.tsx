@@ -113,28 +113,28 @@ const DroppableColumn = memo(function DroppableColumn({
     id: column.id,
     data: droppableData,
   });
-  
+
   const [isAdding, setIsAdding] = useState(false);
 
   // Garantir que tasks seja sempre um array
   const tasks = column.tasks || [];
-  
+
   // Estabilizar array de IDs usado no DnD (SortableContext)
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
-  
+
   // Handlers memoizados
   const handleSetAdding = useCallback(() => {
     setIsAdding(true);
   }, []);
-  
+
   const handleCancelAdd = useCallback(() => {
     setIsAdding(false);
   }, []);
-  
+
   const handleTaskClick = useCallback((taskId: string) => {
     onTaskClick?.(taskId);
   }, [onTaskClick]);
-  
+
   const handleSubmitAdd = useCallback(async (title: string, dueDate?: Date | null, assigneeId?: string | null) => {
     const result = onAddTask?.(column.id, title, dueDate, assigneeId);
     if (result && typeof result === 'object' && 'then' in result) {
@@ -167,11 +167,11 @@ const DroppableColumn = memo(function DroppableColumn({
           count={tasks.length}
           color={column.color}
           actions={
-            viewOption === "group" && 
-            showGroupActions && 
-            column.id !== "inbox" && 
-            column.id !== "Inbox" &&
-            (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup) ? (
+            viewOption === "group" &&
+              showGroupActions &&
+              column.id !== "inbox" &&
+              column.id !== "Inbox" &&
+              (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup) ? (
               <GroupActionMenu
                 groupId={column.id}
                 groupTitle={column.title}
@@ -184,28 +184,28 @@ const DroppableColumn = memo(function DroppableColumn({
               />
             ) : (
               onAddTask ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSetAdding();
-                  }}
-                >
-                  Adicionar Tarefa
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetAdding();
+                      }}
+                    >
+                      Adicionar Tarefa
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : undefined
             )
           }
@@ -224,6 +224,7 @@ const DroppableColumn = memo(function DroppableColumn({
                 columnTitle={column.title}
                 columnId={column.id}
                 onClick={handleSetAdding}
+                isOver={isOver}
               />
             ) : (
               tasks.map((task) => (
@@ -292,17 +293,17 @@ const DroppableColumn = memo(function DroppableColumn({
 
 // TaskBoard Component
 // Nota: O DndContext reside no componente pai (TasksView) para gerenciar o estado global do drag
-function TaskBoardComponent({ 
-  columns, 
-  onTaskClick, 
-  onAddTask, 
-  onTaskMoved, 
-  members, 
-  groupBy, 
-  onToggleComplete, 
-  onTaskUpdated, 
-  onTaskUpdatedOptimistic, 
-  onDelete, 
+function TaskBoardComponent({
+  columns,
+  onTaskClick,
+  onAddTask,
+  onTaskMoved,
+  members,
+  groupBy,
+  onToggleComplete,
+  onTaskUpdated,
+  onTaskUpdatedOptimistic,
+  onDelete,
   isDragDisabled = false,
   onRenameGroup,
   onColorChange,
@@ -312,7 +313,7 @@ function TaskBoardComponent({
   viewOption,
   onCreateGroup,
 }: TaskBoardProps) {
-  
+
   // 🔍 DEBUG: Verificar se callback está chegando no TaskBoardComponent
   return (
     <div className="flex h-full overflow-x-auto overflow-y-hidden gap-4 scrollbar-thin px-2 pb-0 items-stretch">

@@ -501,11 +501,13 @@ export async function signOut() {
     // Revalidar todas as rotas
     revalidatePath('/', 'layout')
 
-    // Redirecionar para login
-    redirect('/login')
+    return { success: true }
   } catch (error) {
     console.error('Erro inesperado ao fazer logout:', error)
-    redirect('/login')
+    return {
+      success: false,
+      message: 'Erro inesperado ao fazer logout',
+    }
   }
 }
 

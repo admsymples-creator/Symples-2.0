@@ -127,3 +127,6 @@
 - Buscar série: `WHERE recurrence_parent_id = <parent_id> OR id = <parent_id>`
 
 
+
+
+

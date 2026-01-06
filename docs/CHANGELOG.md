@@ -42,6 +42,14 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Melhor feedback visual durante gravação de áudio
 
 ### Fixed
+- **Correção de Drag-and-Drop em Tarefas de Projetos:**
+  - Corrigido problema onde DND não funcionava quando havia `tagFilter` (projetos)
+  - Adicionado fallback para `localTasks` quando `localTasksRef.current` está vazio
+  - Corrigida `collisionDetectionStrategy` para funcionar com tarefas filtradas
+  - Corrigidos `handleDragStart`, `handleDragOver` e `handleDragEnd` para usar fallback correto
+  - `groupedDataRef` agora sincronizado via `useEffect` para garantir atualização correta
+  - Adicionados logs de debug em desenvolvimento para facilitar troubleshooting
+  - Ver documentação completa em `docs/CORRECAO_DND_PROJETOS.md`
 - **Correção de Timezone em Datas:**
   - Função `formatDateLocal` criada para evitar problemas de UTC
   - Datas calculadas no timezone local do usuário
@@ -147,6 +155,14 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Botões de bullet, lista numerada, citação e bloco de código voltam a funcionar
   - Estilos aplicados via Tailwind para listas, blockquote e code block
   - Placeholder reposicionado e ocultado no foco; descrição vazia normaliza para string vazia ao salvar para reexibir placeholder
+- **Planner / Weekly View**:
+  - **Correção de Tarefas Desaparecendo (Persistência Local)**: Implementado estado local `createdTasks` em `DayColumn` para manter tarefas visíveis imediatamente após criação, eliminando "flicker".
+  - **Correção de Contexto (Workspace vs Pessoal)**: `DayColumn` agora recebe e utiliza o contexto correto (`workspace_id`) ao criar tarefas, evitando que tarefas de workspace sejam criadas como pessoais (e filtradas posteriormente).
+  - **Estilização Unificada**: Cores do Calendário agora seguem o padrão do painel semanal (Verde para Pessoal, Dark para Projetos, Cinza para Workspace).
+  - **Sincronização**: `PlannerClient` força atualização da lista assim que servidor retorna novos dados (`router.refresh`).
+  - **Tipagem**: Atualizados tipos do banco (`database.types.ts`) com colunas faltantes (`recurrence_type`, `subtasks`).
+  - **Recorrência**: Criada migration `MIGRATION_ADD_RECURRENCE_DETAILS.sql` para suportar nativamente tarefas recorrentes no banco de dados.
+  - **Recorrência em Workspaces**: Removida restrição (`trigger`) que impedia criação de tarefas recorrentes em workspaces (`MIGRATION_ALLOW_WORKSPACE_RECURRENCE.sql`).
 
 ### Technical
 - Implementado layout CSS Grid em TaskRowMinify para alinhamento vertical consistente

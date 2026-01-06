@@ -3,12 +3,13 @@ import React from "react";
 
 const pricingPlans = [
     {
-        name: "Starter",
+        name: "Pessoal",
         price: "R$ 49",
         period: "/mês",
-        description: "Para solopreneurs e freelancers.",
+        description: "Para uso individual com workspace pessoal.",
         features: [
             "1 membro (você)",
+            "1 workspace pessoal",
             "Input via WhatsApp",
             "Tarefas com IA (50/mês)",
             "Financeiro Básico",
@@ -26,6 +27,7 @@ const pricingPlans = [
         description: "Para pequenos times e sócios.",
         features: [
             "Até 5 membros",
+            "2 workspaces (1 pessoal + 1 profissional)",
             "Input via WhatsApp",
             "Tarefas com IA Ilimitadas",
             "Financeiro Completo",
@@ -42,6 +44,7 @@ const pricingPlans = [
         description: "Para agências consolidadas.",
         features: [
             "Até 15 membros",
+            "2 workspaces (1 pessoal + 1 profissional)",
             "Input via WhatsApp",
             "Tarefas com IA Ilimitadas",
             "Financeiro Completo + Exportação",
@@ -60,7 +63,7 @@ export function PricingFAQ() {
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 
                 <div className="text-center max-w-3xl mx-auto mb-16">
-                    <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl mb-4">
+                    <h2 className="text-3xl font-bold tracking-tight text-[#050815] sm:text-4xl mb-4">
                         Preço simples. Retorno imediato.
                     </h2>
                     <p className="text-lg text-slate-600">
@@ -84,7 +87,7 @@ export function PricingFAQ() {
                             )}
 
                             <div className="mb-6">
-                                <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
+                                <h3 className="text-lg font-bold text-[#050815]">{plan.name}</h3>
                                 <div className="mt-4">
                                     {plan.originalPrice && (
                                         <div className="flex items-center gap-2 mb-1">
@@ -95,7 +98,7 @@ export function PricingFAQ() {
                                         </div>
                                     )}
                                     <div className="flex items-baseline gap-1">
-                                        <span className="text-4xl font-extrabold text-slate-900 tracking-tight">{plan.price}</span>
+                                        <span className="text-4xl font-extrabold text-[#050815] tracking-tight">{plan.price}</span>
                                         <span className="text-slate-500 text-sm font-medium">{plan.period}</span>
                                     </div>
                                 </div>
@@ -117,7 +120,7 @@ export function PricingFAQ() {
 
                             <button
                                 className={`w-full py-4 px-6 rounded-xl text-sm font-bold transition-all ${plan.highlight
-                                        ? "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-900/20 hover:scale-[1.02]"
+                                        ? "bg-[#050815] text-white hover:bg-slate-800 shadow-lg shadow-[#050815]/20 hover:scale-[1.02]"
                                         : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                     }`}
                             >

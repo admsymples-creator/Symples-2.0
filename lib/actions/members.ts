@@ -1,11 +1,15 @@
 "use server";
 
 import { createServerActionClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { sendInviteEmail } from "@/lib/email/send-invite";
+import { clearUserWorkspacesCache } from "@/lib/actions/user";
+import { createNotification } from "@/lib/actions/notifications";
 
 // Tipo para os membros retornados
 export type Member = {
@@ -27,6 +31,30 @@ export type Invite = {
   created_at: string;
   invited_by: string | null;
 };
+
+async function revalidateWorkspaceTeamPaths(workspaceId: string) {
+  revalidatePath("/settings");
+  revalidatePath("/team");
+
+  try {
+    const supabase = await createServerActionClient();
+    const { data, error } = await supabase
+      .from("workspaces")
+      .select("slug")
+      .eq("id", workspaceId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao buscar slug para revalidatePath:", error);
+      return;
+    }
+
+    const slugOrId = data?.slug || workspaceId;
+    revalidatePath(`/${slugOrId}/team`);
+  } catch (error) {
+    console.error("Erro ao revalidar rota de time:", error);
+  }
+}
 
 /**
  * Busca a role do usuário atual em um workspace
@@ -51,8 +79,9 @@ export async function getCurrentUserRole(workspaceId: string): Promise<string | 
 
 /**
  * Busca os membros de um workspace específico
+ * OTIMIZADO: Usa cache do React para evitar fetches duplicados
  */
-export async function getWorkspaceMembers(workspaceId: string) {
+export const getWorkspaceMembers = cache(async (workspaceId: string) => {
   const supabase = await createServerActionClient();
 
   // Verificar autenticação
@@ -205,12 +234,13 @@ export async function getWorkspaceMembers(workspaceId: string) {
     });
     return [];
   }
-}
+});
 
 /**
  * Busca convites pendentes de um workspace
+ * OTIMIZADO: Usa cache do React para evitar fetches duplicados
  */
-export async function getPendingInvites(workspaceId: string) {
+export const getPendingInvites = cache(async (workspaceId: string) => {
   const supabase = await createServerActionClient();
 
   const { data, error } = await supabase
@@ -226,7 +256,7 @@ export async function getPendingInvites(workspaceId: string) {
   }
 
   return data as Invite[];
-}
+});
 
 /**
  * Envia um convite para um novo membro
@@ -257,6 +287,13 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     }
 
     // 1.5. Verificar limites de membros do plano
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("account_plan")
+      .eq("id", user.id)
+      .single();
+
+    const hasAgencyAccount = (profileData as any)?.account_plan === "agency";
     const { data: workspaceData, error: workspaceError } = await supabase
       .from("workspaces")
       .select("plan, subscription_status, name")
@@ -277,17 +314,19 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       throw new Error("Erro ao contar membros do workspace.");
     }
 
-    // Obter limite do plano
-    const { getPlanLimits, getPlanName } = await import("@/lib/utils/subscription-helpers");
-    const planLimit = getPlanLimits(workspaceData.plan, workspaceData.subscription_status);
-    const planName = getPlanName(workspaceData.plan);
+    if (!hasAgencyAccount) {
+      // Obter limite do plano
+      const { getPlanLimits, getPlanName } = await import("@/lib/utils/subscription-helpers");
+      const planLimit = getPlanLimits(workspaceData.plan, workspaceData.subscription_status);
+      const planName = getPlanName(workspaceData.plan);
 
-    // Verificar se atingiu o limite
-    if (currentMembersCount !== null && currentMembersCount >= planLimit) {
-      throw new Error(
-        `Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` +
-        `Upgrade necessário para adicionar mais membros. Acesse /billing para ver os planos disponíveis.`
-      );
+      // Verificar se atingiu o limite
+      if (currentMembersCount !== null && currentMembersCount >= planLimit) {
+        throw new Error(
+          `Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` +
+          `Upgrade necessário para adicionar mais membros. Acesse /billing para ver os planos disponíveis.`
+        );
+      }
     }
 
     // 2. Normalizar email e verificar se usuário já existe
@@ -490,6 +529,30 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       environment: process.env.NODE_ENV,
     });
 
+    // 7.5. Notificacao interna para usuarios existentes (nao falhar o fluxo se der erro)
+    if (existingProfile?.id) {
+      try {
+        await createNotification({
+          recipientId: existingProfile.id,
+          triggeringUserId: user.id,
+          category: "admin",
+          resourceType: "member",
+          resourceId: newInvite.id,
+          title: `${inviterProfile?.full_name || "Alguem"} convidou voce para ${workspaceData?.name || "um workspace"}`,
+          content: `Voce foi convidado como ${role}`,
+          actionUrl: `/invite/${newInvite.id}`,
+          metadata: {
+            invite_id: newInvite.id,
+            workspace_id: workspaceId,
+            workspace_name: workspaceData?.name || undefined,
+            role,
+          },
+        });
+      } catch (notificationError: any) {
+        console.error("Erro ao criar notificacao de convite:", notificationError);
+      }
+    }
+
     // 8. Enviar email de convite via Resend
     // ✅ DIFERENCIAÇÃO: Email diferente para usuários novos vs existentes
     const isNewUser = !existingProfile;
@@ -558,8 +621,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       }
     }
 
-    revalidatePath("/settings");
-    revalidatePath("/team");
+    await revalidateWorkspaceTeamPaths(workspaceId);
 
     return {
       success: true,
@@ -644,8 +706,7 @@ export async function revokeInvite(inviteId: string) {
     }
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(invite.workspace_id);
   return { success: true };
 }
 
@@ -762,8 +823,7 @@ export async function resendInvite(inviteId: string) {
     throw new Error(`Erro ao reenviar email: ${emailError.message}`);
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(invite.workspace_id);
   return { success: true, message: "Convite reenviado com sucesso!" };
 }
 
@@ -833,20 +893,7 @@ export async function removeMember(workspaceId: string, userId: string) {
   }
 
   // Usar supabaseAdmin para garantir que a remoção funcione mesmo com RLS restritivo
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!serviceRoleKey) {
-    console.error("❌ SUPABASE_SERVICE_ROLE_KEY não configurada");
-    throw new Error("Configuração do servidor inválida. Contate o suporte.");
-  }
-
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  const supabaseAdmin = await createServiceRoleClient();
 
   // ✅ AUDIT: Registrar ação antes de remover
   try {
@@ -884,8 +931,7 @@ export async function removeMember(workspaceId: string, userId: string) {
     throw new Error("Erro ao remover membro");
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(workspaceId);
 
   return {
     success: true,
@@ -952,8 +998,7 @@ export async function updateMemberRole(
     throw new Error("Erro ao atualizar função do membro");
   }
 
-  revalidatePath("/settings");
-  revalidatePath("/team");
+  await revalidateWorkspaceTeamPaths(workspaceId);
   return { success: true };
 }
 
@@ -1135,6 +1180,9 @@ export async function acceptInvite(inviteId: string) {
     path: '/',
   });
 
+  // Limpar cache de workspaces do usuário para forçar recarregamento
+  await clearUserWorkspacesCache(user.id);
+  
   // Revalidar caminhos importantes para garantir que o layout encontre os workspaces
   revalidatePath("/", "layout");
   revalidatePath("/home");
@@ -1143,19 +1191,82 @@ export async function acceptInvite(inviteId: string) {
   // ✅ Buscar slug do workspace para redirecionar diretamente
   // Isso evita race condition onde o usuário é redirecionado para /home antes
   // da propagação do banco de dados, o que causava redirect falso para onboarding
-  const { data: workspaceData } = await supabase
+  // Usar supabaseAdmin para garantir que a busca funcione mesmo com cache/RLS
+  const { data: workspaceData, error: workspaceError } = await supabaseAdmin
     .from('workspaces')
     .select('slug')
     .eq('id', invite.workspace_id)
     .single();
 
+  if (workspaceError) {
+    console.error("❌ Erro ao buscar slug do workspace:", {
+      workspaceId: invite.workspace_id,
+      error: workspaceError.message,
+      code: workspaceError.code,
+    });
+  }
+
   const workspaceSlug = workspaceData?.slug || null;
+
+  if (!workspaceSlug) {
+    console.warn("⚠️ Workspace slug não encontrado para workspace:", invite.workspace_id);
+  }
+
+  console.log("✅ Convite aceito com sucesso:", {
+    inviteId,
+    workspaceId: invite.workspace_id,
+    workspaceSlug,
+    userId: user.id,
+  });
 
   return {
     success: true,
     workspaceId: invite.workspace_id,
     workspaceSlug, // ✅ Retornar slug para redirecionamento direto
   };
+}
+
+/**
+ * Recusa um convite (para usuarios convidados)
+ */
+export async function declineInvite(inviteId: string) {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Nao autenticado");
+  }
+
+  const { data: invite, error: inviteError } = await supabase
+    .from("workspace_invites")
+    .select("*")
+    .eq("id", inviteId)
+    .single();
+
+  if (inviteError || !invite) {
+    throw new Error("Convite invalido ou nao encontrado.");
+  }
+
+  if (invite.status !== "pending") {
+    throw new Error("Este convite nao esta mais pendente.");
+  }
+
+  if (invite.email.toLowerCase() !== user.email?.toLowerCase()) {
+    throw new Error(`Este convite foi enviado para ${invite.email}, mas voce esta logado como ${user.email}.`);
+  }
+
+  const supabaseAdmin = await createServiceRoleClient();
+  const { error: updateError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ status: "cancelled" })
+    .eq("id", inviteId);
+
+  if (updateError) {
+    console.error("Erro ao recusar convite:", updateError);
+    throw new Error("Erro ao recusar convite.");
+  }
+
+  return { success: true };
 }
 
 /**
@@ -1297,4 +1408,3 @@ export async function getInviteDetails(inviteId: string) {
     return null;
   }
 }
-

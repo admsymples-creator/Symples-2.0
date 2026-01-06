@@ -1,36 +1,23 @@
-import { SettingsPageClient } from "../settings/settings-client";
-import { getUserProfile, getUserWorkspaces } from "@/lib/actions/user";
-import { getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
+import { getUserWorkspaces } from "@/lib/actions/user";
 
 /**
- * Server Component para a página de Time
- * Busca dados no servidor antes de renderizar para melhor performance
+ * Redireciona /team para /[workspaceSlug]/team baseado no workspace ativo
  */
 export default async function TeamPage() {
-  // Buscar dados do usuário e workspaces no servidor
-  const [user, userWorkspaces] = await Promise.all([
-    getUserProfile(),
-    getUserWorkspaces()
-  ]);
+  const cookieStore = await cookies();
+  const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
+  const workspaces = await getUserWorkspaces();
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  if (!userWorkspaces || userWorkspaces.length === 0) {
+  if (!workspaces || workspaces.length === 0) {
     redirect("/onboarding");
   }
 
-  // Tentar obter workspace ativo do cookie (gerenciado pelo SidebarProvider)
-  const cookieStore = await cookies();
-  const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
-  let activeWorkspace = userWorkspaces[0]; // Fallback para primeiro workspace
-
-  // Se houver cookie com workspace ativo, usar ele
+  // Determinar workspace ativo
+  let activeWorkspace = workspaces[0];
   if (activeWorkspaceIdCookie?.value) {
-    const workspaceFromCookie = userWorkspaces.find(
+    const workspaceFromCookie = workspaces.find(
       w => w.id === activeWorkspaceIdCookie.value
     );
     if (workspaceFromCookie) {
@@ -38,19 +25,7 @@ export default async function TeamPage() {
     }
   }
 
-  // Buscar membros e convites em paralelo
-  const [members, invites] = await Promise.all([
-    getWorkspaceMembers(activeWorkspace.id),
-    getPendingInvites(activeWorkspace.id)
-  ]);
-
-  return (
-    <SettingsPageClient
-      user={user}
-      workspace={activeWorkspace}
-      initialMembers={members}
-      initialInvites={invites}
-      mode="team"
-    />
-  );
+  // Redirecionar para a rota com workspace slug
+  const workspaceSlug = activeWorkspace.slug || activeWorkspace.id;
+  redirect(`/${workspaceSlug}/team`);
 }

@@ -23,15 +23,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verificar se usuário é membro do workspace
-    const { data: member } = await supabase
+    // Verificar se usuário é membro do workspace e obter sua role
+    const { data: member, error: memberError } = await supabase
       .from('workspace_members')
-      .select('workspace_id')
+      .select('role')
       .eq('workspace_id', workspaceId)
       .eq('user_id', user.id)
       .single();
 
-    if (!member) {
+    if (memberError || !member) {
       return NextResponse.json(
         { error: 'Workspace não encontrado ou sem permissão' },
         { status: 403 }
@@ -52,7 +52,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(workspace);
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_plan')
+      .eq('id', user.id)
+      .single();
+
+    // Retornar dados de subscription junto com a role do usuário
+    return NextResponse.json({
+      ...workspace,
+      account_plan: (profile as any)?.account_plan ?? null,
+      userRole: member.role,
+    });
   } catch (error) {
     console.error('Erro ao buscar subscription:', error);
     return NextResponse.json(

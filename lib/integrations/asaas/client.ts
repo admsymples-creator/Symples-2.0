@@ -45,8 +45,28 @@ class AsaasClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: "Erro desconhecido" }));
-      throw new Error(`Asaas API Error: ${error.message || response.statusText}`);
+      const errorText = await response.text().catch(() => "");
+      let errorJson: any = null;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch {
+        // keep raw text for logging
+      }
+
+      const message =
+        errorJson?.message ||
+        errorJson?.errors?.[0]?.message ||
+        errorText ||
+        response.statusText;
+
+      console.error("[Asaas API Error]", {
+        endpoint,
+        status: response.status,
+        statusText: response.statusText,
+        body: errorJson || errorText || null,
+      });
+
+      throw new Error(`Asaas API Error (${response.status}): ${message}`);
     }
 
     return response.json();

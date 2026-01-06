@@ -23,7 +23,7 @@ export function AIOrb({ isLoading = false, compact = false }: AIOrbProps) {
         <div className={isLoading ? "absolute inset-[-100%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#F9FAFB_0%,#22C55E_50%,#F9FAFB_100%)] opacity-100" : "absolute inset-[-100%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#F9FAFB_0%,#22C55E_50%,#F9FAFB_100%)] opacity-100"} />
         
         {/* 3. O Núcleo (Core) - Fundo Escuro para contraste no Light Mode */}
-        <div className="relative h-full w-full rounded-full bg-slate-900 flex items-center justify-center shadow-inner">
+        <div className="relative h-full w-full rounded-full bg-[#050815] flex items-center justify-center shadow-inner">
           {/* 4. O Coração (Pulso) */}
           <div className={cn("absolute rounded-full animate-pulse", pulseSize, isLoading ? "bg-green-500/20" : "bg-green-500/10")} />
           

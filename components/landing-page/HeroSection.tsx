@@ -23,7 +23,7 @@ export function HeroSection() {
                             O Sistema Operacional do Empreendedor Digital
                         </div>
 
-                        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-slate-900 mb-6 leading-[1.1]">
+                        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-[#050815] mb-6 leading-[1.1]">
                             Gerir uma empresa tem que ser <span className="text-emerald-500">Symples</span>.
                         </h1>
 
@@ -35,7 +35,7 @@ export function HeroSection() {
                             <button className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-emerald-600 rounded-full hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95">
                                 Teste Grátis por 14 dias
                             </button>
-                            <button className="inline-flex items-center justify-center px-8 py-4 text-base font-medium text-slate-600 hover:text-slate-900 bg-transparent hover:bg-slate-50 rounded-full transition-colors gap-2">
+                            <button className="inline-flex items-center justify-center px-8 py-4 text-base font-medium text-slate-600 hover:text-[#050815] bg-transparent hover:bg-slate-50 rounded-full transition-colors gap-2">
                                 <Play className="w-4 h-4 fill-current" />
                                 Ver Demo
                             </button>
@@ -67,7 +67,7 @@ export function HeroSection() {
                         transition={{ duration: 0.8, delay: 0.4 }}
                         whileHover={{ rotate: 0, scale: 1.02 }}
                     >
-                        <MockChatInterface className="shadow-xl shadow-slate-900/10 scale-90" />
+                        <MockChatInterface className="shadow-xl shadow-[#050815]/10 scale-90" />
                     </motion.div>
 
                     {/* Right: Kanban List (Output) */}
@@ -78,7 +78,7 @@ export function HeroSection() {
                         transition={{ duration: 0.8, delay: 0.6 }}
                         whileHover={{ rotate: 0, scale: 1.02 }}
                     >
-                        <div className="bg-white/40 backdrop-blur-md p-4 rounded-[2.5rem] border border-white/50 shadow-xl shadow-slate-900/5 max-w-[320px]">
+                        <div className="bg-white/40 backdrop-blur-md p-4 rounded-[2.5rem] border border-white/50 shadow-xl shadow-[#050815]/5 max-w-[320px]">
                             <div className="flex flex-col gap-4">
                                 <MockKanbanCard className="rotate-2" />
                                 <MockKanbanCard className="-rotate-1 translate-x-2" />

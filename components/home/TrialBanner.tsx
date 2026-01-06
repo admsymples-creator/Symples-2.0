@@ -5,8 +5,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import type { SubscriptionData } from "@/lib/types/subscription";
+import { getPlanName } from "@/lib/utils/subscription-helpers";
 
-type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'>;
+type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'account_plan' | 'subscription_status' | 'trial_ends_at'> & {
+  userRole?: string;
+};
 
 interface TrialBannerProps {
   workspace?: WorkspaceSubscription | null;
@@ -36,7 +39,17 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
   }, [activeWorkspaceId, workspace]);
 
   // Se não há workspace ou não está em trial, não mostrar banner
-  if (!subscriptionData || subscriptionData.subscription_status !== 'trialing') {
+  if (
+    !subscriptionData ||
+    (subscriptionData.subscription_status !== 'trialing' && subscriptionData.subscription_status !== 'trial') ||
+    subscriptionData.account_plan
+  ) {
+    return null;
+  }
+
+  // Só mostrar banner para owners e admins (não para membros/viewers)
+  const userRole = subscriptionData.userRole;
+  if (userRole && userRole !== 'owner' && userRole !== 'admin') {
     return null;
   }
 
@@ -54,31 +67,36 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
   const isWarning = daysRemaining <= 3 && daysRemaining > 0;
 
   // Determinar cor e mensagem baseado em dias restantes
-  let bgColor = "bg-blue-50";
-  let borderColor = "border-blue-200";
-  let textColor = "text-blue-900";
-  let iconColor = "text-blue-600";
+  let bgColor = "bg-green-50";
+  let borderColor = "border-green-200";
+  let textColor = "text-green-900";
+  let iconColor = "text-green-600";
   let icon = <Zap className={`w-5 h-5 ${iconColor}`} />;
-  let message = "Você está testando o Symples Business";
+  const planLabel = subscriptionData.account_plan
+    ? getPlanName(subscriptionData.account_plan)
+    : subscriptionData.plan
+      ? getPlanName(subscriptionData.plan)
+      : "Plano Trial";
+  let message = `Você está testando o Symples ${planLabel}`;
 
   if (isExpired) {
-    bgColor = "bg-red-50";
-    borderColor = "border-red-200";
-    textColor = "text-red-900";
-    iconColor = "text-red-600";
+    bgColor = "bg-green-50";
+    borderColor = "border-green-200";
+    textColor = "text-green-900";
+    iconColor = "text-green-600";
     icon = <AlertCircle className={`w-5 h-5 ${iconColor}`} />;
     message = "Trial expirado. Escolha um plano para continuar";
   } else if (isWarning) {
-    bgColor = "bg-yellow-50";
-    borderColor = "border-yellow-200";
-    textColor = "text-yellow-900";
-    iconColor = "text-yellow-600";
+    bgColor = "bg-green-50";
+    borderColor = "border-green-200";
+    textColor = "text-green-900";
+    iconColor = "text-green-600";
     icon = <Clock className={`w-5 h-5 ${iconColor}`} />;
     message = `Seu teste acaba em breve${daysRemaining === 1 ? ' (amanhã)' : ` (${daysRemaining} dias)`}`;
   }
 
   return (
-    <div className={`${bgColor} ${borderColor} border-l-4 px-4 py-3 mb-6 rounded-r-md`}>
+    <div className={`${bgColor} ${borderColor} border px-4 py-3 mb-6 rounded-md`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {icon}

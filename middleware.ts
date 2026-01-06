@@ -40,11 +40,11 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/invite/')) {
     const tokenMatch = pathname.match(/^\/invite\/([^/]+)/);
     const inviteToken = tokenMatch?.[1];
-    
+
     if (inviteToken) {
       // ✅ HARDENED: Configurações explícitas e robustas
       const isProduction = process.env.NODE_ENV === 'production';
-      
+
       response.cookies.set('pending_invite', inviteToken, {
         httpOnly: false, // Permite leitura no client se necessário
         secure: isProduction, // ✅ HTTPS only em produção (REQUERIDO)
@@ -52,7 +52,7 @@ export async function middleware(request: NextRequest) {
         maxAge: 3600, // 1 hora
         path: '/', // Disponível em todas as rotas
       });
-      
+
       console.log('🍪 [Middleware] Cookie pending_invite criado:', {
         token: inviteToken.substring(0, 8) + '...',
         secure: isProduction,
@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
 
   // Rotas protegidas (dentro de (main))
-  const protectedRoutes = ['/home', '/tasks', '/finance', '/team', '/settings', '/billing', '/planner']
+  const protectedRoutes = ['/home', '/tasks', '/finance', '/team', '/settings', '/billing', '/planner', '/admin']
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
   // Se tentar acessar rota protegida sem sessão -> Redirect para /login

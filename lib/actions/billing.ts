@@ -44,9 +44,16 @@ export async function getCurrentSubscription(
       return null;
     }
 
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("account_plan")
+      .eq("id", user.id)
+      .single();
+
     return {
       id: workspace.id,
-      plan: workspace.plan as 'starter' | 'pro' | 'business' | null,
+      plan: workspace.plan as 'starter' | 'pro' | 'business' | 'agency' | null,
+      account_plan: (profile as any)?.account_plan ?? null,
       subscription_status: workspace.subscription_status as 'trialing' | 'active' | 'past_due' | 'canceled' | null,
       subscription_id: workspace.subscription_id,
       trial_ends_at: workspace.trial_ends_at,

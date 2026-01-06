@@ -41,6 +41,7 @@ interface GroupActionMenuProps {
     canMoveToTop?: boolean;
     canMoveToBottom?: boolean;
     className?: string;
+    isInbox?: boolean;
 }
 
 // Cores disponíveis para grupos
@@ -75,6 +76,7 @@ export function GroupActionMenu({
     canMoveToTop = false,
     canMoveToBottom = false,
     className,
+    isInbox = false,
 }: GroupActionMenuProps) {
     const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
     const [newTitle, setNewTitle] = useState(groupTitle);
@@ -83,7 +85,7 @@ export function GroupActionMenu({
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isClearModalOpen, setIsClearModalOpen] = useState(false);
     const [clearType, setClearType] = useState<"all" | "completed" | undefined>(undefined);
-    
+
     // Calcular quantidade de tarefas que serão afetadas
     const getTasksToClearCount = (type?: "all" | "completed"): number => {
         if (type === "completed") {
@@ -165,7 +167,7 @@ export function GroupActionMenu({
     // Obter cor atual do localStorage se não fornecida
     const getCurrentColor = (): string | undefined => {
         if (currentColor) return currentColor;
-        
+
         try {
             const groupColors = JSON.parse(
                 localStorage.getItem("taskGroupColors") || "{}"
@@ -178,8 +180,56 @@ export function GroupActionMenu({
 
     const actualCurrentColor = getCurrentColor();
 
-    // Debug: verificar se onReorder está definido
-    if (process.env.NODE_ENV === 'development' && onReorder) {
+    if (isInbox) {
+        return (
+            <>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                                "h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity",
+                                className
+                            )}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                            }}
+                            disabled={isClearing}
+                        >
+                            <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                        {/* Limpar Inbox */}
+                        {onClear && (
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleClearClick("all");
+                                }}
+                                className="text-xs"
+                                disabled={isClearing}
+                            >
+                                <Eraser className="w-4 h-4 mr-2" />
+                                Limpar Inbox
+                            </DropdownMenuItem>
+                        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Modal de Confirmação de Limpeza */}
+                <ConfirmModal
+                    open={isClearModalOpen}
+                    onOpenChange={setIsClearModalOpen}
+                    title="Limpar Inbox?"
+                    description={`Isso irá mover ${getTasksToClearCount("all")} tarefas do Inbox para o arquivo/concluídas. Confirma?`}
+                    confirmText="Limpar Tudo"
+                    isLoading={isClearing}
+                    onConfirm={confirmClear}
+                />
+            </>
+        );
     }
 
     return (

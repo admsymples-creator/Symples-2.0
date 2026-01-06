@@ -1,6 +1,7 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { PricingTable } from "@/components/billing/PricingTable";
 import { getCurrentSubscription } from "@/lib/actions/billing";
+import { isUserAdmin } from "@/lib/actions/admin";
 import { redirect } from "next/navigation";
 
 export default async function BillingPage() {
@@ -11,6 +12,15 @@ export default async function BillingPage() {
     redirect("/login");
   }
 
+  // Verificar se usuário é admin (com fallback para false em caso de erro)
+  let isAdmin = false;
+  try {
+    isAdmin = await isUserAdmin();
+  } catch (error) {
+    console.error('Erro ao verificar se usuário é admin:', error);
+    // Continua com isAdmin = false
+  }
+
   // Buscar workspace ativo do usuário (primeiro workspace)
   const { data: memberData } = await supabase
     .from("workspace_members")
@@ -19,11 +29,11 @@ export default async function BillingPage() {
     .limit(1)
     .single();
 
-  let currentPlan: 'starter' | 'pro' | 'business' | null = null;
+  let currentPlan: 'starter' | 'pro' | 'business' | 'agency' | null = null;
   
   if (memberData) {
     const subscription = await getCurrentSubscription(memberData.workspace_id);
-    currentPlan = subscription?.plan || null;
+    currentPlan = (subscription?.account_plan || subscription?.plan) || null;
   }
 
   return (
@@ -53,7 +63,7 @@ export default async function BillingPage() {
           </ul>
         </div>
 
-        <PricingTable currentPlan={currentPlan} />
+        <PricingTable currentPlan={currentPlan} isAdmin={isAdmin} />
           </div>
         </div>
       </div>

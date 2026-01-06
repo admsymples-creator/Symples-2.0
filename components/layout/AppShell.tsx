@@ -1,14 +1,16 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
-import { SidebarProvider, useSidebar } from "@/components/providers/SidebarProvider";
+import { SidebarProvider, useSidebar, useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
 import { WorkspacesProvider } from "@/components/providers/WorkspacesProvider";
 import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { WorkspaceUrlSync } from "@/components/layout/WorkspaceUrlSync";
 import { WorkspaceSyncAfterInvite } from "@/components/providers/WorkspaceSyncAfterInvite";
 import { GlobalAssistantSheet } from "@/components/assistant/GlobalAssistantSheet";
+import { WorkspaceLoadingOverlay } from "@/components/layout/WorkspaceLoadingOverlay";
+import { WorkspaceSkeleton } from "@/components/skeletons/WorkspaceSkeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
@@ -22,39 +24,43 @@ interface AppShellProps {
     initialSubscription?: SubscriptionData | null;
     initialProjectsTags?: string[];
     initialProjectsIcons?: Map<string, string>;
+    initialWorkspaceId?: string;
 }
 
-function LayoutContent({ children, user, workspaces, initialSubscription, initialProjectsTags, initialProjectsIcons }: AppShellProps) {
+function LayoutContent({ children, user, workspaces, initialSubscription, initialProjectsTags, initialProjectsIcons, initialWorkspaceId }: AppShellProps) {
     const { isCollapsed } = useSidebar();
+    const { isSwitchingWorkspace, isInitialLoad } = useWorkspaceLoading();
     const pathname = usePathname();
+    const previousPathnameRef = useRef(pathname);
 
+    // Reset pathname ref quando pathname muda
     useEffect(() => {
-        try {
-            const clickTs = sessionStorage.getItem("nav-click-ts");
-            const clickHref = sessionStorage.getItem("nav-click-href");
-            if (!clickTs) return;
-
-            const delta = performance.now() - Number(clickTs);
-            console.debug("[nav] latency", { pathname, clickHref, deltaMs: Math.round(delta) });
-            sessionStorage.removeItem("nav-click-ts");
-            sessionStorage.removeItem("nav-click-href");
-        } catch {}
+        if (pathname !== previousPathnameRef.current) {
+            previousPathnameRef.current = pathname;
+        }
+    }, [pathname]);
+    useEffect(() => {
+        if (pathname !== previousPathnameRef.current) {
+            previousPathnameRef.current = pathname;
+        }
     }, [pathname]);
 
     return (
         <div className="min-h-screen bg-gray-50">
             <WorkspaceUrlSync workspaces={workspaces} />
             <WorkspaceSyncAfterInvite />
-            <Sidebar 
-                workspaces={workspaces} 
+
+            <Sidebar
+                workspaces={workspaces}
                 initialSubscription={initialSubscription}
                 initialProjectsTags={initialProjectsTags}
                 initialProjectsIcons={initialProjectsIcons}
+                initialWorkspaceId={initialWorkspaceId}
             />
-            <div 
+            <div
                 className={cn(
                     "flex flex-col min-h-screen transition-all duration-300 ease-in-out",
-                     isCollapsed ? "pl-[64px]" : "pl-[260px]"
+                    isCollapsed ? "pl-[64px]" : "pl-[260px]"
                 )}
             >
                 <Header user={user} />
@@ -62,8 +68,12 @@ function LayoutContent({ children, user, workspaces, initialSubscription, initia
                     {children}
                 </main>
             </div>
+
             {/* Global Assistant Sheet - FAB flutuante em todas as telas autenticadas */}
             <GlobalAssistantSheet user={user} workspaces={workspaces} />
+
+            {/* Workspace Loading Overlay appears ON TOP, without unmounting content */}
+            <WorkspaceLoadingOverlay isVisible={isSwitchingWorkspace} isInitialLoad={isInitialLoad} />
         </div>
     );
 }

@@ -26,7 +26,7 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <UIScaleProvider>
           {children}
-          <Toaster 
+          <Toaster
             theme="light"
             className="font-sans"
             toastOptions={{

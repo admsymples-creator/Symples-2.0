@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { MoreHorizontal, MessageSquare, CheckSquare, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { Avatar } from "@/components/tasks/Avatar";
 import {
@@ -33,6 +33,7 @@ interface WorkspaceCardProps {
 
 export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [], isFirst = false }: WorkspaceCardProps) {
     const router = useRouter();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
     const { setActiveWorkspaceId } = useWorkspace();
     const [isMounted, setIsMounted] = useState(false);
@@ -57,11 +58,16 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     const completedCount = totalCount - pendingCount;
 
     const handleCardClick = () => {
-        // Atualizar workspace ativo no contexto
+        // CRÍTICO: setActiveWorkspaceId ativa o loading ANTES de navegar
+        // Isso garante que o loading apareça imediatamente
         setActiveWorkspaceId(id);
 
-        // Navegar para a Home (novo ponto de entrada "Gestão/Home")
-        router.push("/home");
+        // Usar setTimeout para garantir que o loading apareça antes da navegação
+        // Mesmo que seja 0ms, garante que o React processe o estado primeiro
+        setTimeout(() => {
+            // Navegar para a Home (novo ponto de entrada "Gestão/Home")
+            router.push("/home");
+        }, 0);
     };
 
     const handleOpenWorkspace = (e: React.MouseEvent) => {
@@ -96,9 +102,9 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
         <div
             onClick={handleCardClick}
             className={cn(
-                "group bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-300 cursor-pointer relative flex flex-col h-full",
+                "group bg-white rounded-xl p-5 border-none shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer relative flex flex-col h-full",
                 // Highlight Styles
-                isHighlighted && "ring-2 ring-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)] border-green-500 scale-[1.02] z-10"
+                isHighlighted && "ring-2 ring-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)] scale-[1.02] z-10"
             )}
         >
             {/* Tutorial Tooltip Hint */}
@@ -116,7 +122,7 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
             {/* 2. Header (Topo) */}
             <div className="flex justify-between items-start mb-4 relative z-10">
                 {/* Workspace Image */}
-                <div className="h-12 w-12 rounded-lg overflow-hidden border border-gray-100 shadow-sm">
+                <div className="h-12 w-12 rounded-lg overflow-hidden border-none shadow-sm">
                     <img
                         src={workspaceImage}
                         alt={name}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,15 +88,17 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
     return (
         <div className="h-screen w-full grid lg:grid-cols-2">
             {/* Left Side - Brand (Desktop Only) */}
-            <div className="hidden lg:flex bg-slate-900 flex-col items-center justify-center p-12 relative">
+            <div className="hidden lg:flex bg-[#050815] flex-col items-center justify-center p-12 relative">
                 <div className="flex flex-col items-center justify-center flex-1">
-                    <Image
-                        src="/logo.avif"
-                        alt="Symples"
-                        width={200}
-                        height={60}
-                        priority
-                    />
+                    <Link href="/">
+                        <Image
+                            src="/logo.svg"
+                            alt="Symples"
+                            width={200}
+                            height={60}
+                            priority
+                        />
+                    </Link>
                 </div>
 
                 <div className="absolute bottom-16 text-center px-8">
@@ -110,13 +113,15 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
                 <div className="w-full max-w-[400px] space-y-6">
                     {/* Mobile Logo */}
                     <div className="flex lg:hidden items-center mb-8">
-                        <Image
-                            src="/logo.avif"
-                            alt="Symples"
-                            width={150}
-                            height={45}
-                            priority
-                        />
+                        <Link href="/">
+                            <Image
+                                src="/logo-black.svg"
+                                alt="Symples"
+                                width={150}
+                                height={45}
+                                priority
+                            />
+                        </Link>
                     </div>
 
                     {/* Header */}

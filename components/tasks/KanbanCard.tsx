@@ -439,8 +439,8 @@ function KanbanCardComponent({
         />
       )}
 
-      {/* Header: Status com edição rápida */}
-      <div className="flex items-center justify-between mb-1.5">
+      {/* Header: Status com edição rápida e Tag do Projeto */}
+      <div className="flex items-center justify-between mb-1.5 gap-2">
         <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
           <PopoverTrigger asChild>
             <Badge
@@ -484,6 +484,24 @@ function KanbanCardComponent({
             </Command>
           </PopoverContent>
         </Popover>
+        
+        {/* Tags do Projeto - lado direito */}
+        {tags.length > 0 && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {tags.map((tag, index) => (
+              <Badge
+                key={index}
+                variant="outline"
+                className={cn(
+                  "text-[9px] px-1.5 py-0 h-4 font-normal text-gray-500 border-gray-200 bg-gray-50",
+                  "hover:bg-gray-50"
+                )}
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Body: Checkbox & Título */}
@@ -512,23 +530,6 @@ function KanbanCardComponent({
             </h4>
           </div>
         </div>
-        
-        {/* Tags */}
-        {tags.length > 0 && (
-          <div className="flex items-center gap-1 flex-wrap flex-shrink-0 mt-1">
-            {tags.map((tag, index) => (
-              <span
-                key={index}
-                className={cn(
-                  "text-[10px] px-1.5 py-0.5 rounded-md font-semibold uppercase tracking-wide",
-                  getTagColor(tag)
-                )}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Footer: Meta & Ações */}

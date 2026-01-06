@@ -19,9 +19,12 @@ import { useSidebar, useWorkspace } from "@/components/providers/SidebarProvider
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SubscriptionData } from "@/lib/types/subscription";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import { getWorkspaceTags } from "@/lib/actions/tasks";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { setProjectIcon, getProjectIcons } from "@/lib/actions/projects";
+import { clearProjectCache } from "@/lib/utils/project-cache";
+import { SidebarWorkspaceSwitcher } from "@/components/layout/SidebarWorkspaceSwitcher";
 import dynamic from "next/dynamic";
 import { getIconComponent } from "@/components/projects/IconPicker";
 import {
@@ -53,9 +56,20 @@ const managementItemsBase: NavItem[] = [
 
 interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
-    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'> | null;
+    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'account_plan' | 'subscription_status' | 'trial_ends_at'> | null;
     initialProjectsTags?: string[];
     initialProjectsIcons?: Map<string, string>;
+    initialWorkspaceId?: string;
+}
+
+// Logger de debug
+function debugRender(componentName: string) {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        const now = new Date();
+        console.debug(`[${componentName}] Rendered at ${now.toISOString().split('T')[1]}`, {
+            ts: performance.now()
+        });
+    }
 }
 
 // Memoizar NavItemView para evitar re-renders desnecessários
@@ -71,17 +85,17 @@ const NavItemView = React.memo(function NavItemView({ item, isActive, isCollapse
             console.error('[Sidebar] Invalid href on click:', item.href);
             return;
         }
-        
+
         try {
             sessionStorage.setItem("nav-click-ts", String(performance.now()));
             sessionStorage.setItem("nav-click-href", item.href);
-        } catch {}
-        
+        } catch { }
+
         // Log para debug apenas em desenvolvimento
         if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
             console.log('[Sidebar] Navigation click:', { href: item.href, label: item.label });
         }
-        
+
         // Usar router.push como fallback se o Link não funcionar
         // Não prevenir o comportamento padrão do Link - deixar ele fazer a navegação
     };
@@ -89,14 +103,14 @@ const NavItemView = React.memo(function NavItemView({ item, isActive, isCollapse
     // Prefetch mais agressivo - usar router.prefetch do Next.js (mais eficiente)
     const handleMouseEnter = useCallback(() => {
         router.prefetch(item.href);
-        
+
         // Pré-carregar componentes pesados específicos para rotas
         if (typeof window !== 'undefined') {
             if (item.href.includes('/tasks')) {
-                import("@/components/tasks/TaskBoard").catch(() => {});
-                import("@/components/tasks/TaskDetailModal").catch(() => {});
+                import("@/components/tasks/TaskBoard").catch(() => { });
+                import("@/components/tasks/TaskDetailModal").catch(() => { });
             } else if (item.href.includes('/planner')) {
-                import("@/components/calendar/planner-calendar").catch(() => {});
+                import("@/components/calendar/planner-calendar").catch(() => { });
             }
         }
     }, [item.href, router]);
@@ -207,13 +221,13 @@ function ToggleItemView({ label, icon, isActive, isCollapsed, isOpen, onToggle, 
 }
 
 // Componente otimizado para projetos com navegação rápida e prefetch - Memoizado
-const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, isOpen, onToggle }: { 
-    label: string; 
-    icon: React.ComponentType<{ className?: string }>; 
+const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, isOpen, onToggle }: {
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
     href: string;
-    isActive: boolean; 
-    isCollapsed: boolean; 
-    isOpen: boolean; 
+    isActive: boolean;
+    isCollapsed: boolean;
+    isOpen: boolean;
     onToggle: () => void;
 }) {
     const Icon = icon;
@@ -290,13 +304,13 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
     );
 });
 
-function SidebarContent({ workspaces = [], initialSubscription = null, initialProjectsTags, initialProjectsIcons }: SidebarProps) {
+function SidebarContent({ workspaces = [], initialSubscription = null, initialProjectsTags, initialProjectsIcons, initialWorkspaceId }: SidebarProps) {
+    debugRender('SidebarContent');
     const pathname = usePathname();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { isCollapsed } = useSidebar();
     const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
-    const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
     const [isProjectsOpen, setIsProjectsOpen] = useState(true); // Aberto por padrão
     // Inicializar com dados do servidor para exibição instantânea
     const [workspaceTags, setWorkspaceTags] = useState<string[]>(() => initialProjectsTags || []);
@@ -323,7 +337,11 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         return daysRemaining > 0 ? daysRemaining : 0;
     }, [initialSubscription?.trial_ends_at]);
 
-    const isTrialing = initialSubscription?.subscription_status === 'trialing';
+    const isTrialing =
+        (initialSubscription?.subscription_status === 'trialing' ||
+            initialSubscription?.subscription_status === 'trial') &&
+        !initialSubscription?.account_plan;
+    const displayPlanName = getDisplayPlanName(initialSubscription?.plan || null, initialSubscription?.account_plan);
 
     const hasWorkspaces = React.useMemo(() => workspaces.length > 0, [workspaces.length]);
 
@@ -350,24 +368,24 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         const workspace = currentWorkspace || (workspaces.length > 0 ? workspaces[0] : null);
         if (!workspace) {
             if (process.env.NODE_ENV === 'development') {
-                console.warn('[Sidebar] No workspace available for prefix:', { 
-                    currentWorkspace, 
-                    activeWorkspaceId, 
-                    workspaces: workspaces.length 
+                console.warn('[Sidebar] No workspace available for prefix:', {
+                    currentWorkspace,
+                    activeWorkspaceId,
+                    workspaces: workspaces.length
                 });
             }
             return "";
         }
-        
+
         const base = workspace.slug || workspace.id || "";
         const prefix = base ? `/${base}` : "";
-        
+
         // Log para debug apenas em desenvolvimento
         if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
             if (!prefix) {
-                console.warn('[Sidebar] workspacePrefix is empty:', { 
-                    workspace, 
-                    activeWorkspaceId, 
+                console.warn('[Sidebar] workspacePrefix is empty:', {
+                    workspace,
+                    activeWorkspaceId,
                     workspaces: workspaces.length,
                     base,
                     slug: workspace.slug,
@@ -375,7 +393,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                 });
             }
         }
-        
+
         return prefix;
     }, [currentWorkspace, activeWorkspaceId, workspaces]);
 
@@ -393,7 +411,11 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
 
         // Se temos dados iniciais, usar imediatamente e atualizar cache
         // Isso garante que os projetos apareçam instantaneamente
-        if (initialProjectsTags !== undefined) {
+        // Se temos dados iniciais E o workspace ativo corresponde ao inicial, usar cache
+        // Isso garante que os projetos apareçam instantaneamente APENAS se estivermos no workspace certo
+        const isDataForCurrentWorkspace = initialWorkspaceId && activeWorkspaceId === initialWorkspaceId;
+
+        if (initialProjectsTags !== undefined && isDataForCurrentWorkspace) {
             // Atualizar cache com dados iniciais para este workspace
             workspaceTagsCache.current.set(activeWorkspaceId, { tags: initialProjectsTags, ts: Date.now() });
             if (initialProjectsIcons) {
@@ -404,7 +426,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             if (initialProjectsIcons) {
                 setProjectIcons(initialProjectsIcons);
             }
-            // Não fazer fetch se temos dados iniciais - eles já estão no estado
+            // Não fazer fetch se temos dados iniciais VÁLIDOS
             return;
         }
 
@@ -429,7 +451,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                 // Buscar dados frescos em background (não bloquear UI)
                 if (!tagsFresh || !iconsFresh) {
                     const promises: Promise<any>[] = [];
-                    
+
                     if (!tagsFresh) {
                         promises.push(
                             getWorkspaceTags(activeWorkspaceId).then(tags => {
@@ -472,18 +494,18 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
 
         // Carregar apenas se não temos dados iniciais
         loadWorkspaceTags();
-        
+
         return () => {
             cancelled = true;
         };
-    }, [activeWorkspaceId, isPersonal, initialProjectsTags, initialProjectsIcons]); // Adicionar dependências dos dados iniciais
+    }, [activeWorkspaceId, isPersonal, initialProjectsTags, initialProjectsIcons, initialWorkspaceId]); // Adicionar dependências dos dados iniciais
 
     const managementItems = useMemo(() => {
         // Não gerar links se não temos workspace prefix válido
         if (!workspacePrefix || workspacePrefix === '/') {
             if (process.env.NODE_ENV === 'development') {
-                console.warn('[Sidebar] workspacePrefix is invalid, returning empty managementItems:', { 
-                    workspacePrefix, 
+                console.warn('[Sidebar] workspacePrefix is invalid, returning empty managementItems:', {
+                    workspacePrefix,
                     activeWorkspaceId,
                     currentWorkspace,
                     workspaces: workspaces.length
@@ -491,7 +513,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             }
             return [];
         }
-        
+
         const filtered = isPersonal
             ? managementItemsBase.filter((item) => item.href !== "/team" && item.href !== "/tasks")
             : managementItemsBase;
@@ -499,47 +521,47 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             ...item,
             href: `${workspacePrefix}${item.href}`,
         }));
-        
+
         // Log para debug apenas em desenvolvimento
         if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
             if (items.some(item => !item.href || item.href.startsWith('/undefined'))) {
-                console.error('[Sidebar] Invalid hrefs in managementItems:', { 
-                    items, 
-                    workspacePrefix, 
+                console.error('[Sidebar] Invalid hrefs in managementItems:', {
+                    items,
+                    workspacePrefix,
                     activeWorkspaceId,
-                    currentWorkspace 
+                    currentWorkspace
                 });
             }
         }
-        
+
         return items;
     }, [isPersonal, workspacePrefix, activeWorkspaceId, currentWorkspace, workspaces]);
 
     // Prefetch automático de todas as rotas principais quando workspace muda
     useEffect(() => {
         if (!workspacePrefix) return;
-        
+
         // Prefetch todas as rotas de gestão em paralelo
         managementItems.forEach((item) => {
             router.prefetch(item.href);
         });
-        
+
         // Prefetch settings também
         router.prefetch("/settings");
-        
+
         // Prefetch de componentes pesados para rotas específicas
         if (typeof window !== 'undefined') {
             // Prefetch TaskBoard para /tasks
             const tasksHref = managementItems.find(item => item.href.includes('/tasks'))?.href;
             if (tasksHref) {
                 // Pré-carregar módulo do TaskBoard em background
-                import("@/components/tasks/TaskBoard").catch(() => {});
+                import("@/components/tasks/TaskBoard").catch(() => { });
             }
-            
+
             // Prefetch PlannerCalendar para /planner
             const plannerHref = managementItems.find(item => item.href.includes('/planner'))?.href;
             if (plannerHref) {
-                import("@/components/calendar/planner-calendar").catch(() => {});
+                import("@/components/calendar/planner-calendar").catch(() => { });
             }
         }
     }, [workspacePrefix, managementItems, router]);
@@ -550,7 +572,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
 
     // Memoizar pathname para evitar recálculos - usar useMemo para estabilizar referência
     const stablePathname = useMemo(() => pathname, [pathname]);
-    
+
     // Memoizar resultados de isActive para cada href - evita recálculos durante render
     // Usar apenas pathname (sem searchParams) para evitar re-renders em cascata
     const activeStates = useMemo(() => {
@@ -569,7 +591,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         const checkActive = (href: string) => {
             // Remover query params do href para comparação
             const hrefWithoutQuery = href.split("?")[0];
-            
+
             const workspaceTargets = ["/home", "/planner", "/finance", "/team", "/tasks"];
             const match = workspaceTargets.find((target) => hrefWithoutQuery.endsWith(target));
             if (match) {
@@ -608,7 +630,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     // Para /tasks, verifica se está na rota e se não há tag na URL (para não conflitar com projetos)
     const isActive = useCallback((href: string) => {
         const baseActive = activeStates[href] ?? false;
-        
+
         // Se for /tasks (sem query params), só está ativo se não houver tag na URL (senão é um projeto)
         if (href.endsWith("/tasks") || (href.includes("/tasks") && !href.includes("?"))) {
             // Verificar se pathname corresponde ao href (sem query params)
@@ -616,7 +638,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             const pathnameMatches = stablePathname === hrefWithoutQuery || stablePathname?.startsWith(hrefWithoutQuery + "/");
             return pathnameMatches && !currentTag;
         }
-        
+
         return baseActive;
     }, [activeStates, currentTag, stablePathname]);
 
@@ -628,9 +650,9 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     // Função para criar novo projeto
     const handleCreateProject = useCallback(async () => {
         if (!newProjectName.trim() || !activeWorkspaceId) return;
-        
+
         const projectName = newProjectName.trim();
-        
+
         // Verificar se já existe
         if (workspaceTags.includes(projectName)) {
             alert("Este projeto já existe!");
@@ -652,19 +674,24 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             if (activeWorkspaceId) {
                 workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
             }
-            
+
             // Recarregar ícones
             const updatedIcons = await getProjectIcons(activeWorkspaceId);
             setProjectIcons(updatedIcons);
+
+            // Limpar cache de projetos para forçar recarregamento na home
+            if (activeWorkspaceId) {
+                clearProjectCache(activeWorkspaceId);
+            }
         } catch (error) {
             console.error("Erro ao recarregar tags:", error);
         }
-        
+
         // Fechar modal e limpar input
         setIsCreateProjectOpen(false);
         setNewProjectName("");
         setSelectedIcon("Folder");
-        
+
         // Navegar para a página de tarefas com a tag
         const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(projectName)}`;
         router.push(tagHref);
@@ -678,145 +705,14 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             )}
         >
             {/* Workspace Switcher */}
-            <div className={cn(
-                "h-16 flex items-center border-b border-gray-200 transition-all duration-300 relative",
-                isCollapsed ? "justify-center px-0" : "px-4"
-            )}>
-                {/* Workspace Switcher */}
-                {hasWorkspaces ? (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                className={cn(
-                                    "gap-3 hover:bg-gray-100/80 transition-all group p-0 rounded-lg flex-1",
-                                    isCollapsed ? "justify-center px-2 h-10 w-10" : "justify-start px-3 h-12"
-                                )}
-                            >
-                                <div className={cn(
-                                    "rounded-md bg-[#050815] flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow overflow-hidden",
-                                    isCollapsed ? "w-8 h-8" : "w-8 h-8"
-                                )}>
-                                    {currentWorkspace?.logo_url ? (
-                                        <img
-                                            src={currentWorkspace.logo_url}
-                                            alt={currentWorkspace.name}
-                                            className="w-full h-full object-cover"
-                                        />
-                                    ) : (
-                                        <Building2 className={cn(isCollapsed ? "w-4 h-4" : "w-4 h-4")} />
-                                    )}
-                                </div>
-
-                                {!isCollapsed && (
-                                    <>
-                                        <div className="flex flex-col items-start text-left flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 w-full">
-                                                <span className="font-semibold text-sm text-gray-900 truncate">
-                                                    {currentWorkspace?.name || "Selecione"}
-                                                </span>
-                                                {isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
-                                                    <Link
-                                                        href="/billing"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="flex-shrink-0"
-                                                    >
-                                                        <Badge
-                                                            variant="secondary"
-                                                            className="text-[10px] px-1.5 h-4 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200 cursor-pointer transition-colors"
-                                                        >
-                                                            {trialDaysRemaining} {trialDaysRemaining === 1 ? "dia" : "dias"}
-                                                        </Badge>
-                                                    </Link>
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors">
-                                                {isTrialing ? "Plano Trial" : initialSubscription?.plan ? `Plano ${initialSubscription.plan.charAt(0).toUpperCase() + initialSubscription.plan.slice(1)}` : "Workspace"}
-                                            </span>
-                                        </div>
-
-                                        <ChevronsUpDown className="w-4 h-4 text-gray-400 ml-auto opacity-50 group-hover:opacity-100" />
-                                    </>
-                                )}
-                            </Button>
-                        </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-[220px]" align="start" side={isCollapsed ? "right" : "bottom"}>
-                                <DropdownMenuLabel className="text-xs text-gray-500 font-medium px-2 py-1.5">
-                                    Trocar Workspace
-                                </DropdownMenuLabel>
-                                {workspaces.map((workspace) => (
-                                    <DropdownMenuItem
-                                        key={workspace.id}
-                                        onMouseEnter={() => {
-                                            // Prefetch route and subscription on hover for faster navigation
-                                            const base = workspace.slug || workspace.id;
-                                            if (base) {
-                                                router.prefetch(`/${base}/home`);
-                                                // Prefetch subscription data
-                                                fetch(`/api/workspace/subscription?workspaceId=${workspace.id}`).catch(() => {});
-                                            }
-                                        }}
-                                        onClick={() => {
-                                            if (workspace.id === activeWorkspaceId) return;
-
-                                            setIsSwitchingWorkspace(true);
-                                            const base = workspace.slug || workspace.id;
-                                            if (base) {
-                                                startTransition(() => {
-                                                    router.push(`/${base}/home`);
-                                                    // Reset loading state after navigation
-                                                    setTimeout(() => setIsSwitchingWorkspace(false), 500);
-                                                });
-                                            } else {
-                                                setIsSwitchingWorkspace(false);
-                                            }
-                                        }}
-                                        className={cn(
-                                            "gap-2 cursor-pointer",
-                                            isSwitchingWorkspace && workspace.id !== activeWorkspaceId && "opacity-50"
-                                        )}
-                                        disabled={isSwitchingWorkspace}
-                                    >
-                                        <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
-                                            {workspace.logo_url ? (
-                                                <img
-                                                    src={workspace.logo_url}
-                                                    alt={workspace.name}
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <Building2 className="w-3 h-3 text-gray-500" />
-                                            )}
-                                        </div>
-                                        <span className="flex-1 truncate">{workspace.name}</span>
-                                        {workspace.id === activeWorkspaceId && (
-                                            <div className="w-1.5 h-1.5 rounded-full bg-[#050815]" />
-                                        )}
-                                    </DropdownMenuItem>
-                                ))}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild className="cursor-pointer gap-2 text-[#050815] focus:text-[#050815] focus:bg-gray-50">
-                                    <Link href="/onboarding" prefetch={false}>
-                                        <Plus className="w-4 h-4" />
-                                        Criar Novo Workspace
-                                    </Link>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    ) : (
-                        <Link
-                            href="/onboarding"
-                            prefetch={false}
-                            className={cn(
-                                "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-[#050815] hover:border-[#050815] hover:bg-gray-50 transition-all",
-                                isCollapsed ? "px-0" : ""
-                            )}
-                        >
-                            <Plus className="w-4 h-4" />
-                            {!isCollapsed && "Criar Workspace"}
-                        </Link>
-                    )}
-            </div>
+            {/* Workspace Switcher */}
+            <SidebarWorkspaceSwitcher
+                isCollapsed={isCollapsed}
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                currentWorkspace={currentWorkspace}
+                initialSubscription={initialSubscription}
+            />
 
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto p-4 overflow-x-hidden">
@@ -929,7 +825,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                         const isTagCurrentlyActive = isTagActive(tag);
                                         const iconName = projectIcons.get(tag) || "Folder";
                                         const ProjectIcon = getIconComponent(iconName);
-                                        
+
                                         return (
                                             <li key={tag} className={cn(!isCollapsed && "pl-2")}>
                                                 <ProjectToggleItem
@@ -969,20 +865,24 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             {/* Footer */}
             <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
                 {/* Trial Upgrade Callout - Hide when collapsed and only show if trialing */}
-                {!isCollapsed && isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
+                {!isCollapsed && isTrialing && trialDaysRemaining !== null && (
                     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                         <h4 className="font-semibold text-[#050815] text-xs mb-1">
-                            Trial - {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}
+                            {trialDaysRemaining > 0
+                                ? `Trial - ${trialDaysRemaining} ${trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}`
+                                : 'Trial expirado'}
                         </h4>
                         <p className="text-[10px] text-[#050815] mb-2 leading-snug">
-                            Aproveite todos os recursos Pro do Symples.
+                            {trialDaysRemaining > 0
+                                ? `Aproveite todos os recursos ${displayPlanName} do Symples.`
+                                : "Seu acesso está bloqueado. Escolha um plano para continuar."}
                         </p>
-                        <Button 
-                            size="sm" 
+                        <Button
+                            size="sm"
                             className="w-full h-7 text-xs bg-[#050815] hover:bg-[#0a0f1f] text-white shadow-none"
                             onClick={() => router.push('/billing')}
                         >
-                            Assinar Agora
+                            {trialDaysRemaining > 0 ? "Assinar Agora" : "Escolher Plano"}
                         </Button>
                     </div>
                 )}
@@ -1050,7 +950,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             </Dialog>
         </aside>
     );
-    
+
 }
 
 export function Sidebar(props: SidebarProps) {

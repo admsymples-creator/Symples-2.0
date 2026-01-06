@@ -6,6 +6,81 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-05 08:00 - Kanban DnD e Agrupamento por Projeto
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🔧 Correção de Drag & Drop no Kanban (Ghost Card e Colunas Vazias)
+- **Problema**: Dificuldade extrema em soltar cards em colunas vazias; sensação de "zona morta" ao arrastar sobre o placeholder "Adicionar tarefa".
+- **Causa**:
+  - Estilo `cursor-grabbing` do card arrastado bloqueava eventos de mouse (`pointer-events`).
+  - `KanbanEmptyCard` tinha uma zona de drop aninhada que conflitava com a coluna pai.
+  - Estratégia `closestCenter` exigia precisão excessiva.
+- **Solução**:
+  - Adicionado `pointer-events-none` ao overlay de drag (card flutuante).
+  - Removido `useDroppable` do `KanbanEmptyCard` (agora o alvo é sempre a coluna inteira).
+  - Alterada estratégia de detecção para `rectIntersection` (mais indulgente/magnética).
+  - Adicionado fallback robusto no `handleDragEnd` para forçar o drop se o dnd-kit detectar colisão válida em modo Kanban.
+
+#### ✨ Novo Filtro "Agrupar por Projeto"
+- **Funcionalidade**: Adicionada opção **"Projeto"** no menu "Agrupar por".
+- **Lógica**: Agrupa tarefas baseando-se em suas **Tags** (primeira tag define o grupo).
+- **Interface**:
+  - Mantido agrupamento "Personalizado" (antigo "Nenhum") para grupos customizados do usuário.
+  - Adicionada opção explícita "Projeto" no dropdown.
+
+#### ⚡ Otimização de Performance (Bulk Archive)
+- **Mudança**: Substituída iteração lenta de updates individuais por `bulkArchiveTasks` ao limpar grupos.
+- **Resultado**: Limpeza de colunas com muitas tarefas agora é atômica e muito mais rápida.
+
+#### 🐛 Correção de Atualização Otimista (Modal)
+- **Problema**: Trocar o projeto/grupo no modal de detalhes não atualizava a UI imediatamente.
+- **Correção**: Atualizado `handleOptimisticUpdate` para suportar e propagar mudanças nas propriedades `group` e `tags`.
+
+### 2. O que está sendo trabalhado no momento
+
+- Validação final das interações de drag & drop.
+
+### 3. Próximos passos imediatos
+
+- Monitorar uso do novo agrupamento por projeto.
+
+---
+
+## 2026-01-04 11:45 - Otimização de UX de Loading e Performance do Planner
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### 🚀 Loading Overlay "Cinemático" (Sem Flash Branco)
+- **Mudança**: Implementada transição de loading global controlada manualmente pela Sidebar.
+- **Visual**: Fundo sólido branco (sem transparência) para cobrir totalmente a troca de layout.
+- **Timing**: Duração fixa ajustada (3.5s) para garantir suavidade e sensação de "app pesado/robusto" ao invés de glitch rápido.
+- **Técnica**: `isSwitching` state no Sidebar dispara overlay -> `router.push` -> Overlay desmonta apenas após nova página carregar.
+
+#### ⚡ Otimização do Planejador (Planner Page)
+- **Parallel Fetching**: `app/(main)/[slug]/planner/page.tsx` agora busca `WorkspaceID` e `UserWorkspaces` em paralelo via `Promise.all`.
+- **Hydration Imediata**: `PlannerClient` recebe lista de workspaces via props do servidor, eliminando dependência lenta do Context API na montagem inicial.
+- **Fim do Waterfall**: Redução significativa no tempo de bloqueio inicial da página.
+
+#### 🛡️ Correção de Tipos (TypeScript)
+- **Workspace Type**: Unificados tipos entre `database.types.ts` e `lib/actions/user.ts`.
+- **Compatibilidade**: `isPersonalWorkspace` e componentes agora aceitam interfaces parciais corretamente (`Pick<Workspace, "id" | "name" | "slug">`).
+
+#### ✅ Auditoria de Performance
+- **Tasks Page**: Validado uso de `initialTasks` para renderização imediata (sem skeleton desnecessário).
+- **Finance Page**: Confirmado Lazy Loading para abas pesadas ("Recorrentes" e "Planejamento").
+- **Settings/Team**: Cache de membros validado para evitar refetching ao navegar entre abas.
+
+### 2. O que está sendo trabalhado no momento
+
+- Validação final de build e monitoramento de logs em produção.
+
+### 3. Próximos passos imediatos
+
+- Deploy para produção e verificação de métricas reais (Vercel Analytics).
+
+---
+
 ## 2026-01-02 22:30 - Otimizações de Performance em Produção
 
 ### 1. Melhorias, bugs e features implementadas em preview
@@ -2039,3 +2114,10 @@ Container Grid (min-w-0)
    - Documentar fluxo em diagrama e guia técnico (`docs/INTEGRACAO_WHATSAPP.md`)
 
 
+
+---
+
+## 2026-01-05
+- Tasks: default grouping dynamic (Projetos->Status, Tarefas->Projeto), drag entre projetos atualiza tag automaticamente, e tag de projeto no TaskRowMinify.
+- Quick add: habilitado em projeto/status na lista, ghost padrao em grupos vazios, inbox mantido como sem tag.
+- Cores por status aplicadas em lista e kanban.

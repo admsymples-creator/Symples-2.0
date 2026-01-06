@@ -20,7 +20,7 @@ const formatCurrency = (value: number) => {
 export function PlanningProjectionsCard({ projections }: PlanningProjectionsCardProps) {
   if (!projections || projections.length === 0) {
     return (
-      <Card className="border-none shadow-sm ring-1 ring-gray-200">
+      <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
         <CardHeader>
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-gray-500" />
@@ -30,7 +30,7 @@ export function PlanningProjectionsCard({ projections }: PlanningProjectionsCard
             Previsão de receitas e despesas dos próximos meses
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 overflow-y-auto min-h-0">
           <p className="text-center text-gray-400 py-4 text-sm">
             Nenhuma projeção disponível
           </p>
@@ -40,8 +40,8 @@ export function PlanningProjectionsCard({ projections }: PlanningProjectionsCard
   }
 
   return (
-    <Card className="border-none shadow-sm ring-1 ring-gray-200">
-      <CardHeader>
+    <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
+      <CardHeader className="flex-shrink-0">
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-gray-500" />
           Projeções Futuras
@@ -50,7 +50,7 @@ export function PlanningProjectionsCard({ projections }: PlanningProjectionsCard
           Previsão de receitas e despesas dos próximos {projections.length} meses
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 overflow-y-auto">
         <div className="space-y-3">
           {projections.map((projection, index) => (
             <div

@@ -35,7 +35,7 @@ export function AIOrbDefault({ isLoading = false, compact = false }: AIOrbProps)
       ))}
 
       <div className={cn("relative rounded-full overflow-visible", size)}>
-        <div className="relative h-full w-full rounded-full bg-slate-900 flex items-center justify-center shadow-inner">
+        <div className="relative h-full w-full rounded-full bg-[#050815] flex items-center justify-center shadow-inner">
           {/* Pulso interno suave */}
           <div className={cn(
             "absolute rounded-full",
@@ -89,7 +89,7 @@ export function AIOrbParticles({ isLoading = false, compact = false }: AIOrbProp
       ))}
 
       <div className={cn("relative rounded-full overflow-visible", size)}>
-        <div className="relative h-full w-full rounded-full bg-slate-900 flex items-center justify-center shadow-inner">
+        <div className="relative h-full w-full rounded-full bg-[#050815] flex items-center justify-center shadow-inner">
           <div className={cn(
             "absolute rounded-full",
             pulseSize,
@@ -142,7 +142,7 @@ export function AIOrbWaves({ isLoading = false, compact = false }: AIOrbProps) {
       ))}
 
       <div className={cn("relative rounded-full overflow-visible", size)}>
-        <div className="relative h-full w-full rounded-full bg-slate-900 flex items-center justify-center shadow-inner">
+        <div className="relative h-full w-full rounded-full bg-[#050815] flex items-center justify-center shadow-inner">
           <div className={cn(
             "absolute rounded-full",
             pulseSize,
@@ -185,7 +185,7 @@ export function AIOrbRays({ isLoading = false, compact = false }: AIOrbProps) {
           : "absolute inset-[-100%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_0deg_at_50%_50%,rgba(34,197,94,0.1)_0%,rgba(34,197,94,0.3)_25%,rgba(34,197,94,0.1)_50%,rgba(34,197,94,0.3)_75%,rgba(34,197,94,0.1)_100%)] opacity-100"
         } />
         
-        <div className="relative h-full w-full rounded-full bg-slate-900 flex items-center justify-center shadow-inner">
+        <div className="relative h-full w-full rounded-full bg-[#050815] flex items-center justify-center shadow-inner">
           <div className={cn(
             "absolute rounded-full",
             pulseSize,
@@ -235,7 +235,7 @@ export function AIOrbGlow({ isLoading = false, compact = false }: AIOrbProps) {
       ))}
 
       <div className={cn("relative rounded-full overflow-visible", size)}>
-        <div className="relative h-full w-full rounded-full bg-slate-900 flex items-center justify-center shadow-inner ring-1 ring-green-500/20">
+        <div className="relative h-full w-full rounded-full bg-[#050815] flex items-center justify-center shadow-inner ring-1 ring-green-500/20">
           <div className={cn(
             "absolute rounded-full",
             pulseSize,

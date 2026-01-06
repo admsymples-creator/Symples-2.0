@@ -3,7 +3,7 @@ import { getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { getTasks } from "@/lib/actions/tasks";
 import { notFound } from "next/navigation";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
-import { getUserWorkspaces } from "@/lib/actions/user";
+import { getUserWorkspaces, Profile, Workspace } from "@/lib/actions/user";
 
 interface PageProps {
   params: Promise<{ workspaceSlug: string }>;
@@ -37,43 +37,49 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
   const pageStartTime = Date.now();
   const { workspaceSlug } = await params;
 
-  // 1. Obter workspaceId do slug
-  const workspaceId = await getWorkspaceIdBySlug(workspaceSlug);
+  // 1. Obter dados iniciais em paralelo (Workspace ID e Lista de Workspaces)
+  const [workspaceId, workspaces] = await Promise.all([
+    getWorkspaceIdBySlug(workspaceSlug),
+    getUserWorkspaces(),
+  ]);
 
   if (!workspaceId) {
     return notFound();
   }
 
-  // 2. Buscar workspaces para detectar se é pessoal
-  const workspaces = await getUserWorkspaces();
+  // 2. Detectar se é pessoal
   const workspace = workspaces.find(w => w.id === workspaceId);
   const isPersonal = workspace ? isPersonalWorkspace(workspace, workspaces) : false;
 
-  // 3. Calcular range da semana
+  // 3. Calcular range da semana expandido
+  // A WeeklyView usa uma janela deslizante (Today - 2 a Today + 2) ou mais.
+  // Buscamos um range maior (-7 a +7 dias) para garantir que dias futuros/passados próximos estejam cobertos
+  // e evitar que tarefas sumam quando o dia atual é Domingo (e a query original buscava só até Domingo)
   const today = new Date();
-  const startOfWeek = getStartOfWeek(today);
-  const endOfWeek = getEndOfWeek(today);
+  const startRange = new Date(today);
+  startRange.setDate(today.getDate() - 7);
+  startRange.setHours(0, 0, 0, 0);
+
+  const endRange = new Date(today);
+  endRange.setDate(today.getDate() + 7);
+  endRange.setHours(23, 59, 59, 999);
 
   // 4. Buscar tarefas iniciais da semana
   const tasksStartTime = Date.now();
   const initialTasks = await getTasks({
     workspaceId: isPersonal ? undefined : workspaceId,
     assigneeId: "current",
-    dueDateStart: startOfWeek.toISOString(),
-    dueDateEnd: endOfWeek.toISOString(),
+    dueDateStart: startRange.toISOString(),
+    dueDateEnd: endRange.toISOString(),
   });
-  const tasksTime = Date.now() - tasksStartTime;
-  const tasksSize = JSON.stringify(initialTasks).length;
-  console.log(`[PERF] Planner - Tasks fetch: ${tasksTime}ms`);
-  console.log(`[PERF] Planner - Data size: tasks=${(tasksSize / 1024).toFixed(2)}KB`);
+  // Performance logs removed for production
 
   // Filtrar por workspace se não for pessoal
-  const filteredTasks = isPersonal 
-    ? initialTasks 
+  const filteredTasks = isPersonal
+    ? initialTasks
     : initialTasks.filter(task => task.workspace_id === workspaceId);
-  
-  const totalPageTime = Date.now() - pageStartTime;
-  console.log(`[PERF] Planner - Total page render time: ${totalPageTime}ms`);
+
+  // Performance logs removed for production
 
   return (
     <div className="min-h-screen bg-white pb-20">
@@ -89,10 +95,11 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
       <div className="w-full bg-white px-6">
         <div className="max-w-[1600px] mx-auto">
           <div className="py-3 space-y-8">
-            <PlannerPageClient 
+            <PlannerPageClient
               initialTasks={filteredTasks}
               workspaceId={workspaceId}
               isPersonal={isPersonal}
+              workspaces={workspaces}
             />
           </div>
         </div>

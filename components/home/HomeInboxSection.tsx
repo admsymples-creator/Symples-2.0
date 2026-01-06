@@ -80,7 +80,7 @@ export function HomeInboxSection({ initialNotifications }: HomeInboxSectionProps
 
   
   return (
-    <div className="card-surface h-[400px] flex flex-col">
+    <div className="rounded-lg border-none shadow-sm h-[400px] flex flex-col">
       {/* Header */}
       <div className="px-6 py-4 border-b border-border flex items-center min-h-[56px]">
         <h3 className="text-lg font-semibold text-foreground leading-6">

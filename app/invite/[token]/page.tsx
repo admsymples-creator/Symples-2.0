@@ -21,13 +21,23 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // quando o usuário acessa /invite/[token]. Isso permite que o token sobreviva
   // a redirects OAuth e Magic Link sem depender de localStorage ou parâmetros de URL.
 
-  const supabase = await createServerActionClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  let user = null;
+  let invite = null;
 
-  // Tentar buscar detalhes do convite
-  // Nota: Se o usuário não estiver logado, getInviteDetails falhará devido ao RLS.
-  // Se o email do usuário não bater com o convite, também falhará.
-  const invite = await getInviteDetails(inviteId);
+  try {
+    const supabase = await createServerActionClient();
+    const { data: { user: userData } } = await supabase.auth.getUser();
+    user = userData;
+
+    // Tentar buscar detalhes do convite
+    // Nota: Se o usuário não estiver logado, getInviteDetails pode retornar null devido ao RLS.
+    // Se o email do usuário não bater com o convite, também retornará null.
+    invite = await getInviteDetails(inviteId);
+  } catch (error) {
+    // Se houver erro ao buscar dados, tratar como se não tivesse encontrado o convite
+    console.error("Erro ao buscar dados do convite:", error);
+    invite = null;
+  }
 
   // Se o convite foi encontrado e já foi aceito
   if (invite && invite.status === 'accepted') {
@@ -162,7 +172,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
           <CardContent className="text-center space-y-4">
             <div className="rounded-md bg-slate-50 p-3 text-sm">
               <p className="text-slate-500 mb-1">Logado como:</p>
-              <p className="font-medium text-slate-900">{user.email}</p>
+              <p className="font-medium text-[#050815]">{user.email}</p>
             </div>
             <p className="text-sm text-muted-foreground">
               Verifique se você está logado com o mesmo email que recebeu o convite.
@@ -213,11 +223,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
               <div className="rounded-md bg-slate-50 p-3 text-sm space-y-2">
                 <div>
                   <p className="text-slate-500 mb-1">Convite enviado para:</p>
-                  <p className="font-medium text-slate-900">{invite.email}</p>
+                  <p className="font-medium text-[#050815]">{invite.email}</p>
                 </div>
                 <div className="border-t border-slate-200 pt-2 mt-2">
                   <p className="text-slate-500 mb-1">Você está logado como:</p>
-                  <p className="font-medium text-slate-900">{user.email}</p>
+                  <p className="font-medium text-[#050815]">{user.email}</p>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -245,6 +255,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
     }
 
     // Email bate - verificar se já é membro
+    const supabase = await createServerActionClient();
     const { data: existingMember } = await supabase
       .from("workspace_members")
       .select("user_id")

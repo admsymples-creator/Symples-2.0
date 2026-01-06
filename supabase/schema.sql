@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     avatar_url TEXT,
     email TEXT NOT NULL,
     whatsapp TEXT, -- Campo para integração WhatsApp
+    account_plan TEXT CHECK (account_plan IN ('agency')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
     slug TEXT UNIQUE NOT NULL,
     magic_code TEXT UNIQUE,
     owner_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    plan TEXT DEFAULT 'business' CHECK (plan IN ('starter', 'pro', 'business')),
+    plan TEXT DEFAULT 'business' CHECK (plan IN ('starter', 'pro', 'business', 'agency')),
     subscription_status TEXT DEFAULT 'trialing' CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled')),
     subscription_id TEXT, -- ID da assinatura no gateway de pagamento (Stripe, etc.)
     trial_ends_at TIMESTAMPTZ DEFAULT (now() + interval '14 days'),
@@ -158,7 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_is_personal ON public.tasks(is_personal, cr
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status) WHERE status IS NOT NULL;
 
 -- Índices para workspaces
-CREATE INDEX IF NOT EXISTS idx_workspaces_trial_ends_at ON public.workspaces(trial_ends_at) WHERE subscription_status = 'trial';
+CREATE INDEX IF NOT EXISTS idx_workspaces_trial_ends_at ON public.workspaces(trial_ends_at) WHERE subscription_status = 'trialing';
 CREATE INDEX IF NOT EXISTS idx_workspaces_subscription_status ON public.workspaces(subscription_status);
 
 -- Índices para workspace_members
@@ -305,7 +306,7 @@ BEGIN
         SELECT 1
         FROM public.workspaces
         WHERE id = workspace_uuid
-        AND subscription_status = 'trial'
+        AND subscription_status = 'trialing'
         AND trial_ends_at > NOW()
     );
 END;
@@ -321,7 +322,7 @@ BEGIN
         WHERE id = workspace_uuid
         AND (
             subscription_status = 'active'
-            OR (subscription_status = 'trial' AND trial_ends_at > NOW())
+            OR (subscription_status = 'trialing' AND trial_ends_at > NOW())
         )
     );
 END;

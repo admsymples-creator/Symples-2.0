@@ -13,9 +13,11 @@ interface WeeklyViewProps {
   workspaces: { id: string; name: string }[];
   highlightInput?: boolean;
   onTaskUpdate?: () => void; // Callback para notificar atualizações
+  currentWorkspaceId?: string | null;
+  isPersonal?: boolean;
 }
 
-export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate }: WeeklyViewProps) {
+export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate, currentWorkspaceId, isPersonal = true }: WeeklyViewProps) {
   // Estado local para controlar a visualização (3 ou 5 dias)
   const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
   const shouldReduceMotion = useReducedMotion();
@@ -38,39 +40,100 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
   // Agrupar tarefas por dia (Memoizado)
   const tasksByDay = useMemo(() => {
     const grouped: Record<string, Task[]> = {};
+    const processedKeys = new Set<string>(); // Para evitar duplicatas virtuais
+
+    // 1. Agrupar tarefas reais
     tasks.forEach((task) => {
       if (!task.due_date) return;
       const taskDate = new Date(task.due_date);
-      
-      // CORREÇÃO: Para tarefas pessoais com hora específica, usar a data local para agrupamento
-      // Para tarefas de workspace, usar UTC
-      // Isso evita que uma tarefa de 22h local (01:00 UTC do dia seguinte) seja agrupada no dia errado
-      const isPersonal = task.is_personal || !task.workspace_id;
-      let dateKey: string;
-      
-      if (isPersonal) {
-        // Para tarefas pessoais: usar data local para agrupamento (mais intuitivo)
-        // Uma tarefa de 22h de hoje deve aparecer em "hoje", não em "amanhã"
-        dateKey = taskDate.toLocaleDateString("pt-BR", {
-          day: "2-digit",
-          month: "2-digit",
-        });
-      } else {
-        // Para tarefas de workspace: usar UTC (como estava antes)
-        const utcDay = String(taskDate.getUTCDate()).padStart(2, '0');
-        const utcMonth = String(taskDate.getUTCMonth() + 1).padStart(2, '0');
-        dateKey = `${utcDay}/${utcMonth}`;
-      }
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/home/WeeklyView.tsx:42',message:'BUG-WEEKLY-HOUR: Task date grouping',data:{taskId:task.id,isPersonal,dueDate:task.due_date,taskDateISO:taskDate.toISOString(),taskDateLocal:taskDate.toString(),dateKey},timestamp:Date.now(),sessionId:'debug-session',runId:'bug-investigation-weekly-hour',hypothesisId:'bug-weekly-hour'})}).catch(()=>{});
-      // #endregion
-      
+
+      // Usar SEMPRE o horário local para agrupamento visual, pois as colunas são dias locais.
+      // Isso evita que tarefas de workspace (UTC) de fim de dia caiam no dia seguinte visualmente.
+      const dateKey = taskDate.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+      });
+
       if (!grouped[dateKey]) grouped[dateKey] = [];
       grouped[dateKey].push(task);
+
+      // Marcar chave única para evitar gerar virtual neste mesmo dia para esta série
+      // Usando ID ou título como "chave da série" simples por enquanto
+      if (task.recurrence_type) {
+        const uniqueKey = `${dateKey}-${task.title}-${task.recurrence_type}`;
+        processedKeys.add(uniqueKey);
+      }
     });
+
+    // 2. Gerar tarefas virtuais (Projeção) para os próximos dias visíveis
+    const today = new Date();
+    // Limite de projeção: hoje + dias configurados (3 ou 5) + margem
+    const limitDate = new Date(today);
+    limitDate.setDate(today.getDate() + (daysToShow === 3 ? 3 : 6));
+
+    tasks.forEach((task) => {
+      // Apenas tarefas recorrentes ativas e não concluídas (ou concluídas recentemente se quisermos projetar a partir delas)
+      // Simplificação: Projetar a partir de tarefas não arquivadas com recorrência
+      if (!task.recurrence_type || !task.due_date || task.status === 'archived') return;
+
+      const taskDate = new Date(task.due_date);
+      let nextDate = new Date(taskDate);
+      const interval = task.recurrence_interval || 1;
+
+      // Projetar até o limite da visualização
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+
+      let loops = 0;
+      const MAX_LOOPS = 50;
+
+      while (nextDate < limitDate && loops < MAX_LOOPS) {
+        loops++;
+
+        // Calcular próxima data baseada no tipo
+        if (task.recurrence_type === 'daily') {
+          nextDate.setDate(nextDate.getDate() + interval);
+        } else if (task.recurrence_type === 'weekly') {
+          nextDate.setDate(nextDate.getDate() + (7 * interval));
+        } else if (task.recurrence_type === 'monthly') {
+          nextDate.setMonth(nextDate.getMonth() + interval);
+        } else if (task.recurrence_type === 'custom') {
+          nextDate.setDate(nextDate.getDate() + interval);
+        }
+
+        // Se passou do limite, parar
+        if (nextDate > limitDate) break;
+
+        // Se data gerada é anterior ou igual a hoje (fim do dia de hoje), pular
+        // Queremos mostrar apenas tarefas de AMANHÃ em diante como virtuais
+        if (nextDate <= now) continue;
+
+        // Gerar chave de data para o agrupamento (Local Time)
+        const nextDateKey = nextDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+
+        // Verificar conflito: Já existe tarefa real dessa série neste dia?
+        const uniqueKey = `${nextDateKey}-${task.title}-${task.recurrence_type}`;
+        if (processedKeys.has(uniqueKey)) continue;
+
+        // Criar Tarefa Virtual
+        const virtualTask = {
+          ...task,
+          id: `virtual-${task.id}-${nextDate.getTime()}`,
+          due_date: nextDate.toISOString(),
+          status: 'todo', // Sempre 'todo'
+          is_virtual: true, // Flag para UI
+        } as Task & { is_virtual?: boolean };
+
+        if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
+        grouped[nextDateKey].push(virtualTask);
+
+        // Adicionar aos processados para não duplicar se houver múltiplas instâncias loopando
+        processedKeys.add(uniqueKey);
+      }
+    });
+
     return grouped;
-  }, [tasks]);
+  }, [tasks, daysToShow]);
 
   // Gerar dias para exibição
   const weekDays = useMemo(() => {
@@ -149,6 +212,8 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
                 workspaces={workspaces}
                 highlightInput={highlightInput && day.isToday}
                 onTaskUpdate={onTaskUpdate}
+                currentWorkspaceId={currentWorkspaceId}
+                isPersonalContext={isPersonal}
               />
             </div>
           ))}

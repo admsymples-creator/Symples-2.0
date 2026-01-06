@@ -44,8 +44,8 @@ import {
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
-import { useWorkspace } from "@/components/providers/SidebarProvider";
-import { getPlanName } from "@/lib/utils/subscription-helpers";
+import { useOptionalWorkspace } from "@/components/providers/SidebarProvider";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import type { SubscriptionData } from "@/lib/types/subscription";
 
 interface SettingsPageClientProps {
@@ -70,7 +70,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     return tabParam || "general";
   }, [effectiveMode, searchParams]);
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => initialTab);
-  const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const workspaceContext = useOptionalWorkspace();
+  const activeWorkspaceId = workspaceContext?.activeWorkspaceId || null;
+  const isLoaded = workspaceContext?.isLoaded || false;
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
 
@@ -99,25 +101,34 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_url || null);
 
-  // Carregar workspace ativo quando o contexto mudar
+  // Sincronizar dados iniciais quando disponíveis - executar apenas uma vez no mount
   useEffect(() => {
+    if (initialWorkspace) {
+      setWorkspace(initialWorkspace);
+      setWorkspaceName(initialWorkspace.name);
+      setSlug(initialWorkspace.slug || "");
+      setWorkspaceLogoPreview((initialWorkspace as any)?.logo_url || null);
+    }
+    if (initialMembers.length > 0 || initialInvites.length > 0) {
+      setMembers(initialMembers);
+      setInvites(initialInvites);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Executar apenas no mount
+
+  // Carregar workspace ativo quando o contexto mudar (apenas se não temos dados iniciais)
+  useEffect(() => {
+    if (effectiveMode === "team") {
+      return;
+    }
+
     if (!isLoaded || !activeWorkspaceId) {
       return;
     }
 
     // OTIMIZAÇÃO: Se já temos dados iniciais para este workspace, não recarregar
-    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id && (initialMembers.length > 0 || initialInvites.length > 0)) {
-      // Dados já estão carregados, apenas atualizar workspace se necessário
-      if (!workspace || workspace.id !== activeWorkspaceId) {
-        getWorkspaceById(activeWorkspaceId).then(activeWorkspace => {
-          if (activeWorkspace) {
-            setWorkspace(activeWorkspace);
-            setWorkspaceName(activeWorkspace.name);
-            setSlug(activeWorkspace.slug || "");
-            setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
-          }
-        });
-      }
+    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id) {
+      // Dados já estão carregados, não fazer fetch
       return;
     }
 
@@ -132,7 +143,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           setWorkspaceLogoPreview((activeWorkspace as any)?.logo_url || null);
           setWorkspaceLogoFile(null); // Limpar arquivo selecionado ao trocar workspace
           
-          // Recarregar membros e convites do novo workspace apenas se não temos dados iniciais
+          // Recarregar membros e convites do novo workspace
           const [members, invites] = await Promise.all([
             getWorkspaceMembers(activeWorkspaceId),
             getPendingInvites(activeWorkspaceId)
@@ -149,7 +160,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     };
 
     loadActiveWorkspace();
-  }, [activeWorkspaceId, isLoaded, initialWorkspace, initialMembers, initialInvites]);
+  }, [activeWorkspaceId, isLoaded, initialWorkspace, effectiveMode]);
 
   // Carregar dados de subscription quando workspace mudar ou tab billing for aberta
   useEffect(() => {
@@ -231,14 +242,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
   
-  // Atualizar membros e convites quando dados iniciais mudarem ou quando workspace mudar
-  useEffect(() => {
-    // Se temos dados iniciais e o workspace inicial corresponde ao workspace ativo, usar dados iniciais
-    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id && (initialMembers.length > 0 || initialInvites.length > 0)) {
-      setMembers(initialMembers);
-      setInvites(initialInvites);
-    }
-  }, [initialMembers, initialInvites, initialWorkspace, activeWorkspaceId]);
+  // NOTA: Removido useEffect que sobrescrevia membros - causava perda de dados quando initialMembers mudava
+  // Os dados iniciais já são passados no useState acima, e membros são atualizados apenas quando workspace muda (linha 145)
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -311,14 +316,29 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       if (!memberToRemove || !workspace) return;
       setIsRemovingMember(true);
       try {
-          await removeMember(workspace.id, memberToRemove);
+          const result = await removeMember(workspace.id, memberToRemove);
+          
+          // Atualizar estado local imediatamente (otimistic update)
           setMembers(members.filter(m => m.user_id !== memberToRemove));
-          toast.success("Membro removido", { 
+          
+          if (result.warning) {
+            toast.success("Membro removido", { 
+              description: result.warning
+            });
+          } else {
+            toast.success("Membro removido", { 
               description: "O usuário perdeu acesso ao workspace." 
-          });
-          router.refresh();
+            });
+          }
+          
+          // Não chamar router.refresh() - revalidatePath já foi chamado na server action
+          // O estado local já foi atualizado, então a UI está sincronizada
+          // Chamar router.refresh() pode causar erro de Server Components render
       } catch (error: any) {
-          toast.error("Erro ao remover membro", { description: error.message });
+          console.error("Erro ao remover membro:", error);
+          toast.error("Erro ao remover membro", { 
+            description: error?.message || "Ocorreu um erro inesperado. Tente novamente." 
+          });
       } finally {
           setIsRemovingMember(false);
           setMemberToRemove(null);
@@ -723,7 +743,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </Dialog>
           </div>
 
-          <Card>
+          <Card className="border-none shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
@@ -744,15 +764,24 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   {members.map((member) => {
                     const name = member.profiles?.full_name || "Usuário";
                     const email = member.profiles?.email || "";
-                    const initials = getInitials(name);
+                    const avatarUrl = member.profiles?.avatar_url;
+                    const hasAvatar = avatarUrl && avatarUrl.trim() !== '';
                     
                     return (
                         <tr key={member.user_id} className="bg-white hover:bg-gray-50/50 transition-colors">
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
-                                {initials}
-                            </div>
+                            {hasAvatar ? (
+                                <img 
+                                    src={avatarUrl} 
+                                    alt={name}
+                                    className="h-10 w-10 rounded-full object-cover"
+                                />
+                            ) : (
+                                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
+                                    {getInitials(name)}
+                                </div>
+                            )}
                             <div>
                                 <div className="font-medium text-gray-900">{name}</div>
                                 <div className="text-muted-foreground text-xs">{email}</div>
@@ -786,7 +815,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           {invites.length > 0 && (
               <div className="space-y-4">
                   <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Convites Pendentes</h3>
-                  <Card>
+                  <Card className="border-none shadow-sm">
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
@@ -844,9 +873,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   <CardTitle>Plano Atual</CardTitle>
                   {isLoadingSubscription ? (
                     <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                  ) : subscriptionData?.plan ? (
+                  ) : (subscriptionData?.account_plan || subscriptionData?.plan) ? (
                     <Badge className="bg-green-600 hover:bg-green-700">
-                      {getPlanName(subscriptionData.plan)}
+                      {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)}
                     </Badge>
                   ) : subscriptionData?.subscription_status === 'trialing' ? (
                     <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 border-yellow-200">
@@ -857,7 +886,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   )}
                 </div>
                 <CardDescription>
-                  {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at
+                  {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at && !subscriptionData?.account_plan
                     ? `Trial ativo. Expira em ${new Date(subscriptionData.trial_ends_at).toLocaleDateString('pt-BR')}.`
                     : subscriptionData?.subscription_status === 'active'
                     ? 'Ciclo de faturamento mensal.'
@@ -873,9 +902,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   <>
                     <div className="flex items-end gap-2">
                       <span className="text-4xl font-bold">
-                        {subscriptionData.plan === 'starter' ? 'R$ 49' :
-                         subscriptionData.plan === 'pro' ? 'R$ 69' :
-                         subscriptionData.plan === 'business' ? 'R$ 129' :
+                        {(subscriptionData.account_plan || subscriptionData.plan) === 'starter' ? 'R$ 49' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'pro' ? 'R$ 69' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'business' ? 'R$ 129' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'agency' ? 'Sob consulta' :
                          subscriptionData.subscription_status === 'trialing' ? 'Grátis' : 'R$ 0'}
                       </span>
                       <span className="text-muted-foreground mb-1">
@@ -883,10 +913,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                       </span>
                     </div>
 
-                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && (
+                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && !subscriptionData.account_plan && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <p className="text-sm text-yellow-800">
-                          <strong>Trial ativo:</strong> Você está testando o plano Business por 14 dias.
+                          <strong>Trial ativo:</strong> Você está testando o plano {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)} por 14 dias.
                         </p>
                       </div>
                     )}

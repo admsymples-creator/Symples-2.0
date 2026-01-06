@@ -55,3 +55,6 @@
 7. ⏳ Implementar paginação para transações
 8. ⏳ Adicionar skeleton loading para melhor UX
 
+
+
+

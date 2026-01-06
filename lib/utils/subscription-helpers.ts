@@ -11,7 +11,7 @@ export function getPlanLimits(
   status: string | null
 ): number {
   // Exceção: Se está em trial, sempre usar limite do Business
-  if (status === "trialing") {
+  if (status === "trialing" || status === "trial") {
     return 15; // Limite do Business
   }
 
@@ -23,6 +23,8 @@ export function getPlanLimits(
       return 5; // Dono + 4 membros
     case "business":
       return 15; // Dono + 14 membros
+    case "agency":
+      return 999; // Limite alto para planos Agency
     default:
       // Fallback: se plano não definido, usar limite mínimo
       return 1;
@@ -35,13 +37,25 @@ export function getPlanLimits(
 export function getPlanName(plan: string | null): string {
   switch (plan) {
     case "starter":
-      return "Starter";
+      return "Pessoal";
     case "pro":
       return "Pro";
     case "business":
       return "Business";
+    case "agency":
+      return "Agency";
     default:
-      return "Starter";
+      return "Pessoal";
   }
+}
+
+export function getDisplayPlanName(
+  workspacePlan: string | null,
+  accountPlan?: string | null
+): string {
+  if (accountPlan) {
+    return getPlanName(accountPlan);
+  }
+  return getPlanName(workspacePlan);
 }
 

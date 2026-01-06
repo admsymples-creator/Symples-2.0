@@ -37,6 +37,13 @@ import { TaskMembersPicker } from "./pickers/TaskMembersPicker";
 import { AvatarGroup } from "./Avatar";
 import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 
+// --- Tipos ---
+interface TaskAssignee {
+  name: string;
+  avatar?: string;
+  id: string;
+}
+
 interface MyTaskRowHomeProps {
   task: {
     id: string | number;
@@ -45,7 +52,7 @@ interface MyTaskRowHomeProps {
     dueDate?: string;
     completed?: boolean;
     priority?: "low" | "medium" | "high" | "urgent";
-    assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+    assignees?: TaskAssignee[];
     workspace_id?: string | null;
     commentCount?: number;
     commentsCount?: number;
@@ -60,7 +67,7 @@ interface MyTaskRowHomeProps {
   onClick?: (taskId: string | number) => void;
   onTaskUpdated?: () => void;
   onTaskDeleted?: () => void;
-  onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ title?: string; dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+  onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<any>) => void;
   onTaskDeletedOptimistic?: (taskId: string) => void;
   onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
   members?: Array<{ id: string; name: string; avatar?: string }>;
@@ -71,24 +78,15 @@ interface MyTaskRowHomeProps {
 
 type CurrentUser = { id: string; name: string; avatar?: string };
 
-let currentUserCache: CurrentUser | null = null;
-let currentUserLoaded = false;
-let currentUserPromise: Promise<CurrentUser | null> | null = null;
+// --- Singleton Pattern para User Fetch (Previne flood de requests) ---
+let userFetchPromise: Promise<CurrentUser | null> | null = null;
 
-const loadCurrentUser = async (): Promise<CurrentUser | null> => {
-  if (currentUserLoaded) {
-    return currentUserCache;
-  }
-  if (!currentUserPromise) {
-    currentUserPromise = (async () => {
+const getCurrentUserSingleton = () => {
+  if (!userFetchPromise) {
+    userFetchPromise = (async () => {
       const supabase = createBrowserClient();
       const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        currentUserLoaded = true;
-        currentUserCache = null;
-        return null;
-      }
+      if (!user) return null;
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -96,27 +94,19 @@ const loadCurrentUser = async (): Promise<CurrentUser | null> => {
         .eq("id", user.id)
         .single();
 
-      if (!profile) {
-        currentUserLoaded = true;
-        currentUserCache = null;
-        return null;
-      }
+      if (!profile) return null;
 
-      currentUserCache = {
+      return {
         id: profile.id,
         name: profile.full_name || profile.email || "Usuario",
         avatar: profile.avatar_url || undefined,
       };
-      currentUserLoaded = true;
-      return currentUserCache;
-    })().finally(() => {
-      currentUserPromise = null;
-    });
+    })();
   }
-  return currentUserPromise;
+  return userFetchPromise;
 };
 
-// Função auxiliar para verificar se é hoje
+// --- Funções Auxiliares de Data (Puras) ---
 const isTodayFunc = (dateString?: string): boolean => {
   if (!dateString) return false;
   const date = new Date(dateString);
@@ -124,7 +114,6 @@ const isTodayFunc = (dateString?: string): boolean => {
   return date.toDateString() === today.toDateString();
 };
 
-// Função auxiliar para verificar se a data é o próximo domingo
 const isNextSunday = (dateString?: string): boolean => {
   if (!dateString) return false;
   const date = new Date(dateString);
@@ -143,7 +132,6 @@ const isNextSunday = (dateString?: string): boolean => {
   return taskDate.getTime() === nextSunday.getTime();
 };
 
-// Função auxiliar para obter o próximo domingo
 const getNextSunday = (): Date => {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -154,72 +142,66 @@ const getNextSunday = (): Date => {
   return nextSunday;
 };
 
-function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionClick, onClick, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, members, showWorkspaceBadge = false, workspaceName, showProjectTag = false }: MyTaskRowHomeProps) {
-  // Estados para controlar abertura dos Popovers
+// --- Componente Principal ---
+function MyTaskRowHomeComponent({ 
+  task, 
+  disabled = false, 
+  groupColor, 
+  onClick, 
+  onTaskUpdated, 
+  onTaskDeleted, 
+  onTaskUpdatedOptimistic, 
+  onTaskDeletedOptimistic, 
+  onTaskDuplicatedOptimistic, 
+  members, 
+  showWorkspaceBadge = false, 
+  workspaceName, 
+  showProjectTag = false 
+}: MyTaskRowHomeProps) {
+  
+  // Estados UI
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
-  // Evitar erro de hidratação renderizando Popovers apenas após montagem
+  // Efeitos
   useEffect(() => {
     setIsMounted(true);
-  }, []);
-  
-  // Estado para armazenar o usuário atual
-  const [currentUser, setCurrentUser] = useState<{ id: string; name: string; avatar?: string } | null>(null);
-
-  // Buscar usuário atual
-  useEffect(() => {
     let isActive = true;
-
-    loadCurrentUser().then((user) => {
-      if (isActive && user) {
-        setCurrentUser(user);
-      }
+    getCurrentUserSingleton().then((user) => {
+      if (isActive) setCurrentUser(user);
     });
-
-    return () => {
-      isActive = false;
-    };
+    return () => { isActive = false; };
   }, []);
 
-  // Garantir que o usuário atual esteja na lista de membros
+  // Lógica de Membros
   const membersWithCurrentUser = useMemo(() => {
     if (!members) return currentUser ? [currentUser] : [];
-    
     const hasCurrentUser = currentUser && members.some(m => m.id === currentUser.id);
-    if (hasCurrentUser || !currentUser) {
-      return members;
-    }
-    
-    // Adicionar usuário atual no início da lista
-    return [currentUser, ...members];
+    return (hasCurrentUser || !currentUser) ? members : [currentUser, ...members];
   }, [members, currentUser]);
 
-  // Grid columns sem drag handle (para home)
-  const gridColumnsClass = "grid-cols-[24px_1fr_auto_90px_130px_40px]";
+  const currentMemberIds = useMemo(() => 
+    task.assignees?.map((a) => a.id).filter(Boolean) || [], 
+  [task.assignees]);
 
+  // Estilos e Classes
+  const gridColumnsClass = "grid-cols-[24px_1fr_auto_90px_130px_40px]";
+  
   // Lógica de Data
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
   const isToday = task.dueDate && isTodayFunc(task.dueDate);
   const isFocusActive = isNextSunday(task.dueDate);
   const isUrgentActive = isToday || task.priority === "high" || task.priority === "urgent";
 
-  // Mapear cor do grupo se existir
+  // Cor do Grupo
   const getGroupColorClass = (colorName?: string) => {
-    if (!colorName) return null;
-    if (colorName.startsWith("#")) return null;
-
+    if (!colorName || colorName.startsWith("#")) return null;
     const colorMap: Record<string, string> = {
-      "red": "bg-red-500",
-      "blue": "bg-blue-500",
-      "green": "bg-green-500",
-      "yellow": "bg-yellow-500",
-      "purple": "bg-purple-500",
-      "pink": "bg-pink-500",
-      "orange": "bg-orange-500",
-      "slate": "bg-slate-500",
-      "cyan": "bg-cyan-500",
+      "red": "bg-red-500", "blue": "bg-blue-500", "green": "bg-green-500",
+      "yellow": "bg-yellow-500", "purple": "bg-purple-500", "pink": "bg-pink-500",
+      "orange": "bg-orange-500", "slate": "bg-slate-500", "cyan": "bg-cyan-500",
       "indigo": "bg-indigo-500",
     };
     return colorMap[colorName] || null;
@@ -228,31 +210,28 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
   const groupColorClass = getGroupColorClass(groupColor);
   const isHexColor = groupColor?.startsWith("#");
 
-  // Configuração Visual do Status
+  // Status
   const rawStatus = task.status || "todo";
   const dbStatus = (rawStatus in TASK_CONFIG) ? rawStatus as TaskStatus : mapLabelToStatus(rawStatus);
   const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
-  
-  // Verificar se a tarefa está concluída
   const isCompleted = dbStatus === TASK_STATUS.DONE || task.completed === true;
 
-  // Memoizar objeto task para TaskActionsMenu
+  // Memoização para ActionsMenu
   const taskForActionsMenu = useMemo(() => ({
     id: String(task.id),
     title: task.title,
   }), [task.id, task.title]);
 
-  // Memoizar callback para abrir detalhes
   const handleOpenDetails = useCallback(() => {
     onClick?.(task.id);
   }, [onClick, task.id]);
 
-  // Função para parar propagação de eventos
   const stopProp = (e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation();
   };
 
-  // Handler para atualizar data
+  // --- Handlers ---
+  
   const handleDateUpdate = async (date: Date | undefined) => {
     setIsDateOpen(false);
     const previousDueDate = task.dueDate;
@@ -277,7 +256,6 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
     }
   };
 
-  // Handler para atualizar status
   const handleStatusUpdate = async (newStatus: string) => {
     setIsStatusOpen(false);
     const previousStatus = task.status || "Não iniciado";
@@ -300,10 +278,9 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
     }
   };
 
-  // Handler para atualizar membros
   const handleMembersChange = async (memberIds: string[]) => {
     const previousAssignees = task.assignees || [];
-    const previousMemberIds = previousAssignees.map((a: any) => a.id).filter(Boolean);
+    const previousMemberIds = previousAssignees.map((a) => a.id).filter(Boolean);
     
     const added = memberIds.filter(id => !previousMemberIds.includes(id));
     const removed = previousMemberIds.filter(id => !memberIds.includes(id));
@@ -312,7 +289,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
       ? memberIds.map(id => {
           const member = members.find(m => m.id === id);
           return member ? { name: member.name, avatar: member.avatar, id: member.id } : null;
-        }).filter(Boolean) as Array<{ name: string; avatar?: string; id: string }>
+        }).filter(Boolean) as TaskAssignee[]
       : [];
 
     onTaskUpdatedOptimistic?.(task.id, { assignees: updatedAssignees });
@@ -322,16 +299,11 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
       const removePromises = removed.map(userId => removeTaskMember(String(task.id), userId));
 
       const results = await Promise.all([...addPromises, ...removePromises]);
-      const hasError = results.some(r => !r.success);
-
-      if (hasError) {
+      
+      if (results.some(r => !r.success)) {
         onTaskUpdatedOptimistic?.(task.id, { assignees: previousAssignees });
         toast.error("Erro ao atualizar membros");
       } else {
-        const changeCount = added.length + removed.length;
-        if (changeCount > 0) {
-          toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
-        }
         onTaskUpdated?.();
       }
     } catch (error) {
@@ -340,9 +312,6 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
     }
   };
 
-  const currentMemberIds = task.assignees?.map((a: any) => a.id).filter(Boolean) || [];
-
-  // Handler para Smart Triggers (Focus e Urgente)
   const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -380,7 +349,6 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
     }
   };
 
-  // Handler para toggle de conclusão
   const handleToggleComplete = async (checked: boolean) => {
     const previousStatus = task.status || "Não iniciado";
     const previousDbStatus = mapLabelToStatus(previousStatus);
@@ -397,7 +365,6 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
       });
       
       if (result.success) {
-        toast.success(checked ? "Tarefa concluída" : "Tarefa reaberta");
         onTaskUpdated?.();
       } else {
         onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
@@ -409,21 +376,16 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
     }
   };
 
-  // Handler para atualizar título
   const handleTitleUpdate = async (newTitle: string) => {
-    if (!newTitle.trim()) {
+    const trimmedTitle = newTitle.trim();
+    if (!trimmedTitle) {
       toast.error("O título não pode estar vazio");
       return;
     }
 
-    const trimmedTitle = newTitle.trim();
-    
-    if (trimmedTitle === task.title) {
-      return;
-    }
+    if (trimmedTitle === task.title) return;
 
     const previousTitle = task.title;
-    
     onTaskUpdatedOptimistic?.(task.id, { title: trimmedTitle });
 
     try {
@@ -444,6 +406,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
     }
   };
 
+  // --- JSX ---
   return (
     <div
       className={cn(
@@ -455,25 +418,20 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
       )}
       onClick={(e) => {
         const target = e.target as HTMLElement;
-        const isTitleClick = target.closest('[data-inline-edit="true"]') ||
-                           target.closest('.cursor-text') || 
-                           target.closest('input') ||
-                           target.closest('[role="textbox"]') ||
-                           target.classList.contains('cursor-text') ||
-                           target.hasAttribute('data-inline-edit');
+        const isInteractive = target.closest('[data-inline-edit="true"]') ||
+                             target.closest('button') || 
+                             target.closest('[role="checkbox"]');
         
-        if (!isTitleClick && onClick) {
+        if (!isInteractive && onClick) {
           onClick(task.id);
         }
       }}
     >
-      {/* Barra Lateral Colorida - sempre mostra (cinza padrão ou cor do grupo) */}
+      {/* Barra Lateral */}
       <div 
         className={cn(
           "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
-          groupColorClass || isHexColor 
-            ? (groupColorClass || "") 
-            : "bg-gray-200"
+          groupColorClass || isHexColor ? (groupColorClass || "") : "bg-gray-200"
         )}
         style={isHexColor ? { backgroundColor: groupColor } : undefined}
       />
@@ -491,13 +449,11 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
         />
       </div>
 
-      {/* Título com indicadores no hover */}
+      {/* Título */}
       <div className="flex items-center min-w-0 gap-2 pr-2 overflow-hidden">
         <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
-          {task.isPending && (
-            <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
-          )}
-          {/* Ícone de recorrência */}
+          {task.isPending && <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />}
+          
           {(task.recurrence_type || task.recurrence_parent_id) && (
             <TooltipProvider>
               <Tooltip>
@@ -505,11 +461,12 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
                   <RefreshCw className="w-3 h-3 text-blue-500 flex-shrink-0" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Tarefa recorrente {task.recurrence_type ? `(${task.recurrence_type === 'daily' ? 'Diária' : task.recurrence_type === 'weekly' ? 'Semanal' : task.recurrence_type === 'monthly' ? 'Mensal' : 'Personalizada'})` : ''}</p>
+                  <p>Tarefa recorrente</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
+          
           <div className="flex-1 min-w-0 overflow-hidden">
             <InlineTextEdit
               value={task.title}
@@ -524,11 +481,17 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
               maxLength={100}
             />
           </div>
-          {/* Badge de Projeto (tag) ou Workspace */}
-          {showProjectTag && task.tags && task.tags.length > 0 ? (
-            <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
-              {task.tags[0]}
-            </Badge>
+          
+          {showProjectTag ? (
+            task.tags && task.tags.length > 0 ? (
+              <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+                {task.tags[0]}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs font-medium bg-gray-50 text-gray-400 hover:bg-gray-50 flex-shrink-0">
+                Sem projeto
+              </Badge>
+            )
           ) : showWorkspaceBadge && workspaceName ? (
             <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
               {workspaceName}
@@ -536,25 +499,21 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
           ) : null}
         </div>
         
-        {/* Comentários - aparece apenas no hover */}
+        {/* Ícone Comentários */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          {(task.commentCount && task.commentCount > 0) || (task.commentsCount && task.commentsCount > 0) ? (
+          {(task.commentCount || task.commentsCount || 0) > 0 && (
             <div 
               className="flex items-center gap-1 text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
-              title="Comentários"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClick?.(task.id);
-              }}
+              onClick={(e) => { e.stopPropagation(); onClick?.(task.id); }}
             >
               <MessageSquare size={12} strokeWidth={2.5} />
               <span className="text-[10px] font-semibold">{task.commentCount || task.commentsCount || 0}</span>
             </div>
-          ) : null}
+          )}
         </div>
       </div>
 
-      {/* Coluna: Responsável */}
+      {/* Membros */}
       <div 
         className="flex items-center justify-center"
         onClick={stopProp}
@@ -568,13 +527,9 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
             members={membersWithCurrentUser}
             align="end"
             trigger={
-              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100" onClick={stopProp} onPointerDown={stopProp}>
+              <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
                 {task.assignees && task.assignees.length > 0 ? (
-                  <AvatarGroup
-                    users={task.assignees}
-                    max={3}
-                    size="sm"
-                  />
+                  <AvatarGroup users={task.assignees} max={3} size="sm" />
                 ) : (
                   <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
                     <User size={12} />
@@ -584,75 +539,54 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
             }
           />
         ) : (
-          <button className="outline-none rounded-full" disabled>
-            {task.assignees && task.assignees.length > 0 ? (
-              <AvatarGroup
-                users={task.assignees}
-                max={3}
-                size="sm"
-              />
-            ) : (
-              <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
-                <User size={12} />
-              </div>
-            )}
-          </button>
+           <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
+             <User size={12} />
+           </div>
         )}
       </div>
 
-      {/* Coluna: Data com indicadores Focus e Urgente */}
+      {/* Data */}
       <div 
         className="flex items-center justify-center gap-1 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors"
         onClick={stopProp}
         onPointerDown={stopProp}
       >
-        {/* Indicadores Focus e Urgente */}
         <div className="flex items-center gap-0.5">
-          {/* Focus */}
+          {/* Focus Button */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSmartTrigger('focus', e);
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => handleSmartTrigger('focus', e)}
+                  onPointerDown={stopProp}
                   className={cn(
                     "rounded p-0.5 transition-all",
-                    isFocusActive 
-                      ? "text-yellow-600 bg-yellow-50 opacity-100" 
-                      : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-yellow-500 hover:bg-yellow-50"
+                    isFocusActive ? "text-yellow-600 bg-yellow-50 opacity-100" : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-yellow-500 hover:bg-yellow-50"
                   )}
                 >
                   <Zap className="w-3.5 h-3.5 fill-current" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Mover para Próximo Domingo</p></TooltipContent>
+              <TooltipContent side="bottom"><p className="text-xs">Próximo Domingo</p></TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
-          {/* Urgente */}
+          {/* Urgent Button */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSmartTrigger('urgent', e);
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => handleSmartTrigger('urgent', e)}
+                  onPointerDown={stopProp}
                   className={cn(
                     "rounded p-0.5 transition-all",
-                    isUrgentActive 
-                      ? "text-red-600 bg-red-50 opacity-100" 
-                      : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50"
+                    isUrgentActive ? "text-red-600 bg-red-50 opacity-100" : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50"
                   )}
                 >
                   <AlertTriangle className="w-3.5 h-3.5 fill-current" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Marcar como Urgente</p></TooltipContent>
+              <TooltipContent side="bottom"><p className="text-xs">Urgente</p></TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </div>
@@ -664,8 +598,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
                 {task.dueDate ? (
                   <span className={cn("text-xs font-medium whitespace-nowrap",
                     isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                    isToday ? "text-green-600" : 
-                    "text-gray-500"
+                    isToday ? "text-green-600" : "text-gray-500"
                   )}>
                     {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                   </span>
@@ -676,7 +609,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
                 )}
               </div>
             </PopoverTrigger>
-            <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp} onPointerDown={stopProp}>
+            <PopoverContent className="p-0 w-auto" align="start" onClick={stopProp}>
               <Calendar
                 mode="single"
                 selected={task.dueDate ? new Date(task.dueDate) : undefined}
@@ -701,8 +634,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
             {task.dueDate ? (
               <span className={cn("text-xs font-medium whitespace-nowrap",
                 isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                isToday ? "text-green-600" : 
-                "text-gray-500"
+                isToday ? "text-green-600" : "text-gray-500"
               )}>
                 {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
               </span>
@@ -715,15 +647,12 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
         )}
       </div>
 
-      {/* Coluna: Status */}
+      {/* Status */}
       <div className="flex items-center justify-center">
         {isMounted ? (
           <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
             <PopoverTrigger asChild>
-              <div
-                onClick={stopProp}
-                onPointerDown={stopProp}
-              >
+              <div onClick={stopProp} onPointerDown={stopProp}>
                 <Badge
                   variant="outline"
                   className={cn(
@@ -779,7 +708,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
         )}
       </div>
 
-      {/* Coluna: Menu Ações */}
+      {/* Menu Ações */}
       <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
         <TaskActionsMenu
           task={taskForActionsMenu}
@@ -795,7 +724,7 @@ function MyTaskRowHomeComponent({ task, disabled = false, groupColor, onActionCl
   );
 }
 
-// Memo para performance
+// Memoização para performance
 export const MyTaskRowHome = memo(
   MyTaskRowHomeComponent,
   (prev, next) => {
@@ -814,7 +743,6 @@ export const MyTaskRowHome = memo(
       prev.members === next.members &&
       prev.disabled === next.disabled &&
       prev.onClick === next.onClick &&
-      prev.onActionClick === next.onActionClick &&
       prev.onTaskUpdated === next.onTaskUpdated &&
       prev.onTaskDeleted === next.onTaskDeleted &&
       prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic &&
@@ -823,4 +751,3 @@ export const MyTaskRowHome = memo(
     );
   }
 );
-

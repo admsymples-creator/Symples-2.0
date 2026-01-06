@@ -333,7 +333,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
                   id="recurring-edit" 
                   checked={isRecurring}
                   onCheckedChange={(checked) => setIsRecurring(checked as boolean)}
-                  className="border-gray-300 data-[state=checked]:bg-slate-900 data-[state=checked]:border-slate-900"
+                  className="border-gray-300 data-[state=checked]:bg-[#050815] data-[state=checked]:border-[#050815]"
                 />
                 <label
                   htmlFor="recurring-edit"
@@ -350,7 +350,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
         {/* 5. RODAPÉ (AÇÕES) */}
         <div className="px-6 pb-6 space-y-2">
           <Button 
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium h-12 shadow-sm"
+            className="w-full bg-[#050815] hover:bg-slate-800 text-white font-medium h-12 shadow-sm"
             onClick={handleSubmit}
             disabled={isPending}
           >
