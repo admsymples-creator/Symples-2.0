@@ -231,10 +231,10 @@ export async function ensurePersonalWorkspace(): Promise<{ success: boolean; wor
       name: "Pessoal",
       owner_id: user.id,
       slug,
-      plan: "business",
+      plan: "pro",
       subscription_status: "trialing",
       trial_ends_at: trialEndsAt,
-      member_limit: 15,
+      member_limit: 5,
     })
     .select()
     .single();

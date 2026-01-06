@@ -41,6 +41,7 @@ export type Database = {
     Tables: {
       profiles: {
         Row: {
+          account_plan: string | null
           avatar_url: string | null
           created_at: string | null
           email: string | null
@@ -49,6 +50,7 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          account_plan?: string | null
           avatar_url?: string | null
           created_at?: string | null
           email?: string | null
@@ -57,6 +59,7 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          account_plan?: string | null
           avatar_url?: string | null
           created_at?: string | null
           email?: string | null
@@ -527,7 +530,7 @@ export type Database = {
           name: string
           owner_id: string | null
           slug: string | null
-          plan: 'starter' | 'pro' | 'business' | null
+          plan: 'starter' | 'pro' | 'business' | 'agency' | null
           subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null
           subscription_id: string | null
           trial_ends_at: string | null
@@ -541,7 +544,7 @@ export type Database = {
           name: string
           owner_id?: string | null
           slug?: string | null
-          plan?: 'starter' | 'pro' | 'business' | null
+          plan?: 'starter' | 'pro' | 'business' | 'agency' | null
           subscription_status?: 'trialing' | 'active' | 'past_due' | 'canceled' | null
           subscription_id?: string | null
           trial_ends_at?: string | null
@@ -555,7 +558,7 @@ export type Database = {
           name?: string
           owner_id?: string | null
           slug?: string | null
-          plan?: 'starter' | 'pro' | 'business' | null
+          plan?: 'starter' | 'pro' | 'business' | 'agency' | null
           subscription_status?: 'trialing' | 'active' | 'past_due' | 'canceled' | null
           subscription_id?: string | null
           trial_ends_at?: string | null

@@ -287,6 +287,13 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     }
 
     // 1.5. Verificar limites de membros do plano
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("account_plan")
+      .eq("id", user.id)
+      .single();
+
+    const hasAgencyAccount = (profileData as any)?.account_plan === "agency";
     const { data: workspaceData, error: workspaceError } = await supabase
       .from("workspaces")
       .select("plan, subscription_status, name")
@@ -307,17 +314,19 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       throw new Error("Erro ao contar membros do workspace.");
     }
 
-    // Obter limite do plano
-    const { getPlanLimits, getPlanName } = await import("@/lib/utils/subscription-helpers");
-    const planLimit = getPlanLimits(workspaceData.plan, workspaceData.subscription_status);
-    const planName = getPlanName(workspaceData.plan);
+    if (!hasAgencyAccount) {
+      // Obter limite do plano
+      const { getPlanLimits, getPlanName } = await import("@/lib/utils/subscription-helpers");
+      const planLimit = getPlanLimits(workspaceData.plan, workspaceData.subscription_status);
+      const planName = getPlanName(workspaceData.plan);
 
-    // Verificar se atingiu o limite
-    if (currentMembersCount !== null && currentMembersCount >= planLimit) {
-      throw new Error(
-        `Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` +
-        `Upgrade necessário para adicionar mais membros. Acesse /billing para ver os planos disponíveis.`
-      );
+      // Verificar se atingiu o limite
+      if (currentMembersCount !== null && currentMembersCount >= planLimit) {
+        throw new Error(
+          `Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` +
+          `Upgrade necessário para adicionar mais membros. Acesse /billing para ver os planos disponíveis.`
+        );
+      }
     }
 
     // 2. Normalizar email e verificar se usuário já existe

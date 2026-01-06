@@ -19,7 +19,8 @@ export default async function AdminWorkspacesPage({
         switch (plan) {
             case 'pro': return <Badge className="bg-blue-600 hover:bg-blue-700">Pro</Badge>;
             case 'business': return <Badge className="bg-purple-600 hover:bg-purple-700">Business</Badge>;
-            default: return <Badge variant="secondary">Starter</Badge>;
+            case 'agency': return <Badge className="bg-emerald-600 hover:bg-emerald-700">Agency</Badge>;
+            default: return <Badge variant="secondary">Pessoal</Badge>;
         }
     };
 

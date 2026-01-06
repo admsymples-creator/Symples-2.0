@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import type { SubscriptionData } from "@/lib/types/subscription";
+import { getPlanName } from "@/lib/utils/subscription-helpers";
 
-type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'> & {
+type WorkspaceSubscription = Pick<SubscriptionData, 'id' | 'plan' | 'account_plan' | 'subscription_status' | 'trial_ends_at'> & {
   userRole?: string;
 };
 
@@ -38,7 +39,11 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
   }, [activeWorkspaceId, workspace]);
 
   // Se não há workspace ou não está em trial, não mostrar banner
-  if (!subscriptionData || subscriptionData.subscription_status !== 'trialing') {
+  if (
+    !subscriptionData ||
+    (subscriptionData.subscription_status !== 'trialing' && subscriptionData.subscription_status !== 'trial') ||
+    subscriptionData.account_plan
+  ) {
     return null;
   }
 
@@ -67,7 +72,12 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
   let textColor = "text-green-900";
   let iconColor = "text-green-600";
   let icon = <Zap className={`w-5 h-5 ${iconColor}`} />;
-  let message = "Você está testando o Symples Business";
+  const planLabel = subscriptionData.account_plan
+    ? getPlanName(subscriptionData.account_plan)
+    : subscriptionData.plan
+      ? getPlanName(subscriptionData.plan)
+      : "Plano Trial";
+  let message = `Você está testando o Symples ${planLabel}`;
 
   if (isExpired) {
     bgColor = "bg-green-50";

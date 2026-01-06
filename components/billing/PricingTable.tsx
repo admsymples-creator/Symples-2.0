@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, X, MessageCircle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,11 +11,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 interface PricingTableProps {
-  currentPlan?: 'starter' | 'pro' | 'business' | null;
+  currentPlan?: 'starter' | 'pro' | 'business' | 'agency' | null;
   onSelectPlan?: (plan: 'starter' | 'pro' | 'business') => void;
+  isAdmin?: boolean;
 }
 
-export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
+export function PricingTable({ currentPlan, onSelectPlan, isAdmin = false }: PricingTableProps) {
   const { activeWorkspaceId } = useWorkspace();
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -32,6 +33,14 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
     }
     setSelectedPlan(plan);
     setPaymentModalOpen(true);
+  };
+
+  const handleAgencyWhatsApp = (whatsappNumber: string) => {
+    const message = encodeURIComponent(
+      `Olá! Tenho interesse no plano Agency do Symples.\n\n` +
+      `Gostaria de saber mais sobre preços e condições.`
+    );
+    window.open(`https://wa.me/${whatsappNumber}?text=${message}`, "_blank");
   };
 
   const handleConfirmPayment = async (billingType: "BOLETO" | "CREDIT_CARD" | "PIX") => {
@@ -72,11 +81,12 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
   const plans = [
     {
       id: 'starter' as const,
-      name: 'Starter',
+      name: 'Pessoal',
       price: 49,
-      description: 'Para solopreneurs e freelancers',
+      description: 'Para uso individual com workspace pessoal',
       features: {
         members: '1 (Você)',
+        workspaces: '1 (Pessoal)',
         extraMemberCost: 'N/A (Upgrade obrigatório)',
         whatsapp: true,
         aiTasks: '50/mês',
@@ -94,6 +104,7 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
       description: 'Para pequenos times e sócios',
       features: {
         members: 'Até 5',
+        workspaces: '2 (1 Pessoal + 1 Profissional)',
         extraMemberCost: 'N/A (Upgrade obrigatório)',
         whatsapp: true,
         aiTasks: 'Ilimitado',
@@ -111,6 +122,7 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
       description: 'Para agências consolidadas',
       features: {
         members: 'Até 15',
+        workspaces: '2 (1 Pessoal + 1 Profissional)',
         extraMemberCost: '+ R$ 15/mês (Opcional)',
         whatsapp: true,
         aiTasks: 'Ilimitado',
@@ -120,6 +132,24 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
         support: 'WhatsApp VIP'
       },
       highlight: false
+    },
+    {
+      id: 'agency' as const,
+      name: 'Agency',
+      price: null,
+      description: 'Para agências com múltiplos clientes',
+      features: {
+        members: 'Ilimitado',
+        workspaces: 'Vários (a combinar)',
+        aiTasks: 'Ilimitado',
+        financial: 'Completo + Exportação',
+        storage: '20 GB por workspace',
+        permissions: 'Admin/Viewer/Membro',
+        support: 'WhatsApp VIP + Account Manager'
+      },
+      highlight: false,
+      isCustomPrice: true,
+      whatsappNumber: '5511999999999' // TODO: Mover para variável de ambiente
     }
   ];
 
@@ -134,7 +164,7 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
         onConfirm={handleConfirmPayment}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-8">
         {plans.map((plan) => {
         const isCurrent = currentPlan === plan.id;
         
@@ -153,8 +183,14 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
               <CardTitle className="text-2xl">{plan.name}</CardTitle>
               <CardDescription>{plan.description}</CardDescription>
               <div className="mt-4">
-                <span className="text-4xl font-bold">R$ {plan.price}</span>
-                <span className="text-gray-500">/mês</span>
+                {plan.price !== null ? (
+                  <>
+                    <span className="text-4xl font-bold">R$ {plan.price}</span>
+                    <span className="text-gray-500">/mês</span>
+                  </>
+                ) : (
+                  <span className="text-2xl font-semibold text-gray-700">Sob consulta</span>
+                )}
               </div>
             </CardHeader>
             
@@ -162,20 +198,36 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
               <ul className="space-y-3">
                 <li className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-sm"><strong>Membros:</strong> {plan.features.members}</span>
+                  <span className="text-sm">
+                    <strong>Membros:</strong> {plan.features.members}
+                  </span>
                 </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-sm"><strong>Custo Extra:</strong> {plan.features.extraMemberCost}</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  {plan.features.whatsapp ? (
+                {'workspaces' in plan.features && (
+                  <li className="flex items-start gap-2">
                     <Check className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                  ) : (
-                    <X className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
-                  )}
-                  <span className="text-sm">Input via WhatsApp</span>
-                </li>
+                    <span className="text-sm">
+                      <strong>Workspaces:</strong> {plan.features.workspaces}
+                    </span>
+                  </li>
+                )}
+                {'extraMemberCost' in plan.features && (
+                  <li className="flex items-start gap-2">
+                    <Check className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm">
+                      <strong>Custo Extra:</strong> {plan.features.extraMemberCost}
+                    </span>
+                  </li>
+                )}
+                {'whatsapp' in plan.features && (
+                  <li className="flex items-start gap-2">
+                    {plan.features.whatsapp ? (
+                      <Check className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <X className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                    )}
+                    <span className="text-sm">Input via WhatsApp</span>
+                  </li>
+                )}
                 <li className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
                   <span className="text-sm"><strong>Tarefas com IA:</strong> {plan.features.aiTasks}</span>
@@ -204,11 +256,29 @@ export function PricingTable({ currentPlan, onSelectPlan }: PricingTableProps) {
                 <Button className="w-full" variant="outline" disabled>
                   Plano Atual
                 </Button>
+              ) : ('isCustomPrice' in plan && plan.isCustomPrice && 'whatsappNumber' in plan && plan.whatsappNumber) ? (
+                isAdmin ? (
+                  <Button 
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white" 
+                    onClick={() => handleAgencyWhatsApp(plan.whatsappNumber as string)}
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Ativar Agency (Admin)
+                  </Button>
+                ) : (
+                  <Button 
+                    className="w-full bg-green-500 hover:bg-green-600 text-white" 
+                    onClick={() => handleAgencyWhatsApp(plan.whatsappNumber as string)}
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Falar no WhatsApp
+                  </Button>
+                )
               ) : (
                 <Button 
                   className="w-full" 
                   variant={plan.highlight ? "default" : "outline"}
-                  onClick={() => handleSelectPlanClick(plan)}
+                  onClick={() => handleSelectPlanClick(plan as { id: 'starter' | 'pro' | 'business'; name: string; price: number })}
                   disabled={isUpdating === plan.id}
                 >
                   {isUpdating === plan.id ? "Processando..." : `Escolher ${plan.name}`}

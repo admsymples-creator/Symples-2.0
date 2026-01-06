@@ -19,6 +19,7 @@ import { useSidebar, useWorkspace } from "@/components/providers/SidebarProvider
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SubscriptionData } from "@/lib/types/subscription";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import { getWorkspaceTags } from "@/lib/actions/tasks";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { setProjectIcon, getProjectIcons } from "@/lib/actions/projects";
@@ -55,7 +56,7 @@ const managementItemsBase: NavItem[] = [
 
 interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
-    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'> | null;
+    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'account_plan' | 'subscription_status' | 'trial_ends_at'> | null;
     initialProjectsTags?: string[];
     initialProjectsIcons?: Map<string, string>;
     initialWorkspaceId?: string;
@@ -336,7 +337,11 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         return daysRemaining > 0 ? daysRemaining : 0;
     }, [initialSubscription?.trial_ends_at]);
 
-    const isTrialing = initialSubscription?.subscription_status === 'trialing';
+    const isTrialing =
+        (initialSubscription?.subscription_status === 'trialing' ||
+            initialSubscription?.subscription_status === 'trial') &&
+        !initialSubscription?.account_plan;
+    const displayPlanName = getDisplayPlanName(initialSubscription?.plan || null, initialSubscription?.account_plan);
 
     const hasWorkspaces = React.useMemo(() => workspaces.length > 0, [workspaces.length]);
 
@@ -860,20 +865,24 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             {/* Footer */}
             <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
                 {/* Trial Upgrade Callout - Hide when collapsed and only show if trialing */}
-                {!isCollapsed && isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
+                {!isCollapsed && isTrialing && trialDaysRemaining !== null && (
                     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                         <h4 className="font-semibold text-[#050815] text-xs mb-1">
-                            Trial - {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}
+                            {trialDaysRemaining > 0
+                                ? `Trial - ${trialDaysRemaining} ${trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}`
+                                : 'Trial expirado'}
                         </h4>
                         <p className="text-[10px] text-[#050815] mb-2 leading-snug">
-                            Aproveite todos os recursos Pro do Symples.
+                            {trialDaysRemaining > 0
+                                ? `Aproveite todos os recursos ${displayPlanName} do Symples.`
+                                : "Seu acesso está bloqueado. Escolha um plano para continuar."}
                         </p>
                         <Button
                             size="sm"
                             className="w-full h-7 text-xs bg-[#050815] hover:bg-[#0a0f1f] text-white shadow-none"
                             onClick={() => router.push('/billing')}
                         >
-                            Assinar Agora
+                            {trialDaysRemaining > 0 ? "Assinar Agora" : "Escolher Plano"}
                         </Button>
                     </div>
                 )}

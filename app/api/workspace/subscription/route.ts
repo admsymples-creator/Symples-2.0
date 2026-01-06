@@ -52,9 +52,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_plan')
+      .eq('id', user.id)
+      .single();
+
     // Retornar dados de subscription junto com a role do usuário
     return NextResponse.json({
       ...workspace,
+      account_plan: (profile as any)?.account_plan ?? null,
       userRole: member.role,
     });
   } catch (error) {

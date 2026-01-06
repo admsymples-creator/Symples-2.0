@@ -3,12 +3,13 @@ import React from "react";
 
 const pricingPlans = [
     {
-        name: "Starter",
+        name: "Pessoal",
         price: "R$ 49",
         period: "/mês",
-        description: "Para solopreneurs e freelancers.",
+        description: "Para uso individual com workspace pessoal.",
         features: [
             "1 membro (você)",
+            "1 workspace pessoal",
             "Input via WhatsApp",
             "Tarefas com IA (50/mês)",
             "Financeiro Básico",
@@ -26,6 +27,7 @@ const pricingPlans = [
         description: "Para pequenos times e sócios.",
         features: [
             "Até 5 membros",
+            "2 workspaces (1 pessoal + 1 profissional)",
             "Input via WhatsApp",
             "Tarefas com IA Ilimitadas",
             "Financeiro Completo",
@@ -42,6 +44,7 @@ const pricingPlans = [
         description: "Para agências consolidadas.",
         features: [
             "Até 15 membros",
+            "2 workspaces (1 pessoal + 1 profissional)",
             "Input via WhatsApp",
             "Tarefas com IA Ilimitadas",
             "Financeiro Completo + Exportação",

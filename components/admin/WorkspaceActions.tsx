@@ -23,11 +23,14 @@ interface WorkspaceActionsProps {
 export function WorkspaceActions({ workspaceId, currentPlan }: WorkspaceActionsProps) {
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleUpdatePlan = async (newPlan: 'starter' | 'pro' | 'business') => {
+    const handleUpdatePlan = async (newPlan: 'starter' | 'pro' | 'business' | 'agency') => {
         setIsLoading(true);
         try {
             await updateWorkspacePlan(workspaceId, newPlan);
-            toast.success(`Plano alterado para ${newPlan.toUpperCase()}`);
+            const planLabel = newPlan === "starter"
+                ? "Pessoal"
+                : newPlan.charAt(0).toUpperCase() + newPlan.slice(1);
+            toast.success(`Plano alterado para ${planLabel}`);
             // Force refresh is better handled by parent or router.refresh() 
             // In a server component list, we usually rely on router.refresh()
             window.location.reload();
@@ -55,13 +58,16 @@ export function WorkspaceActions({ workspaceId, currentPlan }: WorkspaceActionsP
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>Alterar Plano</DropdownMenuLabel>
                 <DropdownMenuItem onClick={() => handleUpdatePlan('starter')} disabled={currentPlan === 'starter'}>
-                    <Badge variant="outline" className="mr-2">S</Badge> Starter (Free)
+                    <Badge variant="outline" className="mr-2">P</Badge> Pessoal
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleUpdatePlan('pro')} disabled={currentPlan === 'pro'}>
                     <Badge variant="default" className="mr-2 bg-blue-600 hover:bg-blue-700">P</Badge> Pro
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleUpdatePlan('business')} disabled={currentPlan === 'business'}>
                     <Badge variant="default" className="mr-2 bg-purple-600 hover:bg-purple-700">B</Badge> Business
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleUpdatePlan('agency')} disabled={currentPlan === 'agency'}>
+                    <Badge variant="default" className="mr-2 bg-emerald-600 hover:bg-emerald-700">A</Badge> Agency
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>

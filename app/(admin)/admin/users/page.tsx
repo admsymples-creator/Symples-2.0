@@ -1,7 +1,9 @@
 import { getAdminUsers } from "@/lib/actions/admin";
 import { AdminSearch } from "@/components/admin/AdminSearch";
+import { AdminUserPlanActions } from "@/components/admin/AdminUserPlanActions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -33,11 +35,17 @@ export default async function AdminUsersPage({
                                 <th className="px-6 py-4 font-medium">Usuário</th>
                                 <th className="px-6 py-4 font-medium">Data Cadastro</th>
                                 <th className="px-6 py-4 font-medium">WhatsApp</th>
+                                <th className="px-6 py-4 font-medium">Plano</th>
                                 <th className="px-6 py-4 font-medium text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
-                            {users.map((user) => (
+                            {users.map((user) => {
+                                const primaryWorkspace = (user as any).primaryWorkspace;
+                                const accountPlan = (user as any).account_plan || null;
+                                const currentPlan = accountPlan || primaryWorkspace?.plan || null;
+
+                                return (
                                 <tr key={user.id} className="bg-white hover:bg-gray-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
@@ -59,15 +67,28 @@ export default async function AdminUsersPage({
                                     <td className="px-6 py-4 text-muted-foreground">
                                         {user.whatsapp || "-"}
                                     </td>
+                                    <td className="px-6 py-4 text-muted-foreground">
+                                        {currentPlan ? getDisplayPlanName(primaryWorkspace?.plan || null, accountPlan) : "Sem workspace"}
+                                        {primaryWorkspace?.name && (
+                                            <div className="text-xs text-gray-400">
+                                                {primaryWorkspace.name}
+                                            </div>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 text-right">
-                                        <span className="text-xs text-gray-400">Ver detalhes (em breve)</span>
-                                        {/* Button para ver mais detalhes ou impersonate no futuro */}
+                                        <AdminUserPlanActions
+                                            userId={user.id}
+                                            currentPlan={currentPlan}
+                                            accountPlan={accountPlan}
+                                            hasWorkspace={Boolean(primaryWorkspace)}
+                                        />
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                             {users.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                                    <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
                                         Nenhum usuário encontrado.
                                     </td>
                                 </tr>

@@ -45,7 +45,7 @@ import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
 import { useOptionalWorkspace } from "@/components/providers/SidebarProvider";
-import { getPlanName } from "@/lib/utils/subscription-helpers";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import type { SubscriptionData } from "@/lib/types/subscription";
 
 interface SettingsPageClientProps {
@@ -873,9 +873,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   <CardTitle>Plano Atual</CardTitle>
                   {isLoadingSubscription ? (
                     <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                  ) : subscriptionData?.plan ? (
+                  ) : (subscriptionData?.account_plan || subscriptionData?.plan) ? (
                     <Badge className="bg-green-600 hover:bg-green-700">
-                      {getPlanName(subscriptionData.plan)}
+                      {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)}
                     </Badge>
                   ) : subscriptionData?.subscription_status === 'trialing' ? (
                     <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 border-yellow-200">
@@ -886,7 +886,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   )}
                 </div>
                 <CardDescription>
-                  {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at
+                  {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at && !subscriptionData?.account_plan
                     ? `Trial ativo. Expira em ${new Date(subscriptionData.trial_ends_at).toLocaleDateString('pt-BR')}.`
                     : subscriptionData?.subscription_status === 'active'
                     ? 'Ciclo de faturamento mensal.'
@@ -902,9 +902,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   <>
                     <div className="flex items-end gap-2">
                       <span className="text-4xl font-bold">
-                        {subscriptionData.plan === 'starter' ? 'R$ 49' :
-                         subscriptionData.plan === 'pro' ? 'R$ 69' :
-                         subscriptionData.plan === 'business' ? 'R$ 129' :
+                        {(subscriptionData.account_plan || subscriptionData.plan) === 'starter' ? 'R$ 49' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'pro' ? 'R$ 69' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'business' ? 'R$ 129' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'agency' ? 'Sob consulta' :
                          subscriptionData.subscription_status === 'trialing' ? 'Grátis' : 'R$ 0'}
                       </span>
                       <span className="text-muted-foreground mb-1">
@@ -912,10 +913,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                       </span>
                     </div>
 
-                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && (
+                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && !subscriptionData.account_plan && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <p className="text-sm text-yellow-800">
-                          <strong>Trial ativo:</strong> Você está testando o plano Business por 14 dias.
+                          <strong>Trial ativo:</strong> Você está testando o plano {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)} por 14 dias.
                         </p>
                       </div>
                     )}

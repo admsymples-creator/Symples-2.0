@@ -2,6 +2,7 @@
 
 import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from 'next/cache'
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 
 export async function createWorkspace(formData: FormData) {
   const supabase = await createServerActionClient()
@@ -23,6 +24,71 @@ export async function createWorkspace(formData: FormData) {
     return { error: 'Nome da empresa é obrigatório' }
   }
 
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('account_plan')
+    .eq('id', user.id)
+    .single();
+
+  const hasAgencyAccount = (profileData as any)?.account_plan === 'agency';
+
+  const { data: existingMemberships, error: existingError } = await supabase
+    .from('workspace_members')
+    .select(`
+      workspace_id,
+      workspaces:workspace_id (
+        id,
+        name,
+        slug,
+        plan
+      )
+    `)
+    .eq('user_id', user.id);
+
+  if (existingError) {
+    console.error('Erro ao buscar workspaces existentes:', existingError);
+    return { error: 'Erro ao verificar limite de workspaces' };
+  }
+
+  const existingWorkspaces = (existingMemberships || [])
+    .map((item: any) => (Array.isArray(item.workspaces) ? item.workspaces[0] : item.workspaces))
+    .filter((ws: any) => ws && typeof ws === 'object');
+
+  const personalWorkspaces = existingWorkspaces.filter((ws: any) => isPersonalWorkspace(ws, existingWorkspaces));
+  const professionalWorkspaces = existingWorkspaces.filter((ws: any) => !isPersonalWorkspace(ws, existingWorkspaces));
+  const isPersonalName = name.trim().toLowerCase() === "pessoal";
+
+  const getPlanTier = (workspaces: any[]) => {
+    let tier: "starter" | "pro" | "business" | "agency" = "starter";
+    for (const ws of workspaces) {
+      const plan = (ws?.plan || "").toLowerCase();
+      if (plan === "agency") return "agency";
+      if (plan === "business") tier = "business";
+      if (plan === "pro" && tier !== "business") tier = "pro";
+    }
+    return tier;
+  };
+
+  const planTier = getPlanTier(existingWorkspaces);
+
+  if (!hasAgencyAccount && planTier !== "agency") {
+    if (isPersonalName && personalWorkspaces.length >= 1) {
+      return { error: "Você já tem um workspace pessoal." };
+    }
+
+    if (planTier === "starter" && !isPersonalName) {
+      return { error: "Plano Pessoal permite apenas um workspace pessoal." };
+    }
+
+    if ((planTier === "pro" || planTier === "business") && isPersonalName && personalWorkspaces.length >= 1) {
+      return { error: "Seu plano permite apenas 1 workspace pessoal." };
+    }
+
+    if ((planTier === "pro" || planTier === "business") && !isPersonalName && professionalWorkspaces.length >= 1) {
+      return { error: "Seu plano permite apenas 1 workspace profissional." };
+    }
+  }
+
   // 3. Gerar Magic Code (#START-XXXX) e Slug
   const randomCode = Math.floor(1000 + Math.random() * 9000)
   const magicCode = `#START-${randomCode}`
@@ -37,7 +103,7 @@ export async function createWorkspace(formData: FormData) {
     + '-' + randomCode // Sufixo para unicidade
 
   // 4. Insert (Supabase)
-  // Inserir Workspace com Reverse Trial
+  // Inserir Workspace com Trial
   const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(); // 14 dias no futuro
   
   const { data: workspace, error: workspaceError } = await supabase
@@ -47,10 +113,10 @@ export async function createWorkspace(formData: FormData) {
       owner_id: user.id,
       magic_code: magicCode,
       slug,
-      plan: 'business', // Reverse Trial: começa com Business
+      plan: 'pro', // Trial padrão: Pro
       subscription_status: 'trialing', // Status de trial
       trial_ends_at: trialEndsAt, // 14 dias no futuro
-      member_limit: 15, // Limite do Business durante trial
+      member_limit: 5, // Limite do Pro durante trial
       // segment: segment 
     })
     .select()
@@ -93,4 +159,3 @@ export async function createWorkspace(formData: FormData) {
     magicCode,
   }
 }
-

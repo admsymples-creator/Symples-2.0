@@ -41,6 +41,14 @@ export async function checkWorkspaceAccess(
       return { allowed: true };
     }
 
+    if (subscription_status === "past_due" || subscription_status === "canceled") {
+      return {
+        allowed: false,
+        reason: "Assinatura inativa. Escolha um plano para continuar.",
+        upgradeRequired: true,
+      };
+    }
+
     // Verificar se trial expirou
     if (trial_ends_at) {
       const trialEndDate = new Date(trial_ends_at);

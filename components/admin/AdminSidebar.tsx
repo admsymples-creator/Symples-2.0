@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -36,12 +37,15 @@ export function AdminSidebar() {
         <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col">
             {/* Logo Area */}
             <div className="h-16 flex items-center px-6 border-b border-slate-800">
-                <div className="flex items-center gap-2 font-bold text-lg">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
-                        S
-                    </div>
-                    <span>SuperAdmin</span>
-                </div>
+                <Link href="/admin" className="flex items-center gap-3 font-bold text-lg">
+                    <Image
+                        src="/logo-dock.svg"
+                        alt="Symples"
+                        width={120}
+                        height={32}
+                        priority
+                    />
+                </Link>
             </div>
 
             {/* Navigation */}

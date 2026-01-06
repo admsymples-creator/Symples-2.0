@@ -12,7 +12,7 @@ export default async function AdminDashboardPage() {
         <div className="space-y-8">
             {/* Stats Cards */}
             <div className="grid gap-4 md:grid-cols-3">
-                <Card>
+                <Card className="border-none shadow-sm">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
                             Usuários Totais
@@ -26,7 +26,7 @@ export default async function AdminDashboardPage() {
                         </p>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-none shadow-sm">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
                             Workspaces Ativos
@@ -40,7 +40,7 @@ export default async function AdminDashboardPage() {
                         </p>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-none shadow-sm">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
                             Novos (24h)
@@ -58,7 +58,7 @@ export default async function AdminDashboardPage() {
 
             {/* Recent Activity */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                <Card className="col-span-4">
+                <Card className="col-span-4 border-none shadow-sm">
                     <CardHeader>
                         <CardTitle>Últimos Cadastros</CardTitle>
                     </CardHeader>

@@ -9,8 +9,8 @@ export interface PlanConfig {
 export const PLAN_CONFIGS: Record<'starter' | 'pro' | 'business', PlanConfig> = {
   starter: {
     value: 49.00,
-    name: "Starter",
-    description: "Plano Starter - Symples",
+    name: "Pessoal",
+    description: "Plano Pessoal - Symples",
   },
   pro: {
     value: 69.00,

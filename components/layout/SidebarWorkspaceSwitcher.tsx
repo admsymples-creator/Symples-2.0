@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Building2, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -31,7 +32,7 @@ interface SidebarWorkspaceSwitcherProps {
     workspaces: Workspace[];
     activeWorkspaceId: string | null;
     currentWorkspace?: Workspace;
-    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'subscription_status' | 'trial_ends_at'> | null;
+    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'account_plan' | 'subscription_status' | 'trial_ends_at'> | null;
 }
 
 export function SidebarWorkspaceSwitcher({
@@ -57,7 +58,10 @@ export function SidebarWorkspaceSwitcher({
         return daysRemaining > 0 ? daysRemaining : 0;
     }, [initialSubscription?.trial_ends_at]);
 
-    const isTrialing = initialSubscription?.subscription_status === 'trialing';
+    const isTrialing =
+        (initialSubscription?.subscription_status === 'trialing' ||
+            initialSubscription?.subscription_status === 'trial') &&
+        !initialSubscription?.account_plan;
 
     return (
         <div className={cn(
@@ -97,7 +101,7 @@ export function SidebarWorkspaceSwitcher({
                                             <span className="font-semibold text-sm text-gray-900 truncate min-w-0 flex-1">
                                                 {currentWorkspace?.name || "Selecione"}
                                             </span>
-                                            {isTrialing && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
+                                            {isTrialing && trialDaysRemaining !== null && (
                                                 <Link
                                                     href="/billing"
                                                     onClick={(e) => e.stopPropagation()}
@@ -107,13 +111,19 @@ export function SidebarWorkspaceSwitcher({
                                                         variant="secondary"
                                                         className="text-[10px] px-1.5 h-4 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200 cursor-pointer transition-colors"
                                                     >
-                                                        {trialDaysRemaining} {trialDaysRemaining === 1 ? "dia" : "dias"}
+                                                        {trialDaysRemaining > 0
+                                                            ? `${trialDaysRemaining} ${trialDaysRemaining === 1 ? "dia" : "dias"}`
+                                                            : "Expirado"}
                                                     </Badge>
                                                 </Link>
                                             )}
                                         </div>
                                         <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors w-full">
-                                            {isTrialing ? "Plano Trial" : initialSubscription?.plan ? `Plano ${initialSubscription.plan.charAt(0).toUpperCase() + initialSubscription.plan.slice(1)}` : "Workspace"}
+                                            {isTrialing
+                                                ? "Plano Trial"
+                                                : initialSubscription?.plan || initialSubscription?.account_plan
+                                                    ? `Plano ${getDisplayPlanName(initialSubscription.plan, initialSubscription.account_plan)}`
+                                                    : "Workspace"}
                                         </span>
                                     </div>
 
