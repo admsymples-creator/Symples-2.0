@@ -68,7 +68,7 @@ import {
     type Task as TaskFromDB
 } from "@/lib/actions/tasks";
 import { updateTaskGroup, deleteTaskGroup, createTaskGroup, getTaskGroups, reorderTaskGroup } from "@/lib/actions/task-groups";
-import { getTaskDetails } from "@/lib/actions/task-details";
+import { getTaskDetails, updateTaskTags } from "@/lib/actions/task-details";
 import { mapStatusToLabel, mapLabelToStatus, STATUS_TO_LABEL, ORDERED_STATUSES } from "@/lib/config/tasks";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
@@ -90,6 +90,14 @@ const DATE_COLOR_MAP: Record<string, string> = {
     "Semana": "#2563eb",
     "Futuro": "#475569",
     "Sem data": "#cbd5e1",
+};
+const STATUS_COLOR_MAP: Record<string, string> = {
+    "Não iniciada": "#cbd5e1",
+    "Em progresso": "#3b82f6",
+    "Revisão": "#f59e0b",
+    "Correção": "#ef4444",
+    "Bloqueado": "#a855f7",
+    "Finalizado": "#22c55e",
 };
 
 import { GroupingMenu } from "@/components/tasks/ViewOptions";
@@ -134,7 +142,7 @@ interface TasksPageProps {
 
 // ? Fun├º├úo auxiliar para mapear par├ómetro group da URL para ViewOption
 // Trata todos os edge cases: "none", null, undefined -> "group" (padr├úo)
-function getInitialViewOption(groupParam: string | null): ViewOption {
+function getInitialViewOption(groupParam: string | null, hasProjectFilter: boolean): ViewOption {
     if (groupParam === "status") return "status";
     if (groupParam === "priority") return "priority";
     if (groupParam === "date") return "date";
@@ -142,7 +150,8 @@ function getInitialViewOption(groupParam: string | null): ViewOption {
     if (groupParam === "project") return "project";
     // "none", null ou undefined -> "group" (padr├úo: grupos do banco)
     // Tamb├®m trata qualquer outro valor inv├ílido como "group"
-    return "group";
+    if (groupParam === "group" || groupParam === "none") return "group";
+    return hasProjectFilter ? "status" : "project";
 }
 
 export default function TasksPage({ initialTasks, initialGroups, workspaceId: propWorkspaceId }: TasksPageProps = {}) {
@@ -158,7 +167,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const tagFilter = tagParam ? decodeURIComponent(tagParam) : null;
 
     // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
-    const initialViewOption = getInitialViewOption(searchParams.get("group"));
+    const initialViewOption = getInitialViewOption(searchParams.get("group"), !!tagFilter);
 
     const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -242,6 +251,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
     const previousGroupOrderRef = useRef<string[]>([]);
     const [projectIconName, setProjectIconName] = useState<string | null>(null);
+    const searchParamsString = searchParams.toString();
 
     // ├ó┼ôÔÇª NOVO: Usar workspaceId da prop se fornecido, sen├â┬úo usar do contexto
     const effectiveWorkspaceId = propWorkspaceId ?? activeWorkspaceId;
@@ -795,8 +805,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const assignee = assigneeId ? workspaceMembers.find(m => m.id === assigneeId) : undefined;
 
-        // ✅ Incluir tags do projeto se houver tagFilter
-        const finalTags = tags || (tagFilter ? [tagFilter] : []);
+        // ✅ Incluir tags do projeto baseado no contexto
+        const projectTags =
+            viewOption === "project"
+                ? (groupId === "inbox" || groupId === "Inbox" ? [] : [groupId])
+                : undefined;
+        const finalTags = tags || projectTags || (tagFilter ? [tagFilter] : []);
 
         handleTaskCreatedOptimistic({
             id: tempId,
@@ -1541,7 +1555,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     if (task.tags && task.tags.length > 0) {
                         groupKey = task.tags[0]; // Considera a primeira tag como o projeto principal
                     } else {
-                        groupKey = "Sem Projeto";
+                        groupKey = "Inbox";
                     }
                     break;
                 default:
@@ -1657,6 +1671,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     }
                 } else if (viewOption === "date") {
                     color = DATE_COLOR_MAP[title] || color;
+                } else if (viewOption === "status") {
+                    color = STATUS_COLOR_MAP[title] || color;
                 }
 
                 return {
@@ -1782,6 +1798,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 }
             } else if (viewOption === "date") {
                 groupColor = DATE_COLOR_MAP[title] || groupColor;
+            } else if (viewOption === "status") {
+                groupColor = STATUS_COLOR_MAP[title] || groupColor;
             }
 
             return {
@@ -1930,7 +1948,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // ? Sincronizar viewOption quando par├ómetro group da URL mudar
     useEffect(() => {
         const groupParam = searchParams.get("group");
-        const newViewOption = getInitialViewOption(groupParam);
+        const newViewOption = getInitialViewOption(groupParam, !!tagFilter);
         // S├│ atualizar se o valor realmente mudou para evitar re-renders desnecess├írios
         setViewOption((current) => {
             if (current !== newViewOption) {
@@ -1938,7 +1956,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }
             return current;
         });
-    }, [searchParams]);
+    }, [searchParams, tagFilter]);
+
+    // ? Forçar default consistente na URL quando não houver group
+    useEffect(() => {
+        const params = new URLSearchParams(searchParamsString);
+        if (params.has("group")) return;
+        const defaultGroup = tagFilter ? "status" : "project";
+        params.set("group", defaultGroup);
+        const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+        router.replace(nextUrl, { scroll: false });
+    }, [searchParamsString, tagFilter, pathname, router]);
 
     // Aplica ordena├º├úo visualmente quando sortBy mudar (vindo da URL)
     useEffect(() => {
@@ -2149,9 +2177,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
+        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group' || viewOption === 'project';
         if (!isDragEnabled) {
-            toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade", "Grupos" ou "Projeto" para reorganizar tarefas.');
             return; // Evita iniciar o drag
         }
 
@@ -2195,7 +2223,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return;
         }
 
-        const isDragEnabled = viewOption === "status" || viewOption === "priority" || viewOption === "group";
+        const isDragEnabled = viewOption === "status" || viewOption === "priority" || viewOption === "group" || viewOption === "project";
         if (!isDragEnabled) {
             return;
         }
@@ -2338,9 +2366,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             return;
         }
 
-        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group';
+        const isDragEnabled = viewOption === 'status' || viewOption === 'priority' || viewOption === 'group' || viewOption === 'project';
         if (!isDragEnabled) {
-            toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade" ou "Grupos" para reorganizar tarefas.');
+            toast.info('O arrastar e soltar est├í desabilitado nesta visualiza├º├úo. Use "Status", "Prioridade", "Grupos" ou "Projeto" para reorganizar tarefas.');
             setActiveTask(null);
             resetDragState();
             return; // Bloqueia a a├º├úo l├│gica se estiver nas views apenas de leitura
@@ -2462,11 +2490,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             priority?: "low" | "medium" | "high" | "urgent";
             group_id?: string | null;
             assignee_id?: string | null;
+            tags?: string[];
         } = {};
 
         if (!isSameGroup) {
             // Type narrowing: ap├│s a guard clause, viewOption s├│ pode ser "status", "priority" ou "group"
-            if (viewOption === "status" || viewOption === "priority" || viewOption === "group") {
+            if (viewOption === "status" || viewOption === "priority" || viewOption === "group" || viewOption === "project") {
                 switch (viewOption) {
                     case "status":
                         updateData.status = mapLabelToStatus(destinationGroupKey) as any;
@@ -2493,6 +2522,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                 ? null
                                 : destinationGroupKey;
                         break;
+                    case "project": {
+                        const normalizedKey = destinationGroupKey.toLowerCase();
+                        const isEmptyProject = normalizedKey === "sem projeto" || normalizedKey === "inbox";
+                        updateData.tags = isEmptyProject ? [] : [destinationGroupKey];
+                        break;
+                    }
                 }
             }
         } else if (viewOption === "group") {
@@ -2572,6 +2607,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     }
                 }
             }
+            if (updateData.tags) {
+                moving.tags = updateData.tags;
+            }
         }
 
         const destList = currentWithoutMoving.filter((t) => getTaskGroupKey(t) === destinationGroupKey);
@@ -2646,7 +2684,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             sourceGroupKey,
         });
 
-        const persistPromise = updateTaskPosition({
+        const tagUpdatePromise = updateData.tags
+            ? updateTaskTags(activeIdStr, updateData.tags)
+            : Promise.resolve({ success: true });
+
+        const persistPromise = Promise.all([
+            updateTaskPosition({
             taskId: activeIdStr,
             newPosition: calculatedPosition,
             status: isSameGroup ? undefined : updateData.status,
@@ -2654,12 +2697,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             group_id: finalGroupId,
             assignee_id: isSameGroup ? undefined : updateData.assignee_id,
             workspace_id: movingFinal?.workspaceId ?? null,
-        });
+            }),
+            tagUpdatePromise,
+        ]);
 
         void persistPromise
-            .then((res) => {
-                if (!res?.success) {
-                    console.error("? [handleDragEnd] Falha ao salvar posi??o:", res?.error);
+            .then(([positionResult, tagsResult]) => {
+                if (!positionResult?.success || !tagsResult?.success) {
+                    console.error("? [handleDragEnd] Falha ao salvar posição:", {
+                        positionError: positionResult?.error,
+                        tagsError: tagsResult?.error,
+                    });
                     rollback("Erro ao salvar a nova ordem. Tente novamente.");
                     return;
                 }
@@ -2813,7 +2861,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     };
 
     // ? Vari├ível para controlar se drag est├í habilitado
-    const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group';
+    const isDragDisabled = viewOption !== 'status' && viewOption !== 'priority' && viewOption !== 'group' && viewOption !== 'project';
 
     const handleViewModeChange = useCallback((value: string) => {
         if (value === "kanban") {
@@ -3153,7 +3201,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                     canMoveToTop={canMoveToTop}
                                                                     canMoveToBottom={canMoveToBottom}
                                                                     showGroupActions={viewOption === "group"}
-                                                                    onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
+                                                                    onAddTask={viewOption === "group" || viewOption === "project" || viewOption === "status" ? handleAddTaskToGroup : undefined}
                                                                     showProjectTag={true}
                                                                     tagFilter={tagFilter || undefined}
                                                                 />
@@ -3220,8 +3268,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                 canMoveToTop={canMoveToTop}
                                                                 canMoveToBottom={canMoveToBottom}
                                                                 showGroupActions={viewOption === "group"}
-                                                                onAddTask={viewOption === "group" ? handleAddTaskToGroup : undefined}
-                                                                showProjectTag={!!tagFilter}
+                                                                onAddTask={viewOption === "group" || viewOption === "project" || viewOption === "status" ? handleAddTaskToGroup : undefined}
+                                                                showProjectTag={true}
                                                                 tagFilter={tagFilter || undefined}
                                                             />
                                                         );

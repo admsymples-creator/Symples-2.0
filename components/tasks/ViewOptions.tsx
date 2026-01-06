@@ -23,11 +23,11 @@ export function GroupingMenu() {
   const searchParams = useSearchParams()
 
   // 1. Ler estado da URL (Source of Truth)
-  const currentGroup = searchParams.get("group") || "none"
+  const currentGroup = searchParams.get("group") || "group"
 
   // 2. Mapeamento de Labels para exibição no Badge
   const groupLabels: Record<string, string> = {
-    none: "Personalizado",
+    group: "Personalizado",
     project: "Projeto",
     status: "Status",
     date: "Data",
@@ -38,11 +38,7 @@ export function GroupingMenu() {
   const handleGroupChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString())
 
-    if (value === "none") {
-      params.delete("group")
-    } else {
-      params.set("group", value)
-    }
+    params.set("group", value)
 
     // scroll: false é CRÍTICO para evitar que a página pule para o topo ao clicar
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
@@ -51,11 +47,11 @@ export function GroupingMenu() {
   // 4. Handler para limpar filtro (resetar para "none")
   const handleClear = () => {
     const params = new URLSearchParams(searchParams.toString())
-    params.delete("group")
+    params.set("group", "group")
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  const isGrouped = currentGroup !== "none"
+  const isGrouped = currentGroup !== "group"
 
   return (
     <div className="flex items-center gap-1">
@@ -94,8 +90,7 @@ export function GroupingMenu() {
           <DropdownMenuSeparator />
 
           <DropdownMenuRadioGroup value={currentGroup} onValueChange={handleGroupChange}>
-            {/* Renomeado de "Nenhum (Lista)" para "Projeto" pois é o agrupamento padrão */}
-            <DropdownMenuRadioItem value="none" className="cursor-pointer">
+            <DropdownMenuRadioItem value="group" className="cursor-pointer">
               Personalizado
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="project" className="cursor-pointer">

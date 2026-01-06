@@ -181,11 +181,6 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                 />
                             ))}
 
-                            {/* ✅ Skeleton adicional durante criação batch (mostrar apenas se não houver tarefas pending visíveis) */}
-                            {isAdding && tasks.filter(t => t.isPending).length === 0 && (
-                                <TaskRowSkeleton groupColor={groupColor} />
-                            )}
-
                             {/* Quick Add no final da lista quando há tarefas */}
                             {onAddTask && tasks.length > 0 && (
                                 <div className="pt-1">
@@ -223,26 +218,18 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         tagFilter={tagFilter}
                                     />
                                 </TaskGroupEmpty>
-                            ) : isAdding ? (
+                            ) : (
                                 <div className="p-2">
                                     <QuickTaskAdd
                                         placeholder="Adicionar tarefa aqui..."
-                                        autoFocus={true}
+                                        autoFocus={false}
                                         onCancel={handleCancelAdd}
                                         onSubmit={handleSubmitAdd}
                                         members={members || []}
-                                        variant="default"
+                                        variant="ghost"
+                                        showDragHandle={true}
                                         tagFilter={tagFilter}
                                     />
-                                </div>
-                            ) : (
-                                <div className="flex items-center justify-center h-32">
-                                    <button
-                                        onClick={() => setIsAdding(true)}
-                                        className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
-                                    >
-                                        + Adicionar tarefa
-                                    </button>
                                 </div>
                             )
                         ) : (

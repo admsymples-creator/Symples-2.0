@@ -2114,3 +2114,10 @@ Container Grid (min-w-0)
    - Documentar fluxo em diagrama e guia técnico (`docs/INTEGRACAO_WHATSAPP.md`)
 
 
+
+---
+
+## 2026-01-05
+- Tasks: default grouping dynamic (Projetos->Status, Tarefas->Projeto), drag entre projetos atualiza tag automaticamente, e tag de projeto no TaskRowMinify.
+- Quick add: habilitado em projeto/status na lista, ghost padrao em grupos vazios, inbox mantido como sem tag.
+- Cores por status aplicadas em lista e kanban.
