@@ -34,6 +34,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { updateTransaction } from "@/lib/actions/finance";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
+import {
+  DEFAULT_EXPENSE_CATEGORY,
+  DEFAULT_INCOME_CATEGORY,
+  EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
+} from "@/lib/config/finance-categories";
 
 interface Transaction {
   id: string;
@@ -41,10 +47,11 @@ interface Transaction {
   type: "income" | "expense";
   description: string;
   category: string;
-  due_date: string; // Data de vencimento
+  due_date: string | null; // Data de vencimento
   created_at?: string; // Data de criação
   status: "paid" | "pending" | "scheduled" | "cancelled";
   is_recurring: boolean;
+  counterparty_name?: string | null;
 }
 
 interface EditTransactionModalProps {
@@ -61,17 +68,21 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [counterpartyName, setCounterpartyName] = useState("");
   const [category, setCategory] = useState("");
-  const [date, setDate] = useState<Date | undefined>(new Date());
-  const [dueDate, setDueDate] = useState<Date | undefined>(new Date());
+  const [date, setDate] = useState<Date | null>(new Date());
+  const [dueDate, setDueDate] = useState<Date | null>(new Date());
   const [status, setStatus] = useState<"paid" | "pending" | "scheduled" | "cancelled">("paid");
   const [isRecurring, setIsRecurring] = useState(false);
+  const categoryOptions = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const counterpartyLabel = type === "income" ? "Cliente" : "Fornecedor";
 
   // Preencher form quando transaction mudar ou modal abrir
   useEffect(() => {
     if (open && transaction) {
       setType(transaction.type);
       setDescription(transaction.description);
+      setCounterpartyName(transaction.counterparty_name || "");
       setCategory(transaction.category);
       setStatus(transaction.status as "paid" | "pending" | "scheduled" | "cancelled");
       setIsRecurring(transaction.is_recurring || false);
@@ -90,11 +101,11 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
         setDate(parsedDate);
         
         // Data de vencimento (due_date)
-        const parsedDueDate = transaction.due_date ? parseISO(transaction.due_date) : new Date();
+        const parsedDueDate = transaction.due_date ? parseISO(transaction.due_date) : null;
         setDueDate(parsedDueDate);
       } catch {
         setDate(new Date());
-        setDueDate(new Date());
+        setDueDate(null);
       }
     }
   }, [open, transaction]);
@@ -136,11 +147,12 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
         amount: numericAmount,
         type,
         description,
-        category: category || (type === "income" ? "Outros" : "Geral"),
+        category: category || (type === "income" ? DEFAULT_INCOME_CATEGORY : DEFAULT_EXPENSE_CATEGORY),
         date: date || new Date(),
-        due_date: dueDate || new Date(),
+        due_date: dueDate,
         status,
         is_recurring: isRecurring,
+        counterparty_name: counterpartyName.trim() || null,
       });
 
       if (result.success) {
@@ -227,6 +239,20 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
               />
             </div>
 
+            {/* Cliente / Fornecedor */}
+            <div className="grid grid-cols-[100px_1fr] items-center gap-3 border-b border-gray-200 pb-3 last:border-0 last:pb-0">
+              <div className="flex items-center gap-2">
+                <PenLine className="w-3.5 h-3.5 text-gray-400" />
+                <Label className="text-xs font-medium text-gray-400">{counterpartyLabel}</Label>
+              </div>
+              <Input 
+                value={counterpartyName}
+                onChange={(e) => setCounterpartyName(e.target.value)}
+                placeholder={`Ex: ${counterpartyLabel} Principal`}
+                className="bg-transparent border-0 border-b-0 focus-visible:ring-0 p-0 h-auto text-sm font-medium text-gray-900 placeholder:text-gray-400" 
+              />
+            </div>
+
             {/* Categoria */}
             <div className="grid grid-cols-[100px_1fr] items-center gap-3 border-b border-gray-200 pb-3 last:border-0 last:pb-0">
               <div className="flex items-center gap-2">
@@ -238,14 +264,11 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Geral">Geral</SelectItem>
-                  <SelectItem value="marketing">Marketing</SelectItem>
-                  <SelectItem value="services">Serviços</SelectItem>
-                  <SelectItem value="software">Software</SelectItem>
-                  <SelectItem value="infrastructure">Infraestrutura</SelectItem>
-                  <SelectItem value="salary">Salário</SelectItem>
-                  <SelectItem value="personal">Pessoal</SelectItem>
-                  <SelectItem value="other">Outros</SelectItem>
+                  {categoryOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -258,7 +281,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
               </div>
               <TaskDatePicker
                 date={date || null}
-                onSelect={(d) => setDate(d || undefined)}
+                onSelect={(d) => setDate(d ?? null)}
                 align="start"
                 side="bottom"
                 trigger={
@@ -283,7 +306,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
               </div>
               <TaskDatePicker
                 date={dueDate || null}
-                onSelect={(d) => setDueDate(d || undefined)}
+                onSelect={(d) => setDueDate(d ?? null)}
                 align="start"
                 side="bottom"
                 trigger={
@@ -294,7 +317,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
                       !dueDate && "text-gray-400"
                     )}
                   >
-                    {dueDate ? format(dueDate, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecione</span>}
+                    {dueDate ? format(dueDate, "dd/MM/yyyy", { locale: ptBR }) : <span>Sem vencimento</span>}
                   </Button>
                 }
               />
@@ -377,4 +400,5 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
     </Dialog>
   );
 }
+
 

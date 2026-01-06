@@ -14,7 +14,7 @@ type TransactionStatus = "paid" | "pending" | "overdue" | "scheduled" | "cancell
 
 interface Transaction {
   id: string;
-  due_date: string; // Data de vencimento
+  due_date: string | null; // Data de vencimento
   created_at?: string; // Data de criação
   description: string;
   amount: number;
@@ -22,6 +22,7 @@ interface Transaction {
   category: string;
   type: "income" | "expense";
   is_recurring?: boolean;
+  counterparty_name?: string | null;
 }
 
 interface FinanceTransactionsListProps {
@@ -91,11 +92,15 @@ export function FinanceTransactionsList({
     router.refresh();
   };
 
-          const processedTransactions = transactions.map(t => ({
-            ...t,
-            dueDate: format(parseISO(t.due_date), "dd/MM"),
-            createdDate: t.created_at ? format(parseISO(t.created_at), "dd/MM/yyyy") : undefined,
-          }));
+  const processedTransactions = transactions.map((t) => {
+    const dueDate = t.due_date ? format(parseISO(t.due_date), "dd/MM") : "Sem venc.";
+    const createdDate = t.created_at ? format(parseISO(t.created_at), "dd/MM/yyyy") : undefined;
+    return {
+      ...t,
+      dueDate,
+      createdDate,
+    };
+  });
 
   return (
     <>
@@ -134,6 +139,11 @@ export function FinanceTransactionsList({
                       )}
                     </div>
                     <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                    {item.counterparty_name && (
+                      <span className="text-xs text-gray-500">
+                        {type === "income" ? "Cliente" : "Fornecedor"}: {item.counterparty_name}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex flex-col items-end gap-1">

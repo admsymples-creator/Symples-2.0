@@ -293,37 +293,66 @@ export type Database = {
         Row: {
           amount: number
           category: string | null
+          counterparty_name: string | null
           created_at: string | null
-          date: string | null
+          created_by: string | null
           description: string
+          due_date: string | null
           id: string
+          is_recurring: boolean | null
+          related_task_id: string | null
           status: string | null
           type: string | null
+          updated_at: string | null
           workspace_id: string
         }
         Insert: {
           amount: number
           category?: string | null
+          counterparty_name?: string | null
           created_at?: string | null
-          date?: string | null
+          created_by?: string | null
           description: string
+          due_date?: string | null
           id?: string
+          is_recurring?: boolean | null
+          related_task_id?: string | null
           status?: string | null
           type?: string | null
+          updated_at?: string | null
           workspace_id: string
         }
         Update: {
           amount?: number
           category?: string | null
+          counterparty_name?: string | null
           created_at?: string | null
-          date?: string | null
+          created_by?: string | null
           description?: string
+          due_date?: string | null
           id?: string
+          is_recurring?: boolean | null
+          related_task_id?: string | null
           status?: string | null
           type?: string | null
+          updated_at?: string | null
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_related_task_id_fkey"
+            columns: ["related_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transactions_workspace_id_fkey"
             columns: ["workspace_id"]
