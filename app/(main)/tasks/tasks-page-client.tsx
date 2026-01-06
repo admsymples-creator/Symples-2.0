@@ -2684,7 +2684,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             sourceGroupKey,
         });
 
-        const tagUpdatePromise = updateData.tags
+        const tagUpdatePromise: Promise<{ success: boolean; error?: string }> = updateData.tags
             ? updateTaskTags(activeIdStr, updateData.tags)
             : Promise.resolve({ success: true });
 
