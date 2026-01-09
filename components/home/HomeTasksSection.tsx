@@ -34,7 +34,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   // activeTasksCache: Tarefas não concluídas (todo, in_progress, review, etc)
   const [activeTasksCache, setActiveTasksCache] = useState<TaskWithDetails[] | null>(
     () => {
-      if (!initialTasks) return null;
+      if (!initialTasks || initialIsPersonal) return null;
       // Se initialTasks existe, filtra as ativas.
       return initialTasks.filter(t => t.status !== "done");
     }
@@ -106,8 +106,8 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
 
   // Estado derivado para tarefas a exibir
   const [tasks, setTasks] = useState<TaskWithDetails[]>(() => {
-    // Inicializar com dados do servidor SE disponíveis
-    if (initialTasks && initialTasks.length > 0) {
+    // Inicializar com dados do servidor SE disponiveis
+    if (initialTasks && initialTasks.length > 0 && !initialIsPersonal) {
       const active = initialTasks.filter(t => t.status !== "done");
       return active;
     }
@@ -556,7 +556,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
                         onTaskUpdated={handleTaskUpdated}
                         onTaskUpdatedOptimistic={handleTaskUpdatedOptimistic}
                         members={members}
-                        disabled={true}
+                        disabled={false}
                         showProjectTag={true}
                         showWorkspaceBadge={false}
                         workspaceName={workspaceName}

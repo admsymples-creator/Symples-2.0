@@ -65,8 +65,8 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
         // Usar setTimeout para garantir que o loading apareça antes da navegação
         // Mesmo que seja 0ms, garante que o React processe o estado primeiro
         setTimeout(() => {
-            // Navegar para a Home (novo ponto de entrada "Gestão/Home")
-            router.push("/home");
+            const workspaceSlug = slug || id;
+            router.push(`/${workspaceSlug}/home`);
         }, 0);
     };
 

@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { MoreHorizontal, MessageSquare, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { getIconComponent } from "@/components/projects/IconPicker";
 
 interface ProjectCardProps {
@@ -19,7 +20,9 @@ export function ProjectCard({ tag, pendingCount, totalCount, iconName, isFirst =
     const ProjectIcon = getIconComponent(iconName || "Folder");
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { activeWorkspaceId } = useWorkspace();
+    const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+    const workspaces = useWorkspaces();
+    const pathname = usePathname();
     const [isMounted, setIsMounted] = useState(false);
 
     // Evitar erro de hidratação renderizando DropdownMenu apenas após montagem
@@ -42,9 +45,21 @@ export function ProjectCard({ tag, pendingCount, totalCount, iconName, isFirst =
     const completedCount = totalCount - pendingCount;
 
     const handleCardClick = () => {
-        // Navegar para a página de tarefas com a tag do projeto
-        // Usar apenas /tasks pois o WorkspaceUrlSync já gerencia o workspace na URL
-        router.push(`/tasks?tag=${encodeURIComponent(tag)}`);
+        // Navegar para as tarefas do workspace atual (evita cair no pessoal)
+        const segments = pathname.split("/").filter(Boolean);
+        const workspaceSegment = segments.length > 0 && segments[0] !== "home" ? segments[0] : null;
+        const workspaceFromSlug = workspaceSegment
+            ? workspaces.find((ws) => ws.slug === workspaceSegment || ws.id === workspaceSegment) || null
+            : null;
+
+        const workspaceId = workspaceFromSlug?.id || activeWorkspaceId || null;
+        if (workspaceId) {
+            setActiveWorkspaceId(workspaceId);
+        }
+
+        const baseSegment = workspaceSegment || workspaceFromSlug?.slug || workspaceFromSlug?.id || activeWorkspaceId || "";
+        const base = baseSegment ? `/${baseSegment}` : "";
+        router.push(`${base}/tasks?tag=${encodeURIComponent(tag)}`);
     };
 
     // Mock Data Generator (Deterministic based on tag length)
