@@ -1624,6 +1624,14 @@ export function TaskDetailModal({
 
         if (currentTaskId && !isCreateMode) {
             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+        if (currentTaskId) {
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
+        }
+
+        if (!currentTaskId || isCreateMode) {
+            return;
+        }
+
             onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
 
             try {
@@ -2379,7 +2387,14 @@ export function TaskDetailModal({
         setLocalMembers(newMembers);
 
         // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
+        if (currentTaskId) {
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
+        }
+
+        if (!currentTaskId || isCreateMode) {
+            return;
+        }
+
 
         try {
             // Adicionar novos membros
@@ -2424,6 +2439,7 @@ export function TaskDetailModal({
         setDueDate(dateString);
 
         if (currentTaskId && !isCreateMode) {
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
             const optimisticDueDate = date ? date.toISOString() : undefined;
             onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
@@ -2600,6 +2616,14 @@ export function TaskDetailModal({
                                                         setTitle(newTitle);
                                                         if (currentTaskId && !isCreateMode) {
                                                             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+        if (currentTaskId) {
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
+        }
+
+        if (!currentTaskId || isCreateMode) {
+            return;
+        }
+
                                                             onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
                                                             // Salvar no backend em background
                                                             updateTaskField(currentTaskId, "title", newTitle).catch((error) => {
