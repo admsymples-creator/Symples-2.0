@@ -1619,19 +1619,11 @@ export function TaskDetailModal({
         const oldLabel = STATUS_TO_LABEL[status];
         const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
 
-        // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
+        // ? OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
         setStatus(newStatus as TaskStatus);
 
         if (currentTaskId && !isCreateMode) {
-            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-        if (currentTaskId) {
-            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
-        }
-
-        if (!currentTaskId || isCreateMode) {
-            return;
-        }
-
+            // ? Atualizar TaskRowMinify imediatamente via optimistic update
             onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
 
             try {
@@ -1642,13 +1634,13 @@ export function TaskDetailModal({
                     await reloadActivities(currentTaskId);
                     toast.success(`Status alterado para ${newLabel}`);
                 } else {
-                    // ✅ REVERTER se falhar
+                    // ? REVERTER se falhar
                     setStatus(oldStatus);
                     onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
                     toast.error(result.error || "Erro ao alterar status");
                 }
             } catch (error) {
-                // ✅ REVERTER em caso de exceção
+                // ? REVERTER em caso de exce??o
                 console.error("Erro ao alterar status:", error);
                 setStatus(oldStatus);
                 onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
