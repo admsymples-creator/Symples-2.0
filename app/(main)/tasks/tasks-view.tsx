@@ -843,7 +843,7 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
     }, []);
 
     // ✅ Callback memoizado para optimistic updates (deve vir depois de updateLocalTask)
-    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }>; tags?: string[] }>) => {
         // Mapear updates para o formato do estado local
         const localUpdates: Partial<Task> = {};
         if (updates.title) localUpdates.title = updates.title;
@@ -984,6 +984,7 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
                                     title={group.title}
                                     tasks={group.tasks}
                                     groupColor={group.color}
+                                    workspaceId={workspaceId || null}
                                     onTaskClick={handleTaskClick}
                                 />
                             ))}

@@ -477,14 +477,37 @@ export function TaskDetailModal({
         }
     }, [open, workspaceId]);
 
+    useEffect(() => {
+        if (!open || !isCreateMode) return;
+        const membersWorkspaceId = workspaceId || activeWorkspaceId || null;
+        if (!membersWorkspaceId) {
+            setAvailableUsers([]);
+            return;
+        }
+        let isActive = true;
+        getWorkspaceMembers(membersWorkspaceId).then(members => {
+            if (!isActive) return;
+            setAvailableUsers(
+                members.map((m: any) => ({
+                    id: m.id,
+                    name: m.full_name || m.email || "Sem nome",
+                    avatar: m.avatar_url || undefined,
+                }))
+            );
+        });
+        return () => {
+            isActive = false;
+        };
+    }, [open, isCreateMode, workspaceId, activeWorkspaceId]);
+
     // Inicializar workspaceId quando task mudar ou modal abrir
     useEffect(() => {
         if (open) {
             if (isCreateMode) {
                 // Em modo create, usar o workspace ativo do contexto
                 setWorkspaceId(activeWorkspaceId);
-            } else if (task?.workspaceId) {
-                setWorkspaceId(task.workspaceId);
+            } else if (task?.workspaceId || (task as any)?.workspace_id) {
+                setWorkspaceId(task?.workspaceId || (task as any)?.workspace_id || null);
             } else if (task?.id) {
                 // Se tem task.id mas não tem workspaceId, buscar do backend
                 // Isso será feito no loadBasicData
@@ -498,6 +521,12 @@ export function TaskDetailModal({
         (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
         [currentUserId, currentUserName]
     );
+    const notifyHomeTasksUpdated = useCallback(() => {
+        if (typeof window === "undefined") return;
+        const ts = String(Date.now());
+        sessionStorage.setItem("home_tasks_refresh_ts", ts);
+        window.dispatchEvent(new Event("home-tasks-updated"));
+    }, []);
     // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
     // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
     // Não importa se task tem outros dados - sempre precisamos buscar do backend
@@ -523,6 +552,11 @@ export function TaskDetailModal({
     // NÃO inicializar com dados do task prop - sempre começar vazio para forçar loading
     const [localMembers, setLocalMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [tags, setTags] = useState<string[]>([]);
+    const tagsRef = useRef<string[]>([]);
+    const setTagsAndRef = useCallback((nextTags: string[]) => {
+        tagsRef.current = nextTags;
+        setTags(nextTags);
+    }, []);
     const { uploadToStorage } = useFileUpload();
     const taskCache = useTaskCache(); // Hook de cache - deve ser chamado antes de usar taskCache
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -530,6 +564,8 @@ export function TaskDetailModal({
     const [shareLink, setShareLink] = useState<string>("");
     const [isGeneratingLink, setIsGeneratingLink] = useState(false);
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
+    const isCreatingRef = useRef(false);
+    const hasSubmittedCreateRef = useRef(false);
     const [uploadingAttachments, setUploadingAttachments] = useState<Array<{
         id: string;
         name: string;
@@ -723,6 +759,12 @@ export function TaskDetailModal({
             if (isCreateMode) {
                 // Modo create: criar tarefa se houver título
                 if (title.trim() && !currentTaskId) {
+                    if (isCreatingRef.current || hasSubmittedCreateRef.current) {
+                        onOpenChange(newOpen);
+                        return;
+                    }
+                    hasSubmittedCreateRef.current = true;
+                    isCreatingRef.current = true;
                     try {
                         // Mapear status para o tipo aceito por createTask (não aceita "review")
                         const dbStatus = status === "review" ? "in_progress" : status;
@@ -733,7 +775,7 @@ export function TaskDetailModal({
                             due_date: dueDate || null,
                             workspace_id: workspaceId || null,
                             assignee_id: localMembers[0]?.id || null,
-                            tags: tags.length > 0 ? tags : undefined,
+                            tags: tagsRef.current.length > 0 ? tagsRef.current : undefined,
                             subtasks: subTasks.map(st => ({
                                 title: st.title,
                                 assignee_id: st.assignee_id || null,
@@ -750,6 +792,9 @@ export function TaskDetailModal({
                     } catch (error) {
                         console.error("Erro ao criar tarefa:", error);
                         toast.error("Erro ao criar tarefa");
+                    } finally {
+                        isCreatingRef.current = false;
+            hasSubmittedCreateRef.current = false;
                     }
                 } else if (currentTaskId) {
                     // Tarefa já foi criada
@@ -821,7 +866,7 @@ export function TaskDetailModal({
             setDescription("");
             setStatus("todo");
             setDueDate("");
-            setTags([]);
+            setTagsAndRef([]);
             setSubTasks([]);
             setLocalMembers([]);
             setAttachments([]);
@@ -831,6 +876,8 @@ export function TaskDetailModal({
             setIsLoadingAttachments(false);
             setIsLoadingComments(false);
             setIsDataReady(false);
+            isCreatingRef.current = false;
+            hasSubmittedCreateRef.current = false;
             return;
         }
 
@@ -843,7 +890,7 @@ export function TaskDetailModal({
                 setDescription("");
                 setStatus("todo");
                 setDueDate("");
-                setTags([]);
+                setTagsAndRef([]);
                 setSubTasks([]);
                 setLocalMembers([]);
                 setAttachments([]);
@@ -861,7 +908,7 @@ export function TaskDetailModal({
             setIsLoadingDetails(false);
             // Preencher tags iniciais se fornecido (criação consciente de contexto)
             if (initialTags && initialTags.length > 0) {
-                setTags(initialTags);
+                setTagsAndRef(initialTags);
             }
         }
     }, [open, task?.id ?? null, isCreateMode, currentTaskId, initialTags]);
@@ -911,16 +958,17 @@ export function TaskDetailModal({
 
                         // Carregar tags de origin_context ou do campo tags direto
                         if (cachedBasic.origin_context?.tags && Array.isArray(cachedBasic.origin_context.tags)) {
-                            setTags(cachedBasic.origin_context.tags);
+                            setTagsAndRef(cachedBasic.origin_context.tags);
                         } else if ((cachedBasic as any).tags && Array.isArray((cachedBasic as any).tags)) {
-                            setTags((cachedBasic as any).tags);
+                            setTagsAndRef((cachedBasic as any).tags);
                         }
 
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
 
                         // Carregar membros em background (não está no cache)
-                        getWorkspaceMembers(task.workspaceId || null).then(members => {
+                        const membersWorkspaceId = cachedBasic.workspace_id || task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null;
+                        getWorkspaceMembers(membersWorkspaceId).then(members => {
                             if (active) {
                                 setAvailableUsers(
                                     members.map((m: any) => ({
@@ -938,7 +986,7 @@ export function TaskDetailModal({
                     // FASE 1: Carregar dados básicos do backend (rápido)
                     const [basicDetails, members] = await Promise.all([
                         getTaskBasicDetails(task.id),
-                        getWorkspaceMembers(task.workspaceId || null)
+                        getWorkspaceMembers(task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null)
                     ]);
 
                     if (!active) return;
@@ -979,9 +1027,9 @@ export function TaskDetailModal({
 
                         // Carregar tags de origin_context ou do campo tags direto
                         if (basicDetails.origin_context?.tags && Array.isArray(basicDetails.origin_context.tags)) {
-                            setTags(basicDetails.origin_context.tags);
+                            setTagsAndRef(basicDetails.origin_context.tags);
                         } else if ((basicDetails as any).tags && Array.isArray((basicDetails as any).tags)) {
-                            setTags((basicDetails as any).tags);
+                            setTagsAndRef((basicDetails as any).tags);
                         }
 
                         setAvailableUsers(
@@ -1124,7 +1172,7 @@ export function TaskDetailModal({
             setSubTasks([]);
             setAttachments([]);
             setActivities([]);
-            setTags([]);
+            setTagsAndRef([]);
             setCurrentTaskId(null);
             setLocalMembers([]);
 
@@ -2314,8 +2362,6 @@ export function TaskDetailModal({
     }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities, stripHtmlTags]);
 
     const handleMembersChange = async (memberIds: string[]) => {
-        if (!currentTaskId || isCreateMode) return;
-
         const oldMembers = [...localMembers];
         const oldMemberIds = oldMembers.map(m => m.id);
 
@@ -2628,12 +2674,13 @@ export function TaskDetailModal({
                                                                     tags.length === 0 && "bg-gray-50 font-medium"
                                                                 )}
                                                                 onClick={() => {
-                                                                    setTags([]);
+                                                                    setTagsAndRef([]);
                                                                     if (currentTaskId) {
                                                                         onTaskUpdatedOptimistic?.(currentTaskId, { tags: [] });
                                                                     }
                                                                     if (currentTaskId && !isCreateMode) {
                                                                         updateTaskTags(currentTaskId, []).catch(console.error);
+                                                                    notifyHomeTasksUpdated();
                                                                     }
                                                                 }}
                                                             >
@@ -2652,12 +2699,13 @@ export function TaskDetailModal({
                                                                         onClick={() => {
                                                                             // Permitir apenas uma tag por vez (projeto único)
                                                                             const newTags = isSelected ? [] : [tag];
-                                                                            setTags(newTags);
+                                                                            setTagsAndRef(newTags);
                                                                             if (currentTaskId) {
                                                                                 onTaskUpdatedOptimistic?.(currentTaskId, { tags: newTags });
                                                                             }
                                                                             if (currentTaskId && !isCreateMode) {
                                                                                 updateTaskTags(currentTaskId, newTags).catch(console.error);
+                                                                            notifyHomeTasksUpdated();
                                                                             }
                                                                         }}
                                                                     >

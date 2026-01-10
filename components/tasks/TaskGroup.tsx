@@ -38,7 +38,7 @@ interface TaskGroupProps {
     isDragDisabled?: boolean;
     onTaskUpdated?: () => void;
     onTaskDeleted?: () => void;
-    onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
+    onTaskUpdatedOptimistic?: (taskId: string | number, updates: Partial<{ dueDate?: string; status?: string; priority?: string; tags?: string[]; assignees?: Array<{ name: string; avatar?: string; id?: string }> }>) => void;
     onTaskDeletedOptimistic?: (taskId: string) => void;
     onTaskDuplicatedOptimistic?: (duplicatedTask: any) => void;
     onTaskCreatedOptimistic?: (taskData: { id: string; title: string; status: string; priority?: "low" | "medium" | "high" | "urgent"; assignees?: Array<{ name: string; avatar?: string; id?: string }>; dueDate?: string; groupId?: string | null; workspaceId?: string | null }) => void;

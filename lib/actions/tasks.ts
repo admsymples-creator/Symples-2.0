@@ -454,15 +454,25 @@ export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
 
   if (!user || !workspaceId) return [];
 
-  // Verificar se usuário é membro do workspace
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", user.id)
+  // Verificar se usu?rio ? dono ou membro do workspace
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("owner_id")
+    .eq("id", workspaceId)
     .single();
 
-  if (!membership) return [];
+  if (workspaceError || !workspace) return [];
+
+  if (workspace.owner_id !== user.id) {
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership) return [];
+  }
 
   // OTIMIZAÇÃO: Buscar apenas a coluna tags (não todas as tarefas)
   // Usar distinct para reduzir dados transferidos
@@ -614,6 +624,7 @@ export async function createTask(data: {
   recurrence_count?: number | null;
   group_id?: string | null;
   tags?: string[];
+  position?: number;
   origin_context?: any;
   subtasks?: any;
 }) {
@@ -686,6 +697,10 @@ export async function createTask(data: {
     group_id: data.group_id || null,
     tags: data.tags || null
   };
+
+  if (typeof data.position === "number" && Number.isFinite(data.position)) {
+    taskData.position = data.position;
+  }
 
   console.log("[SERVER-ACTION] Inserting taskData:", JSON.stringify(taskData));
 
