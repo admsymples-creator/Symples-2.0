@@ -296,7 +296,7 @@ export async function renameProjectTag(
     const updates = tasks.map((task: any) => {
       const currentTags = Array.isArray(task.tags) ? task.tags : [];
       const replaced = currentTags.map((tag: string) => (tag === oldTag ? newTag : tag));
-      const unique = Array.from(new Set(replaced));
+      const unique = Array.from(new Set(replaced)) as string[];
       return supabase
         .from("tasks")
         .update({ tags: unique.length > 0 ? unique : null })
