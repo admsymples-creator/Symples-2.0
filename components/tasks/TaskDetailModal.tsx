@@ -2608,13 +2608,7 @@ export function TaskDetailModal({
                                                         setTitle(newTitle);
                                                         if (currentTaskId && !isCreateMode) {
                                                             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-        if (currentTaskId) {
-            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
-        }
 
-        if (!currentTaskId || isCreateMode) {
-            return;
-        }
 
                                                             onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
                                                             // Salvar no backend em background
