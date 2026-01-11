@@ -165,6 +165,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ler tag da URL para filtro de projeto (decodificar se presente)
     const tagParam = searchParams.get("tag");
     const tagFilter = tagParam ? decodeURIComponent(tagParam) : null;
+    const searchParam = searchParams.get("search");
+    const decodedSearch = searchParam ? decodeURIComponent(searchParam) : "";
 
     // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"), !!tagFilter);
@@ -182,7 +184,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [activeTask, setActiveTask] = useState<Task | null>(null);
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
-    const [searchQuery, setSearchQuery] = useState("");
+    const [searchQuery, setSearchQuery] = useState(decodedSearch);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [calendarControls, setCalendarControls] = useState<{
         handlePrev: () => void;
@@ -416,6 +418,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             router.refresh();
         }
     }, [tagFilter, router]);
+
+    useEffect(() => {
+        if (decodedSearch !== searchQuery) {
+            setSearchQuery(decodedSearch);
+        }
+    }, [decodedSearch]);
 
     // ├ó┼ôÔÇª CORRE├âÔÇí├âãÆO: Compara├â┬º├â┬úo profunda baseada em IDs para evitar loops infinitos
     // Compara apenas os IDs das tarefas, n├â┬úo as refer├â┬¬ncias dos arrays

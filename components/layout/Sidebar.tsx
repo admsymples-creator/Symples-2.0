@@ -848,7 +848,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             />
 
             {/* Navigation */}
-            <nav className="flex-1 overflow-y-auto p-4 overflow-x-hidden">
+            <nav className="flex-1 overflow-hidden p-4 overflow-x-hidden flex flex-col">
                 {/* Global Search */}
                 <div className={cn("mb-6", isCollapsed && "flex justify-center")}>
                     {isCollapsed ? (
@@ -900,7 +900,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                 </div>
 
                 {showProjectsSection && (
-                    <div className="mb-2">
+                    <div className="mb-2 flex-1 min-h-0 flex flex-col">
                         <div className={cn("mb-2", isCollapsed ? "flex justify-center" : "px-3")}>
                             {isCollapsed ? (
                                 <Tooltip>
@@ -946,7 +946,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                             )}
                         </div>
                         {isProjectsOpen && (
-                            <ul className="space-y-1 max-h-[280px] overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300">
+                            <ul className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300">
                                 {workspaceTags.length === 0 ? (
                                     <li className={cn(!isCollapsed && "px-3 py-2 text-xs text-gray-400")}>
                                         {!isCollapsed && "Nenhum projeto ainda"}

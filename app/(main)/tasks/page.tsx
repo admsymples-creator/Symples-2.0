@@ -5,7 +5,8 @@ import { getUserWorkspaces } from "@/lib/actions/user";
 /**
  * Redireciona /tasks para /[workspaceSlug]/tasks baseado no workspace ativo
  */
-export default async function TasksPage() {
+export default async function TasksPage({ searchParams }: { searchParams: Promise<{ search?: string }> }) {
+  const { search } = await searchParams;
   const cookieStore = await cookies();
   const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
   const workspaces = await getUserWorkspaces();
@@ -27,8 +28,10 @@ export default async function TasksPage() {
 
   // Redirecionar para a rota com workspace slug
   const workspaceSlug = activeWorkspace.slug || activeWorkspace.id;
-  redirect(`/${workspaceSlug}/tasks`);
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  redirect(`/${workspaceSlug}/tasks${query}`);
 }
+
 
 
 
