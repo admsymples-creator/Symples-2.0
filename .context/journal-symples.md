@@ -6,6 +6,24 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-11 10:17 - Fix RLS workspace em producao
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Documentacao do fix de RLS para criacao de workspace
+- Guia atualizado com nota sobre erro na conta agency em prod.
+- Reforco de validacao do projeto PROD correto ao executar o script.
+
+### 2. O que esta sendo trabalhado no momento
+
+- Aplicacao do script de RLS em producao.
+
+### 3. Proximos passos imediatos
+
+- Executar `supabase/MIGRATION_FIX_WORKSPACE_RLS.sql` no Supabase PROD e retestar criacao.
+
+---
+
 ## 2026-01-11 10:10 - Home e Tasks: status bloqueado e progresso total
 
 ### 1. Melhorias, bugs e features implementadas em preview
