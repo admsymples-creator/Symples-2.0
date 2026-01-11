@@ -618,11 +618,11 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
                     const projectTag = task.tags && task.tags.length > 0 ? task.tags[0] : undefined;
 
                     return (
-                      <MyTaskRowHome
-                        key={task.id}
-                        task={{
-                          id: task.id,
-                          title: task.title,
+                        <MyTaskRowHome
+                          key={task.id}
+                          task={{
+                            id: task.id,
+                            title: task.title,
                           status: task.status || "todo",
                           dueDate: task.due_date || undefined,
                           completed: task.status === "done",
@@ -639,11 +639,12 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
                         members={members}
                         disabled={false}
                         showProjectTag={true}
-                        projectTags={currentWorkspace?.isPersonal ? undefined : workspaceTags}
-                        showWorkspaceBadge={false}
-                        workspaceName={workspaceName}
-                      />
-                    );
+                          projectTags={currentWorkspace?.isPersonal ? undefined : workspaceTags}
+                          showWorkspaceBadge={false}
+                          workspaceName={workspaceName}
+                          allowInlineTitleEdit={false}
+                        />
+                      );
                   })}
 
                   {hasMore && (

@@ -17,6 +17,8 @@ interface WorkspaceStats {
   logo_url: string | null;
   pendingCount: number;
   totalCount: number;
+  overallPendingCount: number;
+  overallTotalCount: number;
   members: Array<{
     id: string;
     full_name: string | null;
@@ -28,7 +30,7 @@ export interface HomeWorkspaceOverviewProps {
   workspaceStats: WorkspaceStats[];
   weekStart: Date;
   weekEnd: Date;
-  initialProjectStats?: Array<{ tag: string; pendingCount: number; totalCount: number }>;
+  initialProjectStats?: Array<{ tag: string; pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>;
   initialProjectIcons?: Record<string, string>; // Objeto serializável em vez de Map
   initialIsPersonal?: boolean;
 }
@@ -46,7 +48,7 @@ export function HomeWorkspaceOverview({
   const workspaces = useWorkspaces();
   const hasLoadedOnceRef = useRef(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number }>>(initialProjectStats || []);
+  const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>>(initialProjectStats || []);
   const [loadingProjects, setLoadingProjects] = useState(false);
   // Converter objeto para Map se necessário
   const [projectIcons, setProjectIcons] = useState<Map<string, string>>(() => {
@@ -225,6 +227,8 @@ export function HomeWorkspaceOverview({
                 tag={project.tag}
                 pendingCount={project.pendingCount}
                 totalCount={project.totalCount}
+                overallPendingCount={project.overallPendingCount}
+                overallTotalCount={project.overallTotalCount}
                 iconName={iconName}
                 isFirst={index === 0}
               />
@@ -257,6 +261,8 @@ export function HomeWorkspaceOverview({
               logo_url={workspace.logo_url}
               pendingCount={workspace.pendingCount}
               totalCount={workspace.totalCount}
+              overallPendingCount={workspace.overallPendingCount}
+              overallTotalCount={workspace.overallTotalCount}
               members={workspace.members}
               isFirst={index === 0}
             />

@@ -75,6 +75,7 @@ interface MyTaskRowHomeProps {
   workspaceName?: string;
   showProjectTag?: boolean;
   projectTags?: string[];
+  allowInlineTitleEdit?: boolean;
 }
 
 type CurrentUser = { id: string; name: string; avatar?: string };
@@ -181,7 +182,8 @@ function MyTaskRowHomeComponent({
   showWorkspaceBadge = false, 
   workspaceName, 
   showProjectTag = false,
-  projectTags
+  projectTags,
+  allowInlineTitleEdit = true
 }: MyTaskRowHomeProps) {
   
   // Estados UI
@@ -245,6 +247,7 @@ function MyTaskRowHomeComponent({
   const isToday = task.dueDate && isTodayFunc(task.dueDate);
   const isFocusActive = isNextSunday(task.dueDate);
   const isUrgentActive = isToday || task.priority === "high" || task.priority === "urgent";
+  const canInlineEditTitle = allowInlineTitleEdit && !task.isPending;
 
   // Cor do Grupo
   const getGroupColorClass = (colorName?: string) => {
@@ -544,18 +547,30 @@ function MyTaskRowHomeComponent({
           )}
           
           <div className="flex-1 min-w-0 overflow-hidden">
-            <InlineTextEdit
-              value={task.title}
-              onSave={handleTitleUpdate}
-              className={cn(
-                "text-sm font-medium text-gray-700",
-                isCompleted && "line-through text-gray-500",
-                task.isPending && "opacity-75"
-              )}
-              inputClassName="text-sm font-medium text-gray-700"
-              disabled={task.isPending}
-              maxLength={100}
-            />
+            {canInlineEditTitle ? (
+              <InlineTextEdit
+                value={task.title}
+                onSave={handleTitleUpdate}
+                className={cn(
+                  "text-sm font-medium text-gray-700",
+                  isCompleted && "line-through text-gray-500",
+                  task.isPending && "opacity-75"
+                )}
+                inputClassName="text-sm font-medium text-gray-700"
+                disabled={task.isPending}
+                maxLength={100}
+              />
+            ) : (
+              <span
+                className={cn(
+                  "text-sm font-medium text-gray-700 truncate block",
+                  isCompleted && "line-through text-gray-500",
+                  task.isPending && "opacity-75"
+                )}
+              >
+                {task.title || "Sem titulo"}
+              </span>
+            )}
           </div>
           
           {showProjectTag ? (
@@ -877,7 +892,8 @@ export const MyTaskRowHome = memo(
       prev.onTaskDeleted === next.onTaskDeleted &&
       prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic &&
       prev.onTaskDeletedOptimistic === next.onTaskDeletedOptimistic &&
-      prev.onTaskDuplicatedOptimistic === next.onTaskDuplicatedOptimistic
+      prev.onTaskDuplicatedOptimistic === next.onTaskDuplicatedOptimistic &&
+      prev.allowInlineTitleEdit === next.allowInlineTitleEdit
     );
   }
 );

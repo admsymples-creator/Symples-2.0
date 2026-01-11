@@ -96,7 +96,7 @@ const STATUS_COLOR_MAP: Record<string, string> = {
     "Em progresso": "#3b82f6",
     "Revisão": "#f59e0b",
     "Correção": "#ef4444",
-    "Bloqueado": "#a855f7",
+    "Bloqueado": "#ef4444",
     "Finalizado": "#22c55e",
 };
 

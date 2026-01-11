@@ -26,6 +26,8 @@ export interface WorkspaceStats {
   logo_url: string | null;
   pendingCount: number;
   totalCount: number;
+  overallPendingCount: number;
+  overallTotalCount: number;
   members: WorkspaceMember[];
 }
 
@@ -202,7 +204,7 @@ export const getWorkspacesWeeklyStats = cache(async (
 
     if (workspaceIds.length === 0) return [];
 
-    // 2. Buscar TODAS as tarefas desses workspaces na semana (Progresso do Time)
+    // 2. Buscar tarefas desses workspaces na semana (Progresso semanal)
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
@@ -215,6 +217,17 @@ export const getWorkspacesWeeklyStats = cache(async (
 
     if (tasksError) {
       console.error("Erro ao buscar tarefas dos workspaces:", tasksError);
+      return [];
+    }
+
+    // 2b. Buscar todas as tarefas dos workspaces (Progresso total)
+    const { data: allTasks, error: allTasksError } = await supabase
+      .from("tasks")
+      .select("workspace_id, status")
+      .in("workspace_id", workspaceIds);
+
+    if (allTasksError) {
+      console.error("Erro ao buscar tarefas totais dos workspaces:", allTasksError);
       return [];
     }
 
@@ -262,18 +275,31 @@ export const getWorkspacesWeeklyStats = cache(async (
                 logo_url: m.workspaces.logo_url || null,
                 pendingCount: 0,
                 totalCount: 0,
+                overallPendingCount: 0,
+                overallTotalCount: 0,
                 members: membersByWorkspace.get(m.workspace_id) || []
             });
         }
     });
 
-    // Contar tarefas
+    // Contar tarefas semanais
     tasks?.forEach((task) => {
       const stats = statsMap.get(task.workspace_id!);
       if (stats) {
         stats.totalCount++;
         if (task.status !== "done" && task.status !== "archived") {
           stats.pendingCount++;
+        }
+      }
+    });
+
+    // Contar tarefas totais
+    allTasks?.forEach((task) => {
+      const stats = statsMap.get(task.workspace_id!);
+      if (stats) {
+        stats.overallTotalCount++;
+        if (task.status !== "done" && task.status !== "archived") {
+          stats.overallPendingCount++;
         }
       }
     });
@@ -300,6 +326,8 @@ export const getProjectsWeeklyStats = async (
   tag: string;
   pendingCount: number;
   totalCount: number;
+  overallPendingCount: number;
+  overallTotalCount: number;
 }>> => {
   try {
     const supabase = await createServerActionClient();
@@ -321,13 +349,16 @@ export const getProjectsWeeklyStats = async (
 
     if (!membership) return [];
 
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
+
     // OTIMIZAÇÃO: Buscar apenas colunas necessárias e fazer queries em paralelo
     // Buscar TODAS as tarefas do workspace que tenham tags (não apenas da semana)
     // Isso garante que todos os projetos apareçam, mesmo sem tarefas na semana atual
     const [tasksResult, projectIconsResult] = await Promise.all([
       supabase
         .from("tasks")
-        .select("tags, status") // Apenas colunas necessárias (não precisa de id nem due_date)
+        .select("tags, status, due_date") // Apenas colunas necessárias (não precisa de id nem due_date)
         .eq("workspace_id", workspaceId)
         .neq("status", "archived")
         .not("tags", "is", null), // Apenas tarefas com tags
@@ -347,22 +378,38 @@ export const getProjectsWeeklyStats = async (
     }
 
     // Agrupar por tag
-    const statsMap = new Map<string, { pendingCount: number; totalCount: number }>();
+    const statsMap = new Map<string, { pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>();
 
     // Processar tarefas se disponíveis
     if (tasks) {
+      const startMs = new Date(startISO).getTime();
+      const endMs = new Date(endISO).getTime();
       tasks.forEach((task: any) => {
         if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
+          const inWeek = task.due_date
+            ? (() => {
+                const due = new Date(task.due_date).getTime();
+                return due >= startMs && due <= endMs;
+              })()
+            : false;
+
           task.tags.forEach((tag: string) => {
             if (tag && tag.trim()) {
               const tagKey = tag.trim();
               if (!statsMap.has(tagKey)) {
-                statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+                statsMap.set(tagKey, { pendingCount: 0, totalCount: 0, overallPendingCount: 0, overallTotalCount: 0 });
               }
               const stats = statsMap.get(tagKey)!;
-              stats.totalCount++;
+              stats.overallTotalCount++;
               if (task.status !== "done" && task.status !== "archived") {
-                stats.pendingCount++;
+                stats.overallPendingCount++;
+              }
+
+              if (inWeek) {
+                stats.totalCount++;
+                if (task.status !== "done" && task.status !== "archived") {
+                  stats.pendingCount++;
+                }
               }
             }
           });
@@ -378,7 +425,7 @@ export const getProjectsWeeklyStats = async (
           const tagKey = icon.tag_name.trim();
           // Adicionar projeto mesmo sem tarefas (com contadores zerados)
           if (!statsMap.has(tagKey)) {
-            statsMap.set(tagKey, { pendingCount: 0, totalCount: 0 });
+            statsMap.set(tagKey, { pendingCount: 0, totalCount: 0, overallPendingCount: 0, overallTotalCount: 0 });
           }
         }
       });
