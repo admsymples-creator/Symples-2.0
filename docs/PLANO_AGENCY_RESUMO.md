@@ -47,3 +47,4 @@ Modelo hibrido:
 ## Observacoes
 - Esse modelo evita nova tabela de agencies agora, mas mantem abertura para evoluir no futuro.
 - Os limites por workspace seguem o plano do workspace, exceto quando o usuario tem `agency`.
+
