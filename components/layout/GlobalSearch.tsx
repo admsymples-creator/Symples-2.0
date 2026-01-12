@@ -95,7 +95,7 @@ export function GlobalSearch() {
           .filter((task) => task?.title)
           .map((task) => ({ id: String(task.id), title: String(task.title) }))
         const projectIconTags = (projectsResponse.data || [])
-          .map((row) => row?.tag_name)
+          .map((row: { tag_name?: string | null } | null) => row?.tag_name)
           .filter((tag): tag is string => Boolean(tag))
 
         const tagsResponse = await supabase
