@@ -42,7 +42,7 @@ export async function FinanceContent({
   typedTransactions.forEach((t: any) => {
     const tx = {
       id: t.id,
-      due_date: t.due_date || new Date().toISOString(),
+      due_date: t.due_date || null,
       created_at: t.created_at || new Date().toISOString(),
       description: t.description,
       amount: Number(t.amount) || 0,
@@ -50,6 +50,7 @@ export async function FinanceContent({
       category: t.category || "Geral",
       type: t.type as "income" | "expense",
       is_recurring: t.is_recurring || false,
+      counterparty_name: t.counterparty_name || null,
     };
 
     if (tx.type === "income") {

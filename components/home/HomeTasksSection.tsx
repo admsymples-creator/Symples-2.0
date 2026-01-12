@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MyTaskRowHome } from "@/components/tasks/MyTaskRowHome";
 import dynamic from "next/dynamic";
-import { TaskWithDetails, getTasks, createTask, getWorkspaceMembers, getWorkspaceMembersBatch } from "@/lib/actions/tasks";
+import { TaskWithDetails, getTasks, createTask, getWorkspaceMembers, getWorkspaceMembersBatch, getWorkspaceTags } from "@/lib/actions/tasks";
 import { cn } from "@/lib/utils";
 import { Loader2, CheckSquare, Clock, AlertCircle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   // activeTasksCache: Tarefas não concluídas (todo, in_progress, review, etc)
   const [activeTasksCache, setActiveTasksCache] = useState<TaskWithDetails[] | null>(
     () => {
-      if (!initialTasks) return null;
+      if (!initialTasks || initialIsPersonal) return null;
       // Se initialTasks existe, filtra as ativas.
       return initialTasks.filter(t => t.status !== "done");
     }
@@ -49,6 +49,9 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   const [members, setMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
   const [workspaceMap, setWorkspaceMap] = useState<Map<string, string>>(new Map());
   const [displayLimit, setDisplayLimit] = useState(10);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const lastRefreshTsRef = useRef<number>(0);
+  const [workspaceTags, setWorkspaceTags] = useState<string[]>([]);
   const shouldReduceMotion = useReducedMotion();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
   const workspaces = useWorkspaces();
@@ -104,10 +107,30 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
     }
   }, [pathname, activeWorkspaceId, isLoaded, workspaces]);
 
+  useEffect(() => {
+    if (!currentWorkspace || currentWorkspace.isPersonal) {
+      setWorkspaceTags([]);
+      return;
+    }
+
+    let isActive = true;
+    getWorkspaceTags(currentWorkspace.id)
+      .then((tags) => {
+        if (isActive) setWorkspaceTags(tags);
+      })
+      .catch(() => {
+        if (isActive) setWorkspaceTags([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentWorkspace]);
+
   // Estado derivado para tarefas a exibir
   const [tasks, setTasks] = useState<TaskWithDetails[]>(() => {
-    // Inicializar com dados do servidor SE disponíveis
-    if (initialTasks && initialTasks.length > 0) {
+    // Inicializar com dados do servidor SE disponiveis
+    if (initialTasks && initialTasks.length > 0 && !initialIsPersonal) {
       const active = initialTasks.filter(t => t.status !== "done");
       return active;
     }
@@ -196,7 +219,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
     };
 
     loadTasks();
-  }, [currentWorkspace, statusFilter]); // Dependências: Workspace e Filtro (para trocar o bucket)
+  }, [currentWorkspace, statusFilter, refreshToken]); // Dependências: Workspace e Filtro (para trocar o bucket)
 
   // Buscar workspaces para criar mapa workspace_id -> name
   useEffect(() => {
@@ -264,6 +287,31 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
 
     loadMembers();
   }, [tasks, currentWorkspace]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleExternalUpdate = () => {
+      const tsRaw = sessionStorage.getItem("home_tasks_refresh_ts");
+      const ts = tsRaw ? Number(tsRaw) : Date.now();
+      if (!Number.isFinite(ts) || ts <= lastRefreshTsRef.current) return;
+
+      lastRefreshTsRef.current = ts;
+      setActiveTasksCache(null);
+      setCompletedTasksCache(null);
+      setTasks([]);
+      setLoading(true);
+      setRefreshToken((value) => value + 1);
+    };
+
+    window.addEventListener("home-tasks-updated", handleExternalUpdate);
+    handleExternalUpdate();
+
+    return () => {
+      window.removeEventListener("home-tasks-updated", handleExternalUpdate);
+    };
+  }, []);
+
 
   // Filtrar tarefas baseado no status e período
   const filteredTasks = useMemo(() => {
@@ -333,6 +381,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
     dueDate?: string;
     status?: string;
     priority?: string;
+    tags?: string[];
     assignees?: Array<{ name: string; avatar?: string; id?: string }>;
   }>) => {
     setTasks((prevTasks) => {
@@ -351,6 +400,9 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
           }
           if (updates.priority !== undefined) {
             updatedTask.priority = updates.priority as any;
+          }
+          if (updates.tags !== undefined) {
+            (updatedTask as any).tags = updates.tags;
           }
           if (updates.assignees !== undefined) {
             // Atualizar assignees mantendo estrutura TaskWithDetails
@@ -391,12 +443,41 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
       setActiveTasksCache(valid);
       if (statusFilter !== "completed") setTasks(valid);
     } catch (e) { console.error(e); }
-  }, [currentWorkspace, statusFilter]);
+  }, [currentWorkspace, statusFilter, refreshToken]);
 
   const handleTaskUpdated = useCallback(() => {
-    // Manter vazio ou recarrregar se necessário
-    // invalidateCaches(); // Opcional
-  }, []);
+    if (!currentWorkspace) return;
+    const isCompletedTab = statusFilter === "completed";
+    const fetchParams = isCompletedTab
+      ? {
+          workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
+          assigneeId: "current" as const,
+          status: "done",
+          limit: 50,
+        }
+      : {
+          workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
+          assigneeId: "current" as const,
+          excludeStatus: ["done", "archived"],
+        };
+
+    getTasks(fetchParams)
+      .then((fetchedTasks) => {
+        const validTasks = currentWorkspace.isPersonal
+          ? (fetchedTasks || [])
+          : (fetchedTasks || []).filter(t => t.workspace_id === currentWorkspace.id);
+
+        if (isCompletedTab) {
+          setCompletedTasksCache(validTasks);
+        } else {
+          setActiveTasksCache(validTasks);
+        }
+        setTasks(validTasks);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }, [currentWorkspace, statusFilter]);
 
 
   return (
@@ -537,11 +618,11 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
                     const projectTag = task.tags && task.tags.length > 0 ? task.tags[0] : undefined;
 
                     return (
-                      <MyTaskRowHome
-                        key={task.id}
-                        task={{
-                          id: task.id,
-                          title: task.title,
+                        <MyTaskRowHome
+                          key={task.id}
+                          task={{
+                            id: task.id,
+                            title: task.title,
                           status: task.status || "todo",
                           dueDate: task.due_date || undefined,
                           completed: task.status === "done",
@@ -556,12 +637,14 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
                         onTaskUpdated={handleTaskUpdated}
                         onTaskUpdatedOptimistic={handleTaskUpdatedOptimistic}
                         members={members}
-                        disabled={true}
+                        disabled={false}
                         showProjectTag={true}
-                        showWorkspaceBadge={false}
-                        workspaceName={workspaceName}
-                      />
-                    );
+                          projectTags={currentWorkspace?.isPersonal ? undefined : workspaceTags}
+                          showWorkspaceBadge={false}
+                          workspaceName={workspaceName}
+                          allowInlineTitleEdit={false}
+                        />
+                      );
                   })}
 
                   {hasMore && (
@@ -592,6 +675,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
           task={sortedTasks.find((t) => String(t.id) === selectedTaskId) as any}
           onTaskCreated={handleTaskCreatedOptimistic}
           onTaskUpdated={handleTaskUpdated}
+          onTaskUpdatedOptimistic={handleTaskUpdatedOptimistic}
         />
       )}
 

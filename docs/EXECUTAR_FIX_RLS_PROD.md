@@ -7,6 +7,8 @@ Ao tentar criar workspace em produção, ocorre o erro:
 Erro de permissão: RLS policies não configuradas no Supabase.
 ```
 
+Isso já foi reproduzido com conta **agency** na versão live.
+
 ## ✅ SOLUÇÃO
 
 Execute o script de correção das RLS policies.
@@ -32,6 +34,7 @@ Execute o script de correção das RLS policies.
 4. **Validar:**
    - Deve retornar: "✅ RLS Policies corrigidas!"
    - Tente criar um workspace novamente
+   - Se falhar, confirme que o projeto PROD correto foi selecionado
 
 ---
 

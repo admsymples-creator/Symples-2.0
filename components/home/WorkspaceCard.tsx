@@ -27,11 +27,13 @@ interface WorkspaceCardProps {
     logo_url?: string | null;
     pendingCount: number;
     totalCount: number;
+    overallPendingCount?: number;
+    overallTotalCount?: number;
     members?: WorkspaceMember[];
     isFirst?: boolean;
 }
 
-export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, members = [], isFirst = false }: WorkspaceCardProps) {
+export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCount, overallPendingCount, overallTotalCount, members = [], isFirst = false }: WorkspaceCardProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -54,8 +56,11 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
     );
 
     // Calculate progress
-    const progress = totalCount > 0 ? ((totalCount - pendingCount) / totalCount) * 100 : 0;
+    const weeklyProgress = totalCount > 0 ? ((totalCount - pendingCount) / totalCount) * 100 : 0;
     const completedCount = totalCount - pendingCount;
+    const overallTotal = overallTotalCount ?? totalCount;
+    const overallPending = overallPendingCount ?? pendingCount;
+    const overallProgress = overallTotal > 0 ? ((overallTotal - overallPending) / overallTotal) * 100 : 0;
 
     const handleCardClick = () => {
         // CRÍTICO: setActiveWorkspaceId ativa o loading ANTES de navegar
@@ -65,8 +70,8 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
         // Usar setTimeout para garantir que o loading apareça antes da navegação
         // Mesmo que seja 0ms, garante que o React processe o estado primeiro
         setTimeout(() => {
-            // Navegar para a Home (novo ponto de entrada "Gestão/Home")
-            router.push("/home");
+            const workspaceSlug = slug || id;
+            router.push(`/${workspaceSlug}/home`);
         }, 0);
     };
 
@@ -185,16 +190,29 @@ export function WorkspaceCard({ id, name, slug, logo_url, pendingCount, totalCou
             <div className="mt-6 relative z-10">
                 <div className="flex justify-between items-end mb-2">
                     <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Progresso da Semana</span>
-                    <span className="text-xs font-bold text-gray-700">{Math.round(progress)}%</span>
+                    <span className="text-xs font-bold text-gray-700">{Math.round(weeklyProgress)}%</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-full">
                     <div
                         className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
-                        style={{ width: `${progress}%` }}
+                        style={{ width: `${weeklyProgress}%` }}
                     />
                 </div>
                 <div className="flex justify-end mt-1">
                     <span className="text-xs text-gray-500">{completedCount} / {pendingCount}</span>
+                </div>
+
+                <div className="mt-3">
+                    <div className="flex justify-between items-end mb-1.5">
+                        <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Progresso Total</span>
+                        <span className="text-[11px] font-semibold text-gray-600">{Math.round(overallProgress)}%</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-full">
+                        <div
+                            className="h-full bg-green-300 rounded-full transition-all duration-500 ease-out"
+                            style={{ width: `${overallProgress}%` }}
+                        />
+                    </div>
                 </div>
             </div>
 

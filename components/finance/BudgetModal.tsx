@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { EXPENSE_CATEGORIES } from "@/lib/config/finance-categories";
 
 interface BudgetModalProps {
   open: boolean;
@@ -102,19 +103,15 @@ export function BudgetModal({
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
   ];
 
-  const allCategories = [
-    "marketing",
-    "services",
-    "software",
-    "infrastructure",
-    "salary",
-    "personal",
-    "other",
-    "Geral",
+  const categoriesWithExisting = [
+    ...EXPENSE_CATEGORIES,
+    ...existingCategories
+      .filter((value) => !EXPENSE_CATEGORIES.some((option) => option.value === value))
+      .map((value) => ({ value, label: value })),
   ];
 
-  const availableCategories = allCategories.filter(
-    cat => !existingCategories.includes(cat) || cat === category
+  const availableCategories = categoriesWithExisting.filter(
+    (cat) => !existingCategories.includes(cat.value) || cat.value === category
   );
 
   return (
@@ -142,15 +139,8 @@ export function BudgetModal({
               </SelectTrigger>
               <SelectContent>
                 {availableCategories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat === "marketing" ? "Marketing" :
-                     cat === "services" ? "Serviços" :
-                     cat === "software" ? "Software" :
-                     cat === "infrastructure" ? "Infraestrutura" :
-                     cat === "salary" ? "Salário" :
-                     cat === "personal" ? "Pessoal" :
-                     cat === "other" ? "Outros" :
-                     cat}
+                  <SelectItem key={cat.value} value={cat.value}>
+                    {cat.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -195,4 +185,6 @@ export function BudgetModal({
     </Dialog>
   );
 }
+
+
 

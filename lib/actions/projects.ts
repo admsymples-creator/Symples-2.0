@@ -173,3 +173,193 @@ export async function deleteProjectIcon(
   return { success: true };
 }
 
+async function hasWorkspaceAccess(
+  supabase: Awaited<ReturnType<typeof createServerActionClient>>,
+  userId: string,
+  workspaceId: string
+): Promise<boolean> {
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("owner_id")
+    .eq("id", workspaceId)
+    .single();
+
+  if (workspaceError || !workspace) return false;
+  if (workspace.owner_id === userId) return true;
+
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId)
+    .single();
+
+  return !!membership;
+}
+
+export async function getProjectTaskCount(
+  workspaceId: string,
+  tagName: string
+): Promise<number> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user || !workspaceId || !tagName) return 0;
+
+  const hasAccess = await hasWorkspaceAccess(supabase, user.id, workspaceId);
+  if (!hasAccess) return 0;
+
+  const { count, error } = await (supabase as any)
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .contains("tags", [tagName]);
+
+  if (error) return 0;
+
+  return count || 0;
+}
+
+export async function renameProjectTag(
+  workspaceId: string,
+  oldTag: string,
+  newTag: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user || !workspaceId || !oldTag || !newTag) {
+    return { success: false, error: "Parâmetros inválidos" };
+  }
+
+  if (oldTag === newTag) {
+    return { success: true };
+  }
+
+  const hasAccess = await hasWorkspaceAccess(supabase, user.id, workspaceId);
+  if (!hasAccess) {
+    return { success: false, error: "Sem permissão para acessar este workspace" };
+  }
+
+  const { data: existing } = await (supabase as any)
+    .from("tasks")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .contains("tags", [newTag])
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    return { success: false, error: "Já existe um projeto com esse nome" };
+  }
+
+  const { data: existingIcon } = await (supabase as any)
+    .from("project_icons")
+    .select("tag_name")
+    .eq("workspace_id", workspaceId)
+    .eq("tag_name", newTag)
+    .limit(1);
+
+  if (existingIcon && existingIcon.length > 0) {
+    return { success: false, error: "Já existe um projeto com esse nome" };
+  }
+
+  const { data: iconRow } = await (supabase as any)
+    .from("project_icons")
+    .select("icon_name")
+    .eq("workspace_id", workspaceId)
+    .eq("tag_name", oldTag)
+    .single();
+
+  if (iconRow) {
+    const { error: iconError } = await (supabase as any)
+      .from("project_icons")
+      .update({ tag_name: newTag })
+      .eq("workspace_id", workspaceId)
+      .eq("tag_name", oldTag);
+
+    if (iconError) {
+      return { success: false, error: iconError.message };
+    }
+  }
+
+  const { data: tasks, error: tasksError } = await (supabase as any)
+    .from("tasks")
+    .select("id, tags")
+    .eq("workspace_id", workspaceId)
+    .contains("tags", [oldTag]);
+
+  if (tasksError) {
+    return { success: false, error: tasksError.message };
+  }
+
+  if (tasks && tasks.length > 0) {
+    const updates = tasks.map((task: any) => {
+      const currentTags = Array.isArray(task.tags) ? task.tags : [];
+      const replaced = currentTags.map((tag: string) => (tag === oldTag ? newTag : tag));
+      const unique = Array.from(new Set(replaced)) as string[];
+      return supabase
+        .from("tasks")
+        .update({ tags: unique.length > 0 ? unique : null })
+        .eq("id", task.id);
+    });
+
+    await Promise.all(updates);
+  }
+
+  revalidatePath("/");
+  revalidatePath("/tasks");
+  revalidatePath("/(main)/home", "page");
+  return { success: true };
+}
+
+export async function deleteProjectTag(
+  workspaceId: string,
+  tagName: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user || !workspaceId || !tagName) {
+    return { success: false, error: "Parâmetros inválidos" };
+  }
+
+  const hasAccess = await hasWorkspaceAccess(supabase, user.id, workspaceId);
+  if (!hasAccess) {
+    return { success: false, error: "Sem permissão para acessar este workspace" };
+  }
+
+  await (supabase as any)
+    .from("project_icons")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("tag_name", tagName);
+
+  const { data: tasks, error: tasksError } = await (supabase as any)
+    .from("tasks")
+    .select("id, tags")
+    .eq("workspace_id", workspaceId)
+    .contains("tags", [tagName]);
+
+  if (tasksError) {
+    return { success: false, error: tasksError.message };
+  }
+
+  if (tasks && tasks.length > 0) {
+    const updates = tasks.map((task: any) => {
+      const currentTags = Array.isArray(task.tags) ? task.tags : [];
+      const filtered = currentTags.filter((tag: string) => tag !== tagName);
+      return supabase
+        .from("tasks")
+        .update({ tags: filtered.length > 0 ? filtered : null })
+        .eq("id", task.id);
+    });
+
+    await Promise.all(updates);
+  }
+
+  revalidatePath("/");
+  revalidatePath("/tasks");
+  revalidatePath("/(main)/home", "page");
+  return { success: true };
+}
+

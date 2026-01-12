@@ -24,9 +24,10 @@ export interface TransactionData {
   description: string;
   category: string;
   date: Date; // Data da transação (created_at/transaction_date)
-  due_date: Date; // Data de vencimento
+  due_date?: Date | null; // Data de vencimento
   status: "paid" | "pending";
   is_recurring: boolean;
+  counterparty_name?: string | null;
   workspace_id?: string;
 }
 
@@ -91,10 +92,11 @@ export async function createTransaction(data: TransactionData) {
       type: data.type,
       description: data.description,
       category: data.category,
-      due_date: data.due_date.toISOString(),
+      due_date: data.due_date ? data.due_date.toISOString() : null,
       status: data.status,
       workspace_id: workspaceId,
       is_recurring: data.is_recurring,
+      counterparty_name: data.counterparty_name || null,
       created_at: data.date.toISOString(), // Data da transação (pode ser passada)
     };
 
@@ -123,6 +125,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
+      futureBalance: 0,
       burnRate: 0,
       healthStatus: "healthy" as const,
     };
@@ -145,6 +148,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
         totalIncome: 0,
         totalExpense: 0,
         balance: 0,
+        futureBalance: 0,
         burnRate: 0,
         healthStatus: "healthy" as const,
       };
@@ -168,6 +172,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
+      futureBalance: 0,
       burnRate: 0,
       healthStatus: "healthy" as const,
     };
@@ -182,12 +187,16 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
 
   // Buscar transações do mês filtradas por workspace
   const queryStart = perfNow();
-  const { data: transactions, error } = await (supabase as any)
+  let metricsQuery = (supabase as any)
     .from("transactions")
-    .select("amount,type,is_recurring")
-    .eq("workspace_id", effectiveWorkspaceId)
-    .gte("due_date", startDate)
-    .lte("due_date", endDate);
+    .select("amount,type,is_recurring,status,due_date,created_at")
+    .eq("workspace_id", effectiveWorkspaceId);
+
+  metricsQuery = metricsQuery.or(
+    `and(due_date.gte.${startDate},due_date.lte.${endDate}),and(due_date.is.null,created_at.gte.${startDate},created_at.lte.${endDate})`
+  );
+
+  const { data: transactions, error } = await metricsQuery;
   logPerf("getFinanceMetrics:query", queryStart, { workspaceId: effectiveWorkspaceId });
 
   if (error) {
@@ -196,6 +205,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
+      futureBalance: 0,
       burnRate: 0,
       healthStatus: "healthy" as const,
     };
@@ -207,18 +217,35 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
 
   // Cálculos
   const totalIncome = typedTransactions
-    .filter((t: any) => t.type === "income")
+    .filter((t: any) => t.type === "income" && t.status !== "cancelled")
     .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
 
   const totalExpense = typedTransactions
-    .filter((t: any) => t.type === "expense")
+    .filter((t: any) => t.type === "expense" && t.status !== "cancelled")
     .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
 
-  const balance = totalIncome - totalExpense;
+  const realIncome = typedTransactions
+    .filter((t: any) => t.type === "income" && t.status === "paid")
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
+
+  const realExpense = typedTransactions
+    .filter((t: any) => t.type === "expense" && t.status === "paid")
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
+
+  const futureIncome = typedTransactions
+    .filter((t: any) => t.type === "income" && t.status !== "cancelled")
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
+
+  const futureExpense = typedTransactions
+    .filter((t: any) => t.type === "expense" && t.status !== "cancelled")
+    .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
+
+  const balance = realIncome - realExpense;
+  const futureBalance = futureIncome - futureExpense;
 
   // Burn Rate: Soma das despesas fixas (is_recurring)
   const burnRate = typedTransactions
-    .filter((t: any) => t.type === "expense" && t.is_recurring === true)
+    .filter((t: any) => t.type === "expense" && t.is_recurring === true && t.status !== "cancelled")
     .reduce((acc: number, curr: any) => acc + Number(curr.amount), 0);
 
   // Lógica de Saúde Financeira
@@ -234,6 +261,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
     totalIncome,
     totalExpense,
     balance,
+    futureBalance,
     burnRate,
     healthStatus,
   };
@@ -290,16 +318,23 @@ export const getTransactions = cache(async (filters?: {
 
   let query = (supabase as any)
     .from("transactions")
-    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring")
+    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name")
     .eq("workspace_id", effectiveWorkspaceId)
-    .order("due_date", { ascending: false });
+    .order("due_date", { ascending: false, nullsLast: true })
+    .order("created_at", { ascending: false });
 
-  if (filters?.startDate) {
-    query = query.gte("due_date", filters.startDate);
-  }
-  
-  if (filters?.endDate) {
-    query = query.lte("due_date", filters.endDate);
+  if (filters?.startDate && filters?.endDate) {
+    query = query.or(
+      `and(due_date.gte.${filters.startDate},due_date.lte.${filters.endDate}),and(due_date.is.null,created_at.gte.${filters.startDate},created_at.lte.${filters.endDate})`
+    );
+  } else if (filters?.startDate) {
+    query = query.or(
+      `due_date.gte.${filters.startDate},and(due_date.is.null,created_at.gte.${filters.startDate})`
+    );
+  } else if (filters?.endDate) {
+    query = query.or(
+      `due_date.lte.${filters.endDate},and(due_date.is.null,created_at.lte.${filters.endDate})`
+    );
   }
 
   if (filters?.isRecurring !== undefined) {
@@ -330,9 +365,10 @@ export interface UpdateTransactionData {
   description?: string;
   category?: string;
   date?: Date; // Data da transação (created_at/transaction_date)
-  due_date?: Date; // Data de vencimento
+  due_date?: Date | null; // Data de vencimento
   status?: "paid" | "pending" | "scheduled" | "cancelled";
   is_recurring?: boolean;
+  counterparty_name?: string | null;
 }
 
 export async function updateTransaction(id: string, data: UpdateTransactionData) {
@@ -374,9 +410,10 @@ export async function updateTransaction(id: string, data: UpdateTransactionData)
     if (data.description !== undefined) payload.description = data.description;
     if (data.category !== undefined) payload.category = data.category;
     if (data.date !== undefined) payload.created_at = data.date.toISOString();
-    if (data.due_date !== undefined) payload.due_date = data.due_date.toISOString();
+    if (data.due_date !== undefined) payload.due_date = data.due_date ? data.due_date.toISOString() : null;
     if (data.status !== undefined) payload.status = data.status;
     if (data.is_recurring !== undefined) payload.is_recurring = data.is_recurring;
+    if (data.counterparty_name !== undefined) payload.counterparty_name = data.counterparty_name || null;
 
     const { error } = await supabase
       .from("transactions")

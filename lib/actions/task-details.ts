@@ -831,6 +831,8 @@ export async function updateTaskField(
 
   console.log(`Sucesso ao atualizar ${field}`);
   revalidatePath(`/tasks`);
+  revalidatePath(`/home`);
+  revalidatePath("/(main)/home", "page");
   return { success: true };
 }
 
@@ -887,6 +889,8 @@ export async function updateTaskFields(
   }
 
   revalidatePath(`/tasks`);
+  revalidatePath(`/home`);
+  revalidatePath("/(main)/home", "page");
   return { success: true };
 }
 

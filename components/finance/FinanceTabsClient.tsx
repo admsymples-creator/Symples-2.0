@@ -24,7 +24,7 @@ type TransactionStatus = "paid" | "pending" | "overdue" | "scheduled" | "cancell
 
 type FinanceTransaction = {
   id: string;
-  due_date: string;
+  due_date: string | null;
   created_at: string;
   description: string;
   amount: number;
@@ -32,12 +32,14 @@ type FinanceTransaction = {
   category: string;
   type: "income" | "expense";
   is_recurring: boolean;
+  counterparty_name?: string | null;
 };
 
 type FinanceMetrics = {
   totalIncome: number;
   totalExpense: number;
   balance: number;
+  futureBalance?: number;
   burnRate: number;
   healthStatus?: "healthy" | "warning" | "critical";
   status?: "healthy" | "warning" | "critical";
@@ -104,8 +106,11 @@ const FinancialHealthCard = ({ data }: { data: FinanceMetrics }) => {
           </p>
         </div>
         <div className="text-right">
-          <p className={`text-sm ${theme.text} opacity-80`}>Saldo Atual</p>
+          <p className={`text-sm ${theme.text} opacity-80`}>Saldo real</p>
           <h2 className={`text-3xl font-bold ${theme.text}`}>{formatCurrency(data.balance)}</h2>
+          <p className={`text-xs ${theme.text} opacity-70 mt-1`}>
+            Saldo futuro: {formatCurrency(data.futureBalance ?? data.balance)}
+          </p>
         </div>
       </div>
 
@@ -140,7 +145,7 @@ const mapTransactions = (transactions: any[]): FinanceTransaction[] => {
     const tx = t as any;
     return {
       id: tx.id,
-      due_date: tx.due_date || new Date().toISOString(),
+      due_date: tx.due_date || null,
       created_at: tx.created_at || new Date().toISOString(),
       description: tx.description,
       amount: Number(tx.amount) || 0,
@@ -148,6 +153,7 @@ const mapTransactions = (transactions: any[]): FinanceTransaction[] => {
       category: tx.category || "Geral",
       type: tx.type as "income" | "expense",
       is_recurring: tx.is_recurring || false,
+      counterparty_name: tx.counterparty_name || null,
     };
   });
 };

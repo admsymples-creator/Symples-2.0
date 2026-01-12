@@ -1,7 +1,7 @@
 "use client";
 
 import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
-import { Calendar as CalendarIcon, X, ChevronDown, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2, RefreshCw } from "lucide-react";
+import { Calendar as CalendarIcon, X, ChevronDown, Check, CheckCircle2, User, Zap, AlertTriangle, MessageSquare, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
@@ -21,7 +21,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { updateTask } from "@/lib/actions/tasks";
+import { getWorkspaceTags, updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES, TASK_STATUS, type TaskStatus } from "@/lib/config/tasks";
 import { Avatar } from "./Avatar";
@@ -74,12 +74,16 @@ interface MyTaskRowHomeProps {
   showWorkspaceBadge?: boolean;
   workspaceName?: string;
   showProjectTag?: boolean;
+  projectTags?: string[];
+  allowInlineTitleEdit?: boolean;
 }
 
 type CurrentUser = { id: string; name: string; avatar?: string };
 
 // --- Singleton Pattern para User Fetch (Previne flood de requests) ---
 let userFetchPromise: Promise<CurrentUser | null> | null = null;
+const workspaceTagsCache = new Map<string, string[]>();
+const workspaceTagsPromiseCache = new Map<string, Promise<string[]>>();
 
 const getCurrentUserSingleton = () => {
   if (!userFetchPromise) {
@@ -104,6 +108,27 @@ const getCurrentUserSingleton = () => {
     })();
   }
   return userFetchPromise;
+};
+
+const getWorkspaceTagsCached = (workspaceId: string) => {
+  if (workspaceTagsCache.has(workspaceId)) {
+    return Promise.resolve(workspaceTagsCache.get(workspaceId) || []);
+  }
+  if (workspaceTagsPromiseCache.has(workspaceId)) {
+    return workspaceTagsPromiseCache.get(workspaceId) as Promise<string[]>;
+  }
+
+  const request = getWorkspaceTags(workspaceId)
+    .then((tags) => {
+      workspaceTagsCache.set(workspaceId, tags);
+      return tags;
+    })
+    .finally(() => {
+      workspaceTagsPromiseCache.delete(workspaceId);
+    });
+
+  workspaceTagsPromiseCache.set(workspaceId, request);
+  return request;
 };
 
 // --- Funções Auxiliares de Data (Puras) ---
@@ -156,14 +181,18 @@ function MyTaskRowHomeComponent({
   members, 
   showWorkspaceBadge = false, 
   workspaceName, 
-  showProjectTag = false 
+  showProjectTag = false,
+  projectTags,
+  allowInlineTitleEdit = true
 }: MyTaskRowHomeProps) {
   
   // Estados UI
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [isProjectOpen, setIsProjectOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   // Efeitos
   useEffect(() => {
@@ -174,6 +203,30 @@ function MyTaskRowHomeComponent({
     });
     return () => { isActive = false; };
   }, []);
+
+  useEffect(() => {
+    if (!showProjectTag || projectTags) return;
+    const workspaceId = task.workspace_id || undefined;
+    if (!workspaceId) {
+      setAvailableTags([]);
+      return;
+    }
+
+    let isActive = true;
+    getWorkspaceTagsCached(workspaceId)
+      .then((tags) => {
+        if (isActive) setAvailableTags(tags);
+      })
+      .catch(() => {
+        if (isActive) setAvailableTags([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [showProjectTag, projectTags, task.workspace_id]);
+
+  const resolvedTags = projectTags || availableTags;
 
   // Lógica de Membros
   const membersWithCurrentUser = useMemo(() => {
@@ -194,6 +247,7 @@ function MyTaskRowHomeComponent({
   const isToday = task.dueDate && isTodayFunc(task.dueDate);
   const isFocusActive = isNextSunday(task.dueDate);
   const isUrgentActive = isToday || task.priority === "high" || task.priority === "urgent";
+  const canInlineEditTitle = allowInlineTitleEdit && !task.isPending;
 
   // Cor do Grupo
   const getGroupColorClass = (colorName?: string) => {
@@ -275,6 +329,31 @@ function MyTaskRowHomeComponent({
     } catch (error) {
       onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
       toast.error("Erro ao atualizar status");
+    }
+  };
+
+  const handleProjectUpdate = async (nextTag: string | null) => {
+    setIsProjectOpen(false);
+    const previousTags = task.tags || [];
+    const newTags = nextTag ? [nextTag] : [];
+    onTaskUpdatedOptimistic?.(task.id, { tags: newTags });
+
+    try {
+      const result = await updateTask({
+        id: String(task.id),
+        tags: newTags,
+      });
+
+      if (!result.success) {
+        onTaskUpdatedOptimistic?.(task.id, { tags: previousTags });
+        toast.error("Erro ao atualizar projeto");
+      } else {
+        toast.success(nextTag ? "Projeto atualizado" : "Projeto removido");
+        onTaskUpdated?.();
+      }
+    } catch (error) {
+      onTaskUpdatedOptimistic?.(task.id, { tags: previousTags });
+      toast.error("Erro ao atualizar projeto");
     }
   };
 
@@ -468,29 +547,95 @@ function MyTaskRowHomeComponent({
           )}
           
           <div className="flex-1 min-w-0 overflow-hidden">
-            <InlineTextEdit
-              value={task.title}
-              onSave={handleTitleUpdate}
-              className={cn(
-                "text-sm font-medium text-gray-700",
-                isCompleted && "line-through text-gray-500",
-                task.isPending && "opacity-75"
-              )}
-              inputClassName="text-sm font-medium text-gray-700"
-              disabled={task.isPending}
-              maxLength={100}
-            />
+            {canInlineEditTitle ? (
+              <InlineTextEdit
+                value={task.title}
+                onSave={handleTitleUpdate}
+                className={cn(
+                  "text-sm font-medium text-gray-700",
+                  isCompleted && "line-through text-gray-500",
+                  task.isPending && "opacity-75"
+                )}
+                inputClassName="text-sm font-medium text-gray-700"
+                disabled={task.isPending}
+                maxLength={100}
+              />
+            ) : (
+              <span
+                className={cn(
+                  "text-sm font-medium text-gray-700 truncate block",
+                  isCompleted && "line-through text-gray-500",
+                  task.isPending && "opacity-75"
+                )}
+              >
+                {task.title || "Sem titulo"}
+              </span>
+            )}
           </div>
           
           {showProjectTag ? (
-            task.tags && task.tags.length > 0 ? (
-              <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
-                {task.tags[0]}
-              </Badge>
+            isMounted ? (
+              <Popover open={isProjectOpen} onOpenChange={setIsProjectOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    className="rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+                    onClick={stopProp}
+                    onPointerDown={stopProp}
+                  >
+                    {task.tags && task.tags.length > 0 ? (
+                      <Badge variant="secondary" className="flex items-center gap-1 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100">
+                        <span>{task.tags[0]}</span>
+                        <ChevronDown className="h-3 w-3 text-gray-400" />
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="flex items-center gap-1 text-xs font-medium bg-gray-50 text-gray-400 hover:bg-gray-50">
+                        <span>Sem projeto</span>
+                        <ChevronDown className="h-3 w-3 text-gray-400" />
+                      </Badge>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-1" align="start" onClick={stopProp} onPointerDown={stopProp}>
+                  <div className="flex flex-col gap-0.5 max-h-60 overflow-y-auto">
+                    <button
+                      className={cn(
+                        "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
+                        (!task.tags || task.tags.length === 0) && "bg-gray-50 font-medium"
+                      )}
+                      onClick={() => handleProjectUpdate(null)}
+                    >
+                      <span className="text-gray-400">Sem projeto</span>
+                      {(!task.tags || task.tags.length === 0) && <Check className="h-3 w-3 text-green-600" />}
+                    </button>
+                    {resolvedTags.map((tag) => {
+                      const isSelected = task.tags?.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          className={cn(
+                            "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
+                            isSelected && "bg-gray-50 font-medium"
+                          )}
+                          onClick={() => handleProjectUpdate(isSelected ? null : tag)}
+                        >
+                          <span>{tag}</span>
+                          {isSelected && <Check className="h-3 w-3 text-green-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             ) : (
-              <Badge variant="secondary" className="text-xs font-medium bg-gray-50 text-gray-400 hover:bg-gray-50 flex-shrink-0">
-                Sem projeto
-              </Badge>
+              task.tags && task.tags.length > 0 ? (
+                <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
+                  {task.tags[0]}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs font-medium bg-gray-50 text-gray-400 hover:bg-gray-50 flex-shrink-0">
+                  Sem projeto
+                </Badge>
+              )
             )
           ) : showWorkspaceBadge && workspaceName ? (
             <Badge variant="secondary" className="text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-100 flex-shrink-0">
@@ -747,7 +892,8 @@ export const MyTaskRowHome = memo(
       prev.onTaskDeleted === next.onTaskDeleted &&
       prev.onTaskUpdatedOptimistic === next.onTaskUpdatedOptimistic &&
       prev.onTaskDeletedOptimistic === next.onTaskDeletedOptimistic &&
-      prev.onTaskDuplicatedOptimistic === next.onTaskDuplicatedOptimistic
+      prev.onTaskDuplicatedOptimistic === next.onTaskDuplicatedOptimistic &&
+      prev.allowInlineTitleEdit === next.allowInlineTitleEdit
     );
   }
 );

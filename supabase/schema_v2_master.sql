@@ -102,11 +102,13 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     workspace_id UUID REFERENCES public.workspaces(id) ON DELETE CASCADE NOT NULL,
     related_task_id UUID REFERENCES public.tasks(id) ON DELETE SET NULL,
     description TEXT NOT NULL,
+    counterparty_name TEXT,
     amount DECIMAL(10, 2) NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     category TEXT DEFAULT 'Geral',
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'scheduled', 'cancelled')),
-    due_date DATE DEFAULT CURRENT_DATE,
+    is_recurring BOOLEAN DEFAULT false,
+    due_date DATE,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -167,6 +169,9 @@ CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_id ON public.workspac
 -- Índices para transactions
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace_id ON public.transactions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_due_date ON public.transactions(due_date);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_created_at_null_due
+  ON public.transactions(workspace_id, created_at)
+  WHERE due_date IS NULL;
 
 -- Índices para outras tabelas
 CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON public.task_comments(task_id);

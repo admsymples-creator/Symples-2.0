@@ -96,7 +96,7 @@ const STATUS_COLOR_MAP: Record<string, string> = {
     "Em progresso": "#3b82f6",
     "Revisão": "#f59e0b",
     "Correção": "#ef4444",
-    "Bloqueado": "#a855f7",
+    "Bloqueado": "#ef4444",
     "Finalizado": "#22c55e",
 };
 
@@ -165,6 +165,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     // Ler tag da URL para filtro de projeto (decodificar se presente)
     const tagParam = searchParams.get("tag");
     const tagFilter = tagParam ? decodeURIComponent(tagParam) : null;
+    const searchParam = searchParams.get("search");
+    const decodedSearch = searchParam ? decodeURIComponent(searchParam) : "";
 
     // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
     const initialViewOption = getInitialViewOption(searchParams.get("group"), !!tagFilter);
@@ -182,7 +184,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const [activeTask, setActiveTask] = useState<Task | null>(null);
     const [taskDetails, setTaskDetails] = useState<any>(null);
     const [isLoadingTaskDetails, setIsLoadingTaskDetails] = useState(false);
-    const [searchQuery, setSearchQuery] = useState("");
+    const [searchQuery, setSearchQuery] = useState(decodedSearch);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [calendarControls, setCalendarControls] = useState<{
         handlePrev: () => void;
@@ -272,10 +274,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const mapTaskFromDB = (task: TaskFromDB | TaskWithDetails): Task => {
         // Extrair tags do origin_context se existir
         const tags: string[] = [];
-        if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context && Array.isArray((task.origin_context as any).tags)) {
-            tags.push(...(task.origin_context as any).tags);
-        } else if ((task as any).tags && Array.isArray((task as any).tags)) {
+        if ((task as any).tags && Array.isArray((task as any).tags)) {
             tags.push(...(task as any).tags);
+        } else if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context && Array.isArray((task.origin_context as any).tags)) {
+            tags.push(...(task.origin_context as any).tags);
         }
 
         // Mapear assignees - usar array assignees se dispon├¡vel (inclui task_members), sen├úo usar assignee
@@ -416,6 +418,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             router.refresh();
         }
     }, [tagFilter, router]);
+
+    useEffect(() => {
+        if (decodedSearch !== searchQuery) {
+            setSearchQuery(decodedSearch);
+        }
+    }, [decodedSearch]);
 
     // ├ó┼ôÔÇª CORRE├âÔÇí├âãÆO: Compara├â┬º├â┬úo profunda baseada em IDs para evitar loops infinitos
     // Compara apenas os IDs das tarefas, n├â┬úo as refer├â┬¬ncias dos arrays
@@ -676,8 +684,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         groupId?: string | null;
         workspaceId?: string | null;
         tags?: string[];
+        position?: number;
         isPending?: boolean; // ? Marca se est├í sendo criada (para mostrar skeleton)
     }) => {
+        const resolvedPosition = typeof taskData.position === "number" ? taskData.position : undefined;
         const newTask: Task = {
             id: taskData.id,
             title: taskData.title,
@@ -697,7 +707,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             } : undefined,
             hasComments: false,
             commentCount: 0,
-            position: undefined,
+            position: resolvedPosition,
             isPending: taskData.isPending ?? true, // ? Por padr├úo, tarefas otimistas est├úo pending
         };
 
@@ -719,7 +729,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
                 const taskWithPosition = {
                     ...newTask,
-                    position: maxPosition + 1000 // Adicionar no final da lista/grupo
+                    position: resolvedPosition ?? (maxPosition + 1000) // Adicionar no final da lista/grupo
                 };
 
                 // Adicionar no final do array completo (a ordena├º├úo ser├í reaplicada)
@@ -731,6 +741,18 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             }
         });
     }, [availableGroups, sortBy, viewOption]); // ? Adicionar sortBy e viewOption nas depend├¬ncias
+
+    const getNextPosition = useCallback((groupId?: string | null) => {
+        const allTasks = localTasksRef.current;
+        const tasksInSameGroup = viewOption === "group" && groupId
+            ? allTasks.filter(t => (t.group?.id || null) === groupId)
+            : allTasks;
+        const maxPosition = tasksInSameGroup.length > 0
+            ? Math.max(...tasksInSameGroup.map(t => t.position ?? 0))
+            : 0;
+
+        return maxPosition + 1000;
+    }, [viewOption]);
 
     // ? Optimistic Delete: Remove tarefa instantaneamente do estado local
     const handleOptimisticDelete = useCallback((taskId: string | number) => {
@@ -811,6 +833,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 ? (groupId === "inbox" || groupId === "Inbox" ? [] : [groupId])
                 : undefined;
         const finalTags = tags || projectTags || (tagFilter ? [tagFilter] : []);
+        const nextPosition = getNextPosition(finalGroupId);
 
         handleTaskCreatedOptimistic({
             id: tempId,
@@ -826,6 +849,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             groupId: finalGroupId,
             workspaceId: effectiveWorkspaceId || null,
             tags: finalTags,
+            position: nextPosition,
         });
 
         try {
@@ -839,6 +863,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 workspace_id: effectiveWorkspaceId || null,
                 group_id: finalGroupId,
                 tags: finalTags.length > 0 ? finalTags : undefined,
+                position: nextPosition,
             });
 
             if (result.success && 'data' in result && result.data) {
@@ -875,7 +900,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             console.error("Erro ao criar tarefa:", error);
             toast.error("Erro ao criar tarefa");
         }
-    }, [viewOption, effectiveWorkspaceId, activeTab, router, workspaceMembers, handleTaskCreatedOptimistic, availableGroups, tagFilter]);
+    }, [viewOption, effectiveWorkspaceId, activeTab, router, workspaceMembers, handleTaskCreatedOptimistic, availableGroups, tagFilter, getNextPosition]);
 
     // Handler para adicionar tarefa no kanban (TaskBoard) com Optimistic UI
     // Reutiliza a mesma l├│gica do handleAddTaskToGroup
@@ -1391,7 +1416,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             // ? Tamb├®m atualizar assigneeId para manter consist├¬ncia
             localUpdates.assigneeId = updates.assignees[0]?.id || null;
         }
-        if (updates.tags) localUpdates.tags = updates.tags;
+        if (updates.tags !== undefined) localUpdates.tags = updates.tags;
         if (updates.group) localUpdates.group = updates.group;
 
         updateLocalTask(taskId, localUpdates);
@@ -3184,6 +3209,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                     title={group.title}
                                                                     tasks={group.tasks}
                                                                     groupColor={group.groupColor || groupColors[group.id]}
+                                                                    workspaceId={effectiveWorkspaceId || null}
                                                                     onTaskClick={handleTaskClick}
                                                                     isDragDisabled={isDragDisabled}
                                                                     onTaskUpdated={handleTaskUpdated}
@@ -3251,6 +3277,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                 title={group.title}
                                                                 tasks={group.tasks}
                                                                 groupColor={group.groupColor || groupColors[group.id]}
+                                                                workspaceId={effectiveWorkspaceId || null}
                                                                 onTaskClick={handleTaskClick}
                                                                 isDragDisabled={isDragDisabled}
                                                                 onTaskUpdated={handleTaskUpdated}

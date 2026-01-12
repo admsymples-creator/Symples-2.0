@@ -6,6 +6,49 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-11 10:17 - Fix RLS workspace em producao
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Documentacao do fix de RLS para criacao de workspace
+- Guia atualizado com nota sobre erro na conta agency em prod.
+- Reforco de validacao do projeto PROD correto ao executar o script.
+
+### 2. O que esta sendo trabalhado no momento
+
+- Aplicacao do script de RLS em producao.
+
+### 3. Proximos passos imediatos
+
+- Executar `supabase/MIGRATION_FIX_WORKSPACE_RLS.sql` no Supabase PROD e retestar criacao.
+
+---
+
+## 2026-01-11 10:10 - Home e Tasks: status bloqueado e progresso total
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Status "Bloqueado" com cor correta na pagina de tarefas
+- Ajustado mapeamento de cor para "Bloqueado" (agora vermelho) na pagina de tarefas.
+
+#### - Home: remoçao de edicao inline no card "Meu trabalho"
+- Ediçao inline do titulo desativada apenas no card "Meu trabalho" para evitar clique acidental.
+
+#### - Home: barra de progresso total em workspace/projeto
+- Adicionada barra de progresso total abaixo do progresso semanal.
+- Progresso total usa verde mais claro e menos saturado que o semanal.
+- Novos totais agregados para workspaces e projetos.
+
+### 2. O que esta sendo trabalhado no momento
+
+- Ajustes finais e validaçao visual em ambiente de preview.
+
+### 3. Proximos passos imediatos
+
+- Validar cores e percentuais na Home e Tasks.
+
+---
+
 ## 2026-01-05 08:00 - Kanban DnD e Agrupamento por Projeto
 
 ### 1. Melhorias, bugs e features implementadas em preview

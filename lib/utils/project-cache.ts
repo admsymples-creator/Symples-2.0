@@ -3,7 +3,7 @@
  * Evita recarregamentos desnecessários quando volta para a home
  */
 
-type ProjectStats = Array<{ tag: string; pendingCount: number; totalCount: number }>;
+type ProjectStats = Array<{ tag: string; pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>;
 type ProjectIcons = Map<string, string>;
 
 interface CachedProjectData {
@@ -64,6 +64,7 @@ export function clearProjectCache(workspaceId: string): void {
 export function clearAllProjectCache(): void {
   projectCache.clear();
 }
+
 
 
 

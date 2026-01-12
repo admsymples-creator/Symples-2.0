@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, startTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Plus, ChevronsUpDown, Calendar, Folder, Users, ChevronDown, Search } from "lucide-react";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Plus, ChevronsUpDown, Calendar, Folder, Users, ChevronDown, Search, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
 import { getWorkspaceTags } from "@/lib/actions/tasks";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
-import { setProjectIcon, getProjectIcons } from "@/lib/actions/projects";
+import { setProjectIcon, getProjectIcons, renameProjectTag, deleteProjectTag, getProjectTaskCount } from "@/lib/actions/projects";
 import { clearProjectCache } from "@/lib/utils/project-cache";
 import { SidebarWorkspaceSwitcher } from "@/components/layout/SidebarWorkspaceSwitcher";
 import dynamic from "next/dynamic";
@@ -221,7 +221,7 @@ function ToggleItemView({ label, icon, isActive, isCollapsed, isOpen, onToggle, 
 }
 
 // Componente otimizado para projetos com navegação rápida e prefetch - Memoizado
-const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, isOpen, onToggle }: {
+const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, isOpen, onToggle, menu }: {
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     href: string;
@@ -229,6 +229,7 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
     isCollapsed: boolean;
     isOpen: boolean;
     onToggle: () => void;
+    menu?: React.ReactNode;
 }) {
     const Icon = icon;
     const router = useRouter();
@@ -274,7 +275,14 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
                 {label}
             </span>
             {!isCollapsed && (
-                <ChevronDown className={cn("ml-auto w-4 h-4 text-gray-400 transition-transform", !isOpen && "-rotate-90")} />
+                <span className="ml-auto flex items-center gap-1">
+                    {menu && (
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            {menu}
+                        </span>
+                    )}
+                    <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", !isOpen && "-rotate-90")} />
+                </span>
             )}
         </button>
     );
@@ -300,7 +308,8 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
         prevProps.href === nextProps.href &&
         prevProps.isActive === nextProps.isActive &&
         prevProps.isCollapsed === nextProps.isCollapsed &&
-        prevProps.isOpen === nextProps.isOpen
+        prevProps.isOpen === nextProps.isOpen &&
+        prevProps.menu === nextProps.menu
     );
 });
 
@@ -318,6 +327,14 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [selectedIcon, setSelectedIcon] = useState<string>("Folder");
+    const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+    const [editProjectName, setEditProjectName] = useState("");
+    const [editProjectOriginalName, setEditProjectOriginalName] = useState<string | null>(null);
+    const [editProjectIcon, setEditProjectIcon] = useState<string>("Folder");
+    const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
+    const [deleteProjectName, setDeleteProjectName] = useState<string | null>(null);
+    const [deleteProjectCount, setDeleteProjectCount] = useState<number>(0);
+    const [isDeleteProjectLoading, setIsDeleteProjectLoading] = useState(false);
     const [projectIcons, setProjectIcons] = useState<Map<string, string>>(() => initialProjectsIcons || new Map());
     const workspaceTagsCache = useRef<Map<string, { tags: string[]; ts: number }>>(new Map());
     const projectIconsCache = useRef<Map<string, { icons: Map<string, string>; ts: number }>>(new Map());
@@ -697,6 +714,122 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         router.push(tagHref);
     }, [newProjectName, workspaceTags, workspacePrefix, router, activeWorkspaceId, selectedIcon]);
 
+    const openEditProject = useCallback((tag: string) => {
+        setEditProjectOriginalName(tag);
+        setEditProjectName(tag);
+        setEditProjectIcon(projectIcons.get(tag) || "Folder");
+        setIsEditProjectOpen(true);
+    }, [projectIcons]);
+
+    const handleEditProject = useCallback(async () => {
+        if (!activeWorkspaceId || !editProjectOriginalName) return;
+        const nextName = editProjectName.trim();
+        if (!nextName) return;
+
+        if (nextName !== editProjectOriginalName && workspaceTags.includes(nextName)) {
+            alert("Este projeto já existe!");
+            return;
+        }
+
+        if (nextName !== editProjectOriginalName) {
+            const renameResult = await renameProjectTag(activeWorkspaceId, editProjectOriginalName, nextName);
+            if (!renameResult.success) {
+                alert(renameResult.error || "Erro ao renomear projeto.");
+                return;
+            }
+        }
+
+        const iconResult = await setProjectIcon(activeWorkspaceId, nextName, editProjectIcon);
+        if (!iconResult.success) {
+            alert(iconResult.error || "Erro ao atualizar ícone do projeto.");
+            return;
+        }
+
+        const updatedTags = workspaceTags.map((tag) => (tag === editProjectOriginalName ? nextName : tag));
+        setWorkspaceTags(updatedTags);
+        workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
+
+        setOpenProjectTags((prev) => {
+            if (!(editProjectOriginalName in prev)) return prev;
+            const next = { ...prev };
+            delete next[editProjectOriginalName];
+            next[nextName] = prev[editProjectOriginalName];
+            return next;
+        });
+
+        setProjectIcons((prev) => {
+            const next = new Map(prev);
+            next.delete(editProjectOriginalName);
+            next.set(nextName, editProjectIcon);
+            projectIconsCache.current.set(activeWorkspaceId, { icons: next, ts: Date.now() });
+            return next;
+        });
+
+        clearProjectCache(activeWorkspaceId);
+
+        if (isTagActive(editProjectOriginalName)) {
+            const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(nextName)}`;
+            router.push(tagHref);
+        }
+
+        setIsEditProjectOpen(false);
+        setEditProjectName("");
+        setEditProjectOriginalName(null);
+        setEditProjectIcon("Folder");
+    }, [activeWorkspaceId, editProjectOriginalName, editProjectName, editProjectIcon, workspaceTags, workspacePrefix, router, isTagActive]);
+
+    const openDeleteProject = useCallback((tag: string) => {
+        if (!activeWorkspaceId) return;
+        setDeleteProjectName(tag);
+        setIsDeleteProjectOpen(true);
+        setIsDeleteProjectLoading(true);
+        getProjectTaskCount(activeWorkspaceId, tag)
+            .then((count) => {
+                setDeleteProjectCount(count);
+            })
+            .finally(() => {
+                setIsDeleteProjectLoading(false);
+            });
+    }, [activeWorkspaceId]);
+
+    const handleDeleteProject = useCallback(async () => {
+        if (!activeWorkspaceId || !deleteProjectName) return;
+
+        const tag = deleteProjectName;
+        const deleteResult = await deleteProjectTag(activeWorkspaceId, tag);
+        if (!deleteResult.success) {
+            alert(deleteResult.error || "Erro ao excluir projeto.");
+            return;
+        }
+
+        const updatedTags = workspaceTags.filter((item) => item !== tag);
+        setWorkspaceTags(updatedTags);
+        workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
+
+        setOpenProjectTags((prev) => {
+            if (!(tag in prev)) return prev;
+            const next = { ...prev };
+            delete next[tag];
+            return next;
+        });
+
+        setProjectIcons((prev) => {
+            const next = new Map(prev);
+            next.delete(tag);
+            projectIconsCache.current.set(activeWorkspaceId, { icons: next, ts: Date.now() });
+            return next;
+        });
+
+        clearProjectCache(activeWorkspaceId);
+
+        if (isTagActive(tag)) {
+            router.push(`${workspacePrefix}/tasks`);
+        }
+        setIsDeleteProjectOpen(false);
+        setDeleteProjectName(null);
+        setDeleteProjectCount(0);
+    }, [activeWorkspaceId, deleteProjectName, workspaceTags, workspacePrefix, router, isTagActive]);
+
     return (
         <aside
             className={cn(
@@ -715,7 +848,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             />
 
             {/* Navigation */}
-            <nav className="flex-1 overflow-y-auto p-4 overflow-x-hidden">
+            <nav className="flex-1 overflow-hidden p-4 overflow-x-hidden flex flex-col">
                 {/* Global Search */}
                 <div className={cn("mb-6", isCollapsed && "flex justify-center")}>
                     {isCollapsed ? (
@@ -767,7 +900,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                 </div>
 
                 {showProjectsSection && (
-                    <div className="mb-2">
+                    <div className="mb-2 flex-1 min-h-0 flex flex-col">
                         <div className={cn("mb-2", isCollapsed ? "flex justify-center" : "px-3")}>
                             {isCollapsed ? (
                                 <Tooltip>
@@ -813,7 +946,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                             )}
                         </div>
                         {isProjectsOpen && (
-                            <ul className="space-y-1">
+                            <ul className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300">
                                 {workspaceTags.length === 0 ? (
                                     <li className={cn(!isCollapsed && "px-3 py-2 text-xs text-gray-400")}>
                                         {!isCollapsed && "Nenhum projeto ainda"}
@@ -825,6 +958,47 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                         const isTagCurrentlyActive = isTagActive(tag);
                                         const iconName = projectIcons.get(tag) || "Folder";
                                         const ProjectIcon = getIconComponent(iconName);
+                                        const projectMenu = (
+                                            <DropdownMenu modal={false}>
+                                            <DropdownMenuTrigger asChild>
+                                                <span
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    className="h-6 w-6 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50 inline-flex items-center justify-center"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                    }}
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation();
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter" || e.key === " ") {
+                                                            e.stopPropagation();
+                                                        }
+                                                    }}
+                                                >
+                                                    <MoreHorizontal className="w-4 h-4" />
+                                                </span>
+                                            </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-44">
+                                                    <DropdownMenuItem
+                                                        onClick={() => openEditProject(tag)}
+                                                        className="cursor-pointer"
+                                                    >
+                                                        <Pencil className="w-4 h-4 mr-2 text-gray-500" />
+                                                        Editar projeto
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        onClick={() => openDeleteProject(tag)}
+                                                        className="cursor-pointer text-red-600 focus:text-red-600"
+                                                    >
+                                                        <Trash2 className="w-4 h-4 mr-2" />
+                                                        Excluir projeto
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        );
 
                                         return (
                                             <li key={tag} className={cn(!isCollapsed && "pl-2")}>
@@ -836,6 +1010,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                                     isCollapsed={isCollapsed}
                                                     isOpen={isTagOpen}
                                                     onToggle={() => setOpenProjectTags(prev => ({ ...prev, [tag]: !prev[tag] }))}
+                                                    menu={projectMenu}
                                                 />
                                                 {isTagOpen && !isCollapsed && (
                                                     <ul className="pl-8">
@@ -944,6 +1119,106 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                             disabled={!newProjectName.trim()}
                         >
                             Criar Projeto
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Modal de Editar Projeto */}
+            <Dialog open={isEditProjectOpen} onOpenChange={setIsEditProjectOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Editar Projeto</DialogTitle>
+                        <DialogDescription>
+                            Atualize o nome e o ícone do projeto.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-project-name">Nome do Projeto</Label>
+                            <Input
+                                id="edit-project-name"
+                                value={editProjectName}
+                                onChange={(e) => setEditProjectName(e.target.value)}
+                                placeholder="Ex: Coca-Cola, Site Redesign..."
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && editProjectName.trim()) {
+                                        handleEditProject();
+                                    }
+                                }}
+                                autoFocus
+                            />
+                        </div>
+                        <IconPicker
+                            selectedIcon={editProjectIcon}
+                            onIconSelect={setEditProjectIcon}
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setIsEditProjectOpen(false);
+                                setEditProjectName("");
+                                setEditProjectOriginalName(null);
+                                setEditProjectIcon("Folder");
+                            }}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            onClick={handleEditProject}
+                            disabled={!editProjectName.trim()}
+                        >
+                            Salvar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Modal de Excluir Projeto */}
+            <Dialog open={isDeleteProjectOpen} onOpenChange={setIsDeleteProjectOpen}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <DialogTitle>Excluir projeto</DialogTitle>
+                        <DialogDescription>
+                            {deleteProjectName ? `Você está prestes a excluir "${deleteProjectName}".` : "Você está prestes a excluir este projeto."}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="text-sm text-gray-600 space-y-2">
+                        {isDeleteProjectLoading ? (
+                            <div className="flex items-center gap-2 text-gray-500">
+                                <span className="h-3 w-3 rounded-full border border-gray-300 border-t-transparent animate-spin" />
+                                Carregando tarefas...
+                            </div>
+                        ) : (
+                            <p>
+                                {deleteProjectCount === 0
+                                    ? "Nenhuma tarefa será afetada."
+                                    : `${deleteProjectCount} ${deleteProjectCount === 1 ? "tarefa ficará" : "tarefas ficarão"} sem projeto.`}
+                            </p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                            As tarefas permanecem, apenas a tag do projeto será removida.
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setIsDeleteProjectOpen(false);
+                                setDeleteProjectName(null);
+                                setDeleteProjectCount(0);
+                            }}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteProject}
+                            disabled={!deleteProjectName}
+                        >
+                            Excluir
                         </Button>
                     </DialogFooter>
                 </DialogContent>
