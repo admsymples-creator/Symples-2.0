@@ -28,6 +28,8 @@ export interface TransactionData {
   status: "paid" | "pending";
   is_recurring: boolean;
   counterparty_name?: string | null;
+  related_task_id?: string | null;
+  client_id?: string | null;
   workspace_id?: string;
 }
 
@@ -97,6 +99,8 @@ export async function createTransaction(data: TransactionData) {
       workspace_id: workspaceId,
       is_recurring: data.is_recurring,
       counterparty_name: data.counterparty_name || null,
+      related_task_id: data.related_task_id || null,
+      client_id: data.client_id || null,
       created_at: data.date.toISOString(), // Data da transação (pode ser passada)
     };
 
@@ -275,6 +279,7 @@ export const getTransactions = cache(async (filters?: {
   endDate?: string;
   workspaceId?: string;
   isRecurring?: boolean;
+  relatedTaskId?: string;
 }) => {
   const perfStart = perfNow();
   const supabase = await createServerActionClient();
@@ -318,7 +323,7 @@ export const getTransactions = cache(async (filters?: {
 
   let query = (supabase as any)
     .from("transactions")
-    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name")
+    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,client:clients(name)")
     .eq("workspace_id", effectiveWorkspaceId)
     .order("due_date", { ascending: false, nullsLast: true })
     .order("created_at", { ascending: false });
@@ -341,6 +346,10 @@ export const getTransactions = cache(async (filters?: {
     query = query.eq("is_recurring", filters.isRecurring);
   }
 
+  if (filters?.relatedTaskId) {
+    query = query.eq("related_task_id", filters.relatedTaskId);
+  }
+
   if (filters?.limit) {
     query = query.limit(filters.limit);
   }
@@ -359,6 +368,84 @@ export const getTransactions = cache(async (filters?: {
   return data;
 });
 
+export async function getTransactionsByTask(taskId: string, workspaceId: string) {
+  try {
+    const supabase = await createServerActionClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return [];
+
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership) return [];
+
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,client:clients(name)")
+      .eq("workspace_id", workspaceId)
+      .eq("related_task_id", taskId)
+      .order("due_date", { ascending: false, nullsLast: true })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao buscar transações da tarefa:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Erro ao buscar transações da tarefa:", error);
+    return [];
+  }
+}
+
+export async function createClient(params: { workspaceId: string; name: string; email?: string | null; phone?: string | null }) {
+  try {
+    const supabase = await createServerActionClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      throw new Error("Usuário não autenticado");
+    }
+
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", params.workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership) {
+      throw new Error("Você não tem permissão para criar clientes neste workspace.");
+    }
+
+    const { data, error } = await supabase
+      .from("clients")
+      .insert({
+        workspace_id: params.workspaceId,
+        name: params.name.trim(),
+        email: params.email || null,
+        phone: params.phone || null,
+        created_by: user.id,
+      })
+      .select("id,name")
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return { success: true, client: data };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
 export interface UpdateTransactionData {
   amount?: number;
   type?: "income" | "expense";
@@ -369,6 +456,8 @@ export interface UpdateTransactionData {
   status?: "paid" | "pending" | "scheduled" | "cancelled";
   is_recurring?: boolean;
   counterparty_name?: string | null;
+  related_task_id?: string | null;
+  client_id?: string | null;
 }
 
 export async function updateTransaction(id: string, data: UpdateTransactionData) {
@@ -414,6 +503,8 @@ export async function updateTransaction(id: string, data: UpdateTransactionData)
     if (data.status !== undefined) payload.status = data.status;
     if (data.is_recurring !== undefined) payload.is_recurring = data.is_recurring;
     if (data.counterparty_name !== undefined) payload.counterparty_name = data.counterparty_name || null;
+    if (data.related_task_id !== undefined) payload.related_task_id = data.related_task_id || null;
+    if (data.client_id !== undefined) payload.client_id = data.client_id || null;
 
     const { error } = await supabase
       .from("transactions")

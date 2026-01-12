@@ -33,6 +33,9 @@ type FinanceTransaction = {
   type: "income" | "expense";
   is_recurring: boolean;
   counterparty_name?: string | null;
+  related_task_id?: string | null;
+  client_id?: string | null;
+  client_name?: string | null;
 };
 
 type FinanceMetrics = {
@@ -154,6 +157,9 @@ const mapTransactions = (transactions: any[]): FinanceTransaction[] => {
       type: tx.type as "income" | "expense",
       is_recurring: tx.is_recurring || false,
       counterparty_name: tx.counterparty_name || null,
+      related_task_id: tx.related_task_id || null,
+      client_id: tx.client_id || null,
+      client_name: tx.client?.name || null,
     };
   });
 };

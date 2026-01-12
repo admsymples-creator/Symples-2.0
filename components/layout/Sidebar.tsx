@@ -49,6 +49,7 @@ const managementItemsBase: NavItem[] = [
     { label: "Planner", href: "/planner", icon: Calendar },
     { label: "Tarefas", href: "/tasks", icon: CheckSquare },
     { label: "Financeiro", href: "/finance", icon: DollarSign },
+    { label: "Clientes", href: "/clients", icon: Building2 },
     { label: "Time", href: "/team", icon: Users },
 ];
 
@@ -611,7 +612,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             // Remover query params do href para comparação
             const hrefWithoutQuery = href.split("?")[0];
 
-            const workspaceTargets = ["/home", "/planner", "/finance", "/team", "/tasks"];
+            const workspaceTargets = ["/home", "/planner", "/finance", "/clients", "/team", "/tasks"];
             const match = workspaceTargets.find((target) => hrefWithoutQuery.endsWith(target));
             if (match) {
                 return isWorkspaceScoped(match.slice(1));

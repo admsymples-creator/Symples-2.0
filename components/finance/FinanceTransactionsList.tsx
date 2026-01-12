@@ -23,6 +23,7 @@ interface Transaction {
   type: "income" | "expense";
   is_recurring?: boolean;
   counterparty_name?: string | null;
+  client_name?: string | null;
 }
 
 interface FinanceTransactionsListProps {
@@ -139,9 +140,9 @@ export function FinanceTransactionsList({
                       )}
                     </div>
                     <span className="font-medium text-sm text-gray-900">{item.description}</span>
-                    {item.counterparty_name && (
+                    {(item.client_name || item.counterparty_name) && (
                       <span className="text-xs text-gray-500">
-                        {type === "income" ? "Cliente" : "Fornecedor"}: {item.counterparty_name}
+                        {type === "income" ? "Cliente" : "Fornecedor"}: {item.client_name || item.counterparty_name}
                       </span>
                     )}
                   </div>

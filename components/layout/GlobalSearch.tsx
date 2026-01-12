@@ -250,6 +250,10 @@ export function GlobalSearch() {
               <FileText className="mr-2 h-4 w-4" />
               <span>Financeiro</span>
             </CommandItem>
+            <CommandItem value="clientes" onSelect={() => runCommand(() => router.push(`${workspacePrefix}/clients`))}>
+              <Building2 className="mr-2 h-4 w-4" />
+              <span>Clientes</span>
+            </CommandItem>
              <CommandItem value="configuracoes" onSelect={() => runCommand(() => router.push(`${workspacePrefix}/settings`))}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Configurações</span>

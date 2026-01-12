@@ -51,6 +51,7 @@ export async function FinanceContent({
       type: t.type as "income" | "expense",
       is_recurring: t.is_recurring || false,
       counterparty_name: t.counterparty_name || null,
+      client_name: t.client?.name || null,
     };
 
     if (tx.type === "income") {

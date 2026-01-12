@@ -60,6 +60,7 @@ import {
     Lock,
     Square,
     AlertTriangle,
+    CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +100,8 @@ import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudio
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { CreateTransactionModal } from "@/components/finance/CreateTransactionModal";
+import { getTransactionsByTask } from "@/lib/actions/finance";
 
 // ------------------------------------------------------------------
 // Types
@@ -154,6 +157,18 @@ interface FileAttachment {
     type: "image" | "pdf" | "other";
     size: string;
     url?: string;
+}
+
+interface TaskPayment {
+    id: string;
+    amount: number;
+    status: "paid" | "pending" | "scheduled" | "cancelled";
+    type: "income" | "expense";
+    description: string;
+    due_date?: string | null;
+    created_at?: string | null;
+    counterparty_name?: string | null;
+    client_name?: string | null;
 }
 
 interface TaskDetailModalProps {
@@ -346,6 +361,19 @@ const formatActivityTimestamp = (iso: string) =>
         timeStyle: "medium",
     });
 
+const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+    }).format(value);
+
+const formatPaymentDate = (value?: string | null) => {
+    if (!value) return "Sem vencimento";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Sem vencimento";
+    return date.toLocaleDateString("pt-BR");
+};
+
 const mapCommentToActivityBase = (
     comment: any,
     currentUserId: string | null,
@@ -447,6 +475,26 @@ export function TaskDetailModal({
     const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const saveStateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const titleSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const [payments, setPayments] = useState<TaskPayment[]>([]);
+    const [paymentsLoading, setPaymentsLoading] = useState(false);
+    const [paymentsLoaded, setPaymentsLoaded] = useState(false);
+    const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
+
+    // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
+    // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
+    // Não importa se task tem outros dados - sempre precisamos buscar do backend
+    const [isLoadingDetails, setIsLoadingDetails] = useState(() => {
+        if (!isCreateMode && task?.id) {
+            return true;
+        }
+        return false;
+    });
+    // CRÍTICO: currentTaskId deve começar como null, não como task?.id
+    // Só será definido quando os dados do backend forem carregados
+    const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+    // Estado de "pronto" - só fica true quando os dados básicos do backend foram carregados
+    const [isDataReady, setIsDataReady] = useState(false);
     // Usuário atual para padronizar exibição de comentários
     useEffect(() => {
         const supabase = createBrowserClient();
@@ -521,6 +569,54 @@ export function TaskDetailModal({
         }
     }, [open, task, isCreateMode, activeWorkspaceId]);
 
+    useEffect(() => {
+        if (!open) {
+            setCreatePaymentOpen(false);
+        }
+    }, [open]);
+
+    const loadPayments = useCallback(async (force = false) => {
+        if (!currentTaskId || !workspaceId || isCreateMode) return;
+        if (paymentsLoading) return;
+        if (paymentsLoaded && !force) return;
+        setPaymentsLoading(true);
+        try {
+            const data = await getTransactionsByTask(currentTaskId, workspaceId);
+            const mapped = (data || []).map((item: any) => ({
+                id: item.id,
+                amount: Number(item.amount) || 0,
+                status: (item.status || "pending") as TaskPayment["status"],
+                type: (item.type || "expense") as TaskPayment["type"],
+                description: item.description,
+                due_date: item.due_date || null,
+                created_at: item.created_at || null,
+                counterparty_name: item.counterparty_name || null,
+                client_name: item.client?.name || null,
+            }));
+            setPayments(mapped);
+            setPaymentsLoaded(true);
+        } catch (error) {
+            console.error("Erro ao carregar pagamentos:", error);
+            setPayments([]);
+        } finally {
+            setPaymentsLoading(false);
+        }
+    }, [currentTaskId, workspaceId, isCreateMode, paymentsLoading, paymentsLoaded]);
+
+    useEffect(() => {
+        if (!open || !currentTaskId || isCreateMode) {
+            setPayments([]);
+            setPaymentsLoaded(false);
+            return;
+        }
+        setPaymentsLoaded(false);
+    }, [open, currentTaskId, isCreateMode]);
+
+    useEffect(() => {
+        if (!open || !currentTaskId || !workspaceId || isCreateMode) return;
+        loadPayments();
+    }, [open, currentTaskId, workspaceId, isCreateMode, loadPayments]);
+
     const mapCommentToActivity = useCallback(
         (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
         [currentUserId, currentUserName]
@@ -556,23 +652,6 @@ export function TaskDetailModal({
             }
         };
     }, []);
-    // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
-    // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
-    // Não importa se task tem outros dados - sempre precisamos buscar do backend
-    const [isLoadingDetails, setIsLoadingDetails] = useState(() => {
-        // Se não é create mode e há um ID, SEMPRE começar em loading
-        if (!isCreateMode && task?.id) {
-            return true;
-        }
-        return false;
-    });
-    // CRÍTICO: currentTaskId deve começar como null, não como task?.id
-    // Isso força a verificação de dados carregados a funcionar corretamente
-    // Só será definido quando os dados do backend forem carregados
-    const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-    // Estado de "pronto" - só fica true quando os dados básicos do backend foram carregados
-    // Isso garante que o formulário nunca seja renderizado antes dos dados básicos estarem prontos
-    const [isDataReady, setIsDataReady] = useState(false);
     // Estados para carregamento progressivo de seções específicas
     const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
     const [isLoadingComments, setIsLoadingComments] = useState(false);
@@ -787,7 +866,7 @@ export function TaskDetailModal({
     const handleClose = useCallback(async (newOpen: boolean) => {
         if (!newOpen && open) {
             // Modal está sendo fechado - salvar automaticamente
-            
+
             if (isCreateMode) {
                 // Modo create: criar tarefa se houver título
                 if (title.trim() && !currentTaskId) {
@@ -826,7 +905,7 @@ export function TaskDetailModal({
                         toast.error("Erro ao criar tarefa");
                     } finally {
                         isCreatingRef.current = false;
-            hasSubmittedCreateRef.current = false;
+                        hasSubmittedCreateRef.current = false;
                     }
                 } else if (currentTaskId) {
                     // Tarefa já foi criada
@@ -881,7 +960,7 @@ export function TaskDetailModal({
                         return; // Não fechar modal se houver erro
                     }
                 }
-                
+
                 // Sempre mostrar toast de confirmação
                 toast.success("Tarefa salva com sucesso!");
             }
@@ -1305,10 +1384,10 @@ export function TaskDetailModal({
 
         // Optimistic UI: atualizar estado local imediatamente
         const previousMessage = previousActivity.message;
-        setActivities(prev => prev.map(act => 
-            act.id === editingCommentId 
-                ? { 
-                    ...act, 
+        setActivities(prev => prev.map(act =>
+            act.id === editingCommentId
+                ? {
+                    ...act,
                     message: trimmedText,
                     edited: true,
                     editedAt: new Date().toISOString()
@@ -1321,8 +1400,8 @@ export function TaskDetailModal({
             const result = await updateComment(editingCommentId, trimmedText);
             if (!result.success) {
                 // Rollback em caso de erro
-                setActivities(prev => prev.map(act => 
-                    act.id === editingCommentId 
+                setActivities(prev => prev.map(act =>
+                    act.id === editingCommentId
                         ? { ...act, message: previousMessage, edited: previousActivity.edited, editedAt: previousActivity.editedAt }
                         : act
                 ));
@@ -1337,8 +1416,8 @@ export function TaskDetailModal({
             }
         } catch (error) {
             // Rollback em caso de exceção
-            setActivities(prev => prev.map(act => 
-                act.id === editingCommentId 
+            setActivities(prev => prev.map(act =>
+                act.id === editingCommentId
                     ? { ...act, message: previousMessage, edited: previousActivity.edited, editedAt: previousActivity.editedAt }
                     : act
             ));
@@ -1362,10 +1441,10 @@ export function TaskDetailModal({
         if (!previousActivity) return;
 
         // Optimistic UI: marcar como deletado imediatamente
-        setActivities(prev => prev.map(act => 
-            act.id === activityId 
-                ? { 
-                    ...act, 
+        setActivities(prev => prev.map(act =>
+            act.id === activityId
+                ? {
+                    ...act,
                     message: "Esta mensagem foi removida",
                     deleted: true,
                     deletedAt: new Date().toISOString()
@@ -1378,10 +1457,10 @@ export function TaskDetailModal({
             const result = await deleteComment(activityId);
             if (!result.success) {
                 // Rollback em caso de erro
-                setActivities(prev => prev.map(act => 
-                    act.id === activityId 
-                        ? { 
-                            ...act, 
+                setActivities(prev => prev.map(act =>
+                    act.id === activityId
+                        ? {
+                            ...act,
                             message: previousActivity.message,
                             deleted: previousActivity.deleted,
                             deletedAt: previousActivity.deletedAt
@@ -1399,10 +1478,10 @@ export function TaskDetailModal({
             }
         } catch (error) {
             // Rollback em caso de exceção
-            setActivities(prev => prev.map(act => 
-                act.id === activityId 
-                    ? { 
-                        ...act, 
+            setActivities(prev => prev.map(act =>
+                act.id === activityId
+                    ? {
+                        ...act,
                         message: previousActivity.message,
                         deleted: previousActivity.deleted,
                         deletedAt: previousActivity.deletedAt
@@ -1574,7 +1653,7 @@ export function TaskDetailModal({
                                             {act.isCurrentUser && !act.deleted && act.type === "commented" && (
                                                 <>
                                                     {/* Gradiente da direita para esquerda no hover */}
-                                                    <div 
+                                                    <div
                                                         className={cn(
                                                             "absolute right-0 top-0 bottom-0 w-20 pointer-events-none opacity-0 group-hover/comment:opacity-100 transition-opacity duration-200",
                                                             "bg-gradient-to-l from-white via-white via-60% to-transparent"
@@ -2263,7 +2342,7 @@ export function TaskDetailModal({
                             if (result.success && result.data) {
                                 // Recarregar atividades do banco para garantir que está salvo
                                 void reloadActivities(currentTaskId);
-                    markSaved(true);
+                                markSaved(true);
 
                                 toast.success(`Áudio enviado (${finalDuration}s)`);
                                 invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
@@ -2785,7 +2864,7 @@ export function TaskDetailModal({
                                                                                 markSaved(false);
                                                                                 console.error("Erro ao salvar tags:", error);
                                                                             });
-                                                                    notifyHomeTasksUpdated();
+                                                                        notifyHomeTasksUpdated();
                                                                     }
                                                                 }}
                                                             >
@@ -2816,7 +2895,7 @@ export function TaskDetailModal({
                                                                                         markSaved(false);
                                                                                         console.error("Erro ao salvar tags:", error);
                                                                                     });
-                                                                            notifyHomeTasksUpdated();
+                                                                                notifyHomeTasksUpdated();
                                                                             }
                                                                         }}
                                                                     >
@@ -2906,7 +2985,7 @@ export function TaskDetailModal({
                                                         dangerouslySetInnerHTML={{ __html: linkifyHtml(description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>") }}
                                                     />
                                                     {/* Gradiente da direita para esquerda no hover */}
-                                                    <div 
+                                                    <div
                                                         className={cn(
                                                             "absolute right-0 top-0 bottom-0 w-24 pointer-events-none opacity-0 group-hover/description:opacity-100 transition-opacity duration-200",
                                                             "bg-gradient-to-l from-white via-white via-60% to-transparent"
@@ -3110,7 +3189,7 @@ export function TaskDetailModal({
                                                                         );
                                                                         // Recarregar atividades do banco
                                                                         void reloadActivities(currentTaskId);
-                    markSaved(true);
+                                                                        markSaved(true);
                                                                     } else {
                                                                         // ✅ REVERTER se falhar
                                                                         setSubTasks(oldSubtasks);
@@ -3142,6 +3221,77 @@ export function TaskDetailModal({
                                                 </Button>
                                             </div>
                                         </div>
+
+                                        {!isCreateMode && currentTaskId && (
+                                            <div className="mt-6">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <label className="text-xs font-medium text-gray-500 uppercase">Pagamentos</label>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8 gap-2"
+                                                        onClick={() => setCreatePaymentOpen(true)}
+                                                    >
+                                                        <CreditCard className="h-4 w-4" />
+                                                        Novo
+                                                    </Button>
+                                                </div>
+
+                                                {paymentsLoading ? (
+                                                    <div className="space-y-2">
+                                                        {[1, 2].map((item) => (
+                                                            <div key={item} className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+                                                        ))}
+                                                    </div>
+                                                ) : payments.length === 0 ? (
+                                                    <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
+                                                        Nenhum pagamento vinculado.
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        {payments.map((payment) => {
+                                                            const statusLabel = payment.status === "paid"
+                                                                ? "Pago"
+                                                                : payment.status === "scheduled"
+                                                                    ? "Agendado"
+                                                                    : payment.status === "cancelled"
+                                                                        ? "Cancelado"
+                                                                        : "Pendente";
+                                                            const statusStyle = payment.status === "paid"
+                                                                ? "bg-green-100 text-green-700"
+                                                                : payment.status === "scheduled"
+                                                                    ? "bg-blue-100 text-blue-700"
+                                                                    : payment.status === "cancelled"
+                                                                        ? "bg-red-100 text-red-700"
+                                                                        : "bg-gray-100 text-gray-700";
+                                                            const detailLabel = payment.client_name || payment.counterparty_name;
+                                                            return (
+                                                                <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                                                                            <span>{formatPaymentDate(payment.due_date || payment.created_at)}</span>
+                                                                            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", statusStyle)}>
+                                                                                {statusLabel}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-sm font-medium text-gray-900 truncate">{payment.description}</p>
+                                                                        {detailLabel && (
+                                                                            <p className="text-xs text-gray-500">Cliente: {detailLabel}</p>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className={cn(
+                                                                        "text-sm font-semibold",
+                                                                        payment.type === "income" ? "text-green-600" : "text-gray-900"
+                                                                    )}>
+                                                                        {payment.type === "income" ? "+" : "-"} {formatCurrency(payment.amount)}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </>
                                 )}
 
@@ -3340,6 +3490,14 @@ export function TaskDetailModal({
                     </DialogPrimitive.Content>
                 </DialogPortal>
             </Dialog>
+
+            <CreateTransactionModal
+                open={createPaymentOpen}
+                onOpenChange={setCreatePaymentOpen}
+                initialRelatedTask={currentTaskId ? { id: currentTaskId, title } : undefined}
+                initialWorkspaceId={workspaceId || undefined}
+                onCreated={() => loadPayments(true)}
+            />
 
             {/* Modal de Confirmação de Exclusão de Arquivo */}
             <ConfirmModal
