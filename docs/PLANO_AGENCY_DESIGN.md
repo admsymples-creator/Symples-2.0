@@ -63,3 +63,4 @@ Migracoes:
 
 Ultima atualizacao: 2026-01-05
 Status: Implementado (modelo hibrido)
+

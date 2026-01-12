@@ -6,6 +6,25 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-01-11 11:07 - Search global com autocomplete real
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### - Searchbar com sugestões reais de tarefas e projetos
+- Removidos itens mock (Recentes/Ações rápidas).
+- Autocomplete baseado em tarefas por titulo e tags de projeto no workspace ativo.
+- Navegação direta para tarefas com filtro por search e projetos via tag.
+
+### 2. O que esta sendo trabalhado no momento
+
+- Ajustes finos de UX do dialogo de busca.
+
+### 3. Proximos passos imediatos
+
+- Validar resultados com termos curtos e projetos sem tarefas.
+
+---
+
 ## 2026-01-11 10:17 - Fix RLS workspace em producao
 
 ### 1. Melhorias, bugs e features implementadas em preview

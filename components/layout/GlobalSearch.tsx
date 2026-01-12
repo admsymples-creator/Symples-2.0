@@ -81,7 +81,7 @@ export function GlobalSearch() {
             .neq("status", "archived")
             .ilike("title", `%${term}%`)
             .limit(6),
-          supabase
+          (supabase as any)
             .from("project_icons")
             .select("tag_name")
             .eq("workspace_id", activeWorkspaceId)
