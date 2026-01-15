@@ -54,6 +54,11 @@ export function OnboardingWizard() {
                     setMagicCode(result.magicCode);
                     setNewWorkspaceId(result.workspaceId || null);
                     setNewWorkspaceSlug(result.workspaceSlug || null);
+                    if (result.workspaceSlug || result.workspaceId) {
+                        const workspacePath = result.workspaceSlug || result.workspaceId;
+                        router.push(`/${workspacePath}/home`);
+                        return;
+                    }
                     setCurrentStep(2);
                 } else {
                     alert(result.error || "Erro ao criar workspace");

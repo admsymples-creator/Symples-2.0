@@ -165,7 +165,7 @@ function TaskRowComponent({
 
     // Lógica de Smart Triggers
     const isFocusActive = isNextSunday(dueDate);
-    const isUrgentActive = isToday(dueDate) || priority === "high" || priority === "urgent";
+    const isUrgentActive = !completed && (isToday(dueDate) || priority === "high" || priority === "urgent");
 
     // Handler para atualizar data
     const handleDateSelect = async (date: Date | null) => {
@@ -542,9 +542,10 @@ function TaskRowComponent({
                                 type="button"
                                 className={cn(
                                     "text-xs transition-colors hover:opacity-80",
-                                    dueDate && isToday(dueDate) && "text-red-500 font-medium",
-                                    dueDate && isOverdue && !isToday(dueDate) && "text-red-500 font-medium",
-                                    dueDate && !isToday(dueDate) && !isOverdue && "text-gray-400",
+                                    completed && "text-gray-400 font-normal",
+                                    !completed && dueDate && isToday(dueDate) && "text-red-500 font-medium",
+                                    !completed && dueDate && isOverdue && !isToday(dueDate) && "text-red-500 font-medium",
+                                    !completed && dueDate && !isToday(dueDate) && !isOverdue && "text-gray-400",
                                     !dueDate && "text-gray-300 hover:text-gray-500 cursor-pointer"
                                 )}
                             >

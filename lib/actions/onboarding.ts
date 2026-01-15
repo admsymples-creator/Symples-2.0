@@ -3,6 +3,7 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from 'next/cache'
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
+import { clearUserWorkspacesCache } from "@/lib/actions/user";
 
 export async function createWorkspace(formData: FormData) {
   const supabase = await createServerActionClient()
@@ -148,8 +149,13 @@ export async function createWorkspace(formData: FormData) {
     // Não retornamos erro aqui para não travar o fluxo, já que o workspace foi criado
   }
 
+  // Limpar cache para que o novo workspace apareça imediatamente apÇüs o redirect
+  await clearUserWorkspacesCache(user.id);
+
   // Revalidar o layout principal para atualizar a lista de workspaces
   revalidatePath('/', 'layout')
+  revalidatePath('/home');
+  revalidatePath(`/${workspace.slug}/home`);
 
   // 5. Retorno
   return {
