@@ -194,9 +194,11 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     return null;
   }
 
-  // Extrair tags do origin_context se existir
+  // Extrair tags da coluna tags (preferencial) ou do origin_context (fallback)
   let tags: string[] = [];
-  if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
+  if ((task as any).tags && Array.isArray((task as any).tags)) {
+    tags = (task as any).tags;
+  } else if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
     const contextTags = (task.origin_context as any).tags;
     if (Array.isArray(contextTags)) {
       tags = contextTags;

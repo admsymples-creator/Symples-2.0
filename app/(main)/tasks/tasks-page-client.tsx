@@ -1513,6 +1513,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 const label = STATUS_TO_LABEL[status as keyof typeof STATUS_TO_LABEL];
                 if (label) groups[label] = [];
             });
+        } else if (viewOption === "project") {
+            // Sempre inicializar Inbox no modo projeto
+            groups["Inbox"] = [];
         }
 
         filteredTasks.forEach((task) => {
@@ -1938,6 +1941,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             case "assignee":
                 const assigneeName = task.assignees?.[0]?.name;
                 return assigneeName ? assigneeName.trim() : "Sem respons├ível";
+            case "project":
+                return task.tags && task.tags.length > 0 ? task.tags[0] : "Inbox";
             default:
                 return "Inbox";
         }
