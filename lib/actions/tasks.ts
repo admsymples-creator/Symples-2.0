@@ -96,15 +96,15 @@ function transformTaskWithMembers(task: any): any {
     });
   }
 
-  // Extrair tags do origin_context ou da coluna tags
+  // Extrair tags da coluna tags (preferencial) ou do origin_context (fallback)
   let tags: string[] = [];
-  if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
+  if ((task as any).tags && Array.isArray((task as any).tags)) {
+    tags = (task as any).tags;
+  } else if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
     const contextTags = (task.origin_context as any).tags;
     if (Array.isArray(contextTags)) {
       tags = contextTags;
     }
-  } else if ((task as any).tags && Array.isArray((task as any).tags)) {
-    tags = (task as any).tags;
   }
 
   return {
@@ -1408,7 +1408,7 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
     return null;
   }
 
-  const cacheKey = `${user.id}:${workspaceSlug} `;
+  const cacheKey = `${user.id}:${workspaceSlug}`;
   const cached = readCache(workspaceIdBySlugCache, cacheKey);
   if (cached) {
     return cached.value;
@@ -1423,14 +1423,36 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
     workspaces.find((w) => w.id === workspaceSlug) ??
     null;
 
-  if (!matchedWorkspace) {
-    console.warn(`[getWorkspaceIdBySlug] Workspace não encontrado para slug: ${workspaceSlug} `);
-    writeCache(workspaceIdBySlugCache, cacheKey, null);
-    return null;
+  if (matchedWorkspace) {
+    writeCache(workspaceIdBySlugCache, cacheKey, matchedWorkspace.id);
+    return matchedWorkspace.id;
   }
 
-  writeCache(workspaceIdBySlugCache, cacheKey, matchedWorkspace.id);
-  return matchedWorkspace.id;
+  // Fallback: buscar direto no banco para evitar cache stale de workspaces
+  const { data: workspaceBySlug } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("slug", workspaceSlug)
+    .single();
+
+  const workspaceId = workspaceBySlug?.id || workspaceSlug;
+  if (workspaceId) {
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (membership?.workspace_id) {
+      writeCache(workspaceIdBySlugCache, cacheKey, membership.workspace_id);
+      return membership.workspace_id;
+    }
+  }
+
+  console.warn(`[getWorkspaceIdBySlug] Workspace não encontrado para slug: ${workspaceSlug}`);
+  writeCache(workspaceIdBySlugCache, cacheKey, null);
+  return null;
 }
 
 /**

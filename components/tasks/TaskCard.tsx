@@ -217,7 +217,9 @@ function TaskCardComponent({
                             <Calendar
                                 className={cn(
                                     "w-3 h-3",
-                                    isOverdue
+                                    completed
+                                        ? "text-gray-400"
+                                        : isOverdue
                                         ? "text-red-600"
                                         : isToday
                                         ? "text-green-600"
@@ -227,7 +229,9 @@ function TaskCardComponent({
                             <span
                                 className={cn(
                                     "text-[10px] font-medium",
-                                    isOverdue
+                                    completed
+                                        ? "text-gray-400"
+                                        : isOverdue
                                         ? "text-red-600"
                                         : isToday
                                         ? "text-green-600"

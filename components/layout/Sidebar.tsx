@@ -327,10 +327,12 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [selectedIcon, setSelectedIcon] = useState<string>("Folder");
+    const [isCreateProjectSaving, setIsCreateProjectSaving] = useState(false);
     const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
     const [editProjectName, setEditProjectName] = useState("");
     const [editProjectOriginalName, setEditProjectOriginalName] = useState<string | null>(null);
     const [editProjectIcon, setEditProjectIcon] = useState<string>("Folder");
+    const [isEditProjectSaving, setIsEditProjectSaving] = useState(false);
     const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
     const [deleteProjectName, setDeleteProjectName] = useState<string | null>(null);
     const [deleteProjectCount, setDeleteProjectCount] = useState<number>(0);
@@ -666,53 +668,73 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
 
     // Função para criar novo projeto
     const handleCreateProject = useCallback(async () => {
-        if (!newProjectName.trim() || !activeWorkspaceId) return;
+        if (!newProjectName.trim() || !activeWorkspaceId || isCreateProjectSaving) return;
 
         const projectName = newProjectName.trim();
 
-        // Verificar se já existe
+        // Verificar se ja existe
         if (workspaceTags.includes(projectName)) {
-            alert("Este projeto já existe!");
+            alert("Este projeto ja existe!");
             return;
         }
 
-        // Salvar ícone do projeto
+        setIsCreateProjectSaving(true);
+
+        // Salvar icone do projeto
         const iconResult = await setProjectIcon(activeWorkspaceId, projectName, selectedIcon);
         if (!iconResult.success) {
-            console.error("Erro ao salvar ícone do projeto:", iconResult.error);
+            console.error("Erro ao salvar icone do projeto:", iconResult.error);
             alert("Erro ao criar projeto. Tente novamente.");
+            setIsCreateProjectSaving(false);
             return;
         }
 
-        // Recarregar tags do workspace (agora inclui projetos sem tarefas)
-        try {
-            const updatedTags = await getWorkspaceTags(activeWorkspaceId);
-            setWorkspaceTags(updatedTags);
-            if (activeWorkspaceId) {
+        // Atualizacao otimista para deixar a UI imediata
+        const nextTags = workspaceTags.includes(projectName)
+            ? workspaceTags
+            : [...workspaceTags, projectName];
+        setWorkspaceTags(nextTags);
+        workspaceTagsCache.current.set(activeWorkspaceId, { tags: nextTags, ts: Date.now() });
+
+        setProjectIcons((prev) => {
+            const next = new Map(prev);
+            next.set(projectName, selectedIcon);
+            projectIconsCache.current.set(activeWorkspaceId, { icons: next, ts: Date.now() });
+            return next;
+        });
+
+        // Limpar cache de projetos para forcar recarregamento na home
+        clearProjectCache(activeWorkspaceId);
+
+        // Recarregar dados em background (nao bloquear UI)
+        void getWorkspaceTags(activeWorkspaceId)
+            .then((updatedTags) => {
+                setWorkspaceTags(updatedTags);
                 workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
-            }
+            })
+            .catch((error) => {
+                console.error("Erro ao recarregar tags:", error);
+            });
 
-            // Recarregar ícones
-            const updatedIcons = await getProjectIcons(activeWorkspaceId);
-            setProjectIcons(updatedIcons);
-
-            // Limpar cache de projetos para forçar recarregamento na home
-            if (activeWorkspaceId) {
-                clearProjectCache(activeWorkspaceId);
-            }
-        } catch (error) {
-            console.error("Erro ao recarregar tags:", error);
-        }
+        void getProjectIcons(activeWorkspaceId)
+            .then((updatedIcons) => {
+                setProjectIcons(updatedIcons);
+                projectIconsCache.current.set(activeWorkspaceId, { icons: updatedIcons, ts: Date.now() });
+            })
+            .catch((error) => {
+                console.error("Erro ao recarregar icones:", error);
+            });
 
         // Fechar modal e limpar input
         setIsCreateProjectOpen(false);
         setNewProjectName("");
         setSelectedIcon("Folder");
+        setIsCreateProjectSaving(false);
 
-        // Navegar para a página de tarefas com a tag
+        // Navegar para a pagina de tarefas com a tag
         const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(projectName)}`;
         router.push(tagHref);
-    }, [newProjectName, workspaceTags, workspacePrefix, router, activeWorkspaceId, selectedIcon]);
+    }, [newProjectName, workspaceTags, workspacePrefix, router, activeWorkspaceId, selectedIcon, isCreateProjectSaving]);
 
     const openEditProject = useCallback((tag: string) => {
         setEditProjectOriginalName(tag);
@@ -722,26 +744,30 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     }, [projectIcons]);
 
     const handleEditProject = useCallback(async () => {
-        if (!activeWorkspaceId || !editProjectOriginalName) return;
+        if (!activeWorkspaceId || !editProjectOriginalName || isEditProjectSaving) return;
         const nextName = editProjectName.trim();
         if (!nextName) return;
 
         if (nextName !== editProjectOriginalName && workspaceTags.includes(nextName)) {
-            alert("Este projeto já existe!");
+            alert("Este projeto ja existe!");
             return;
         }
+
+        setIsEditProjectSaving(true);
 
         if (nextName !== editProjectOriginalName) {
             const renameResult = await renameProjectTag(activeWorkspaceId, editProjectOriginalName, nextName);
             if (!renameResult.success) {
                 alert(renameResult.error || "Erro ao renomear projeto.");
+                setIsEditProjectSaving(false);
                 return;
             }
         }
 
         const iconResult = await setProjectIcon(activeWorkspaceId, nextName, editProjectIcon);
         if (!iconResult.success) {
-            alert(iconResult.error || "Erro ao atualizar ícone do projeto.");
+            alert(iconResult.error || "Erro ao atualizar icone do projeto.");
+            setIsEditProjectSaving(false);
             return;
         }
 
@@ -776,7 +802,8 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         setEditProjectName("");
         setEditProjectOriginalName(null);
         setEditProjectIcon("Folder");
-    }, [activeWorkspaceId, editProjectOriginalName, editProjectName, editProjectIcon, workspaceTags, workspacePrefix, router, isTagActive]);
+        setIsEditProjectSaving(false);
+    }, [activeWorkspaceId, editProjectOriginalName, editProjectName, editProjectIcon, workspaceTags, workspacePrefix, router, isTagActive, isEditProjectSaving]);
 
     const openDeleteProject = useCallback((tag: string) => {
         if (!activeWorkspaceId) return;
@@ -1110,15 +1137,16 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                 setNewProjectName("");
                                 setSelectedIcon("Folder");
                             }}
+                            disabled={isCreateProjectSaving}
                         >
                             Cancelar
                         </Button>
                         <Button
                             type="button"
                             onClick={handleCreateProject}
-                            disabled={!newProjectName.trim()}
+                            disabled={!newProjectName.trim() || isCreateProjectSaving}
                         >
-                            Criar Projeto
+                            {isCreateProjectSaving ? "Salvando..." : "Criar Projeto"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1163,14 +1191,15 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                 setEditProjectOriginalName(null);
                                 setEditProjectIcon("Folder");
                             }}
+                            disabled={isEditProjectSaving}
                         >
                             Cancelar
                         </Button>
                         <Button
                             onClick={handleEditProject}
-                            disabled={!editProjectName.trim()}
+                            disabled={!editProjectName.trim() || isEditProjectSaving}
                         >
-                            Salvar
+                            {isEditProjectSaving ? "Salvando..." : "Salvar"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

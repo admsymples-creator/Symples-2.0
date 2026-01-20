@@ -274,7 +274,6 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
   const isToday = task.dueDate && isTodayFunc(task.dueDate);
   const isFocusActive = isNextSunday(task.dueDate);
-  const isUrgentActive = isToday || task.priority === "high" || task.priority === "urgent";
 
   // Mapear cor do grupo se existir (ex: "red" -> "bg-red-500")
   const getGroupColorClass = (colorName?: string) => {
@@ -309,6 +308,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   
   // Verificar se a tarefa está concluída
   const isCompleted = dbStatus === TASK_STATUS.DONE || task.completed === true;
+  const isUrgentActive = !isCompleted && (isToday || task.priority === "high" || task.priority === "urgent");
 
   // Memoizar objeto task para TaskActionsMenu (versão simplificada)
   const taskForActionsMenu = useMemo(() => ({
@@ -860,6 +860,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
               <div className="flex items-center gap-1.5">
                 {task.dueDate ? (
                   <span className={cn("text-xs font-medium whitespace-nowrap",
+                    isCompleted ? "text-gray-400" :
                     isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
                     isToday ? "text-green-600" : 
                     "text-gray-500"
@@ -898,6 +899,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
           <div className="flex items-center gap-1.5">
             {task.dueDate ? (
               <span className={cn("text-xs font-medium whitespace-nowrap",
+                isCompleted ? "text-gray-400" :
                 isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
                 isToday ? "text-green-600" : 
                 "text-gray-500"

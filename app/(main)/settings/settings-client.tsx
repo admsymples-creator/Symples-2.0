@@ -28,7 +28,7 @@ import {
 import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi, Loader2, MoreVertical, Edit, RotateCcw, Shield } from "lucide-react";
 import { useUI } from "@/components/providers/UIScaleProvider";
 import { updateProfile, Profile, Workspace, getWorkspaceById } from "@/lib/actions/user";
-import { updateWorkspaceSettings } from "@/lib/actions/workspace-settings";
+import { updateWorkspaceSettings, deleteWorkspace } from "@/lib/actions/workspace-settings";
 import { 
   inviteMember, 
   revokeInvite, 
@@ -241,6 +241,11 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   // OTIMIZAÇÃO: Usar dados iniciais se disponíveis
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
+  const currentUserRole = useMemo(() => {
+    if (!user) return null;
+    return members.find((member) => member.user_id === user.id)?.role || null;
+  }, [members, user]);
+  const canDeleteWorkspace = currentUserRole === "owner";
   
   // NOTA: Removido useEffect que sobrescrevia membros - causava perda de dados quando initialMembers mudava
   // Os dados iniciais já são passados no useState acima, e membros são atualizados apenas quando workspace muda (linha 145)
@@ -254,6 +259,8 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [isRevoking, setIsRevoking] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
   const [isRemovingMember, setIsRemovingMember] = useState(false);
+  const [isDeleteWorkspaceOpen, setIsDeleteWorkspaceOpen] = useState(false);
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
 
   const handleSaveSettings = async () => {
     if (!workspace) return;
@@ -280,6 +287,27 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         toast.error("Erro ao salvar configurações", { description: error.message });
     } finally {
         setIsSaving(false);
+    }
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!workspace) return;
+    setIsDeletingWorkspace(true);
+    try {
+      const result = await deleteWorkspace(workspace.id);
+      if (!result.success) {
+        toast.error(result.error || "Erro ao excluir workspace");
+        return;
+      }
+      toast.success("Workspace excluído com sucesso");
+      setIsDeleteWorkspaceOpen(false);
+      router.push("/home");
+      router.refresh();
+    } catch (error) {
+      console.error("Erro ao excluir workspace:", error);
+      toast.error("Erro ao excluir workspace");
+    } finally {
+      setIsDeletingWorkspace(false);
     }
   };
 
@@ -608,6 +636,30 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                      </p>
                   </div>
                </div>
+            </CardContent>
+          </Card>
+
+          {/* Danger Zone */}
+          <Card className="border-red-200">
+            <CardHeader>
+              <CardTitle className="text-red-600">Excluir Workspace</CardTitle>
+              <CardDescription>
+                Esta ação é permanente. Todas as tarefas e dados deste workspace serão removidos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between gap-4">
+              <div className="text-sm text-gray-600">
+                {canDeleteWorkspace
+                  ? "Use com cuidado. Essa ação não pode ser desfeita."
+                  : "Somente o owner pode excluir o workspace."}
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setIsDeleteWorkspaceOpen(true)}
+                disabled={!workspace || isLoadingWorkspace || isDeletingWorkspace || !canDeleteWorkspace}
+              >
+                Excluir
+              </Button>
             </CardContent>
           </Card>
 
@@ -1062,6 +1114,16 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         confirmText="Sim, remover membro"
         onConfirm={confirmRemoveMember}
         isLoading={isRemovingMember}
+      />
+
+      <ConfirmModal
+        open={isDeleteWorkspaceOpen}
+        onOpenChange={setIsDeleteWorkspaceOpen}
+        title="Excluir Workspace"
+        description="Esta ação não pode ser desfeita. Todas as tarefas e dados deste workspace serão removidos."
+        confirmText="Sim, excluir workspace"
+        onConfirm={handleDeleteWorkspace}
+        isLoading={isDeletingWorkspace}
       />
         </div>
       </div>

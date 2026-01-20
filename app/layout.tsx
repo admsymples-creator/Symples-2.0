@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { Toaster } from "sonner";
+import { MicrosoftClarity } from "@/components/analytics/MicrosoftClarity";
 
 // Root layout component
 const inter = Inter({
@@ -43,6 +44,7 @@ export default function RootLayout({
               },
             }}
           />
+          <MicrosoftClarity />
         </UIScaleProvider>
       </body>
     </html>

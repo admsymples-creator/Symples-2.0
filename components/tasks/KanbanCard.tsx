@@ -146,7 +146,7 @@ function KanbanCardComponent({
     const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
     const isToday = dueDate && isTodayFunc(dueDate);
     const isFocusActive = isNextSunday(dueDate);
-    const isUrgentActive = isToday || priority === "high" || priority === "urgent";
+    const isUrgentActive = !completed && (isToday || priority === "high" || priority === "urgent");
     return { isOverdue, isToday, isFocusActive, isUrgentActive };
   }, [dueDate, completed, priority]);
   
@@ -548,8 +548,9 @@ function KanbanCardComponent({
                 <div className="flex items-center gap-1.5">
                   {dueDate ? (
                     <>
-                      <CalendarIcon className={cn("w-3.5 h-3.5", isOverdue ? "text-red-600" : isToday ? "text-green-600" : "text-gray-400")} />
+                      <CalendarIcon className={cn("w-3.5 h-3.5", completed ? "text-gray-400" : isOverdue ? "text-red-600" : isToday ? "text-green-600" : "text-gray-400")} />
                       <span className={cn("text-xs font-medium", 
+                        completed ? "text-gray-400" :
                         isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
                         isToday ? "text-green-600" : "text-gray-500"
                       )}>

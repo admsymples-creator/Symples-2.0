@@ -59,6 +59,7 @@ import {
     Globe,
     Lock,
     Square,
+    AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -443,6 +444,9 @@ export function TaskDetailModal({
     const [isDeletingComment, setIsDeletingComment] = useState<string | null>(null);
     const [workspaceId, setWorkspaceId] = useState<string | null>(null);
     const [availableTags, setAvailableTags] = useState<string[]>([]);
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+    const saveStateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const titleSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     // Usuário atual para padronizar exibição de comentários
     useEffect(() => {
         const supabase = createBrowserClient();
@@ -527,6 +531,31 @@ export function TaskDetailModal({
         sessionStorage.setItem("home_tasks_refresh_ts", ts);
         window.dispatchEvent(new Event("home-tasks-updated"));
     }, []);
+    const markSaving = useCallback(() => {
+        if (saveStateTimeoutRef.current) {
+            clearTimeout(saveStateTimeoutRef.current);
+        }
+        setSaveState("saving");
+    }, []);
+    const markSaved = useCallback((ok: boolean) => {
+        if (saveStateTimeoutRef.current) {
+            clearTimeout(saveStateTimeoutRef.current);
+        }
+        setSaveState(ok ? "saved" : "error");
+        saveStateTimeoutRef.current = setTimeout(() => {
+            setSaveState("idle");
+        }, 2000);
+    }, []);
+    useEffect(() => {
+        return () => {
+            if (saveStateTimeoutRef.current) {
+                clearTimeout(saveStateTimeoutRef.current);
+            }
+            if (titleSaveTimeoutRef.current) {
+                clearTimeout(titleSaveTimeoutRef.current);
+            }
+        };
+    }, []);
     // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
     // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
     // Não importa se task tem outros dados - sempre precisamos buscar do backend
@@ -591,7 +620,8 @@ export function TaskDetailModal({
             dueDate?: string;
             priority?: string;
             assignees?: Array<{ name: string; avatar?: string; id?: string }>;
-        }>
+        }>,
+        options?: { refresh?: boolean }
     ) => {
         // ✅ OPTIMISTIC UI: Atualizar estado local primeiro
         if (taskId && optimisticUpdates && onTaskUpdatedOptimistic) {
@@ -602,7 +632,9 @@ export function TaskDetailModal({
             taskCache.invalidate(taskId);
         }
         // Notificar atualização (pode fazer refetch se necessário)
-        onTaskUpdated?.();
+        if (options?.refresh !== false) {
+            onTaskUpdated?.();
+        }
     }, [taskCache, onTaskUpdated, onTaskUpdatedOptimistic]);
 
     // Memoizar handlers para evitar re-renders desnecessários
@@ -619,7 +651,7 @@ export function TaskDetailModal({
         try {
             if (currentTaskId) {
                 await deleteAttachment(id);
-                invalidateCacheAndNotify(currentTaskId);
+                invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
             }
             setAttachments(prev => prev.filter(f => f.id !== id));
             toast.success("Arquivo excluído com sucesso");
@@ -1298,7 +1330,8 @@ export function TaskDetailModal({
             } else {
                 // Recarregar atividades para garantir sincronização
                 if (currentTaskId) {
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 }
                 toast.success("Comentário editado");
             }
@@ -1359,7 +1392,8 @@ export function TaskDetailModal({
             } else {
                 // Recarregar atividades para garantir sincronização
                 if (currentTaskId) {
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 }
                 toast.success("Comentário removido");
             }
@@ -1627,16 +1661,19 @@ export function TaskDetailModal({
             onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
 
             try {
+                markSaving();
                 const result = await updateTaskField(currentTaskId, "status", newStatus);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId, { status: newLabel });
+                    invalidateCacheAndNotify(currentTaskId, { status: newLabel }, { refresh: false });
                     // Recarregar atividades do banco para garantir que o log foi persistido
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                     toast.success(`Status alterado para ${newLabel}`);
                 } else {
                     // ? REVERTER se falhar
                     setStatus(oldStatus);
                     onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                    markSaved(false);
                     toast.error(result.error || "Erro ao alterar status");
                 }
             } catch (error) {
@@ -1644,6 +1681,7 @@ export function TaskDetailModal({
                 console.error("Erro ao alterar status:", error);
                 setStatus(oldStatus);
                 onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                markSaved(false);
                 toast.error("Erro ao alterar status");
             }
         } else {
@@ -1671,7 +1709,7 @@ export function TaskDetailModal({
                 const oldSubtasks = subTasks;
                 const result = await updateTaskSubtasks(currentTaskId, updatedSubTasks);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                     // Criar log manual para subtarefas (updateTaskSubtasks não cria log diretamente)
                     await addComment(
                         currentTaskId,
@@ -1684,7 +1722,8 @@ export function TaskDetailModal({
                         "log"
                     );
                     // Recarregar atividades do banco
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
@@ -1734,7 +1773,7 @@ export function TaskDetailModal({
             try {
                 const result = await updateTaskSubtasks(currentTaskId, updated);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                     await addComment(
                         currentTaskId,
                         `editou a sub-tarefa: "${target.title}" → "${trimmedTitle}"`,
@@ -1746,7 +1785,8 @@ export function TaskDetailModal({
                         },
                         "log"
                     );
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao salvar título da sub-tarefa");
                     setSubTasks(oldSubtasks);
@@ -1802,7 +1842,7 @@ export function TaskDetailModal({
 
                 const result = await updateTaskSubtasks(currentTaskId, updated);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                     const action = selectedMember ? "subtask_assigned" : "subtask_unassigned";
                     const message = selectedMember
                         ? `atribuiu ${selectedMember.name} à sub-tarefa: "${target.title}"`
@@ -1818,7 +1858,8 @@ export function TaskDetailModal({
                         },
                         "log"
                     );
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao atualizar responsável da sub-tarefa");
                     setSubTasks(oldSubtasks);
@@ -1856,7 +1897,7 @@ export function TaskDetailModal({
             try {
                 const result = await updateTaskSubtasks(currentTaskId, updated);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                     // Criar log manual para subtarefas
                     await addComment(
                         currentTaskId,
@@ -1869,7 +1910,8 @@ export function TaskDetailModal({
                         "log"
                     );
                     // Recarregar atividades do banco
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
@@ -1978,7 +2020,8 @@ export function TaskDetailModal({
                         setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
                         optimisticIdRef.current = null;
                     }
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                     return;
                 }
 
@@ -2016,7 +2059,7 @@ export function TaskDetailModal({
                 setComment("");
                 setPendingAttachments([]);
                 setPendingFiles([]); // Limpar File objects também
-                invalidateCacheAndNotify(currentTaskId);
+                invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
             } catch (error) {
                 console.error("Erro ao criar comentário:", error);
                 toast.error("Erro ao criar comentário");
@@ -2026,7 +2069,7 @@ export function TaskDetailModal({
                     setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
                     optimisticIdRef.current = null;
                 }
-                await reloadActivities(currentTaskId);
+                void reloadActivities(currentTaskId);
             } finally {
                 setIsSubmitting(false);
             }
@@ -2151,7 +2194,7 @@ export function TaskDetailModal({
 
         // Recarregar atividades e anexos finais
         if (currentTaskId) {
-            await reloadActivities(currentTaskId);
+            void reloadActivities(currentTaskId);
             const taskDetails = await getTaskDetails(currentTaskId);
             if (taskDetails) {
                 const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
@@ -2167,7 +2210,7 @@ export function TaskDetailModal({
         }
 
         toast.success(`${files.length} arquivo(s) adicionado(s)`);
-        invalidateCacheAndNotify(currentTaskId);
+        invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
     };
 
     const { getRootProps, getInputProps, isDragActive, open: openFileUpload } = useDropzone({
@@ -2219,10 +2262,11 @@ export function TaskDetailModal({
                             const result = await uploadAudioComment(currentTaskId, formData);
                             if (result.success && result.data) {
                                 // Recarregar atividades do banco para garantir que está salvo
-                                await reloadActivities(currentTaskId);
+                                void reloadActivities(currentTaskId);
+                    markSaved(true);
 
                                 toast.success(`Áudio enviado (${finalDuration}s)`);
-                                invalidateCacheAndNotify(currentTaskId);
+                                invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                             } else {
                                 toast.error(result.error || "Erro ao enviar áudio");
                             }
@@ -2331,6 +2375,37 @@ export function TaskDetailModal({
         }
     }, [description, isEditingDescription]);
 
+    const scheduleTitleSave = useCallback((nextTitle: string, fallbackTitle?: string) => {
+        if (!currentTaskId || isCreateMode) return;
+        if (titleSaveTimeoutRef.current) {
+            clearTimeout(titleSaveTimeoutRef.current);
+        }
+        markSaving();
+        const optimisticTitle = nextTitle.trim();
+        titleSaveTimeoutRef.current = setTimeout(async () => {
+            try {
+                const result = await updateTaskField(currentTaskId, "title", optimisticTitle);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, { title: optimisticTitle }, { refresh: false });
+                    markSaved(true);
+                } else {
+                    markSaved(false);
+                    toast.error(result.error || "Erro ao salvar título");
+                    if (fallbackTitle !== undefined) {
+                        onTaskUpdatedOptimistic?.(currentTaskId, { title: fallbackTitle });
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao salvar título:", error);
+                markSaved(false);
+                toast.error("Erro ao salvar título");
+                if (fallbackTitle !== undefined) {
+                    onTaskUpdatedOptimistic?.(currentTaskId, { title: fallbackTitle });
+                }
+            }
+        }, 500);
+    }, [currentTaskId, isCreateMode, invalidateCacheAndNotify, markSaving, markSaved, onTaskUpdatedOptimistic]);
+
     // Handler memoizado para salvar descrição
     const handleSaveDescription = useCallback(async () => {
         setIsDescriptionExpanded(false);
@@ -2343,19 +2418,23 @@ export function TaskDetailModal({
                 setDescription(normalizedDescription);
             }
             try {
+                markSaving();
                 const result = await updateTaskField(currentTaskId, "description", normalizedDescription);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
-                    await reloadActivities(currentTaskId);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     // ✅ REVERTER se falhar
                     setDescription(oldDescription);
+                    markSaved(false);
                     toast.error(result.error || "Erro ao salvar descrição");
                 }
             } catch (error) {
                 // ✅ REVERTER em caso de exceção
                 console.error("Erro ao salvar descrição:", error);
                 setDescription(oldDescription);
+                markSaved(false);
                 toast.error("Erro ao salvar descrição");
             }
         }
@@ -2403,9 +2482,9 @@ export function TaskDetailModal({
                 onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
                 toast.error("Erro ao atualizar membros");
             } else {
-                invalidateCacheAndNotify(currentTaskId, { assignees: newMembers });
+                invalidateCacheAndNotify(currentTaskId, { assignees: newMembers }, { refresh: false });
                 // Recarregar apenas atividades (não precisa recarregar dados básicos)
-                await reloadActivities(currentTaskId);
+                void reloadActivities(currentTaskId);
                 const changeCount = added.length + removed.length;
                 toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
             }
@@ -2437,19 +2516,22 @@ export function TaskDetailModal({
             onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
 
             try {
+                markSaving();
                 const result = await updateTaskField(
                     currentTaskId,
                     "due_date",
                     date ? date.toISOString() : null
                 );
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate });
+                    invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate }, { refresh: false });
                     // Recarregar atividades do banco para garantir que o log foi persistido
-                    await reloadActivities(currentTaskId);
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
 
                     const dateFormatted = date ? date.toLocaleDateString("pt-BR") : "removida";
                     toast.success(date ? `Data de entrega atualizada para ${dateFormatted}` : "Data de entrega removida");
                 } else {
+                    markSaved(false);
                     toast.error(result.error || "Erro ao atualizar data de entrega");
                     // ✅ REVERTER se falhar
                     setDueDate(oldDate);
@@ -2457,6 +2539,7 @@ export function TaskDetailModal({
                 }
             } catch (error) {
                 console.error("Erro ao atualizar data de entrega:", error);
+                markSaved(false);
                 toast.error("Erro ao atualizar data de entrega");
                 // ✅ REVERTER se falhar
                 setDueDate(oldDate);
@@ -2514,6 +2597,18 @@ export function TaskDetailModal({
                                 )}
 
                                 <div className="flex items-center gap-2 ml-auto">
+                                    {!isCreateMode && saveState !== "idle" && (
+                                        <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-2">
+                                            {saveState === "saving" && <Loader2 className="w-3 h-3 animate-spin" />}
+                                            {saveState === "saved" && <Check className="w-3 h-3 text-green-600" />}
+                                            {saveState === "error" && <AlertTriangle className="w-3 h-3 text-red-600" />}
+                                            <span>
+                                                {saveState === "saving" && "Salvando..."}
+                                                {saveState === "saved" && "Edições salvas"}
+                                                {saveState === "error" && "Erro ao salvar"}
+                                            </span>
+                                        </div>
+                                    )}
                                     {!isCreateMode && (
                                         <Button
                                             variant="ghost"
@@ -2605,18 +2700,12 @@ export function TaskDetailModal({
                                                     value={title}
                                                     onChange={(e) => {
                                                         const newTitle = e.target.value;
+                                                        const previousTitle = title;
                                                         setTitle(newTitle);
                                                         if (currentTaskId && !isCreateMode) {
-                                                            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-
-
+                                                            // ? Atualizar TaskRowMinify imediatamente via optimistic update
                                                             onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
-                                                            // Salvar no backend em background
-                                                            updateTaskField(currentTaskId, "title", newTitle).catch((error) => {
-                                                                console.error("Erro ao salvar título:", error);
-                                                                // Reverter em caso de erro
-                                                                onTaskUpdatedOptimistic?.(currentTaskId, { title: task?.title || "" });
-                                                            });
+                                                            scheduleTitleSave(newTitle, previousTitle);
                                                         }
                                                     }}
                                                     className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
@@ -2689,7 +2778,13 @@ export function TaskDetailModal({
                                                                         onTaskUpdatedOptimistic?.(currentTaskId, { tags: [] });
                                                                     }
                                                                     if (currentTaskId && !isCreateMode) {
-                                                                        updateTaskTags(currentTaskId, []).catch(console.error);
+                                                                        markSaving();
+                                                                        updateTaskTags(currentTaskId, [])
+                                                                            .then(() => markSaved(true))
+                                                                            .catch((error) => {
+                                                                                markSaved(false);
+                                                                                console.error("Erro ao salvar tags:", error);
+                                                                            });
                                                                     notifyHomeTasksUpdated();
                                                                     }
                                                                 }}
@@ -2714,7 +2809,13 @@ export function TaskDetailModal({
                                                                                 onTaskUpdatedOptimistic?.(currentTaskId, { tags: newTags });
                                                                             }
                                                                             if (currentTaskId && !isCreateMode) {
-                                                                                updateTaskTags(currentTaskId, newTags).catch(console.error);
+                                                                                markSaving();
+                                                                                updateTaskTags(currentTaskId, newTags)
+                                                                                    .then(() => markSaved(true))
+                                                                                    .catch((error) => {
+                                                                                        markSaved(false);
+                                                                                        console.error("Erro ao salvar tags:", error);
+                                                                                    });
                                                                             notifyHomeTasksUpdated();
                                                                             }
                                                                         }}
@@ -2995,7 +3096,7 @@ export function TaskDetailModal({
                                                                 try {
                                                                     const result = await updateTaskSubtasks(currentTaskId, updated);
                                                                     if (result.success) {
-                                                                        invalidateCacheAndNotify(currentTaskId);
+                                                                        invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                                                                         // Criar log manual para subtarefas
                                                                         await addComment(
                                                                             currentTaskId,
@@ -3008,7 +3109,8 @@ export function TaskDetailModal({
                                                                             "log"
                                                                         );
                                                                         // Recarregar atividades do banco
-                                                                        await reloadActivities(currentTaskId);
+                                                                        void reloadActivities(currentTaskId);
+                    markSaved(true);
                                                                     } else {
                                                                         // ✅ REVERTER se falhar
                                                                         setSubTasks(oldSubtasks);

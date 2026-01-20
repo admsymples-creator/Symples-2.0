@@ -2,6 +2,7 @@
 
 import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { clearUserWorkspacesCache } from "@/lib/actions/user";
 
 export async function updateWorkspaceSettings(workspaceId: string, formData: FormData) {
   const supabase = await createServerActionClient();
@@ -94,3 +95,39 @@ export async function updateWorkspaceSettings(workspaceId: string, formData: For
   return { success: true };
 }
 
+export async function deleteWorkspace(workspaceId: string) {
+  const supabase = await createServerActionClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  const { data: memberData, error: memberError } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (memberError || !memberData || memberData.role !== "owner") {
+    return { success: false, error: "Apenas o owner pode excluir o workspace." };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("workspaces")
+    .delete()
+    .eq("id", workspaceId);
+
+  if (deleteError) {
+    console.error("Erro ao excluir workspace:", deleteError);
+    return { success: false, error: deleteError.message };
+  }
+
+  await clearUserWorkspacesCache(user.id);
+  revalidatePath("/", "layout");
+  revalidatePath("/settings");
+  revalidatePath("/home");
+
+  return { success: true };
+}
