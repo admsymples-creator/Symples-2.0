@@ -79,7 +79,7 @@ export function CreateTransactionModal({
   const [clientId, setClientId] = useState<string | null>(null);
   const [category, setCategory] = useState("");
   const [date, setDate] = useState<Date | null>(new Date());
-  const [dueDate, setDueDate] = useState<Date | null>(new Date());
+  const [dueDate, setDueDate] = useState<Date | null>(null);
   const [status, setStatus] = useState<"paid" | "pending">("pending");
   const [isRecurring, setIsRecurring] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
@@ -113,7 +113,7 @@ export function CreateTransactionModal({
       setCategory("");
       setCategoryQuery("");
       setDate(new Date());
-      setDueDate(new Date());
+      setDueDate(null);
       setStatus("pending");
       setIsRecurring(false);
       setLinkedTask(initialRelatedTask ?? null);
