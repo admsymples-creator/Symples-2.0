@@ -223,6 +223,16 @@ export async function deleteClient(clientId: string) {
   }
 }
 
+interface ClientDetails {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  workspace_id: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export async function getClientDetails(clientId: string) {
   try {
     const supabase = await createServerActionClient();
@@ -242,11 +252,14 @@ export async function getClientDetails(clientId: string) {
       return null;
     }
 
+    // Type assertion para garantir o tipo correto
+    const typedClient = client as ClientDetails;
+
     // Verificar permissão no workspace
     const { data: membership } = await supabase
         .from("workspace_members")
         .select("role")
-        .eq("workspace_id", client.workspace_id)
+        .eq("workspace_id", typedClient.workspace_id)
         .eq("user_id", user.id)
         .single();
 
@@ -291,7 +304,7 @@ export async function getClientDetails(clientId: string) {
         .order("created_at", { ascending: false });
 
     return {
-        client,
+        client: typedClient,
         finance: {
             totalIncome,
             totalPending,
