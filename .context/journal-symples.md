@@ -2183,3 +2183,97 @@ Container Grid (min-w-0)
 - Tasks: default grouping dynamic (Projetos->Status, Tarefas->Projeto), drag entre projetos atualiza tag automaticamente, e tag de projeto no TaskRowMinify.
 - Quick add: habilitado em projeto/status na lista, ghost padrao em grupos vazios, inbox mantido como sem tag.
 - Cores por status aplicadas em lista e kanban.
+
+---
+
+## 2026-01-21
+
+### Padronização de Tabelas - Clean & Consistent
+
+**Contexto:**
+Aplicado estilo  clean consistente em todas as tabelas do sistema, seguindo o design da tabela de transações do histórico financeiro do cliente.
+
+**Mudanças Implementadas:**
+
+1. **Estilo Unificado de Tabelas:**
+   - Header: g-gray-50 text-gray-500 font-medium border-b border-gray-100
+   - Padding células: px-4 py-3 (reduzido de px-6 py-4)
+   - Divisores: divide-y divide-gray-100
+   - Hover: hover:bg-gray-50/50 transition-colors
+   - Altura fixa das linhas: h-[52px] para consistência visual
+   - Cards com overflow: overflow-hidden para evitar bordas cortadas
+
+2. **Lista de Clientes (pp/(main)/clients/clients-page-client.tsx):**
+   - ✅ Aplicado padding reduzido e header clean
+   - ✅ Avatares reduzidos: h-8 w-8 (antes h-10 w-10)
+   - ✅ Removida linha Cliente ativo (mais minimalista)
+   - ✅ Ícones de email/telefone removidos (menos poluição visual)
+   - ✅ Altura fixa das linhas: h-[52px]
+   - **Métricas financeiras** (implementadas anteriormente, mantidas):
+     - Total Recebido: 	ext-green-600
+     - A Receber: 	ext-blue-600
+     - Em Atraso: 	ext-red-600
+   - **Funcionalidades UX** (implementadas anteriormente, mantidas):
+     - Sistema de ordenação (crescente/decrescente/null) para todas as colunas
+     - Busca por nome, email e telefone
+     - Contador de resultados
+     - Exportação CSV
+     - Empty states contextuais
+
+3. **Lista de Team/Membros (pp/(main)/settings/settings-client.tsx):**
+   - ✅ Aplicado padding reduzido e header clean em 2 tabelas:
+     - Tabela de membros ativos
+     - Tabela de convites pendentes
+   - ✅ Avatares reduzidos: h-8 w-8 (antes h-10 w-10)
+   - ✅ Altura fixa das linhas: h-[52px]
+   - ✅ Ícone de email reduzido: h-3.5 w-3.5 em convites pendentes
+
+4. **Transações do Cliente (pp/(main)/[workspaceSlug]/clients/[clientId]/page.tsx):**
+   - ✅ Altura fixa das linhas: h-[52px]
+   - ✅ Mantido título Transações com ont-normal (implementado anteriormente)
+
+**Cliente Selector Integration (Contexto da sessão anterior):**
+- Integrado componente ClientSelector reutilizável em modais de transação
+- Adicionado campo client_id à tabela 	ransactions via migration
+- Implementado seleção de cliente em criação e edição de transações
+- Adicionadas métricas financeiras por cliente (Total Recebido, A Receber, Em Atraso)
+- Tratamento de transações sem data de vencimento no cálculo de A Receber
+
+**Benefícios:**
+- Interface mais leve e profissional
+- Consistência visual entre todas as páginas com tabelas
+- Melhor densidade de informação
+- Experiência de usuário mais fluida
+- Manutenção simplificada com padrão unificado
+
+**Arquivos Modificados:**
+- pp/(main)/clients/clients-page-client.tsx
+- pp/(main)/settings/settings-client.tsx
+- pp/(main)/[workspaceSlug]/clients/[clientId]/page.tsx
+- components/finance/ClientSelector.tsx (sessão anterior)
+- components/finance/CreateTransactionModal.tsx (sessão anterior)
+- components/finance/EditTransactionModal.tsx (sessão anterior)
+- lib/actions/finance.ts (sessão anterior)
+- lib/actions/clients.ts (sessão anterior)
+
+**Padrão de Tabelas (Design System):**
+`	sx
+// Header
+<thead className=bg-gray-50 text-gray-500 font-medium border-b border-gray-100>
+  <tr>
+    <th className=px-4 py-3 font-medium>...</th>
+  </tr>
+</thead>
+
+// Body
+<tbody className=divide-y divide-gray-100>
+  <tr className=hover:bg-gray-50/50 transition-colors h-[52px]>
+    <td className=px-4 py-3>...</td>
+  </tr>
+</tbody>
+
+// Card Container
+<Card className=border-none shadow-sm overflow-hidden>
+  <table className=w-full text-sm text-left>...</table>
+</Card>
+`

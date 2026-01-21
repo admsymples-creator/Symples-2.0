@@ -103,6 +103,12 @@ export async function deleteWorkspace(workspaceId: string) {
     return { success: false, error: "Usuário não autenticado" };
   }
 
+  console.log("[deleteWorkspace] Tentando excluir workspace:", {
+    workspaceId,
+    userId: user.id
+  });
+
+  // Verificar se o usuário é owner via workspace_members
   const { data: memberData, error: memberError } = await supabase
     .from("workspace_members")
     .select("role")
@@ -110,8 +116,39 @@ export async function deleteWorkspace(workspaceId: string) {
     .eq("user_id", user.id)
     .single();
 
-  if (memberError || !memberData || memberData.role !== "owner") {
-    return { success: false, error: "Apenas o owner pode excluir o workspace." };
+  console.log("[deleteWorkspace] Verificação de membro:", {
+    memberData,
+    memberError: memberError ? { message: memberError.message, code: memberError.code } : null
+  });
+
+  // Também verificar se é owner via campo owner_id na tabela workspaces (fallback)
+  const { data: workspaceData, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("owner_id")
+    .eq("id", workspaceId)
+    .single();
+
+  console.log("[deleteWorkspace] Verificação de workspace owner_id:", {
+    workspaceData,
+    workspaceError: workspaceError ? { message: workspaceError.message, code: workspaceError.code } : null
+  });
+
+  // Verificar se é owner por qualquer um dos métodos
+  const isOwnerByMember = memberData?.role === "owner";
+  const isOwnerByWorkspace = workspaceData?.owner_id === user.id;
+  const isOwner = isOwnerByMember || isOwnerByWorkspace;
+
+  console.log("[deleteWorkspace] Verificação de owner:", {
+    isOwnerByMember,
+    isOwnerByWorkspace,
+    isOwner
+  });
+
+  if (!isOwner) {
+    return { 
+      success: false, 
+      error: `Apenas o owner pode excluir o workspace. (role: ${memberData?.role || 'não encontrado'}, owner_id match: ${isOwnerByWorkspace})` 
+    };
   }
 
   const { error: deleteError } = await supabase
@@ -120,9 +157,16 @@ export async function deleteWorkspace(workspaceId: string) {
     .eq("id", workspaceId);
 
   if (deleteError) {
-    console.error("Erro ao excluir workspace:", deleteError);
+    console.error("[deleteWorkspace] Erro ao excluir workspace:", {
+      message: deleteError.message,
+      code: deleteError.code,
+      details: deleteError.details,
+      hint: deleteError.hint
+    });
     return { success: false, error: deleteError.message };
   }
+
+  console.log("[deleteWorkspace] Workspace excluído com sucesso:", workspaceId);
 
   await clearUserWorkspacesCache(user.id);
   revalidatePath("/", "layout");

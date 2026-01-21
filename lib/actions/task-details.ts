@@ -729,6 +729,28 @@ export async function updateTaskField(
     return { success: false, error: error.message };
   }
 
+  // ✅ Auto-reset de urgência: Se o status mudou para "done", resetar prioridade "urgent" para "medium"
+  if (field === "status" && updateValue === "done") {
+    try {
+      const { data: taskForPriority } = await supabase
+        .from("tasks")
+        .select("priority")
+        .eq("id", taskId)
+        .single();
+
+      if (taskForPriority && taskForPriority.priority === "urgent") {
+        console.log("[updateTaskField] Resetando prioridade urgente para medium após conclusão:", taskId);
+        await supabase
+          .from("tasks")
+          .update({ priority: "medium" })
+          .eq("id", taskId);
+      }
+    } catch (priorityError) {
+      console.error("[updateTaskField] Erro ao resetar prioridade:", priorityError);
+      // Não falhar o update principal se o reset de prioridade falhar
+    }
+  }
+
   // Criar log de atividade se não foi pulado
   if (!options?.skipLog) {
     let logContent = options?.logContent;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Mail, Phone, User, Edit, Trash2, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Mail, Phone, User, Edit, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Search, Users, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { createClient } from "@/lib/actions/finance";
 import { deleteClient, updateClient } from "@/lib/actions/clients";
 
@@ -18,14 +20,22 @@ export interface ClientRow {
   email?: string | null;
   phone?: string | null;
   created_at?: string | null;
+  totalReceived?: number;
+  totalReceivable?: number;
+  totalOverdue?: number;
 }
 
 interface ClientsPageClientProps {
   workspaceId: string;
+  workspaceSlug: string;
   initialClients: ClientRow[];
 }
 
-export function ClientsPageClient({ workspaceId, initialClients }: ClientsPageClientProps) {
+type SortField = "name" | "email" | "phone" | "totalReceived" | "totalReceivable" | "totalOverdue";
+type SortOrder = "asc" | "desc" | null;
+
+export function ClientsPageClient({ workspaceId, workspaceSlug, initialClients }: ClientsPageClientProps) {
+  const router = useRouter();
   const [clients, setClients] = useState<ClientRow[]>(initialClients);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -33,6 +43,10 @@ export function ClientsPageClient({ workspaceId, initialClients }: ClientsPageCl
   const [form, setForm] = useState({ name: "", email: "", phone: "" });
   const [clientToDelete, setClientToDelete] = useState<ClientRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const openCreate = () => {
     setEditingClient(null);
@@ -130,6 +144,98 @@ export function ClientsPageClient({ workspaceId, initialClients }: ClientsPageCl
     }
   };
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Ciclar: asc -> desc -> null
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortOrder(null);
+        setSortField(null);
+      }
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  const getFilteredClients = () => {
+    if (!searchQuery.trim()) return clients;
+
+    const query = searchQuery.toLowerCase().trim();
+    return clients.filter((client) => {
+      return (
+        client.name.toLowerCase().includes(query) ||
+        client.email?.toLowerCase().includes(query) ||
+        client.phone?.toLowerCase().includes(query)
+      );
+    });
+  };
+
+  const getSortedClients = () => {
+    const filtered = getFilteredClients();
+    
+    if (!sortField || !sortOrder) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      let aValue: any = a[sortField];
+      let bValue: any = b[sortField];
+
+      // Tratar valores undefined/null
+      if (aValue === undefined || aValue === null) aValue = sortField === "name" ? "" : 0;
+      if (bValue === undefined || bValue === null) bValue = sortField === "name" ? "" : 0;
+
+      // Ordenação
+      if (sortField === "name" || sortField === "email" || sortField === "phone") {
+        // Ordenação alfabética
+        const comparison = String(aValue).localeCompare(String(bValue));
+        return sortOrder === "asc" ? comparison : -comparison;
+      } else {
+        // Ordenação numérica
+        return sortOrder === "asc" ? Number(aValue) - Number(bValue) : Number(bValue) - Number(aValue);
+      }
+    });
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-gray-400" />;
+    }
+    if (sortOrder === "asc") {
+      return <ArrowUp className="h-3.5 w-3.5 ml-1 text-gray-700" />;
+    }
+    return <ArrowDown className="h-3.5 w-3.5 ml-1 text-gray-700" />;
+  };
+
+  const sortedClients = getSortedClients();
+
+  const handleExportCSV = () => {
+    const csvData = [
+      ["Cliente", "Email", "Telefone", "Total Recebido", "A Receber", "Em Atraso"],
+      ...sortedClients.map((client) => [
+        client.name,
+        client.email || "",
+        client.phone || "",
+        (client.totalReceived || 0).toFixed(2),
+        (client.totalReceivable || 0).toFixed(2),
+        (client.totalOverdue || 0).toFixed(2),
+      ]),
+    ];
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      csvData.map((row) => row.join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `clientes_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Lista exportada com sucesso!");
+  };
+
   return (
     <div className="min-h-screen bg-white pb-20">
       <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
@@ -149,6 +255,48 @@ export function ClientsPageClient({ workspaceId, initialClients }: ClientsPageCl
                 <Plus className="h-4 w-4 mr-2" />
                 Novo cliente
               </Button>
+              {clients.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={handleExportCSV}
+                  className="text-gray-700"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar CSV
+                </Button>
+              )}
+              <span className="text-sm text-muted-foreground">
+                {sortedClients.length} {sortedClients.length === 1 ? "cliente" : "clientes"}
+                {searchQuery && ` (${clients.length} total)`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {!isSearchOpen ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-gray-500 hover:text-gray-900"
+                  onClick={() => setIsSearchOpen(true)}
+                >
+                  <Search className="w-4 h-4" />
+                </Button>
+              ) : (
+                <div className="relative flex items-center">
+                  <Search className="absolute left-3 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <Input
+                    placeholder="Buscar clientes..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onBlur={() => {
+                      if (!searchQuery) {
+                        setIsSearchOpen(false);
+                      }
+                    }}
+                    autoFocus
+                    className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200"
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -161,48 +309,139 @@ export function ClientsPageClient({ workspaceId, initialClients }: ClientsPageCl
               <CardContent className="px-0">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
+                    <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                       <tr>
-                        <th className="px-6 py-4 font-medium">Cliente</th>
-                        <th className="px-6 py-4 font-medium">Email</th>
-                        <th className="px-6 py-4 font-medium">Telefone</th>
-                        <th className="px-6 py-4 font-medium text-right">Acoes</th>
+                        <th className="px-4 py-3 font-medium">
+                          <button
+                            onClick={() => handleSort("name")}
+                            className="flex items-center hover:text-gray-700 transition-colors"
+                          >
+                            Cliente
+                            <SortIcon field="name" />
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 font-medium">
+                          <button
+                            onClick={() => handleSort("email")}
+                            className="flex items-center hover:text-gray-700 transition-colors"
+                          >
+                            Email
+                            <SortIcon field="email" />
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 font-medium">
+                          <button
+                            onClick={() => handleSort("phone")}
+                            className="flex items-center hover:text-gray-700 transition-colors"
+                          >
+                            Telefone
+                            <SortIcon field="phone" />
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 font-medium text-right">
+                          <button
+                            onClick={() => handleSort("totalReceived")}
+                            className="flex items-center justify-end w-full hover:text-gray-700 transition-colors"
+                          >
+                            Total Recebido
+                            <SortIcon field="totalReceived" />
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 font-medium text-right">
+                          <button
+                            onClick={() => handleSort("totalReceivable")}
+                            className="flex items-center justify-end w-full hover:text-gray-700 transition-colors"
+                          >
+                            A Receber
+                            <SortIcon field="totalReceivable" />
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 font-medium text-right">
+                          <button
+                            onClick={() => handleSort("totalOverdue")}
+                            className="flex items-center justify-end w-full hover:text-gray-700 transition-colors"
+                          >
+                            Em Atraso
+                            <SortIcon field="totalOverdue" />
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 font-medium text-right">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y">
-                      {clients.length === 0 && (
+                    <tbody className="divide-y divide-gray-100">
+                      {sortedClients.length === 0 && !searchQuery && (
                         <tr>
-                          <td colSpan={4} className="px-6 py-10 text-center text-muted-foreground">
-                            Nenhum cliente cadastrado ainda.
+                          <td colSpan={7} className="px-6 py-20">
+                            <EmptyState
+                              icon={Users}
+                              title="Nenhum cliente cadastrado"
+                              description="Comece adicionando seu primeiro cliente para gerenciar o financeiro."
+                              actionLabel="Novo cliente"
+                              onClick={openCreate}
+                            />
                           </td>
                         </tr>
                       )}
-                      {clients.map((client) => (
-                        <tr key={client.id} className="bg-white hover:bg-gray-50/50 transition-colors">
-                          <td className="px-6 py-4">
+                      {sortedClients.length === 0 && searchQuery && (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-20">
+                            <EmptyState
+                              icon={Search}
+                              title="Nenhum resultado encontrado"
+                              description={`Não encontramos clientes com "${searchQuery}". Tente outro termo.`}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      {sortedClients.map((client) => (
+                        <tr 
+                          key={client.id} 
+                          className="hover:bg-gray-50/50 transition-colors cursor-pointer h-[52px]"
+                          onClick={(e) => {
+                            // Evitar navegação se o clique foi nos botões de ação
+                            if ((e.target as HTMLElement).closest('button')) return;
+                            router.push(`/${workspaceSlug}/clients/${client.id}`);
+                          }}
+                        >
+                          <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700">
-                                <User className="h-4 w-4" />
+                              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700">
+                                <User className="h-3.5 w-3.5" />
                               </div>
-                              <div>
-                                <div className="font-medium text-gray-900">{client.name}</div>
-                                <div className="text-xs text-muted-foreground">Cliente ativo</div>
-                              </div>
+                              <div className="font-medium text-gray-900">{client.name}</div>
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <Mail className="h-4 w-4 text-gray-400" />
-                              <span>{client.email || "-"}</span>
-                            </div>
+                          <td className="px-4 py-3 text-gray-600">
+                            {client.email || "-"}
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <Phone className="h-4 w-4 text-gray-400" />
-                              <span>{client.phone || "-"}</span>
-                            </div>
+                          <td className="px-4 py-3 text-gray-600">
+                            {client.phone || "-"}
                           </td>
-                          <td className="px-6 py-4 text-right">
+                          <td className="px-4 py-3 text-right">
+                            <span className={`font-medium ${(client.totalReceived || 0) > 0 ? "text-green-600" : "text-gray-400"}`}>
+                              {new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(client.totalReceived || 0)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`font-medium ${(client.totalReceivable || 0) > 0 ? "text-blue-600" : "text-gray-400"}`}>
+                              {new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(client.totalReceivable || 0)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`font-medium ${(client.totalOverdue || 0) > 0 ? "text-red-600" : "text-gray-400"}`}>
+                              {new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(client.totalOverdue || 0)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
                             <div className="inline-flex items-center gap-2">
                               <Button variant="ghost" size="icon" onClick={() => openEdit(client)}>
                                 <Edit className="h-4 w-4" />

@@ -10,7 +10,8 @@ import {
   Loader2,
   Link2,
   ChevronsUpDown,
-  Check
+  Check,
+  Building2
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -37,8 +38,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { createTransaction, createClient } from "@/lib/actions/finance";
+import { createTransaction } from "@/lib/actions/finance";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
+import { ClientSelector } from "@/components/finance/ClientSelector";
 import {
   DEFAULT_EXPENSE_CATEGORY,
   DEFAULT_INCOME_CATEGORY,
@@ -59,7 +61,6 @@ interface CreateTransactionModalProps {
 type TransactionType = "income" | "expense";
 
 type TaskOption = { id: string; title: string };
-type ClientOption = { id: string; name: string };
 
 export function CreateTransactionModal({
   open,
@@ -86,13 +87,21 @@ export function CreateTransactionModal({
   const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
   const [taskLoading, setTaskLoading] = useState(false);
   const [linkedTask, setLinkedTask] = useState<TaskOption | null>(initialRelatedTask ?? null);
-  const [clientOpen, setClientOpen] = useState(false);
-  const [clientQuery, setClientQuery] = useState("");
-  const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
-  const [clientLoading, setClientLoading] = useState(false);
+  
   const categoryOptions = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const supabase = React.useMemo(() => createBrowserClient(), []);
   const effectiveWorkspaceId = initialWorkspaceId || activeWorkspaceId || null;
+  
+  // Debug: log workspace ID
+  React.useEffect(() => {
+    if (open) {
+      console.log("[CreateTransactionModal] Modal aberto. WorkspaceId:", {
+        effectiveWorkspaceId,
+        initialWorkspaceId,
+        activeWorkspaceId
+      });
+    }
+  }, [open, effectiveWorkspaceId, initialWorkspaceId, activeWorkspaceId]);
 
   // Reset form when modal opens/closes
   useEffect(() => {
@@ -109,8 +118,6 @@ export function CreateTransactionModal({
       setTaskQuery("");
       setTaskOptions([]);
       setClientId(null);
-      setClientQuery("");
-      setClientOptions([]);
     }
   }, [open, initialRelatedTask]);
 
@@ -136,29 +143,6 @@ export function CreateTransactionModal({
     }, 250);
     return () => clearTimeout(timeout);
   }, [open, taskOpen, taskQuery, effectiveWorkspaceId, supabase]);
-
-  useEffect(() => {
-    if (!open || !clientOpen || !effectiveWorkspaceId) return;
-    const query = clientQuery.trim();
-    const timeout = setTimeout(async () => {
-      setClientLoading(true);
-      const { data, error } = await supabase
-        .from("clients")
-        .select("id,name")
-        .eq("workspace_id", effectiveWorkspaceId)
-        .ilike("name", `%${query}%`)
-        .order("name", { ascending: true })
-        .limit(8);
-      if (error) {
-        console.error("Erro ao buscar clientes:", error);
-        setClientOptions([]);
-      } else {
-        setClientOptions((data || []).map((item: any) => ({ id: item.id, name: item.name })));
-      }
-      setClientLoading(false);
-    }, 250);
-    return () => clearTimeout(timeout);
-  }, [open, clientOpen, clientQuery, effectiveWorkspaceId, supabase]);
 
   useEffect(() => {
     if (categoryOpen && !categoryQuery.trim() && category) {
@@ -225,36 +209,6 @@ export function CreateTransactionModal({
   const handleSelectTask = (option: TaskOption | null) => {
     setLinkedTask(option);
     setTaskOpen(false);
-  };
-
-  const handleSelectClient = (option: ClientOption | null) => {
-    setClientId(option?.id || null);
-    setClientOpen(false);
-  };
-
-  const handleCreateClient = async () => {
-    if (!effectiveWorkspaceId) {
-      toast.error("Workspace nao encontrado.");
-      return;
-    }
-    const name = clientQuery.trim();
-    if (!name) {
-      toast.error("Informe o nome do cliente.");
-      return;
-    }
-    const result = await createClient({ workspaceId: effectiveWorkspaceId, name });
-    if (result.success && result.client) {
-      setClientId(result.client.id);
-      setClientOptions((prev) => {
-        const exists = prev.some((item) => item.id === result.client?.id);
-        return exists ? prev : [{ id: result.client.id, name: result.client.name }, ...prev];
-      });
-      setClientQuery("");
-      setClientOpen(false);
-      toast.success("Cliente criado!");
-    } else {
-      toast.error(result.error || "Erro ao criar cliente");
-    }
   };
 
   return (
@@ -332,69 +286,20 @@ export function CreateTransactionModal({
             {/* Cliente cadastrado */}
             <div className="grid grid-cols-[100px_1fr] items-center gap-3 border-b border-gray-200 pb-3 last:border-0 last:pb-0">
               <div className="flex items-center gap-2">
-                <Tag className="w-3.5 h-3.5 text-gray-400" />
+                <Building2 className="w-3.5 h-3.5 text-gray-400" />
                 <Label className="text-xs font-medium text-gray-400">Cliente</Label>
               </div>
-              <Popover open={clientOpen} onOpenChange={setClientOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    role="combobox"
-                    className="w-full justify-between bg-transparent border-0 p-0 h-auto text-sm text-gray-900 hover:bg-transparent"
-                  >
-                    {clientId
-                      ? clientOptions.find((option) => option.id === clientId)?.name || "Cliente selecionado"
-                      : "Buscar cliente"}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-gray-400" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="p-0 w-[280px]" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder="Buscar cliente..."
-                      value={clientQuery}
-                      onValueChange={setClientQuery}
-                    />
-                    <CommandList>
-                      {clientLoading ? (
-                        <CommandGroup heading="Carregando">
-                          <CommandItem disabled value="loading">
-                            Buscando clientes...
-                          </CommandItem>
-                        </CommandGroup>
-                      ) : (
-                        <>
-                          <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                          <CommandGroup heading="Clientes">
-                            {clientOptions.map((option) => (
-                              <CommandItem
-                                key={option.id}
-                                value={option.name}
-                                onSelect={() => handleSelectClient(option)}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    clientId === option.id ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                {option.name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                          {clientQuery.trim().length > 0 && (
-                            <CommandGroup heading="Novo">
-                              <CommandItem value={`create-${clientQuery}`} onSelect={handleCreateClient}>
-                                Criar cliente "{clientQuery.trim()}"
-                              </CommandItem>
-                            </CommandGroup>
-                          )}
-                        </>
-                      )}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              <div className="flex-1">
+                <ClientSelector
+                  clientId={clientId}
+                  onSelect={(id) => {
+                    console.log("[CreateTransactionModal] Cliente selecionado:", id);
+                    setClientId(id);
+                  }}
+                  workspaceId={effectiveWorkspaceId}
+                  triggerClassName="w-full justify-start bg-transparent hover:bg-transparent border-0 px-0 py-0 h-auto text-sm text-gray-900 font-medium"
+                />
+              </div>
             </div>
 
             {/* Vincular tarefa */}

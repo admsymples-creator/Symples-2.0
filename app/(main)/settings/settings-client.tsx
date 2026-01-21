@@ -245,7 +245,16 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     if (!user) return null;
     return members.find((member) => member.user_id === user.id)?.role || null;
   }, [members, user]);
-  const canDeleteWorkspace = currentUserRole === "owner";
+  
+  // Verificar se pode excluir workspace: role "owner" OU é o owner_id do workspace
+  const canDeleteWorkspace = useMemo(() => {
+    if (!user || !workspace) return false;
+    // Verificar por role na lista de membros
+    const isOwnerByRole = currentUserRole === "owner";
+    // Verificar por owner_id no workspace (fallback)
+    const isOwnerById = (workspace as any).owner_id === user.id;
+    return isOwnerByRole || isOwnerById;
+  }, [currentUserRole, user, workspace]);
   
   // NOTA: Removido useEffect que sobrescrevia membros - causava perda de dados quando initialMembers mudava
   // Os dados iniciais já são passados no useState acima, e membros são atualizados apenas quando workspace muda (linha 145)
@@ -795,20 +804,20 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </Dialog>
           </div>
 
-          <Card className="border-none shadow-sm">
+          <Card className="border-none shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
+                <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                   <tr>
-                    <th className="px-6 py-4 font-medium">Usuário</th>
-                    <th className="px-6 py-4 font-medium">Função</th>
-                    <th className="px-6 py-4 font-medium text-right">Ações</th>
+                    <th className="px-4 py-3 font-medium">Usuário</th>
+                    <th className="px-4 py-3 font-medium">Função</th>
+                    <th className="px-4 py-3 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-gray-100">
                   {members.length === 0 && (
                       <tr>
-                          <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
+                          <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                               Nenhum membro encontrado além de você.
                           </td>
                       </tr>
@@ -820,17 +829,17 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                     const hasAvatar = avatarUrl && avatarUrl.trim() !== '';
                     
                     return (
-                        <tr key={member.user_id} className="bg-white hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4">
+                        <tr key={member.user_id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
+                        <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
                             {hasAvatar ? (
                                 <img 
                                     src={avatarUrl} 
                                     alt={name}
-                                    className="h-10 w-10 rounded-full object-cover"
+                                    className="h-8 w-8 rounded-full object-cover"
                                 />
                             ) : (
-                                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
+                                <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold text-xs">
                                     {getInitials(name)}
                                 </div>
                             )}
@@ -840,12 +849,12 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             </div>
                             </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-3">
                             <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
                             {getRoleLabel(member.role)}
                             </Badge>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-4 py-3 text-right">
                             <Button 
                             variant="ghost" 
                             size="icon" 
@@ -867,33 +876,33 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           {invites.length > 0 && (
               <div className="space-y-4">
                   <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Convites Pendentes</h3>
-                  <Card className="border-none shadow-sm">
+                  <Card className="border-none shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
+                        <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                         <tr>
-                            <th className="px-6 py-4 font-medium">Email</th>
-                            <th className="px-6 py-4 font-medium">Função</th>
-                            <th className="px-6 py-4 font-medium text-right">Ações</th>
+                            <th className="px-4 py-3 font-medium">Email</th>
+                            <th className="px-4 py-3 font-medium">Função</th>
+                            <th className="px-4 py-3 font-medium text-right">Ações</th>
                         </tr>
                         </thead>
-                        <tbody className="divide-y">
+                        <tbody className="divide-y divide-gray-100">
                         {invites.map((invite) => (
-                            <tr key={invite.id} className="bg-white hover:bg-gray-50/50 transition-colors">
-                            <td className="px-6 py-4">
+                            <tr key={invite.id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
+                            <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-bold text-xs">
-                                        <Mail className="h-4 w-4" />
+                                    <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700">
+                                        <Mail className="h-3.5 w-3.5" />
                                     </div>
                                     <span className="text-gray-700">{invite.email}</span>
                                 </div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-4 py-3">
                                 <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
                                     {getRoleLabel(invite.role)} (Pendente)
                                 </Badge>
                             </td>
-                            <td className="px-6 py-4 text-right">
+                            <td className="px-4 py-3 text-right">
                                 <Button 
                                 variant="ghost" 
                                 size="sm" 

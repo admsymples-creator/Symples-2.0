@@ -7,7 +7,8 @@ import {
   Tag,
   CheckCircle2,
   RefreshCw,
-  Loader2
+  Loader2,
+  Building2
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -34,6 +35,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { updateTransaction } from "@/lib/actions/finance";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
+import { ClientSelector } from "@/components/finance/ClientSelector";
 import {
   DEFAULT_EXPENSE_CATEGORY,
   DEFAULT_INCOME_CATEGORY,
@@ -52,6 +54,8 @@ interface Transaction {
   status: "paid" | "pending" | "scheduled" | "cancelled";
   is_recurring: boolean;
   counterparty_name?: string | null;
+  client_id?: string | null;
+  workspace_id?: string | null;
 }
 
 interface EditTransactionModalProps {
@@ -68,21 +72,24 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [counterpartyName, setCounterpartyName] = useState("");
+  const [clientId, setClientId] = useState<string | null>(null);
   const [category, setCategory] = useState("");
   const [date, setDate] = useState<Date | null>(new Date());
   const [dueDate, setDueDate] = useState<Date | null>(new Date());
   const [status, setStatus] = useState<"paid" | "pending" | "scheduled" | "cancelled">("paid");
   const [isRecurring, setIsRecurring] = useState(false);
   const categoryOptions = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-  const counterpartyLabel = type === "income" ? "Cliente" : "Fornecedor";
 
   // Preencher form quando transaction mudar ou modal abrir
   useEffect(() => {
     if (open && transaction) {
+      console.log("[EditTransactionModal] Modal aberto. Transaction:", {
+        workspace_id: transaction.workspace_id,
+        client_id: transaction.client_id
+      });
       setType(transaction.type);
       setDescription(transaction.description);
-      setCounterpartyName(transaction.counterparty_name || "");
+      setClientId(transaction.client_id || null);
       setCategory(transaction.category);
       setStatus(transaction.status as "paid" | "pending" | "scheduled" | "cancelled");
       setIsRecurring(transaction.is_recurring || false);
@@ -152,7 +159,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
         due_date: dueDate,
         status,
         is_recurring: isRecurring,
-        counterparty_name: counterpartyName.trim() || null,
+        client_id: clientId,
       });
 
       if (result.success) {
@@ -239,18 +246,23 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
               />
             </div>
 
-            {/* Cliente / Fornecedor */}
+            {/* Cliente */}
             <div className="grid grid-cols-[100px_1fr] items-center gap-3 border-b border-gray-200 pb-3 last:border-0 last:pb-0">
               <div className="flex items-center gap-2">
-                <PenLine className="w-3.5 h-3.5 text-gray-400" />
-                <Label className="text-xs font-medium text-gray-400">{counterpartyLabel}</Label>
+                <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                <Label className="text-xs font-medium text-gray-400">Cliente</Label>
               </div>
-              <Input 
-                value={counterpartyName}
-                onChange={(e) => setCounterpartyName(e.target.value)}
-                placeholder={`Ex: ${counterpartyLabel} Principal`}
-                className="bg-transparent border-0 border-b-0 focus-visible:ring-0 p-0 h-auto text-sm font-medium text-gray-900 placeholder:text-gray-400" 
-              />
+              <div className="flex-1">
+                <ClientSelector
+                  clientId={clientId}
+                  onSelect={(id) => {
+                    console.log("[EditTransactionModal] Cliente selecionado:", id);
+                    setClientId(id);
+                  }}
+                  workspaceId={transaction?.workspace_id}
+                  triggerClassName="w-full justify-start bg-transparent hover:bg-transparent border-0 px-0 py-0 h-auto text-sm text-gray-900 font-medium"
+                />
+              </div>
             </div>
 
             {/* Categoria */}

@@ -9,15 +9,19 @@ import { redirect } from "next/navigation";
 
 export default async function LandingPage() {
     // Check if user is authenticated and redirect to home
+    let shouldRedirect = false;
+    
     try {
         const supabase = await createServerClient();
         const { data: { user } } = await supabase.auth.getUser();
-
-        if (user) {
-            redirect("/home");
-        }
+        shouldRedirect = !!user;
     } catch (error) {
         // Ignore errors during auth check on landing page
+    }
+    
+    // Redirect fora do try-catch para evitar problemas com o erro interno do Next.js
+    if (shouldRedirect) {
+        redirect("/home");
     }
 
     return (

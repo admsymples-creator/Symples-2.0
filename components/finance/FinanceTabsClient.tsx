@@ -36,6 +36,7 @@ type FinanceTransaction = {
   related_task_id?: string | null;
   client_id?: string | null;
   client_name?: string | null;
+  workspace_id?: string | null;
 };
 
 type FinanceMetrics = {
@@ -160,6 +161,7 @@ const mapTransactions = (transactions: any[]): FinanceTransaction[] => {
       related_task_id: tx.related_task_id || null,
       client_id: tx.client_id || null,
       client_name: tx.client?.name || null,
+      workspace_id: tx.workspace_id || null,
     };
   });
 };
@@ -268,7 +270,7 @@ export function FinanceTabsClient({
           <div className="flex flex-1 items-center justify-between gap-2 flex-wrap">
             {/* Lado Esquerdo: Botão Novo */}
             <div className="flex items-center gap-4">
-              <NewTransactionButton />
+              <NewTransactionButton workspaceId={workspaceId} />
             </div>
 
             {/* Lado Direito: Filtros */}

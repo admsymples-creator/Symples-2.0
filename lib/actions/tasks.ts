@@ -695,7 +695,7 @@ export async function createTask(data: {
     recurrence_count: 0,
     // Group and Tags
     group_id: data.group_id || null,
-    tags: data.tags || null
+    tags: data.tags || null,
   };
 
   if (typeof data.position === "number" && Number.isFinite(data.position)) {
@@ -759,6 +759,29 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
 
   // Se não houve erro, o update foi bem-sucedido
   console.log("[updateTask] Tarefa atualizada com sucesso:", id);
+
+  // ✅ Auto-reset de urgência: Se a tarefa foi concluída e tinha prioridade "urgent", resetar para "medium"
+  if (updates.status === "done") {
+    try {
+      // Buscar a tarefa para verificar a prioridade atual
+      const { data: taskForPriority } = await supabase
+        .from("tasks")
+        .select("priority")
+        .eq("id", id)
+        .single();
+
+      if (taskForPriority && taskForPriority.priority === "urgent") {
+        console.log("[updateTask] Resetando prioridade urgente para medium após conclusão:", id);
+        await supabase
+          .from("tasks")
+          .update({ priority: "medium" })
+          .eq("id", id);
+      }
+    } catch (priorityError) {
+      console.error("[updateTask] Erro ao resetar prioridade:", priorityError);
+      // Não falhar o update principal se o reset de prioridade falhar
+    }
+  }
 
   // ✅ Recorrência: Se a tarefa foi concluída, verificar se precisa criar a próxima
   if (updates.status === "done") {

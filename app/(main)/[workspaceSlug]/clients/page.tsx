@@ -41,6 +41,7 @@ export default async function WorkspaceClientsPage({
   return (
     <ClientsPageClient
       workspaceId={activeWorkspace.id}
+      workspaceSlug={activeWorkspace.slug || activeWorkspace.id}
       initialClients={clients}
     />
   );

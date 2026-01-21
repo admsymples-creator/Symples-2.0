@@ -971,7 +971,71 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Client Component:** `DynamicGreeting` é renderizado no cliente para atualização dinâmica baseada na hora atual
 - **Reutilização:** A função `getGreeting` é compartilhada entre Home e Assistente IA
 
-## 21. Journal Visual de Preview
+## 21. Padrão de Tabelas Clean (v2.6)
+
+### 21.1. Estilo Unificado
+Todas as tabelas do sistema seguem um padrão clean e consistente:
+
+```tsx
+// Card Container
+<Card className="border-none shadow-sm overflow-hidden">
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm text-left">
+      {/* Header */}
+      <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
+        <tr>
+          <th className="px-4 py-3 font-medium">Coluna</th>
+        </tr>
+      </thead>
+      
+      {/* Body */}
+      <tbody className="divide-y divide-gray-100">
+        <tr className="hover:bg-gray-50/50 transition-colors h-[52px]">
+          <td className="px-4 py-3">Conteúdo</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</Card>
+```
+
+### 21.2. Especificações de Estilo
+- **Header:**
+  - Background: `bg-gray-50`
+  - Texto: `text-gray-500 font-medium`
+  - Borda inferior: `border-b border-gray-100`
+  - Padding células: `px-4 py-3`
+
+- **Body:**
+  - Divisores: `divide-y divide-gray-100`
+  - Hover: `hover:bg-gray-50/50 transition-colors`
+  - Altura fixa das linhas: `h-[52px]` (para consistência visual)
+  - Padding células: `px-4 py-3`
+
+- **Card Container:**
+  - Estilo: `border-none shadow-sm`
+  - Overflow: `overflow-hidden` (para bordas arredondadas limpas)
+  - Scroll: `overflow-x-auto` no wrapper interno
+
+- **Avatares em Tabelas:**
+  - Tamanho padrão: `h-8 w-8` (compacto)
+  - Ícones internos: `h-3.5 w-3.5`
+
+### 21.3. Aplicação
+Este padrão está implementado em:
+- Lista de Clientes (`clients-page-client.tsx`)
+- Lista de Membros do Time (`settings-client.tsx`)
+- Lista de Convites Pendentes (`settings-client.tsx`)
+- Histórico de Transações do Cliente (`[clientId]/page.tsx`)
+
+### 21.4. Consistência Visual
+O padrão garante:
+- Interface mais leve e profissional
+- Densidade de informação otimizada
+- Experiência consistente entre páginas
+- Manutenção simplificada
+
+## 22. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  

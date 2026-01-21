@@ -1117,6 +1117,7 @@ export function TaskDetailModal({
                         setDescription(basicDetails.description || "");
                         setStatus(basicDetails.status || "todo");
                         setDueDate(basicDetails.due_date ? new Date(basicDetails.due_date).toISOString().split("T")[0] : "");
+                        setWorkspaceId(basicDetails.workspace_id || null);
 
                         // Usar assignees dos detalhes (já inclui task_members)
                         if ((basicDetails as any).assignees && Array.isArray((basicDetails as any).assignees)) {
@@ -2973,7 +2974,7 @@ export function TaskDetailModal({
                                                     <div
                                                         ref={descriptionRef}
                                                         className={cn(
-                                                            "p-3 rounded-md prose prose-sm max-w-none text-gray-700 border border-transparent outline-none focus:outline-none focus-visible:outline-none active:outline-none",
+                                                            "p-3 rounded-md prose prose-sm max-w-none text-gray-700 border border-transparent outline-none focus:outline-none focus-visible:outline-none active:outline-none cursor-pointer hover:bg-gray-50 transition-colors",
                                                             "[&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:hover:underline [&_a]:no-underline",
                                                             !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
                                                         )}
@@ -2982,6 +2983,12 @@ export function TaskDetailModal({
                                                             '--tw-prose-links': '#2563eb',
                                                         } as React.CSSProperties}
                                                         tabIndex={-1}
+                                                        onClick={(e) => {
+                                                            // Não ativar edição se clicou em um link
+                                                            if ((e.target as HTMLElement).tagName === 'A') return;
+                                                            setIsDescriptionExpanded(false);
+                                                            setIsEditingDescription(true);
+                                                        }}
                                                         dangerouslySetInnerHTML={{ __html: linkifyHtml(description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>") }}
                                                     />
                                                     {/* Gradiente da direita para esquerda no hover */}
@@ -3248,7 +3255,25 @@ export function TaskDetailModal({
                                                         Nenhum pagamento vinculado.
                                                     </div>
                                                 ) : (
-                                                    <div className="space-y-2">
+                                                    <div className="space-y-3">
+                                                        {/* Total Summary */}
+                                                        {payments.length > 0 && (
+                                                            <div className="grid grid-cols-2 gap-3 mb-2">
+                                                                <div className="bg-green-50 rounded-lg p-2 border border-green-100 flex flex-col">
+                                                                    <span className="text-[10px] uppercase font-bold text-green-600/70">Receitas</span>
+                                                                    <span className="text-sm font-bold text-green-700">
+                                                                        {formatCurrency(payments.filter(p => p.type === "income").reduce((acc, curr) => acc + curr.amount, 0))}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="bg-red-50 rounded-lg p-2 border border-red-100 flex flex-col">
+                                                                    <span className="text-[10px] uppercase font-bold text-red-600/70">Despesas</span>
+                                                                    <span className="text-sm font-bold text-red-700">
+                                                                        {formatCurrency(payments.filter(p => p.type === "expense").reduce((acc, curr) => acc + curr.amount, 0))}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         {payments.map((payment) => {
                                                             const statusLabel = payment.status === "paid"
                                                                 ? "Pago"

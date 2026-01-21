@@ -24,6 +24,8 @@ interface Transaction {
   is_recurring?: boolean;
   counterparty_name?: string | null;
   client_name?: string | null;
+  client_id?: string | null;
+  workspace_id?: string | null;
 }
 
 interface FinanceTransactionsListProps {

@@ -57,11 +57,11 @@ export async function createTransaction(data: TransactionData) {
         .eq("user_id", user.id)
         .limit(1)
         .single();
-        
+
       if (memberData) {
         workspaceId = memberData.workspace_id;
       } else {
-         throw new Error("Nenhum workspace encontrado para este usuário.");
+        throw new Error("Nenhum workspace encontrado para este usuário.");
       }
     }
 
@@ -72,7 +72,7 @@ export async function createTransaction(data: TransactionData) {
       .eq("workspace_id", workspaceId)
       .eq("user_id", user.id)
       .single();
-    
+
     if (!membership) {
       throw new Error("Você não tem permissão para criar transações neste workspace.");
     }
@@ -80,7 +80,7 @@ export async function createTransaction(data: TransactionData) {
     // Verificar acesso do workspace (gatekeeper)
     const { checkWorkspaceAccess } = await import("@/lib/utils/subscription");
     const accessCheck = await checkWorkspaceAccess(workspaceId);
-    
+
     if (!accessCheck.allowed) {
       return {
         success: false,
@@ -89,6 +89,21 @@ export async function createTransaction(data: TransactionData) {
     }
 
     // Preparar payload
+    let clientId = data.client_id || null;
+
+    // Se houver tarefa relacionada mas sem cliente, tentar buscar da tarefa
+    if (data.related_task_id && !clientId) {
+      const { data: relatedTask } = await supabase
+        .from("tasks")
+        .select("client_id")
+        .eq("id", data.related_task_id)
+        .single();
+      
+      if (relatedTask?.client_id) {
+        clientId = relatedTask.client_id;
+      }
+    }
+
     const payload: any = {
       amount: data.amount,
       type: data.type,
@@ -100,7 +115,7 @@ export async function createTransaction(data: TransactionData) {
       is_recurring: data.is_recurring,
       counterparty_name: data.counterparty_name || null,
       related_task_id: data.related_task_id || null,
-      client_id: data.client_id || null,
+      client_id: clientId,
       created_at: data.date.toISOString(), // Data da transação (pode ser passada)
     };
 
@@ -146,7 +161,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
       .eq("user_id", user.id)
       .limit(1)
       .single();
-    
+
     if (!memberData) {
       const result = {
         totalIncome: 0,
@@ -169,7 +184,7 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
     .eq("workspace_id", effectiveWorkspaceId)
     .eq("user_id", user.id)
     .single();
-  
+
   if (!membership) {
     console.warn(`[getFinanceMetrics] Acesso negado: Usuário ${user.id} tentou acessar workspace ${effectiveWorkspaceId} sem ser membro`);
     const result = {
@@ -273,13 +288,14 @@ export const getFinanceMetrics = cache(async (month: number, year: number, works
   return result;
 });
 
-export const getTransactions = cache(async (filters?: { 
-  limit?: number; 
-  startDate?: string; 
+export const getTransactions = cache(async (filters?: {
+  limit?: number;
+  startDate?: string;
   endDate?: string;
   workspaceId?: string;
   isRecurring?: boolean;
   relatedTaskId?: string;
+  clientId?: string;
 }) => {
   const perfStart = perfNow();
   const supabase = await createServerActionClient();
@@ -299,7 +315,7 @@ export const getTransactions = cache(async (filters?: {
       .eq("user_id", user.id)
       .limit(1)
       .single();
-    
+
     if (!memberData) {
       logPerf("getTransactions:no-workspace", perfStart);
       return [];
@@ -314,7 +330,7 @@ export const getTransactions = cache(async (filters?: {
     .eq("workspace_id", effectiveWorkspaceId)
     .eq("user_id", user.id)
     .single();
-  
+
   if (!membership) {
     console.warn(`[getTransactions] Acesso negado: Usuário ${user.id} tentou acessar workspace ${effectiveWorkspaceId} sem ser membro`);
     logPerf("getTransactions:denied", perfStart, { workspaceId: effectiveWorkspaceId });
@@ -323,7 +339,7 @@ export const getTransactions = cache(async (filters?: {
 
   let query = (supabase as any)
     .from("transactions")
-    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,client:clients(name)")
+    .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,workspace_id,client:clients(name)")
     .eq("workspace_id", effectiveWorkspaceId)
     .order("due_date", { ascending: false, nullsLast: true })
     .order("created_at", { ascending: false });
@@ -348,6 +364,10 @@ export const getTransactions = cache(async (filters?: {
 
   if (filters?.relatedTaskId) {
     query = query.eq("related_task_id", filters.relatedTaskId);
+  }
+
+  if (filters?.clientId) {
+    query = query.eq("client_id", filters.clientId);
   }
 
   if (filters?.limit) {
@@ -386,7 +406,7 @@ export async function getTransactionsByTask(taskId: string, workspaceId: string)
 
     const { data, error } = await supabase
       .from("transactions")
-      .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,client:clients(name)")
+      .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,workspace_id,client:clients(name)")
       .eq("workspace_id", workspaceId)
       .eq("related_task_id", taskId)
       .order("due_date", { ascending: false, nullsLast: true })
@@ -487,7 +507,7 @@ export async function updateTransaction(id: string, data: UpdateTransactionData)
       .eq("workspace_id", (transaction as any).workspace_id)
       .eq("user_id", user.id)
       .single();
-    
+
     if (!membership) {
       throw new Error("Você não tem permissão para editar transações neste workspace.");
     }
@@ -551,7 +571,7 @@ export async function deleteTransaction(id: string) {
       .eq("workspace_id", (transaction as any).workspace_id)
       .eq("user_id", user.id)
       .single();
-    
+
     const isAdmin = membership?.role === "owner" || membership?.role === "admin";
 
     if (!membership || !isAdmin) {
@@ -616,7 +636,7 @@ export async function getBudgets(month: number, year: number, workspaceId?: stri
       .eq("user_id", user.id)
       .limit(1)
       .single();
-    
+
     if (!memberData) {
       return [];
     }
@@ -630,7 +650,7 @@ export async function getBudgets(month: number, year: number, workspaceId?: stri
     .eq("workspace_id", effectiveWorkspaceId)
     .eq("user_id", user.id)
     .single();
-  
+
   if (!membership) {
     return [];
   }
@@ -667,7 +687,7 @@ export async function createBudget(data: BudgetData) {
         .eq("user_id", user.id)
         .limit(1)
         .single();
-      
+
       if (memberData) {
         workspaceId = memberData.workspace_id;
       } else {
@@ -682,7 +702,7 @@ export async function createBudget(data: BudgetData) {
       .eq("workspace_id", workspaceId)
       .eq("user_id", user.id)
       .single();
-    
+
     if (!membership || !membership.role || !["owner", "admin"].includes(membership.role)) {
       throw new Error("Você não tem permissão para criar orçamentos neste workspace.");
     }
@@ -742,7 +762,7 @@ export const getProjections = cache(async (months: number = 6, workspaceId?: str
       .eq("user_id", user.id)
       .limit(1)
       .single();
-    
+
     if (!memberData) {
       logPerf("getProjections:no-workspace", perfStart);
       return [];
@@ -757,7 +777,7 @@ export const getProjections = cache(async (months: number = 6, workspaceId?: str
     .eq("workspace_id", effectiveWorkspaceId)
     .eq("user_id", user.id)
     .single();
-  
+
   if (!membership) {
     logPerf("getProjections:denied", perfStart, { workspaceId: effectiveWorkspaceId });
     return [];
@@ -877,7 +897,7 @@ export async function getFinancialGoals(workspaceId?: string): Promise<Financial
       .eq("user_id", user.id)
       .limit(1)
       .single();
-    
+
     if (!memberData) {
       return [];
     }
@@ -891,7 +911,7 @@ export async function getFinancialGoals(workspaceId?: string): Promise<Financial
     .eq("workspace_id", effectiveWorkspaceId)
     .eq("user_id", user.id)
     .single();
-  
+
   if (!membership) {
     return [];
   }
@@ -928,7 +948,7 @@ export async function createFinancialGoal(data: FinancialGoalData) {
         .eq("user_id", user.id)
         .limit(1)
         .single();
-      
+
       if (memberData) {
         workspaceId = memberData.workspace_id;
       } else {
@@ -943,7 +963,7 @@ export async function createFinancialGoal(data: FinancialGoalData) {
       .eq("workspace_id", workspaceId)
       .eq("user_id", user.id)
       .single();
-    
+
     if (!membership || !membership.role || !["owner", "admin"].includes(membership.role)) {
       throw new Error("Você não tem permissão para criar metas neste workspace.");
     }
@@ -1011,7 +1031,7 @@ export async function updateFinancialGoal(id: string, data: UpdateFinancialGoalD
       .eq("workspace_id", (goal as any).workspace_id)
       .eq("user_id", user.id)
       .single();
-    
+
     if (!membership || !membership.role || !["owner", "admin"].includes(membership.role)) {
       throw new Error("Você não tem permissão para editar metas neste workspace.");
     }
@@ -1072,7 +1092,7 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
       .eq("user_id", user.id)
       .limit(1)
       .single();
-    
+
     if (!memberData) {
       logPerf("getCashFlowForecast:no-workspace", perfStart);
       return [];
@@ -1087,7 +1107,7 @@ export const getCashFlowForecast = cache(async (months: number = 6, workspaceId?
     .eq("workspace_id", effectiveWorkspaceId)
     .eq("user_id", user.id)
     .single();
-  
+
   if (!membership) {
     logPerf("getCashFlowForecast:denied", perfStart, { workspaceId: effectiveWorkspaceId });
     return [];
