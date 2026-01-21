@@ -4,8 +4,9 @@ import React, { useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, ChevronDown } from "lucide-react";
 import { TransactionActionsMenu } from "./TransactionActionsMenu";
 import { EditTransactionModal } from "./EditTransactionModal";
 import { useRouter } from "next/navigation";
@@ -69,6 +70,9 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+const INITIAL_ITEMS = 5;
+const LOAD_MORE_ITEMS = 5;
+
 export function FinanceTransactionsList({
   transactions,
   type,
@@ -79,6 +83,8 @@ export function FinanceTransactionsList({
   const router = useRouter();
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleEdit = (transaction: Transaction) => {
     setEditingTransaction(transaction);
@@ -95,6 +101,15 @@ export function FinanceTransactionsList({
     router.refresh();
   };
 
+  const handleLoadMore = () => {
+    setIsLoading(true);
+    // Simula um pequeno delay para feedback visual
+    setTimeout(() => {
+      setVisibleCount(prev => Math.min(prev + LOAD_MORE_ITEMS, transactions.length));
+      setIsLoading(false);
+    }, 300);
+  };
+
   const processedTransactions = transactions.map((t) => {
     const dueDate = t.due_date ? format(parseISO(t.due_date), "dd/MM") : "Sem venc.";
     const createdDate = t.created_at ? format(parseISO(t.created_at), "dd/MM/yyyy") : undefined;
@@ -105,10 +120,14 @@ export function FinanceTransactionsList({
     };
   });
 
+  const visibleTransactions = processedTransactions.slice(0, visibleCount);
+  const hasMore = visibleCount < processedTransactions.length;
+  const remainingCount = processedTransactions.length - visibleCount;
+
   return (
     <>
-      <Card className="border-none shadow-sm flex flex-col min-h-[400px]">
-        <CardHeader className="pb-3 border-b border-border/60">
+      <Card className="border-none shadow-sm flex flex-col h-[600px]">
+        <CardHeader className="pb-3 border-b border-border/60 flex-shrink-0">
           <div className="flex justify-between items-center">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               {icon}
@@ -122,14 +141,14 @@ export function FinanceTransactionsList({
             </span>
           </div>
         </CardHeader>
-        <CardContent className="pt-4 px-0 flex-1 overflow-y-auto">
-          <div className="space-y-1">
+        <CardContent className="pt-4 px-0 flex-1 min-h-0 overflow-y-auto flex flex-col">
+          <div className="space-y-1 flex-1">
             {processedTransactions.length === 0 ? (
               <p className="text-center text-gray-400 py-4 text-sm">
                 Nenhuma {type === "income" ? "entrada" : "saída"} neste mês
               </p>
             ) : (
-              processedTransactions.map((item) => (
+              visibleTransactions.map((item) => (
                 <div 
                   key={item.id} 
                   className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors group"
@@ -168,6 +187,30 @@ export function FinanceTransactionsList({
               ))
             )}
           </div>
+          
+          {hasMore && (
+            <div className="flex-shrink-0 pt-2 pb-2 px-4 border-t border-gray-100 bg-gradient-to-t from-white to-transparent">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLoadMore}
+                disabled={isLoading}
+                className="w-full text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2" />
+                    Carregando...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4 mr-2" />
+                    Ver mais {remainingCount} {remainingCount === 1 ? "transação" : "transações"}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
