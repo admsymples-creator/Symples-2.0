@@ -409,7 +409,7 @@ export async function getTransactionsByTask(taskId: string, workspaceId: string)
       .select("id,due_date,created_at,description,amount,status,category,type,is_recurring,counterparty_name,related_task_id,client_id,workspace_id,client:clients(name)")
       .eq("workspace_id", workspaceId)
       .eq("related_task_id", taskId)
-      .order("due_date", { ascending: false, nullsLast: true })
+      .order("due_date", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false });
 
     if (error) {

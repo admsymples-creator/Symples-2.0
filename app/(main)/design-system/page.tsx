@@ -69,6 +69,7 @@ export default function DesignSystemPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         assignee_id: null,
+        client_id: null,
         due_date: "2024-12-18",
         position: 1,
         origin_context: null,

@@ -69,9 +69,56 @@ export type Database = {
         }
         Relationships: []
       }
+      clients: {
+        Row: {
+          id: string
+          workspace_id: string
+          name: string
+          email: string | null
+          phone: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          name: string
+          email?: string | null
+          phone?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          name?: string
+          email?: string | null
+          phone?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_workspace_id_fkey"
+            columns: ["workspace_id"]
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
+          client_id: string | null
           created_at: string | null
           created_by: string | null
           description: string | null
@@ -95,6 +142,7 @@ export type Database = {
         }
         Insert: {
           assignee_id?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -118,6 +166,7 @@ export type Database = {
         }
         Update: {
           assignee_id?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -145,6 +194,13 @@ export type Database = {
             columns: ["assignee_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
           {
@@ -293,6 +349,7 @@ export type Database = {
         Row: {
           amount: number
           category: string | null
+          client_id: string | null
           counterparty_name: string | null
           created_at: string | null
           created_by: string | null
@@ -309,6 +366,7 @@ export type Database = {
         Insert: {
           amount: number
           category?: string | null
+          client_id?: string | null
           counterparty_name?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -325,6 +383,7 @@ export type Database = {
         Update: {
           amount?: number
           category?: string | null
+          client_id?: string | null
           counterparty_name?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -339,6 +398,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transactions_created_by_fkey"
             columns: ["created_by"]
