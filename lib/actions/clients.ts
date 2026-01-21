@@ -233,7 +233,7 @@ export async function getClientDetails(clientId: string) {
     // 1. Buscar Cliente
     const { data: client, error: clientError } = await supabase
       .from("clients")
-      .select("*")
+      .select("id, name, email, phone, workspace_id, created_at, updated_at")
       .eq("id", clientId)
       .single();
 
