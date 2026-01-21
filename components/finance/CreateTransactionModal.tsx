@@ -109,7 +109,7 @@ export function CreateTransactionModal({
   useEffect(() => {
     if (open) {
       setAmount("");
-      setDescription("");
+      setDescription(initialRelatedTask?.title ?? ""); // Preenche descrição com nome da tarefa
       setCategory("");
       setCategoryQuery("");
       setDate(new Date());
