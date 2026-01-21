@@ -24,6 +24,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Separator } from "@/components/ui/separator";
+import { ClientDetailsClient } from "./client-details-client";
 
 // Componente para formatar moeda
 const formatCurrency = (value: number) => {
@@ -58,50 +59,56 @@ export default async function ClientDetailsPage({
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50/50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
-        <div className="flex items-center gap-4 mb-4">
-          <Link 
-            href={`/${workspaceSlug}/clients`}
-            className="text-gray-500 hover:text-gray-800 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12 border border-gray-100">
-              <AvatarImage src={`https://avatar.vercel.sh/${client.name}.png`} />
-              <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                {getInitials(client.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">{client.name}</h1>
-              <div className="flex items-center gap-3 text-sm text-gray-500">
-                {client.email && (
-                  <div className="flex items-center gap-1">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>{client.email}</span>
-                  </div>
-                )}
-                {client.phone && (
-                  <div className="flex items-center gap-1">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>{client.phone}</span>
-                  </div>
-                )}
+    <ClientDetailsClient clientId={clientId} workspaceId={client.workspace_id}>
+      {({ onOpenModal }) => (
+      <div className="flex flex-col h-full bg-gray-50/50">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
+          <div className="flex items-center gap-4 mb-4">
+            <Link 
+              href={`/${workspaceSlug}/clients`}
+              className="text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-12 w-12 border border-gray-100">
+                <AvatarImage src={`https://avatar.vercel.sh/${client.name}.png`} />
+                <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                  {getInitials(client.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">{client.name}</h1>
+                <div className="flex items-center gap-3 text-sm text-gray-500">
+                  {client.email && (
+                    <div className="flex items-center gap-1">
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>{client.email}</span>
+                    </div>
+                  )}
+                  {client.phone && (
+                    <div className="flex items-center gap-1">
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>{client.phone}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+            <div className="ml-auto flex gap-2">
+              <Button variant="outline" size="sm">
+                Editar
+              </Button>
+              <Button 
+                size="sm" 
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={onOpenModal}
+              >
+                Nova Transação
+              </Button>
+            </div>
           </div>
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm">
-              Editar
-            </Button>
-            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-              Nova Transação
-            </Button>
-          </div>
-        </div>
 
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
@@ -292,5 +299,7 @@ export default async function ClientDetailsPage({
         </Tabs>
       </div>
     </div>
+      )}
+    </ClientDetailsClient>
   );
 }

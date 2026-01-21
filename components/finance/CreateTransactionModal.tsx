@@ -55,6 +55,7 @@ interface CreateTransactionModalProps {
   onOpenChange: (open: boolean) => void;
   initialRelatedTask?: { id: string; title: string };
   initialWorkspaceId?: string;
+  initialClientId?: string | null;
   onCreated?: () => void;
 }
 
@@ -67,6 +68,7 @@ export function CreateTransactionModal({
   onOpenChange,
   initialRelatedTask,
   initialWorkspaceId,
+  initialClientId,
   onCreated,
 }: CreateTransactionModalProps) {
   const { activeWorkspaceId } = useWorkspace();
@@ -117,9 +119,9 @@ export function CreateTransactionModal({
       setLinkedTask(initialRelatedTask ?? null);
       setTaskQuery("");
       setTaskOptions([]);
-      setClientId(null);
+      setClientId(initialClientId ?? null);
     }
-  }, [open, initialRelatedTask]);
+  }, [open, initialRelatedTask, initialClientId]);
 
   useEffect(() => {
     if (!open || !taskOpen || !effectiveWorkspaceId) return;
@@ -152,12 +154,30 @@ export function CreateTransactionModal({
 
   // Handle amount input (currency mask simulation)
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, "");
-    const numberValue = Number(value) / 100;
-    setAmount(new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(numberValue));
+    let value = e.target.value;
+    
+    // Remove tudo exceto dígitos e vírgula
+    value = value.replace(/[^\d,]/g, "");
+    
+    // Permite apenas uma vírgula
+    const parts = value.split(",");
+    if (parts.length > 2) {
+      value = parts[0] + "," + parts.slice(1).join("");
+    }
+    
+    // Limita a 2 dígitos após a vírgula
+    if (parts.length === 2 && parts[1].length > 2) {
+      value = parts[0] + "," + parts[1].substring(0, 2);
+    }
+    
+    // Formata com pontos de milhar se tiver valor
+    if (value) {
+      const [inteiro, decimal] = value.split(",");
+      const inteiroFormatado = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      value = decimal !== undefined ? `R$ ${inteiroFormatado},${decimal}` : `R$ ${inteiroFormatado}`;
+    }
+    
+    setAmount(value);
   };
 
   const handleSubmit = async () => {
