@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { CreateTransactionModal } from "@/components/finance/CreateTransactionModal";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 interface ClientDetailsClientProps {
   clientId: string;
   workspaceId: string;
-  children: (props: { onOpenModal: () => void }) => React.ReactNode;
 }
 
-export function ClientDetailsClient({ clientId, workspaceId, children }: ClientDetailsClientProps) {
+export function ClientDetailsClient({ clientId, workspaceId }: ClientDetailsClientProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const router = useRouter();
 
@@ -20,8 +20,14 @@ export function ClientDetailsClient({ clientId, workspaceId, children }: ClientD
 
   return (
     <>
-      {children({ onOpenModal: () => setIsModalOpen(true) })}
-      
+      <Button
+        size="sm"
+        className="bg-green-600 hover:bg-green-700 text-white"
+        onClick={() => setIsModalOpen(true)}
+      >
+        Nova Transação
+      </Button>
+
       <CreateTransactionModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}

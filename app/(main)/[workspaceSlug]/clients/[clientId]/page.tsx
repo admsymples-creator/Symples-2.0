@@ -59,9 +59,7 @@ export default async function ClientDetailsPage({
   };
 
   return (
-    <ClientDetailsClient clientId={clientId} workspaceId={client.workspace_id}>
-      {({ onOpenModal }) => (
-      <div className="flex flex-col h-full bg-gray-50/50">
+    <div className="flex flex-col h-full bg-gray-50/50">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
           <div className="flex items-center gap-4 mb-4">
@@ -100,13 +98,7 @@ export default async function ClientDetailsPage({
               <Button variant="outline" size="sm">
                 Editar
               </Button>
-              <Button 
-                size="sm" 
-                className="bg-green-600 hover:bg-green-700 text-white"
-                onClick={onOpenModal}
-              >
-                Nova Transação
-              </Button>
+              <ClientDetailsClient clientId={clientId} workspaceId={client.workspace_id} />
             </div>
           </div>
 
@@ -299,7 +291,5 @@ export default async function ClientDetailsPage({
         </Tabs>
       </div>
     </div>
-      )}
-    </ClientDetailsClient>
   );
 }
