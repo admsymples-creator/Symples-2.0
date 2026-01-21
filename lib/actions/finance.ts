@@ -424,6 +424,11 @@ export async function getTransactionsByTask(taskId: string, workspaceId: string)
   }
 }
 
+interface CreateClientResult {
+  id: string;
+  name: string;
+}
+
 export async function createClient(params: { workspaceId: string; name: string; email?: string | null; phone?: string | null }) {
   try {
     const supabase = await createServerActionClient();
@@ -460,7 +465,8 @@ export async function createClient(params: { workspaceId: string; name: string; 
       throw new Error(error.message);
     }
 
-    return { success: true, client: data };
+    const typedClient = data as CreateClientResult;
+    return { success: true, client: typedClient };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
