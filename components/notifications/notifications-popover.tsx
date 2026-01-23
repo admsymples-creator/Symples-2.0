@@ -406,7 +406,7 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
       toast.success("Convite aceito");
       setIsOpen(false);
 
-      if (result?.workspaceSlug) {
+      if ("workspaceSlug" in result && result.workspaceSlug) {
         router.refresh();
         router.push(`/${result.workspaceSlug}/tasks?invite_accepted=true`);
       } else {
