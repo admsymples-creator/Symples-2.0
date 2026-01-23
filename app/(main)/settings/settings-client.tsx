@@ -380,6 +380,10 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       try {
           const result = await removeMember(workspace.id, memberToRemove);
           
+          if (!result.success) {
+            throw new Error(result.error || "Erro ao remover membro");
+          }
+
           // Atualizar estado local imediatamente (otimistic update)
           setMembers(members.filter(m => m.user_id !== memberToRemove));
           
