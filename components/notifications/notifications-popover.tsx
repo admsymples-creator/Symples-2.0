@@ -406,10 +406,15 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
       toast.success("Convite aceito");
       setIsOpen(false);
 
-      if ("workspaceSlug" in result && result.workspaceSlug) {
-        router.push(`/${result.workspaceSlug}/tasks?invite_accepted=true`);
-      } else {
-        router.push("/home?invite_accepted=true");
+      if (result.success) {
+        const targetSlug = ("workspaceSlug" in result && result.workspaceSlug)
+          ? result.workspaceSlug
+          : ("workspaceId" in result && result.workspaceId ? result.workspaceId : null);
+        if (targetSlug) {
+          router.push(`/${targetSlug}/home?invite_accepted=true`);
+        } else {
+          router.push("/home?invite_accepted=true");
+        }
       }
     } catch (error: any) {
       console.error("Erro ao aceitar convite:", error);

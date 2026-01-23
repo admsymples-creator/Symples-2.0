@@ -52,6 +52,8 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
 
       if (workspaceData?.slug) {
         dashboardHref = `/${workspaceData.slug}/home`;
+      } else {
+        dashboardHref = `/${(invite as any).workspace_id}/home`;
       }
     }
   } catch (error) {
@@ -92,12 +94,14 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
 
       // ✅ CORREÇÃO: Redirecionar direto para o workspace
       // Evita loop de redirecionamento na Home se o banco ainda não propagou
-      if (result.success && result.workspaceSlug) {
-        redirect(`/${result.workspaceSlug}/tasks`);
-      } else {
-        // Fallback para home se não conseguir o slug (mas deve ter)
-        redirect("/home?invite_accepted=true");
+      if (result.success) {
+        const targetSlug = result.workspaceSlug || result.workspaceId;
+        if (targetSlug) {
+          redirect(`/${targetSlug}/home`);
+        }
       }
+      // Fallback para home se não conseguir o slug (mas deve ter)
+      redirect("/home?invite_accepted=true");
     } catch (error) {
       redirect(`/invite/${inviteId}?error=accept_failed`);
     }
@@ -376,4 +380,5 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
     </div>
   );
 }
+
 
