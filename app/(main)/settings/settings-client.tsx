@@ -938,7 +938,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                     <Badge className="bg-green-600 hover:bg-green-700">
                       {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)}
                     </Badge>
-                  ) : subscriptionData?.subscription_status === 'trialing' ? (
+                  ) : subscriptionData?.subscription_status === 'trialing' && subscriptionData?.plan !== 'agency' ? (
                     <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 border-yellow-200">
                       Trial
                     </Badge>
@@ -947,7 +947,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   )}
                 </div>
                 <CardDescription>
-                  {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at && !subscriptionData?.account_plan
+                {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at && !subscriptionData?.account_plan && subscriptionData?.plan !== 'agency'
                     ? `Trial ativo. Expira em ${new Date(subscriptionData.trial_ends_at).toLocaleDateString('pt-BR')}.`
                     : subscriptionData?.subscription_status === 'active'
                     ? 'Ciclo de faturamento mensal.'
@@ -970,11 +970,11 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                          subscriptionData.subscription_status === 'trialing' ? 'Grátis' : 'R$ 0'}
                       </span>
                       <span className="text-muted-foreground mb-1">
-                        {subscriptionData.subscription_status === 'trialing' ? ' (trial)' : '/mês'}
+                        {subscriptionData.subscription_status === 'trialing' && subscriptionData.plan !== 'agency' ? ' (trial)' : '/mês'}
                       </span>
                     </div>
 
-                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && !subscriptionData.account_plan && (
+                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && !subscriptionData.account_plan && subscriptionData.plan !== 'agency' && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <p className="text-sm text-yellow-800">
                           <strong>Trial ativo:</strong> Você está testando o plano {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)} por 14 dias.

@@ -357,10 +357,15 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         return daysRemaining > 0 ? daysRemaining : 0;
     }, [initialSubscription?.trial_ends_at]);
 
+    const isAgency =
+        initialSubscription?.account_plan === "agency" ||
+        initialSubscription?.plan === "agency";
+
     const isTrialing =
         (initialSubscription?.subscription_status === 'trialing' ||
             initialSubscription?.subscription_status === 'trial') &&
-        !initialSubscription?.account_plan;
+        !initialSubscription?.account_plan &&
+        !isAgency;
     const displayPlanName = getDisplayPlanName(initialSubscription?.plan || null, initialSubscription?.account_plan);
 
     const hasWorkspaces = React.useMemo(() => workspaces.length > 0, [workspaces.length]);

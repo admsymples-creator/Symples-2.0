@@ -34,7 +34,7 @@ export async function checkWorkspaceAccess(
       };
     }
 
-    const { subscription_status, trial_ends_at } = workspace;
+    const { subscription_status, trial_ends_at, plan } = workspace;
 
     // Se está ativo, sempre permitir
     if (subscription_status === "active") {
@@ -47,6 +47,11 @@ export async function checkWorkspaceAccess(
         reason: "Assinatura inativa. Escolha um plano para continuar.",
         upgradeRequired: true,
       };
+    }
+
+    // Agency nunca expira por trial
+    if (plan === "agency") {
+      return { allowed: true };
     }
 
     // Verificar se trial expirou

@@ -18,6 +18,8 @@ interface TrialBannerProps {
 export function TrialBanner({ workspace }: TrialBannerProps) {
   const { activeWorkspaceId } = useWorkspace();
   const [subscriptionData, setSubscriptionData] = useState<WorkspaceSubscription | null>(workspace || null);
+  const isAgency = !!subscriptionData &&
+    (subscriptionData.account_plan === "agency" || subscriptionData.plan === "agency");
 
   // Buscar dados de subscription se não foram passados como prop
   useEffect(() => {
@@ -42,7 +44,8 @@ export function TrialBanner({ workspace }: TrialBannerProps) {
   if (
     !subscriptionData ||
     (subscriptionData.subscription_status !== 'trialing' && subscriptionData.subscription_status !== 'trial') ||
-    subscriptionData.account_plan
+    subscriptionData.account_plan ||
+    isAgency
   ) {
     return null;
   }

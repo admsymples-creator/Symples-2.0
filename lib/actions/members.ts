@@ -314,7 +314,8 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       throw new Error("Erro ao contar membros do workspace.");
     }
 
-    if (!hasAgencyAccount) {
+    const hasAgencyPlan = workspaceData.plan === "agency";
+    if (!hasAgencyAccount && !hasAgencyPlan) {
       // Obter limite do plano
       const { getPlanLimits, getPlanName } = await import("@/lib/utils/subscription-helpers");
       const planLimit = getPlanLimits(workspaceData.plan, workspaceData.subscription_status);

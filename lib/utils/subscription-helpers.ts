@@ -10,6 +10,11 @@ export function getPlanLimits(
   plan: string | null,
   status: string | null
 ): number {
+  // Agency é ilimitado, independente do status
+  if (plan === "agency") {
+    return 999;
+  }
+
   // Exceção: Se está em trial, sempre usar limite do Business
   if (status === "trialing" || status === "trial") {
     return 15; // Limite do Business
