@@ -30,9 +30,11 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
 
   let user = null;
   let invite = null;
+  let dashboardHref = "/home";
+  let supabase: Awaited<ReturnType<typeof createServerActionClient>> | null = null;
 
   try {
-    const supabase = await createServerActionClient();
+    supabase = await createServerActionClient();
     const { data: { user: userData } } = await supabase.auth.getUser();
     user = userData;
 
@@ -40,6 +42,18 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
     // Nota: Se o usuário não estiver logado, getInviteDetails pode retornar null devido ao RLS.
     // Se o email do usuário não bater com o convite, também retornará null.
     invite = await getInviteDetails(inviteId);
+
+    if (invite?.workspace_id) {
+      const { data: workspaceData } = await supabase
+        .from("workspaces")
+        .select("slug")
+        .eq("id", (invite as any).workspace_id)
+        .maybeSingle();
+
+      if (workspaceData?.slug) {
+        dashboardHref = `/${workspaceData.slug}/home`;
+      }
+    }
   } catch (error) {
     // Se houver erro ao buscar dados, tratar como se não tivesse encontrado o convite
     console.error("Erro ao buscar dados do convite:", error);
@@ -61,7 +75,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
             </CardDescription>
           </CardHeader>
           <CardFooter className="justify-center">
-            <Link href="/home">
+            <Link href={dashboardHref}>
               <Button>Ir para Dashboard</Button>
             </Link>
           </CardFooter>
@@ -210,7 +224,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
                 Trocar de conta
               </Button>
             </form>
-            <Link href="/home" className="text-sm text-muted-foreground hover:underline">
+            <Link href={dashboardHref} className="text-sm text-muted-foreground hover:underline">
               Voltar para Home
             </Link>
           </CardFooter>
@@ -271,7 +285,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
                   Trocar de conta
                 </Button>
               </form>
-              <Link href="/home" className="text-sm text-muted-foreground hover:underline">
+              <Link href={dashboardHref} className="text-sm text-muted-foreground hover:underline">
                 Voltar para Home
               </Link>
             </CardFooter>
@@ -304,7 +318,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
               </CardDescription>
             </CardHeader>
             <CardFooter className="justify-center">
-              <Link href="/home">
+              <Link href={dashboardHref}>
                 <Button>Ir para Dashboard</Button>
               </Link>
             </CardFooter>
@@ -355,7 +369,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
             </Button>
           </form>
           <Button variant="ghost" className="text-muted-foreground" asChild>
-            <Link href="/home">Agora não</Link>
+            <Link href={dashboardHref}>Agora não</Link>
           </Button>
         </CardFooter>
       </Card>

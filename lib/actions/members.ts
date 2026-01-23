@@ -1197,6 +1197,13 @@ async function acceptInviteCore(
     maxAge: 60, // 1 minuto (suficiente para o cliente ler e atualizar)
     path: '/',
   });
+  cookieStore.set('active_workspace_id', inviteData.workspace_id, {
+    httpOnly: false, // Mantem compatibilidade com atualizacao no cliente
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 30, // 30 dias
+    path: '/',
+  });
 
   // Limpar cache de workspaces do usuário para forçar recarregamento
   await clearUserWorkspacesCache(user.id);
