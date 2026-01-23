@@ -395,11 +395,11 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
 
       const result = await acceptInviteClient(inviteId);
       if (!result?.success) {
-        if (result?.error === "not_authenticated") {
+        if ("error" in result && result.error === "not_authenticated") {
           router.push(`/login?next=/invite/${inviteId}`);
           return;
         }
-        throw new Error(result?.error || "Erro ao aceitar convite");
+        throw new Error(("error" in result && result.error) ? result.error : "Erro ao aceitar convite");
       }
 
       await handleMarkAsRead(notificationId);
