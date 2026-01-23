@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 
 /**
@@ -9,7 +10,8 @@ import { useWorkspace } from "@/components/providers/SidebarProvider";
  * o contexto do SidebarProvider.
  */
 export function WorkspaceSyncAfterInvite() {
-  const { setActiveWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+  const pathname = usePathname();
 
   useEffect(() => {
     // Função para ler cookie
@@ -24,17 +26,17 @@ export function WorkspaceSyncAfterInvite() {
 
     // Ler cookie setado pelo servidor após aceitar convite
     const newlyAcceptedWorkspaceId = getCookie('newly_accepted_workspace_id');
-
     if (newlyAcceptedWorkspaceId) {
-      // Atualizar workspace ativo no contexto (que também atualiza localStorage)
-      setActiveWorkspaceId(newlyAcceptedWorkspaceId);
+      if (newlyAcceptedWorkspaceId !== activeWorkspaceId) {
+        // Atualizar workspace ativo no contexto (que tambem atualiza localStorage)
+        setActiveWorkspaceId(newlyAcceptedWorkspaceId);
+        console.log("Workspace ativo atualizado para:", newlyAcceptedWorkspaceId);
+      }
 
-      // Limpar o cookie (já foi consumido)
+      // Limpar o cookie (ja foi consumido)
       document.cookie = 'newly_accepted_workspace_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-
-      console.log("✅ Workspace ativo atualizado para:", newlyAcceptedWorkspaceId);
     }
-  }, [setActiveWorkspaceId]);
+  }, [activeWorkspaceId, pathname, setActiveWorkspaceId]);
 
   return null; // Componente não renderiza nada
 }
