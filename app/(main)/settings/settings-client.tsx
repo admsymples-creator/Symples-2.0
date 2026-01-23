@@ -262,6 +262,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [newMember, setNewMember] = useState({ email: "", role: "member" });
+  const [roleUpdateLoading, setRoleUpdateLoading] = useState<Record<string, boolean>>({});
 
   // Modal States
   const [inviteToRevoke, setInviteToRevoke] = useState<string | null>(null);
@@ -347,6 +348,30 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
   const handleRemoveMember = (userId: string) => {
       setMemberToRemove(userId);
+  };
+
+  const handleUpdateMemberRole = async (userId: string, nextRole: "admin" | "member" | "viewer") => {
+      if (!workspace) return;
+      const previousRole = members.find((m) => m.user_id === userId)?.role;
+      if (!previousRole || previousRole === nextRole) return;
+
+      setRoleUpdateLoading((prev) => ({ ...prev, [userId]: true }));
+      setMembers((prev) => prev.map((m) => m.user_id === userId ? { ...m, role: nextRole } : m));
+
+      try {
+          const result = await updateMemberRole(workspace.id, userId, nextRole);
+          if (!result.success) {
+              throw new Error(result.error || "Erro ao atualizar função");
+          }
+          toast.success("Função atualizada");
+      } catch (error: any) {
+          setMembers((prev) => prev.map((m) => m.user_id === userId ? { ...m, role: previousRole } : m));
+          toast.error("Erro ao atualizar função", {
+              description: error?.message || "Tente novamente."
+          });
+      } finally {
+          setRoleUpdateLoading((prev) => ({ ...prev, [userId]: false }));
+      }
   };
 
   const confirmRemoveMember = async () => {
@@ -827,6 +852,12 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                     const email = member.profiles?.email || "";
                     const avatarUrl = member.profiles?.avatar_url;
                     const hasAvatar = avatarUrl && avatarUrl.trim() !== '';
+                    const canEditRole = (currentUserRole === "owner" || currentUserRole === "admin") &&
+                        member.role !== "owner" &&
+                        member.user_id !== user?.id;
+                    const roleOptions = currentUserRole === "owner"
+                        ? ["admin", "member", "viewer"]
+                        : ["member", "viewer"];
                     
                     return (
                         <tr key={member.user_id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
@@ -850,9 +881,28 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             </div>
                         </td>
                         <td className="px-4 py-3">
-                            <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
-                            {getRoleLabel(member.role)}
-                            </Badge>
+                            {canEditRole ? (
+                                <Select
+                                    value={member.role}
+                                    onValueChange={(val) => handleUpdateMemberRole(member.user_id, val as "admin" | "member" | "viewer")}
+                                    disabled={roleUpdateLoading[member.user_id]}
+                                >
+                                    <SelectTrigger className="h-8 w-[160px]">
+                                        <SelectValue placeholder="Selecione" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {roleOptions.map((role) => (
+                                            <SelectItem key={role} value={role}>
+                                                {getRoleLabel(role)}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
+                                    {getRoleLabel(member.role)}
+                                </Badge>
+                            )}
                         </td>
                         <td className="px-4 py-3 text-right">
                             <Button 
