@@ -10,12 +10,19 @@ interface InvitePageProps {
   params: Promise<{
     token: string;
   }>;
+  searchParams: Promise<{
+    error?: string;
+  }>;
 }
 
-export default async function InvitePage({ params }: InvitePageProps) {
+export default async function InvitePage({ params, searchParams }: InvitePageProps) {
   // ✅ CORREÇÃO: Next.js 15+ requer await para params (são Promises)
   const { token } = await params;
+  const { error: errorParam } = await searchParams;
   const inviteId = token;
+  const errorMessage = errorParam === "accept_failed"
+    ? "Nao foi possivel aceitar o convite. Tente novamente ou faca login com o mesmo email."
+    : null;
 
   // ✅ NOTA: O cookie 'pending_invite' é criado automaticamente pelo proxy
   // quando o usuário acessa /invite/[token]. Isso permite que o token sobreviva
@@ -66,15 +73,19 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // Action de aceite para ser chamada pelo formulário
   async function handleAccept() {
     "use server";
-    const result = await acceptInvite(inviteId);
+    try {
+      const result = await acceptInvite(inviteId);
 
-    // ✅ CORREÇÃO: Redirecionar direto para o workspace
-    // Evita loop de redirecionamento na Home se o banco ainda não propagou
-    if (result.success && result.workspaceSlug) {
-      redirect(`/${result.workspaceSlug}/tasks`);
-    } else {
-      // Fallback para home se não conseguir o slug (mas deve ter)
-      redirect("/home?invite_accepted=true");
+      // ✅ CORREÇÃO: Redirecionar direto para o workspace
+      // Evita loop de redirecionamento na Home se o banco ainda não propagou
+      if (result.success && result.workspaceSlug) {
+        redirect(`/${result.workspaceSlug}/tasks`);
+      } else {
+        // Fallback para home se não conseguir o slug (mas deve ter)
+        redirect("/home?invite_accepted=true");
+      }
+    } catch (error) {
+      redirect(`/invite/${inviteId}?error=accept_failed`);
     }
   }
 
@@ -98,6 +109,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center space-y-4">
+              {errorMessage && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {errorMessage}
+                </div>
+              )}
               <p className="text-sm text-muted-foreground">
                 Para aceitar este convite, você precisa criar uma conta ou fazer login.
               </p>
@@ -170,6 +186,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-4">
+            {errorMessage && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {errorMessage}
+              </div>
+            )}
             <div className="rounded-md bg-slate-50 p-3 text-sm">
               <p className="text-slate-500 mb-1">Logado como:</p>
               <p className="font-medium text-[#050815]">{user.email}</p>
@@ -220,6 +241,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center space-y-4">
+              {errorMessage && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {errorMessage}
+                </div>
+              )}
               <div className="rounded-md bg-slate-50 p-3 text-sm space-y-2">
                 <div>
                   <p className="text-slate-500 mb-1">Convite enviado para:</p>
@@ -305,6 +331,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {errorMessage && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 mb-4">
+              {errorMessage}
+            </div>
+          )}
           <div className="rounded-md bg-green-50 p-4 border border-green-100">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-sm border border-green-100">
