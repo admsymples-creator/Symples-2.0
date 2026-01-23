@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { CheckCircle2, AlertCircle, ArrowRight, Building2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { isRedirectError } from "next/dist/client/components/redirect";
 import { createServerActionClient } from "@/lib/supabase/server";
 
 interface InvitePageProps {
@@ -90,25 +89,23 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
   // Action de aceite para ser chamada pelo formulário
   async function handleAccept() {
     "use server";
+    let result: Awaited<ReturnType<typeof acceptInvite>>;
     try {
-      const result = await acceptInvite(inviteId);
-
-      // ✅ CORREÇÃO: Redirecionar direto para o workspace
-      // Evita loop de redirecionamento na Home se o banco ainda não propagou
-      if (result.success) {
-        const targetSlug = result.workspaceSlug || result.workspaceId;
-        if (targetSlug) {
-          redirect(`/${targetSlug}/home`);
-        }
-      }
-      // Fallback para home se não conseguir o slug (mas deve ter)
-      redirect("/home?invite_accepted=true");
+      result = await acceptInvite(inviteId);
     } catch (error) {
-      if (isRedirectError(error)) {
-        throw error;
-      }
       redirect(`/invite/${inviteId}?error=accept_failed`);
     }
+
+    // ✅ CORREÇÃO: Redirecionar direto para o workspace
+    // Evita loop de redirecionamento na Home se o banco ainda não propagou
+    if (result.success) {
+      const targetSlug = result.workspaceSlug || result.workspaceId;
+      if (targetSlug) {
+        redirect(`/${targetSlug}/home`);
+      }
+    }
+    // Fallback para home se não conseguir o slug (mas deve ter)
+    redirect("/home?invite_accepted=true");
   }
 
   // Caso 1: Usuário NÃO logado
