@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationWithActor } from "@/lib/actions/notifications";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -54,6 +55,7 @@ function NotificationItemComponent({
   onDeclineInvite,
   inviteActionState,
 }: NotificationItemProps) {
+  const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
   const isRead = !!notification.read_at;
   const metadata = notification.metadata || {};
 
@@ -78,6 +80,15 @@ function NotificationItemComponent({
 
   const isInviteNotification = Boolean(inviteId) && notification.resource_type === "member";
   const isInviteActionable = isInviteNotification && (!!onAcceptInvite || !!onDeclineInvite);
+  const metadataWorkspaceId =
+    typeof (metadata as any).workspace_id === "string" ? (metadata as any).workspace_id as string : null;
+
+  const canAutoSwitchWorkspace = Boolean(
+    metadataWorkspaceId &&
+    notification.action_url &&
+    !notification.action_url.startsWith("http") &&
+    !notification.action_url.startsWith("/invite")
+  );
   
   // Memoizar cálculo de timeAgo para evitar recálculos desnecessários
   const timeAgo = useMemo(() => {
@@ -212,6 +223,14 @@ function NotificationItemComponent({
     }
   };
 
+  const handleNavigate = () => {
+    if (!canAutoSwitchWorkspace || !metadataWorkspaceId) return;
+    if (metadataWorkspaceId === activeWorkspaceId) return;
+
+    document.cookie = `active_workspace_id=${metadataWorkspaceId}; path=/; max-age=2592000; samesite=lax`;
+    setActiveWorkspaceId(metadataWorkspaceId);
+  };
+
   const content = (
     <div
       className={cn(
@@ -319,7 +338,7 @@ function NotificationItemComponent({
   // Envolver em Link se action_url existir
   if (notification.action_url && !isInviteActionable) {
     return (
-      <Link href={notification.action_url} className="block">
+      <Link href={notification.action_url} className="block" onClick={handleNavigate}>
         {content}
       </Link>
     );
