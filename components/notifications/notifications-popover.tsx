@@ -16,7 +16,7 @@ import {
   getUnreadCount,
   NotificationWithActor 
 } from "@/lib/actions/notifications";
-import { acceptInvite, declineInvite } from "@/lib/actions/members";
+import { acceptInviteClient, declineInvite } from "@/lib/actions/members";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 interface NotificationsPopoverProps {
@@ -393,7 +393,15 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
         return;
       }
 
-      const result = await acceptInvite(inviteId);
+      const result = await acceptInviteClient(inviteId);
+      if (!result?.success) {
+        if (result?.error === "not_authenticated") {
+          router.push(`/login?next=/invite/${inviteId}`);
+          return;
+        }
+        throw new Error(result?.error || "Erro ao aceitar convite");
+      }
+
       await handleMarkAsRead(notificationId);
       toast.success("Convite aceito");
       setIsOpen(false);

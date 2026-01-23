@@ -1014,16 +1014,13 @@ export async function updateMemberRole(
 /**
  * Aceita um convite
  */
-export async function acceptInvite(inviteId: string) {
-  const supabase = await createServerActionClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    // Se não estiver logado, redirecionar para login com callback
-    redirect(`/login?next=/invite/${inviteId}`);
-  }
-
-  // 1. VALIDAÇÃO: Buscar convite usando cliente normal (validações de RLS e email)
+// Internal core to share logic between server and client callers.
+async function acceptInviteCore(
+  inviteId: string,
+  user: { id: string; email?: string | null },
+  supabase: Awaited<ReturnType<typeof createServerActionClient>>
+) {
+// 1. VALIDAÇÃO: Buscar convite usando cliente normal (validações de RLS e email)
   // Tentamos ler com o cliente normal primeiro para garantir que o usuário tem permissão
   const { data: invite, error: inviteError } = await supabase
     .from("workspace_invites")
@@ -1248,8 +1245,45 @@ export async function acceptInvite(inviteId: string) {
 }
 
 /**
- * Recusa um convite (para usuarios convidados)
+ * Aceita um convite
  */
+export async function acceptInvite(inviteId: string) {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    // Se n?o estiver logado, redirecionar para login com callback
+    redirect(`/login?next=/invite/${inviteId}`);
+  }
+
+  return acceptInviteCore(inviteId, user, supabase);
+}
+
+/**
+ * Aceita um convite (client-safe)
+ */
+export async function acceptInviteClient(inviteId: string) {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "not_authenticated" };
+  }
+
+  try {
+    return await acceptInviteCore(inviteId, user, supabase);
+  } catch (error: any) {
+    console.error("Erro ao aceitar convite (client-safe):", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      digest: error?.digest,
+    });
+    return { success: false, error: error?.message || "Erro ao aceitar convite" };
+  }
+}
+
 export async function declineInvite(inviteId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
