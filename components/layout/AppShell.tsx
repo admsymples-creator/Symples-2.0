@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { SidebarProvider, useSidebar, useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
-import { WorkspacesProvider } from "@/components/providers/WorkspacesProvider";
+import { WorkspacesProvider, useWorkspaces } from "@/components/providers/WorkspacesProvider";
 import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { WorkspaceUrlSync } from "@/components/layout/WorkspaceUrlSync";
 import { WorkspaceSyncAfterInvite } from "@/components/providers/WorkspaceSyncAfterInvite";
@@ -27,10 +27,11 @@ interface AppShellProps {
     initialWorkspaceId?: string;
 }
 
-function LayoutContent({ children, user, workspaces, initialSubscription, initialProjectsTags, initialProjectsIcons, initialWorkspaceId }: AppShellProps) {
+function LayoutContent({ children, user, initialSubscription, initialProjectsTags, initialProjectsIcons, initialWorkspaceId }: AppShellProps) {
     const { isCollapsed } = useSidebar();
     const { isSwitchingWorkspace, isInitialLoad } = useWorkspaceLoading();
     const pathname = usePathname();
+    const workspaces = useWorkspaces();
     const previousPathnameRef = useRef(pathname);
 
     // Reset pathname ref quando pathname muda

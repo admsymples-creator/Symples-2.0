@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { useWorkspacesManager } from "@/components/providers/WorkspacesProvider";
+import { getUserWorkspaces } from "@/lib/actions/user";
 
 /**
  * Componente que sincroniza o workspace ativo após aceitar um convite.
@@ -11,6 +13,7 @@ import { useWorkspace } from "@/components/providers/SidebarProvider";
  */
 export function WorkspaceSyncAfterInvite() {
   const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+  const { setWorkspaces } = useWorkspacesManager();
   const pathname = usePathname();
 
   useEffect(() => {
@@ -33,10 +36,16 @@ export function WorkspaceSyncAfterInvite() {
         console.log("Workspace ativo atualizado para:", newlyAcceptedWorkspaceId);
       }
 
+      getUserWorkspaces()
+        .then((nextWorkspaces) => setWorkspaces(nextWorkspaces || []))
+        .catch((error) => {
+          console.error("Erro ao atualizar lista de workspaces:", error);
+        });
+
       // Limpar o cookie (ja foi consumido)
       document.cookie = 'newly_accepted_workspace_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     }
-  }, [activeWorkspaceId, pathname, setActiveWorkspaceId]);
+  }, [activeWorkspaceId, pathname, setActiveWorkspaceId, setWorkspaces]);
 
   return null; // Componente não renderiza nada
 }

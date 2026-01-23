@@ -1209,9 +1209,10 @@ async function acceptInviteCore(
   await clearUserWorkspacesCache(user.id);
   
   // Revalidar caminhos importantes para garantir que o layout encontre os workspaces
-  revalidatePath("/", "layout");
-  revalidatePath("/home");
-  revalidatePath("/settings");
+    revalidatePath("/", "layout");
+    revalidatePath("/(main)", "layout");
+    revalidatePath("/home");
+    revalidatePath("/settings");
 
   // ✅ Buscar slug do workspace para redirecionar diretamente
   // Isso evita race condition onde o usuário é redirecionado para /home antes
