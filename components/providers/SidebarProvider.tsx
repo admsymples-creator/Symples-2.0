@@ -56,6 +56,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         return () => clearTimeout(timer);
     }, []);
 
+    // Sincronizar workspace ativo com cookie para SSR (/home e afins)
+    useEffect(() => {
+        if (!activeWorkspaceId) return;
+        document.cookie = `active_workspace_id=${activeWorkspaceId}; path=/; max-age=2592000; samesite=lax`;
+    }, [activeWorkspaceId]);
+
     const toggleSidebar = () => {
         const newState = !isCollapsed;
         setIsCollapsed(newState);
