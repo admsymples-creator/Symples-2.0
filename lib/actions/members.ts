@@ -1222,7 +1222,7 @@ export async function acceptInvite(inviteId: string) {
   const workspaceSlug = workspaceData?.slug || null;
 
   if (!workspaceSlug) {
-    console.warn("⚠️ Workspace slug não encontrado para workspace:", invite.workspace_id);
+    console.warn("⚠️ Workspace slug não encontrado para workspace:", inviteData.workspace_id);
   }
 
   console.log("✅ Convite aceito com sucesso:", {
