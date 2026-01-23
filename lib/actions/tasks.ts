@@ -1,6 +1,7 @@
 "use server";
 
 import { createServerActionClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import { Database } from "@/types/database.types";
 
@@ -1433,7 +1434,7 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
 
   const cacheKey = `${user.id}:${workspaceSlug}`;
   const cached = readCache(workspaceIdBySlugCache, cacheKey);
-  if (cached) {
+  if (cached && cached.value !== null) {
     return cached.value;
   }
 
@@ -1458,7 +1459,10 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
     .eq("slug", workspaceSlug)
     .single();
 
-  const workspaceId = workspaceBySlug?.id || workspaceSlug;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    workspaceSlug
+  );
+  let workspaceId = workspaceBySlug?.id || (isUuid ? workspaceSlug : null);
   if (workspaceId) {
     const { data: membership } = await supabase
       .from("workspace_members")
@@ -1473,8 +1477,36 @@ export async function getWorkspaceIdBySlug(workspaceSlug: string): Promise<strin
     }
   }
 
+  // Fallback admin: evita cache/RLS stale logo após aceitar convite
+  try {
+    const supabaseAdmin = await createServiceRoleClient();
+    if (!workspaceId) {
+      const { data: adminWorkspace } = await supabaseAdmin
+        .from("workspaces")
+        .select("id")
+        .eq("slug", workspaceSlug)
+        .single();
+      workspaceId = adminWorkspace?.id || null;
+    }
+
+    if (workspaceId) {
+      const { data: adminMembership } = await supabaseAdmin
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (adminMembership?.workspace_id) {
+        writeCache(workspaceIdBySlugCache, cacheKey, adminMembership.workspace_id);
+        return adminMembership.workspace_id;
+      }
+    }
+  } catch (error) {
+    console.warn("[getWorkspaceIdBySlug] Falha ao validar acesso com admin:", error);
+  }
+
   console.warn(`[getWorkspaceIdBySlug] Workspace não encontrado para slug: ${workspaceSlug}`);
-  writeCache(workspaceIdBySlugCache, cacheKey, null);
   return null;
 }
 
