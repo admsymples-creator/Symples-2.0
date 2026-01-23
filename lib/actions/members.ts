@@ -830,27 +830,27 @@ export async function resendInvite(inviteId: string) {
 
 /**
  * Remove um membro do workspace
- * Security: Verifica permissões (owner/admin), previne auto-remoção, valida hierarquia
- * Audit: Registra a ação em audit_logs
- * Safety: Alerta se for o último admin sendo removido
+ * Security: Verifica permissoes (owner/admin), previne auto-remocao, valida hierarquia
+ * Audit: Registra a acao em audit_logs
+ * Safety: Alerta se for o ultimo admin sendo removido
  */
 export async function removeMember(workspaceId: string, userId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    return { success: false, error: "N??o autenticado" };
+    return { success: false, error: "Nao autenticado" };
   }
 
-  // ??? SECURITY: Verificar se o usu??rio est?? tentando remover a si mesmo
+  // SECURITY: Verificar se o usuario esta tentando remover a si mesmo
   if (user.id === userId) {
     return {
       success: false,
-      error: "Voc?? n??o pode remover a si mesmo do workspace. Use a op????o 'Deixar workspace' se desejar sair."
+      error: "Voce nao pode remover a si mesmo do workspace. Use a opcao 'Deixar workspace' se desejar sair."
     };
   }
 
-  // ??? SECURITY: Verificar permiss??es do usu??rio atual (owner ou admin)
+  // SECURITY: Verificar permissoes do usuario atual (owner ou admin)
   const { data: currentMember } = await supabase
     .from("workspace_members")
     .select("role")
@@ -859,7 +859,7 @@ export async function removeMember(workspaceId: string, userId: string) {
     .maybeSingle();
 
   if (!currentMember || (currentMember.role !== "owner" && currentMember.role !== "admin")) {
-    return { success: false, error: "Permiss??o negada. Apenas admins podem remover membros." };
+    return { success: false, error: "Permissao negada. Apenas admins podem remover membros." };
   }
 
   // Verificar dados do membro a ser removido
@@ -873,16 +873,16 @@ export async function removeMember(workspaceId: string, userId: string) {
   if (!targetMember) {
     return {
       success: true,
-      warning: "Membro j?? havia sido removido ou n??o existe no workspace."
+      warning: "Membro ja havia sido removido ou nao existe no workspace."
     };
   }
 
-  // ??? SECURITY: Apenas owner pode remover outro owner
+  // SECURITY: Apenas owner pode remover outro owner
   if (targetMember.role === "owner" && currentMember.role !== "owner") {
     return { success: false, error: "Apenas o owner pode remover outro owner." };
   }
 
-  // ??? SAFETY: Verificar se ?? o ??ltimo admin sendo removido
+  // SAFETY: Verificar se e o ultimo admin sendo removido
   // Buscar todos os admins do workspace (owner + admin)
   const { data: allAdmins, error: adminsError } = await supabase
     .from("workspace_members")
@@ -892,25 +892,25 @@ export async function removeMember(workspaceId: string, userId: string) {
 
   if (adminsError) {
     console.error("Erro ao verificar admins:", adminsError);
-    // N??o bloquear a remo????o por causa disso, apenas logar
+    // Nao bloquear a remocao por causa disso, apenas logar
   }
 
   const isLastAdmin = allAdmins && allAdmins.length === 1 && allAdmins[0].user_id === userId;
   if (isLastAdmin && targetMember.role === "admin") {
-    // Permitir a remo????o, mas registrar aviso (ser?? retornado na resposta)
-    console.warn("?????? ATEN????O: Removendo o ??ltimo admin do workspace. Workspace ficar?? sem admins!");
+    // Permitir a remocao, mas registrar aviso (sera retornado na resposta)
+    console.warn("ATENCAO: Removendo o ultimo admin do workspace. Workspace ficara sem admins!");
   }
 
-  // Usar supabaseAdmin para garantir que a remo????o funcione mesmo com RLS restritivo
+  // Usar supabaseAdmin para garantir que a remocao funcione mesmo com RLS restritivo
   const supabaseAdmin = await createServiceRoleClient();
 
-  // ??? AUDIT: Registrar a????o antes de remover
+  // AUDIT: Registrar a acao antes de remover
   try {
     const { error: auditError } = await supabaseAdmin
       .from("audit_logs")
       .insert({
         workspace_id: workspaceId,
-        user_id: user.id || null, // Quem executou a a????o (pode ser null em edge cases)
+        user_id: user.id || null, // Quem executou a acao (pode ser null em edge cases)
         action: "removed_member",
         details: {
           removed_user_id: userId,
@@ -920,15 +920,15 @@ export async function removeMember(workspaceId: string, userId: string) {
       });
 
     if (auditError) {
-      console.error("?????? Erro ao registrar audit log (n??o bloqueia remo????o):", auditError);
-      // N??o bloqueamos a remo????o se o audit log falhar
+      console.error("Erro ao registrar audit log (nao bloqueia remocao):", auditError);
+      // Nao bloqueamos a remocao se o audit log falhar
     }
   } catch (auditErr: any) {
-    console.error("?????? Erro ao registrar audit log:", auditErr);
+    console.error("Erro ao registrar audit log:", auditErr);
     // Continuar mesmo se audit log falhar
   }
 
-  // ??? LOGIC: Remover membro (n??o deleta de auth.users ou profiles)
+  // LOGIC: Remover membro (nao deleta de auth.users ou profiles)
   const { error } = await supabaseAdmin
     .from("workspace_members")
     .delete()
@@ -944,7 +944,7 @@ export async function removeMember(workspaceId: string, userId: string) {
 
   return {
     success: true,
-    warning: isLastAdmin ? "Aten????o: Este era o ??ltimo admin do workspace. O workspace ficar?? sem administradores." : undefined,
+    warning: isLastAdmin ? "Atencao: Este era o ultimo admin do workspace. O workspace ficara sem administradores." : undefined,
   };
 }
 
@@ -1457,3 +1457,5 @@ export async function getInviteDetails(inviteId: string) {
     return null;
   }
 }
+
+

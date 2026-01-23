@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { CheckCircle2, AlertCircle, ArrowRight, Building2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect";
 import { createServerActionClient } from "@/lib/supabase/server";
 
 interface InvitePageProps {
@@ -103,6 +104,9 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
       // Fallback para home se não conseguir o slug (mas deve ter)
       redirect("/home?invite_accepted=true");
     } catch (error) {
+      if (isRedirectError(error)) {
+        throw error;
+      }
       redirect(`/invite/${inviteId}?error=accept_failed`);
     }
   }
