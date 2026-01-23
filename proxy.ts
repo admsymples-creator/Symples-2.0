@@ -5,7 +5,7 @@ import { Database } from '@/types/database.types'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const startTime = Date.now()
   let response = NextResponse.next({
     request: {
@@ -46,14 +46,14 @@ export async function middleware(request: NextRequest) {
       const isProduction = process.env.NODE_ENV === 'production';
 
       response.cookies.set('pending_invite', inviteToken, {
-        httpOnly: false, // Permite leitura no client se necessário
+        httpOnly: true, // Apenas server precisa ler esse cookie
         secure: isProduction, // ✅ HTTPS only em produção (REQUERIDO)
         sameSite: 'lax', // ✅ CRÍTICO: Permite cookie ser lido após OAuth redirect
         maxAge: 3600, // 1 hora
         path: '/', // Disponível em todas as rotas
       });
 
-      console.log('🍪 [Middleware] Cookie pending_invite criado:', {
+      console.log('🍪 [Proxy] Cookie pending_invite criado:', {
         token: inviteToken.substring(0, 8) + '...',
         secure: isProduction,
         sameSite: 'lax',

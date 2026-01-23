@@ -17,7 +17,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
   const { token } = await params;
   const inviteId = token;
 
-  // ✅ NOTA: O cookie 'pending_invite' é criado automaticamente pelo middleware
+  // ✅ NOTA: O cookie 'pending_invite' é criado automaticamente pelo proxy
   // quando o usuário acessa /invite/[token]. Isso permite que o token sobreviva
   // a redirects OAuth e Magic Link sem depender de localStorage ou parâmetros de URL.
 
@@ -104,7 +104,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
             </CardContent>
             <CardFooter className="flex-col gap-3">
               {/* ✅ TASK 2: URL Redundancy - Passar invite token na URL */}
-              {/* O cookie já foi criado pelo middleware, mas adicionar na URL garante redundância */}
+              {/* O cookie já foi criado pelo proxy, mas adicionar na URL garante redundância */}
               <Link href={`/signup?invite=${inviteId}`} className="w-full">
                 <Button className="w-full text-lg py-6 bg-green-600 hover:bg-green-700">
                   Criar Conta e Aceitar

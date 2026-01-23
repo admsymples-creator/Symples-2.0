@@ -38,6 +38,7 @@ import { InlineTextEdit } from "@/components/ui/inline-text-edit";
 import { TaskMembersPicker } from "./pickers/TaskMembersPicker";
 import { AvatarGroup } from "./Avatar";
 import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
+import { buildProjectTags } from "@/lib/utils/project-tags";
 
 interface TaskRowMinifyProps {
   task: {
@@ -377,7 +378,7 @@ function TaskRowMinifyComponent({ task, containerId, isOverlay = false, disabled
   const handleProjectUpdate = async (nextTag: string | null) => {
     setIsProjectOpen(false);
     const previousTags = task.tags || [];
-    const newTags = nextTag ? [nextTag] : [];
+    const newTags = buildProjectTags(previousTags, nextTag);
     onTaskUpdatedOptimistic?.(task.id, { tags: newTags });
 
     try {

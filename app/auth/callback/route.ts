@@ -56,9 +56,9 @@ export async function GET(request: Request) {
                 status: inviteDetails?.status,
               });
               
-              // Limpar cookie se veio do cookie
-              if (inviteTokenSource === 'cookie') {
-                const cookieStore = await cookies();
+              // Limpar cookie pendente para evitar retry com token inválido
+              const cookieStore = await cookies();
+              if (cookieStore.get('pending_invite')) {
                 cookieStore.delete('pending_invite');
               }
               

@@ -7,6 +7,8 @@ import { MockComparison } from "@/components/ui-mocks/MockComparison";
 import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function LandingPage() {
     // Check if user is authenticated and redirect to home
     let shouldRedirect = false;

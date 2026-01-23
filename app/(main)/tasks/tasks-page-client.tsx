@@ -78,6 +78,7 @@ import type { TaskWithDetails } from "@/lib/actions/tasks";
 import type { WorkspaceGroup } from "@/lib/group-actions";
 import { getProjectIcon } from "@/lib/actions/projects";
 import { getIconComponent } from "@/components/projects/IconPicker";
+import { buildProjectTags } from "@/lib/utils/project-tags";
 
 type ViewMode = "list" | "kanban" | "calendar";
 type GroupBy = "status" | "priority" | "assignee" | "date";
@@ -243,6 +244,24 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 }
                 // Ordem padr├úo: inbox primeiro, depois grupos do banco
                 return ["inbox", ...initialGroups.map(g => g.id)];
+            }
+        }
+        return [];
+    });
+    const [projectOrder, setProjectOrder] = useState<string[]>(() => {
+        if (initialViewOption === "project") {
+            if (typeof window !== "undefined") {
+                const savedOrder = localStorage.getItem("taskProjectOrder");
+                if (savedOrder) {
+                    try {
+                        const parsed = JSON.parse(savedOrder);
+                        if (Array.isArray(parsed)) {
+                            return parsed;
+                        }
+                    } catch (e) {
+                        // Fallback para ordem padrão
+                    }
+                }
             }
         }
         return [];
@@ -1611,6 +1630,33 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [groupedData, tagFilter]);
 
+    // ✅ Manter ordem estável dos projetos
+    useEffect(() => {
+        if (viewOption !== "project") return;
+
+        const keys = Object.keys(groupedData);
+        if (keys.length === 0) return;
+
+        setProjectOrder((current) => {
+            const existing = current.filter((key) => keys.includes(key));
+            const missing = keys.filter((key) => !existing.includes(key));
+            let next = [...existing, ...missing];
+
+            if (keys.includes("Inbox")) {
+                next = ["Inbox", ...next.filter((key) => key !== "Inbox")];
+            }
+
+            if (next.length > 0) {
+                localStorage.setItem("taskProjectOrder", JSON.stringify(next));
+            }
+
+            if (next.length === current.length && next.every((key, index) => key === current[index])) {
+                return current;
+            }
+            return next;
+        });
+    }, [groupedData, viewOption]);
+
     // ? CORRE├ç├âO: Reordenar grupos quando viewOption === "group" baseado em groupOrder
     const orderedGroupedData = useMemo(() => {
         if (viewOption === "group") {
@@ -1640,13 +1686,30 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             // mas isso s├│ deve acontecer no primeiro render antes de groupOrder ser inicializado
             return groupedData;
         }
+        if (viewOption === "project") {
+            if (projectOrder.length > 0) {
+                const ordered: Record<string, Task[]> = {};
+                projectOrder.forEach((key) => {
+                    if (groupedData[key]) {
+                        ordered[key] = groupedData[key];
+                    }
+                });
+                Object.keys(groupedData).forEach((key) => {
+                    if (!ordered[key]) {
+                        ordered[key] = groupedData[key];
+                    }
+                });
+                return ordered;
+            }
+            return groupedData;
+        }
         return groupedData;
-    }, [groupedData, viewOption, groupOrder]);
+    }, [groupedData, viewOption, groupOrder, projectOrder]);
 
     // Converter grupos para formato de colunas (Kanban)
     // Otimizado: usa refer├¬ncias est├íveis e evita recria├º├úo quando dados n├úo mudam
     const kanbanColumns = useMemo(() => {
-        const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
+        const dataToUse = viewOption === "group" || viewOption === "project" ? orderedGroupedData : groupedData;
 
         // Early return se n├úo h├í dados
         if (!dataToUse || Object.keys(dataToUse).length === 0) {
@@ -1761,7 +1824,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // Converter grupos para formato de lista (TaskGroup) com ordena├â┬º├â┬úo
     const listGroups = useMemo(() => {
-        const dataToUse = viewOption === "group" ? orderedGroupedData : groupedData;
+        const dataToUse = viewOption === "group" || viewOption === "project" ? orderedGroupedData : groupedData;
         const groups = Object.entries(dataToUse).map(([key, tasks]) => {
             // Ordenar tarefas dentro do grupo
             const sortedTasks = [...tasks].sort((a, b) => {
@@ -1896,9 +1959,19 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 return aIndex - bIndex;
             });
         }
+        if (viewOption === "project" && projectOrder.length > 0) {
+            return groups.sort((a, b) => {
+                const aIndex = projectOrder.indexOf(a.id);
+                const bIndex = projectOrder.indexOf(b.id);
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
+        }
 
         return groups;
-    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder]); // ? Adicionar groupOrder para recalcular quando a ordem mudar
+    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder, projectOrder]); // ? Adicionar groupOrder para recalcular quando a ordem mudar
 
     // Atualizar ref quando listGroups mudar
     useEffect(() => {
@@ -2514,6 +2587,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const targetIndex = overIndex >= 0 ? overIndex : destinationTasks.length;
 
         const isSameGroup = sourceGroupKey === destinationGroupKey;
+        let nextProjectTag: string | null = null;
 
         const updateData: {
             status?: "todo" | "in_progress" | "done" | "archived" | "review" | "correction";
@@ -2555,7 +2629,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     case "project": {
                         const normalizedKey = destinationGroupKey.toLowerCase();
                         const isEmptyProject = normalizedKey === "sem projeto" || normalizedKey === "inbox";
-                        updateData.tags = isEmptyProject ? [] : [destinationGroupKey];
+                        nextProjectTag = isEmptyProject ? null : destinationGroupKey;
                         break;
                     }
                 }
@@ -2602,6 +2676,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         // aplicar altera├º├Áes de grupo/status/priority se mudou de grupo
         if (!isSameGroup) {
+            if (viewOption === "project") {
+                updateData.tags = buildProjectTags(moving.tags, nextProjectTag);
+            }
             if (updateData.status) {
                 const statusLabel =
                     STATUS_TO_LABEL[updateData.status as keyof typeof STATUS_TO_LABEL] || moving.status;

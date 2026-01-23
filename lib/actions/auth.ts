@@ -101,6 +101,7 @@ export async function loginWithEmail(formData: FormData) {
   try {
     // Extrair email do FormData
     const email = formData.get('email')?.toString().trim()
+    const inviteToken = formData.get('inviteToken')?.toString()
 
     // Validar se o email foi fornecido
     if (!email) {
@@ -124,7 +125,10 @@ export async function loginWithEmail(formData: FormData) {
     // Configurar URL de redirecionamento dinamicamente
     // Captura a URL base usando NEXT_PUBLIC_SITE_URL ou fallback para localhost
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-    const emailRedirectTo = `${baseUrl}/auth/callback`
+    let emailRedirectTo = `${baseUrl}/auth/callback`
+    if (inviteToken) {
+      emailRedirectTo += `?invite=${inviteToken}`
+    }
 
     // Chamar signInWithOtp do Supabase
     const { error } = await supabase.auth.signInWithOtp({
