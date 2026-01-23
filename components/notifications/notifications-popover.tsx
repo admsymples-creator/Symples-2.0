@@ -410,11 +410,10 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
         const targetSlug = ("workspaceSlug" in result && result.workspaceSlug)
           ? result.workspaceSlug
           : ("workspaceId" in result && result.workspaceId ? result.workspaceId : null);
-        if (targetSlug) {
-          router.push(`/${targetSlug}/home?invite_accepted=true`);
-        } else {
-          router.push("/home?invite_accepted=true");
-        }
+        const targetUrl = targetSlug
+          ? `/${targetSlug}/home?invite_accepted=true`
+          : "/home?invite_accepted=true";
+        window.location.href = targetUrl;
       }
     } catch (error: any) {
       console.error("Erro ao aceitar convite:", error);
