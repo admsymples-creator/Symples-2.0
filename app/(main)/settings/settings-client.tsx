@@ -361,7 +361,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       try {
           const result = await updateMemberRole(workspace.id, userId, nextRole);
           if (!result.success) {
-              throw new Error(result.error || "Erro ao atualizar função");
+              throw new Error("Erro ao atualizar função");
           }
           toast.success("Função atualizada");
       } catch (error: any) {
