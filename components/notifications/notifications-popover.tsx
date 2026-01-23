@@ -407,10 +407,8 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
       setIsOpen(false);
 
       if ("workspaceSlug" in result && result.workspaceSlug) {
-        router.refresh();
         router.push(`/${result.workspaceSlug}/tasks?invite_accepted=true`);
       } else {
-        router.refresh();
         router.push("/home?invite_accepted=true");
       }
     } catch (error: any) {
