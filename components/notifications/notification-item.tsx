@@ -223,12 +223,14 @@ function NotificationItemComponent({
     }
   };
 
-  const handleNavigate = () => {
-    if (!canAutoSwitchWorkspace || !metadataWorkspaceId) return;
+  const handleNavigate = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!canAutoSwitchWorkspace || !metadataWorkspaceId || !notification.action_url) return;
     if (metadataWorkspaceId === activeWorkspaceId) return;
 
+    event.preventDefault();
     document.cookie = `active_workspace_id=${metadataWorkspaceId}; path=/; max-age=2592000; samesite=lax`;
     setActiveWorkspaceId(metadataWorkspaceId);
+    window.location.href = notification.action_url;
   };
 
   const content = (
