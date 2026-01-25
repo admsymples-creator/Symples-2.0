@@ -381,6 +381,13 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           const result = await removeMember(workspace.id, memberToRemove);
           
           if (!result.success) {
+            if (result.error === "Membro nao encontrado para remocao") {
+              setMembers(members.filter(m => m.user_id !== memberToRemove));
+              toast.success("Membro removido", {
+                description: "O usuario ja nao esta no workspace.",
+              });
+              return;
+            }
             throw new Error(result.error || "Erro ao remover membro");
           }
 
