@@ -588,22 +588,28 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     // 7.5. Notificacao interna para usuarios existentes (nao falhar o fluxo se der erro)
     if (existingProfile?.id) {
       try {
-        await createNotification({
-          recipientId: existingProfile.id,
-          triggeringUserId: user.id,
-          category: "admin",
-          resourceType: "member",
-          resourceId: newInvite.id,
-          title: `${inviterProfile?.full_name || "Alguem"} convidou voce para ${workspaceData?.name || "um workspace"}`,
-          content: `Voce foi convidado como ${role}`,
-          actionUrl: `/invite/${newInvite.id}`,
-          metadata: {
-            invite_id: newInvite.id,
-            workspace_id: workspaceId,
-            workspace_name: workspaceData?.name || undefined,
-            role,
-          },
-        });
+        const supabaseAdmin = await createServiceRoleClient();
+        const { error: notificationError } = await supabaseAdmin
+          .from("notifications")
+          .insert({
+            recipient_id: existingProfile.id,
+            triggering_user_id: user.id,
+            category: "admin",
+            resource_type: "member",
+            resource_id: newInvite.id,
+            title: `${inviterProfile?.full_name || "Alguem"} convidou voce para ${workspaceData?.name || "um workspace"}`,
+            content: `Voce foi convidado como ${role}`,
+            action_url: `/invite/${newInvite.id}`,
+            metadata: {
+              invite_id: newInvite.id,
+              workspace_id: workspaceId,
+              workspace_name: workspaceData?.name || undefined,
+              role,
+            },
+          });
+        if (notificationError) {
+          console.error("Erro ao criar notificacao de convite:", notificationError);
+        }
       } catch (notificationError: any) {
         console.error("Erro ao criar notificacao de convite:", notificationError);
       }
