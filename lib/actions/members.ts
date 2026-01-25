@@ -265,8 +265,9 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
   try {
     const supabase = await createServerActionClient();
     const { data: { user } } = await supabase.auth.getUser();
+    const fail = (message: string, code?: string) => ({ success: false, error: message, code });
 
-    if (!user) throw new Error("Não autenticado");
+    if (!user) return fail("Nao autenticado", "not_authenticated");
 
     // 1. Verificar permissões (se é admin do workspace)
     // Consultamos a tabela workspace_members diretamente
@@ -279,11 +280,11 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
     if (memberDataError && memberDataError.code !== 'PGRST116') {
       console.error("Erro ao verificar permissões:", memberDataError);
-      throw new Error("Erro ao verificar permissões.");
+      return fail("Erro ao verificar permissoes.", "permission_check_failed");
     }
 
     if (!memberData || (memberData.role !== "owner" && memberData.role !== "admin")) {
-      throw new Error("Permissão negada. Apenas admins podem convidar.");
+      return fail("Permissao negada. Apenas admins podem convidar.", "permission_denied");
     }
 
     // 1.5. Verificar limites de membros do plano
@@ -301,7 +302,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       .single();
 
     if (workspaceError || !workspaceData) {
-      throw new Error("Erro ao buscar informações do workspace.");
+      return fail("Erro ao buscar informacoes do workspace.", "workspace_not_found");
     }
 
     // Contar membros atuais
@@ -311,7 +312,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       .eq("workspace_id", workspaceId);
 
     if (countError) {
-      throw new Error("Erro ao contar membros do workspace.");
+      return fail("Erro ao contar membros do workspace.", "member_count_failed");
     }
 
     const hasAgencyPlan = workspaceData.plan === "agency";
@@ -323,10 +324,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
       // Verificar se atingiu o limite
       if (currentMembersCount !== null && currentMembersCount >= planLimit) {
-        throw new Error(
-          `Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` +
-          `Upgrade necessário para adicionar mais membros. Acesse /billing para ver os planos disponíveis.`
-        );
+        return fail(`Limite de membros atingido para o plano ${planName} (${planLimit} membro${planLimit > 1 ? 's' : ''}). ` + "Upgrade necessario para adicionar mais membros. Acesse /billing para ver os planos disponiveis.", "member_limit_reached");
       }
     }
 
@@ -336,12 +334,12 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     // Validação de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(normalizedEmail)) {
-      throw new Error("Email inválido.");
+      return fail("Email invalido.", "invalid_email");
     }
 
     // Validação de workspaceId
     if (!workspaceId || typeof workspaceId !== 'string') {
-      throw new Error("Workspace ID inválido.");
+      return fail("Workspace ID invalido.", "invalid_workspace");
     }
 
     // 3. Verificar se o usuário já é membro do workspace
@@ -362,7 +360,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
         .maybeSingle();
 
       if (isMember) {
-        throw new Error("Este usuário já é membro do workspace.");
+        return fail("Este usuario ja e membro do workspace.", "already_member");
       }
     }
 
@@ -384,7 +382,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
     if (existingInvite) {
       if (existingInvite.status === 'pending') {
-        throw new Error("Já existe um convite pendente para este email. Você pode cancelar o convite existente antes de criar um novo.");
+        return fail("Ja existe um convite pendente para este email. Voce pode cancelar o convite existente antes de criar um novo.", "invite_pending");
       } else if (existingInvite.status === 'accepted') {
         // ✅ CORREÇÃO: Se o convite foi aceito, verificar se o usuário ainda é membro
         // Se não for mais membro (foi removido), permitir criar novo convite
@@ -398,7 +396,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
           if (stillMember) {
             // Ainda é membro - não permitir novo convite
-            throw new Error("Este email já foi aceito neste workspace. O usuário já é membro.");
+            return fail("Este email ja foi aceito neste workspace. O usuario ja e membro.", "already_member");
           } else {
             // Não é mais membro - limpar convite antigo e permitir criar novo
             console.log("🔄 Convite aceito encontrado, mas usuário não é mais membro. Limpando convite antigo para permitir reinvite:", existingInvite.id);
@@ -411,7 +409,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
             if (deleteError) {
               console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
-              throw new Error("Erro ao limpar convite antigo. Tente novamente.");
+              return fail("Erro ao limpar convite antigo. Tente novamente.", "invite_cleanup_failed");
             }
 
             console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
@@ -429,7 +427,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
           if (deleteError) {
             console.error("❌ Erro ao excluir convite aceito antigo:", deleteError);
-            throw new Error("Erro ao limpar convite antigo. Tente novamente.");
+            return fail("Erro ao limpar convite antigo. Tente novamente.", "invite_cleanup_failed");
           }
 
           console.log("✅ Convite aceito antigo removido. Prosseguindo com criação do novo convite.");
@@ -444,13 +442,13 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
         if (deleteError) {
           console.error("❌ Erro ao excluir convite cancelado:", deleteError);
-          throw new Error("Erro ao limpar convite cancelado. Tente novamente.");
+          return fail("Erro ao limpar convite cancelado. Tente novamente.", "invite_cleanup_failed");
         }
 
         // Continuar o fluxo normalmente para criar o novo convite
         console.log("✅ Convite cancelado removido. Prosseguindo com criação do novo convite.");
       } else {
-        throw new Error("Já existe um convite para este email (status: " + existingInvite.status + "). Você pode cancelar o convite existente antes de criar um novo.");
+        return fail("Ja existe um convite para este email (status: " + existingInvite.status + "). Voce pode cancelar o convite existente antes de criar um novo.", "invite_exists");
       }
     }
 
@@ -493,15 +491,15 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
       // Tratar erro de constraint unique violation (convite duplicado)
       if (insertError.code === '23505') {
-        throw new Error("Já existe um convite para este email neste workspace. Verifique a lista de convites pendentes.");
+        return fail("Ja existe um convite para este email neste workspace. Verifique a lista de convites pendentes.", "invite_duplicate");
       }
 
-      throw new Error(`Erro ao criar convite: ${insertError.message || 'Erro desconhecido'}`);
+      return fail(`Erro ao criar convite: ${insertError.message || 'Erro desconhecido'}`, "invite_insert_failed");
     }
 
     if (!newInvite || !newInvite.id) {
       console.error("❌ Convite criado mas não retornou ID:", { newInvite });
-      throw new Error("Erro ao criar convite: ID não foi retornado.");
+      return fail("Erro ao criar convite: ID nao foi retornado.", "invite_missing_id");
     }
 
     // 7. Gerar link de convite
@@ -512,7 +510,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     // Em produção/preview, validar que a URL está configurada
     if (process.env.NODE_ENV !== "development" && !baseUrl) {
       console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
-      throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
+      return fail("NEXT_PUBLIC_SITE_URL nao esta configurada. Configure a variavel de ambiente no Vercel.", "missing_site_url");
     }
 
     // Fallback para desenvolvimento
@@ -599,7 +597,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
         // Em produção/preview, se o email falhar, lançar erro para não silenciar
         if (process.env.NODE_ENV !== "development") {
-          throw new Error(emailError || "Falha ao enviar email de convite");
+          return fail(emailError || "Falha ao enviar email de convite", "email_failed");
         }
       }
     } catch (err: any) {
@@ -618,7 +616,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       // Em produção/preview, lançar erro para não silenciar o problema
       // Em desenvolvimento, permitir continuar sem email (para facilitar testes)
       if (process.env.NODE_ENV !== "development") {
-        throw new Error(`Falha ao enviar email de convite: ${emailError}. Verifique se RESEND_API_KEY está configurada no Vercel.`);
+        return fail(`Falha ao enviar email de convite: ${emailError}. Verifique se RESEND_API_KEY esta configurada no Vercel.`, "email_failed");
       }
     }
 
@@ -645,7 +643,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
       role,
       fullError: JSON.stringify(error, Object.getOwnPropertyNames(error), 2),
     });
-    throw new Error(error?.message || "Erro ao processar convite. Verifique os logs para mais detalhes.");
+    return { success: false, error: error?.message || "Erro ao processar convite.", code: "unexpected_error" };
   }
 }
 
@@ -655,8 +653,9 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 export async function revokeInvite(inviteId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
+    const fail = (message: string, code?: string) => ({ success: false, error: message, code });
 
-  if (!user) throw new Error("Não autenticado");
+    if (!user) return fail("Nao autenticado", "not_authenticated");
 
   // Buscar o workspace do convite para verificar permissões
   const { data: invite } = await supabase
@@ -718,8 +717,9 @@ export async function revokeInvite(inviteId: string) {
 export async function resendInvite(inviteId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
+    const fail = (message: string, code?: string) => ({ success: false, error: message, code });
 
-  if (!user) throw new Error("Não autenticado");
+    if (!user) return fail("Nao autenticado", "not_authenticated");
 
   // Buscar dados do convite
   const { data: invite, error: inviteError } = await supabase
@@ -793,7 +793,7 @@ export async function resendInvite(inviteId: string) {
   // Em produção/preview, validar que a URL está configurada
   if (process.env.NODE_ENV !== "development" && !baseUrl) {
     console.error("❌ NEXT_PUBLIC_SITE_URL ou VERCEL_URL não configurada em produção/preview");
-    throw new Error("NEXT_PUBLIC_SITE_URL não está configurada. Configure a variável de ambiente no Vercel.");
+    return fail("NEXT_PUBLIC_SITE_URL nao esta configurada. Configure a variavel de ambiente no Vercel.", "missing_site_url");
   }
 
   // Fallback para desenvolvimento
@@ -958,8 +958,9 @@ export async function updateMemberRole(
 ) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
+    const fail = (message: string, code?: string) => ({ success: false, error: message, code });
 
-  if (!user) throw new Error("Não autenticado");
+    if (!user) return fail("Nao autenticado", "not_authenticated");
 
   // Verificar permissões do usuário atual
   const { data: currentMember } = await supabase
@@ -1458,5 +1459,13 @@ export async function getInviteDetails(inviteId: string) {
     return null;
   }
 }
+
+
+
+
+
+
+
+
 
 

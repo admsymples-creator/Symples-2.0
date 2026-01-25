@@ -419,6 +419,11 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
     try {
         const result = await inviteMember(workspace.id, newMember.email, newMember.role as "admin" | "member" | "viewer");
+        if (!result?.success) {
+            const message = result?.error || "Ocorreu um erro ao processar o convite.";
+            toast.error("Erro ao enviar convite", { description: message });
+            return;
+        }
         
         // ✅ CORREÇÃO: Todos os convites agora são pendentes (fluxo unificado)
         // A função sempre retorna inviteLink quando bem-sucedida
