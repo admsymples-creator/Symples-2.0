@@ -24,6 +24,16 @@ select id, name, slug
 from workspaces
 where id = '0d657a6b-c0be-4e49-8cef-43ceb0a396ce';
 
+-- 4b) Compare with known-good workspace.
+select id, name, slug, owner_id, plan, subscription_status, created_at
+from workspaces
+where id = 'd9d665ff-c541-4277-816e-f140f90ae3e6';
+
+select *
+from workspace_members
+where workspace_id = 'd9d665ff-c541-4277-816e-f140f90ae3e6'
+  and user_id = 'e8b8cea3-7a95-427e-8b34-273e4e5d0752';
+
 -- 5) Optional: remove membership row (if needed).
 delete from workspace_members
 where workspace_id = '0d657a6b-c0be-4e49-8cef-43ceb0a396ce'
