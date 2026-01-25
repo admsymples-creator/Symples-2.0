@@ -929,15 +929,23 @@ export async function removeMember(workspaceId: string, userId: string) {
   }
 
   // LOGIC: Remover membro (nao deleta de auth.users ou profiles)
-  const { error } = await supabaseAdmin
+  const { data: deletedRows, error } = await supabaseAdmin
     .from("workspace_members")
     .delete()
     .eq("workspace_id", workspaceId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("user_id");
 
   if (error) {
     console.error("Erro ao remover membro:", error);
     return { success: false, error: "Erro ao remover membro" };
+  }
+  if (!deletedRows || deletedRows.length === 0) {
+    console.warn("Remocao solicitada, mas nenhum membro foi removido:", {
+      workspaceId,
+      userId,
+    });
+    return { success: false, error: "Membro nao encontrado para remocao" };
   }
 
   await revalidateWorkspaceTeamPaths(workspaceId);
