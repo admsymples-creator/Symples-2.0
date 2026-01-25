@@ -663,7 +663,7 @@ export async function createTask(data: {
       console.log(`[SERVER-ACTION] Checking workspace membership. User: ${user.id}, Workspace: ${data.workspace_id}`);
       const { data: member, error: memberError } = await supabase
         .from("workspace_members")
-        .select("id")
+        .select("user_id")
         .eq("workspace_id", data.workspace_id)
         .eq("user_id", user.id)
         .single();
