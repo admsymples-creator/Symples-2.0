@@ -43,7 +43,7 @@ export function WorkspaceUrlSync({ workspaces }: WorkspaceUrlSyncProps) {
         if (attemptedSlugRef.current === urlSegment) return;
 
         attemptedSlugRef.current = urlSegment;
-        getUserWorkspaces()
+        getUserWorkspaces({ forceRefresh: true })
             .then((nextWorkspaces) => {
                 if (!nextWorkspaces || nextWorkspaces.length === 0) return;
                 setWorkspaces(nextWorkspaces);

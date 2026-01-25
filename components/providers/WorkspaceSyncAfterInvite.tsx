@@ -36,7 +36,7 @@ export function WorkspaceSyncAfterInvite() {
         console.log("Workspace ativo atualizado para:", newlyAcceptedWorkspaceId);
       }
 
-      getUserWorkspaces()
+      getUserWorkspaces({ forceRefresh: true })
         .then((nextWorkspaces) => setWorkspaces(nextWorkspaces || []))
         .catch((error) => {
           console.error("Erro ao atualizar lista de workspaces:", error);

@@ -75,7 +75,7 @@ export const getUserProfile = cache(async () => {
   return profileValue;
 });
 
-export const getUserWorkspaces = cache(async () => {
+export async function getUserWorkspaces(options?: { forceRefresh?: boolean }) {
   const perfStart = perfNow();
   const supabase = await createServerActionClient();
   const {
@@ -95,10 +95,12 @@ export const getUserWorkspaces = cache(async () => {
     return [];
   }
 
-  const cachedWorkspaces = readCache(workspacesCache, user.id);
-  if (cachedWorkspaces) {
-    logPerf("getUserWorkspaces:cache", perfStart, { count: cachedWorkspaces.value.length });
-    return cachedWorkspaces.value;
+  if (!options?.forceRefresh) {
+    const cachedWorkspaces = readCache(workspacesCache, user.id);
+    if (cachedWorkspaces) {
+      logPerf("getUserWorkspaces:cache", perfStart, { count: cachedWorkspaces.value.length });
+      return cachedWorkspaces.value;
+    }
   }
 
   console.log("🔍 [getUserWorkspaces] Buscando workspaces para usuário:", user.id);
@@ -166,7 +168,7 @@ export const getUserWorkspaces = cache(async () => {
   writeCache(workspacesCache, user.id, sortedWorkspaces);
   logPerf("getUserWorkspaces", perfStart, { count: sortedWorkspaces.length });
   return sortedWorkspaces;
-});
+}
 
 /**
  * Limpa o cache de workspaces para um usuário específico
@@ -389,3 +391,6 @@ export async function updateProfile(formData: FormData) {
 
   return { success: true };
 }
+
+
+
