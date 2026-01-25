@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
+import { useWorkspacesManager } from "@/components/providers/WorkspacesProvider";
+import { getUserWorkspaces } from "@/lib/actions/user";
 
 interface WorkspaceUrlSyncProps {
     workspaces: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
@@ -16,9 +18,11 @@ export function WorkspaceUrlSync({ workspaces }: WorkspaceUrlSyncProps) {
         isLoaded,
     } = useWorkspace();
     const { isSwitchingWorkspace, setIsSwitchingWorkspace } = useWorkspaceLoading();
+    const { setWorkspaces } = useWorkspacesManager();
+    const attemptedSlugRef = useRef<string | null>(null);
 
     // Memoizar cálculo do workspace da URL
-    const urlWorkspace = useMemo(() => {
+    const urlSegment = useMemo(() => {
         if (!isLoaded) return null;
         const segments = pathname.split("/").filter(Boolean);
         if (segments.length === 0) return null;
@@ -26,9 +30,35 @@ export function WorkspaceUrlSync({ workspaces }: WorkspaceUrlSyncProps) {
         const nonWorkspaceRoutes = new Set(["login", "register", "onboarding", "invite", "auth"]);
         if (nonWorkspaceRoutes.has(segments[0])) return null;
 
-        const slugOrId = segments[0];
-        return workspaces.find(w => w.id === slugOrId || w.slug === slugOrId) || null;
-    }, [pathname, isLoaded, workspaces]);
+        return segments[0];
+    }, [pathname, isLoaded]);
+
+    const urlWorkspace = useMemo(() => {
+        if (!urlSegment) return null;
+        return workspaces.find(w => w.id === urlSegment || w.slug === urlSegment) || null;
+    }, [urlSegment, workspaces]);
+
+    useEffect(() => {
+        if (!isLoaded || !urlSegment || urlWorkspace) return;
+        if (attemptedSlugRef.current === urlSegment) return;
+
+        attemptedSlugRef.current = urlSegment;
+        getUserWorkspaces()
+            .then((nextWorkspaces) => {
+                if (!nextWorkspaces || nextWorkspaces.length === 0) return;
+                setWorkspaces(nextWorkspaces);
+                const matched = nextWorkspaces.find(
+                    (workspace) => workspace.id === urlSegment || workspace.slug === urlSegment
+                );
+                if (matched && matched.id !== activeWorkspaceId) {
+                    console.debug("[WorkspaceUrlSync] Sync after refresh", matched.id);
+                    setActiveWorkspaceId(matched.id);
+                }
+            })
+            .catch((error) => {
+                console.error("[WorkspaceUrlSync] Failed to refresh workspaces", error);
+            });
+    }, [isLoaded, urlSegment, urlWorkspace, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId]);
 
     useEffect(() => {
         // --- A REGRA DE OURO (CLÁUSULA DE SILÊNCIO) ---
@@ -76,3 +106,4 @@ export function WorkspaceUrlSync({ workspaces }: WorkspaceUrlSyncProps) {
 
     return null;
 }
+

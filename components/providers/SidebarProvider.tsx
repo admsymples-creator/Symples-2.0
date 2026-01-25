@@ -38,14 +38,28 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         const savedSidebar = localStorage.getItem("sidebar-state");
         if (savedSidebar) setIsCollapsed(savedSidebar === "true");
 
-        const savedWorkspace = localStorage.getItem("active-workspace-id");
-        if (savedWorkspace) {
-            // Usa update funcional para não sobrescrever se o URLSync já definiu o workspace correto
-            setActiveWorkspaceId(prev => prev || savedWorkspace);
+        const getCookie = (name: string): string | null => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) {
+                return parts.pop()?.split(";").shift() || null;
+            }
+            return null;
+        };
+
+        const cookieWorkspace = getCookie("active_workspace_id");
+        if (cookieWorkspace) {
+            setActiveWorkspaceId(prev => prev || cookieWorkspace);
+            localStorage.setItem("active-workspace-id", cookieWorkspace);
+        } else {
+            const savedWorkspace = localStorage.getItem("active-workspace-id");
+            if (savedWorkspace) {
+                // Usa update funcional para não sobrescrever se o URLSync já definiu o workspace correto
+                setActiveWorkspaceId(prev => prev || savedWorkspace);
+            }
         }
 
         setIsMounted(true);
-
         // Desligar o Splash Screen inicial após hidratação e pequeno delay
         // Isso garante que o usuário veja o loading antes de qualquer conteúdo
         const timer = setTimeout(() => {
@@ -182,3 +196,6 @@ export function useWorkspaceLoading() {
     if (!context) throw new Error("useWorkspaceLoading must be used within a SidebarProvider");
     return context;
 }
+
+
+
