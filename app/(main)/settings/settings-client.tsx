@@ -427,7 +427,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         
         // ✅ CORREÇÃO: Todos os convites agora são pendentes (fluxo unificado)
         // A função sempre retorna inviteLink quando bem-sucedida
-        if (result.inviteLink) {
+        if (result.success && "inviteLink" in result && result.inviteLink) {
             // Se foi criado convite pendente
             setInviteLink(result.inviteLink);
             toast.success("Convite criado!", {
