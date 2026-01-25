@@ -266,6 +266,7 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     const supabase = await createServerActionClient();
     const { data: { user } } = await supabase.auth.getUser();
     const fail = (message: string, code?: string) => ({ success: false, error: message, code });
+    const debugInvites = process.env.DEBUG_INVITES === "1";
 
     if (!user) return fail("Nao autenticado", "not_authenticated");
 
@@ -330,6 +331,15 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
     // 2. Normalizar email e verificar se usuário já existe
     const normalizedEmail = email.toLowerCase().trim();
+    if (debugInvites) {
+      console.log("[inviteMember] start", {
+        workspaceId,
+        email,
+        normalizedEmail,
+        userId: user.id,
+        role,
+      });
+    }
 
     // Validação de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -359,6 +369,14 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
         .eq("user_id", existingProfile.id)
         .maybeSingle();
 
+      if (debugInvites) {
+        console.log("[inviteMember] membership check", {
+          workspaceId,
+          existingProfileId: existingProfile.id,
+          isMember: !!isMember,
+        });
+      }
+
       if (isMember) {
         return fail("Este usuario ja e membro do workspace.", "already_member");
       }
@@ -381,6 +399,13 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
     }
 
     if (existingInvite) {
+      if (debugInvites) {
+        console.log("[inviteMember] existing invite", {
+          workspaceId,
+          inviteId: existingInvite.id,
+          status: existingInvite.status,
+        });
+      }
       if (existingInvite.status === 'pending') {
         return fail("Ja existe um convite pendente para este email. Voce pode cancelar o convite existente antes de criar um novo.", "invite_pending");
       } else if (existingInvite.status === 'accepted') {
@@ -837,6 +862,7 @@ export async function resendInvite(inviteId: string) {
 export async function removeMember(workspaceId: string, userId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
+  const debugInvites = process.env.DEBUG_INVITES === "1";
 
   if (!user) {
     return { success: false, error: "Nao autenticado" };
@@ -929,6 +955,14 @@ export async function removeMember(workspaceId: string, userId: string) {
   }
 
   // LOGIC: Remover membro (nao deleta de auth.users ou profiles)
+  if (debugInvites) {
+    console.log("[removeMember] delete request", {
+      workspaceId,
+      userId,
+      requestedBy: user?.id || null,
+    });
+  }
+
   const { data: deletedRows, error } = await supabaseAdmin
     .from("workspace_members")
     .delete()
@@ -941,6 +975,12 @@ export async function removeMember(workspaceId: string, userId: string) {
     return { success: false, error: "Erro ao remover membro" };
   }
   if (!deletedRows || deletedRows.length === 0) {
+    if (debugInvites) {
+      console.warn("[removeMember] no rows deleted", {
+        workspaceId,
+        userId,
+      });
+    }
     console.warn("Remocao solicitada, mas nenhum membro foi removido:", {
       workspaceId,
       userId,
