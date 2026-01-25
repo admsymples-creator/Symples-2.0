@@ -270,6 +270,13 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
     if (!user) return fail("Nao autenticado", "not_authenticated");
 
+    if (debugInvites) {
+      console.log("[inviteMember] env", {
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+        vercelEnv: process.env.VERCEL_ENV || null,
+      });
+    }
+
     // 1. Verificar permissões (se é admin do workspace)
     // Consultamos a tabela workspace_members diretamente
     const { data: memberData, error: memberDataError } = await supabase
@@ -362,18 +369,43 @@ export async function inviteMember(workspaceId: string, email: string, role: "ad
 
     // Se o usuário existe, verificar se já é membro
     if (existingProfile) {
-      const { data: isMember } = await supabase
-        .from("workspace_members")
-        .select("user_id")
-        .eq("workspace_id", workspaceId)
-        .eq("user_id", existingProfile.id)
-        .maybeSingle();
+      let isMember = null as null | { user_id?: string };
+      let membershipError: unknown = null;
+      let membershipSource = "admin";
+
+      try {
+        const supabaseAdmin = await createServiceRoleClient();
+        const { data, error } = await supabaseAdmin
+          .from("workspace_members")
+          .select("user_id")
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", existingProfile.id)
+          .maybeSingle();
+        isMember = data;
+        membershipError = error;
+      } catch (error) {
+        membershipSource = "user";
+        membershipError = error;
+      }
+
+      if (membershipSource === "user") {
+        const { data, error } = await supabase
+          .from("workspace_members")
+          .select("user_id")
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", existingProfile.id)
+          .maybeSingle();
+        isMember = data;
+        membershipError = membershipError || error;
+      }
 
       if (debugInvites) {
         console.log("[inviteMember] membership check", {
           workspaceId,
           existingProfileId: existingProfile.id,
           isMember: !!isMember,
+          membershipSource,
+          membershipError,
         });
       }
 
@@ -863,6 +895,13 @@ export async function removeMember(workspaceId: string, userId: string) {
   const supabase = await createServerActionClient();
   const { data: { user } } = await supabase.auth.getUser();
   const debugInvites = process.env.DEBUG_INVITES === "1";
+
+  if (debugInvites) {
+    console.log("[removeMember] env", {
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+      vercelEnv: process.env.VERCEL_ENV || null,
+    });
+  }
 
   if (!user) {
     return { success: false, error: "Nao autenticado" };
