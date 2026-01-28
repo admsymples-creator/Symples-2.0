@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, startTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Plus, ChevronsUpDown, Calendar, Folder, Users, ChevronDown, Search, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Plus, ChevronsUpDown, Folder, Users, ChevronDown, Search, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,6 @@ interface NavItem {
 
 const managementItemsBase: NavItem[] = [
     { label: "Home", href: "/home", icon: Home },
-    { label: "Planner", href: "/planner", icon: Calendar },
     { label: "Tarefas", href: "/tasks", icon: CheckSquare },
     { label: "Financeiro", href: "/finance", icon: DollarSign },
     { label: "Clientes", href: "/clients", icon: Building2 },
@@ -110,8 +109,6 @@ const NavItemView = React.memo(function NavItemView({ item, isActive, isCollapse
             if (item.href.includes('/tasks')) {
                 import("@/components/tasks/TaskBoard").catch(() => { });
                 import("@/components/tasks/TaskDetailModal").catch(() => { });
-            } else if (item.href.includes('/planner')) {
-                import("@/components/calendar/planner-calendar").catch(() => { });
             }
         }
     }, [item.href, router]);
@@ -222,30 +219,23 @@ function ToggleItemView({ label, icon, isActive, isCollapsed, isOpen, onToggle, 
 }
 
 // Componente otimizado para projetos com navegação rápida e prefetch - Memoizado
-const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, isOpen, onToggle, menu }: {
+const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, menu }: {
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     href: string;
     isActive: boolean;
     isCollapsed: boolean;
-    isOpen: boolean;
-    onToggle: () => void;
     menu?: React.ReactNode;
 }) {
     const Icon = icon;
     const router = useRouter();
 
     const handleClick = useCallback((e: React.MouseEvent) => {
-        // Se não estiver colapsado, expandir/colapsar
-        if (!isCollapsed) {
-            onToggle();
-        }
-        // Navegar diretamente para o projeto (não esperar expandir)
         e.preventDefault();
         startTransition(() => {
             router.push(href);
         });
-    }, [href, router, isCollapsed, onToggle]);
+    }, [href, router]);
 
     const handleMouseEnter = useCallback(() => {
         // Prefetch ao hover para carregar mais rápido
@@ -257,7 +247,6 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
             type="button"
             onClick={handleClick}
             onMouseEnter={handleMouseEnter}
-            aria-expanded={isOpen}
             className={cn(
                 "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap w-full",
                 isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm",
@@ -282,7 +271,6 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
                             {menu}
                         </span>
                     )}
-                    <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", !isOpen && "-rotate-90")} />
                 </span>
             )}
         </button>
@@ -309,7 +297,6 @@ const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, h
         prevProps.href === nextProps.href &&
         prevProps.isActive === nextProps.isActive &&
         prevProps.isCollapsed === nextProps.isCollapsed &&
-        prevProps.isOpen === nextProps.isOpen &&
         prevProps.menu === nextProps.menu
     );
 });
@@ -324,7 +311,6 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
     const [isProjectsOpen, setIsProjectsOpen] = useState(true); // Aberto por padrão
     // Inicializar com dados do servidor para exibição instantânea
     const [workspaceTags, setWorkspaceTags] = useState<string[]>(() => initialProjectsTags || []);
-    const [openProjectTags, setOpenProjectTags] = useState<Record<string, boolean>>({});
     const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [selectedIcon, setSelectedIcon] = useState<string>("Folder");
@@ -583,11 +569,6 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                 import("@/components/tasks/TaskBoard").catch(() => { });
             }
 
-            // Prefetch PlannerCalendar para /planner
-            const plannerHref = managementItems.find(item => item.href.includes('/planner'))?.href;
-            if (plannerHref) {
-                import("@/components/calendar/planner-calendar").catch(() => { });
-            }
         }
     }, [workspacePrefix, managementItems, router]);
 
@@ -617,7 +598,7 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
             // Remover query params do href para comparação
             const hrefWithoutQuery = href.split("?")[0];
 
-            const workspaceTargets = ["/home", "/planner", "/finance", "/clients", "/team", "/tasks"];
+            const workspaceTargets = ["/home", "/finance", "/clients", "/team", "/tasks"];
             const match = workspaceTargets.find((target) => hrefWithoutQuery.endsWith(target));
             if (match) {
                 return isWorkspaceScoped(match.slice(1));
@@ -781,14 +762,6 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         setWorkspaceTags(updatedTags);
         workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
 
-        setOpenProjectTags((prev) => {
-            if (!(editProjectOriginalName in prev)) return prev;
-            const next = { ...prev };
-            delete next[editProjectOriginalName];
-            next[nextName] = prev[editProjectOriginalName];
-            return next;
-        });
-
         setProjectIcons((prev) => {
             const next = new Map(prev);
             next.delete(editProjectOriginalName);
@@ -838,13 +811,6 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
         const updatedTags = workspaceTags.filter((item) => item !== tag);
         setWorkspaceTags(updatedTags);
         workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
-
-        setOpenProjectTags((prev) => {
-            if (!(tag in prev)) return prev;
-            const next = { ...prev };
-            delete next[tag];
-            return next;
-        });
 
         setProjectIcons((prev) => {
             const next = new Map(prev);
@@ -987,7 +953,6 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                 ) : (
                                     workspaceTags.map((tag) => {
                                         const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(tag)}`;
-                                        const isTagOpen = openProjectTags[tag] ?? false;
                                         const isTagCurrentlyActive = isTagActive(tag);
                                         const iconName = projectIcons.get(tag) || "Folder";
                                         const ProjectIcon = getIconComponent(iconName);
@@ -1041,25 +1006,8 @@ function SidebarContent({ workspaces = [], initialSubscription = null, initialPr
                                                     icon={ProjectIcon}
                                                     isActive={isTagCurrentlyActive}
                                                     isCollapsed={isCollapsed}
-                                                    isOpen={isTagOpen}
-                                                    onToggle={() => setOpenProjectTags(prev => ({ ...prev, [tag]: !prev[tag] }))}
                                                     menu={projectMenu}
                                                 />
-                                                {isTagOpen && !isCollapsed && (
-                                                    <ul className="pl-8">
-                                                        <li>
-                                                            <NavItemView
-                                                                item={{
-                                                                    label: "Tarefas",
-                                                                    href: tagHref,
-                                                                    icon: CheckSquare,
-                                                                }}
-                                                                isActive={isTagCurrentlyActive}
-                                                                isCollapsed={isCollapsed}
-                                                            />
-                                                        </li>
-                                                    </ul>
-                                                )}
                                             </li>
                                         );
                                     })

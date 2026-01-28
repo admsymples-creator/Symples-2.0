@@ -1,14 +1,13 @@
 import { Suspense } from "react";
 import { getWorkspacesWeeklyStats, getProjectsWeeklyStats } from "@/lib/actions/dashboard";
 import { getTasks } from "@/lib/actions/tasks";
-import { getNotifications } from "@/lib/actions/notifications";
 import { getProjectIcons } from "@/lib/actions/projects";
 import { getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { getUserWorkspaces, getUserProfile } from "@/lib/actions/user";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { TrialBanner } from "@/components/home/TrialBanner";
 import { HomeTasksSection } from "@/components/home/HomeTasksSection";
-import { HomeInboxSection } from "@/components/home/HomeInboxSection";
+import { WeeklyView } from "@/components/home/WeeklyView";
 import { HomeWorkspaceOverview } from "@/components/home/HomeWorkspaceOverview";
 import { DynamicGreeting } from "@/components/home/DynamicGreeting";
 import { PageLoading } from "@/components/ui/page-loading";
@@ -61,18 +60,13 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
 
   // 4. Buscar dados críticos primeiro (tarefas e notificações) para exibição imediata
   const criticalDataStartTime = Date.now();
-  const [initialTasks, initialNotifications] = await Promise.all([
+  const [initialTasks] = await Promise.all([
     // Buscar tarefas iniciais no servidor
     getTasks({
       workspaceId: isPersonal ? null : workspaceId,
       assigneeId: "current",
       dueDateStart: taskFetchStart.toISOString(),
       dueDateEnd: taskFetchEnd.toISOString(),
-    }),
-    // Buscar notificações iniciais no servidor
-    getNotifications({
-      limit: 30,
-      workspaceId: isPersonal ? null : workspaceId,
     }),
   ]);
   // Performance logs removed for production
@@ -105,7 +99,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
       {/* HEADER AREA - LINE 1 */}
       <div className="px-6 pt-6">
         <div className="max-w-[1600px] mx-auto">
-          <div className="bg-white border-none shadow-sm rounded-lg px-6 py-4 sticky top-4 z-10">
+          <div className="bg-white border border-gray-200 rounded-lg px-6 py-4 sticky top-4 z-10">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
@@ -128,15 +122,24 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
               <TrialBanner />
             </Suspense>
 
-            {/* Cards: Minhas tarefas e Caixa de entrada - Carregar imediatamente com dados do servidor */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Visão Semanal (cópia do Planner) */}
+            <div className="rounded-lg border border-gray-200 bg-white p-6">
+              <WeeklyView
+                tasks={initialTasks}
+                workspaces={workspaces.map(({ id, name }) => ({ id, name }))}
+                currentWorkspaceId={workspaceId}
+                isPersonal={isPersonal}
+              />
+            </div>
+
+            {/* Cards: Minhas tarefas - Carregar imediatamente com dados do servidor */}
+            <div className="w-full">
               <HomeTasksSection
                 period="week"
                 initialTasks={initialTasks}
                 initialWorkspaceId={workspaceId}
                 initialIsPersonal={isPersonal}
               />
-              <HomeInboxSection initialNotifications={initialNotifications} />
             </div>
 
             {/* Workspaces Overview - Carregar com Suspense para não bloquear render */}

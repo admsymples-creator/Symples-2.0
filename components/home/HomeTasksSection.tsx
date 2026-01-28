@@ -34,7 +34,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   // activeTasksCache: Tarefas não concluídas (todo, in_progress, review, etc)
   const [activeTasksCache, setActiveTasksCache] = useState<TaskWithDetails[] | null>(
     () => {
-      if (!initialTasks || initialIsPersonal) return null;
+      if (!initialTasks || initialTasks.length === 0 || initialIsPersonal) return null;
       // Se initialTasks existe, filtra as ativas.
       return initialTasks.filter(t => t.status !== "done");
     }
@@ -482,7 +482,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
 
   return (
     <>
-      <div className="rounded-lg border-none shadow-sm h-[400px] flex flex-col">
+      <div className="rounded-lg border border-gray-200 h-[400px] flex flex-col bg-white">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border min-h-[56px] flex items-center">
           <div className="flex items-center justify-between gap-4 w-full">

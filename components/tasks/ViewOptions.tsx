@@ -14,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
 export function GroupingMenu() {
@@ -59,27 +58,16 @@ export function GroupingMenu() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
+            title={groupLabels[currentGroup] ? `Agrupar (${groupLabels[currentGroup]})` : "Agrupar"}
             className={cn(
-              "h-9 px-3 transition-all flex items-center justify-center",
+              "h-9 w-9 transition-all flex items-center justify-center",
               isGrouped
                 ? "text-green-700 hover:text-green-800 hover:bg-green-50"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             )}
           >
-            <LayoutGrid className={cn("mr-2 h-4 w-4", isGrouped ? "text-green-600" : "text-gray-500")} />
-            Agrupar
-            {isGrouped && (
-              <>
-                <div className="mx-2 h-4 w-[1px] bg-green-200" />
-                <Badge
-                  variant="secondary"
-                  className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
-                >
-                  {groupLabels[currentGroup] || "Status"}
-                </Badge>
-              </>
-            )}
+            <LayoutGrid className={cn("h-4 w-4", isGrouped ? "text-green-600" : "text-gray-500")} />
           </Button>
         </DropdownMenuTrigger>
 
@@ -110,15 +98,17 @@ export function GroupingMenu() {
       </DropdownMenu>
 
       {isGrouped && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleClear}
-          className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-          title="Limpar filtro de agrupamento"
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+          <span>{groupLabels[currentGroup] || "Status"}</span>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="ml-1 rounded-full p-0.5 text-green-600 hover:text-green-800 hover:bg-green-100"
+            title="Limpar agrupamento"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
       )}
     </div>
   )

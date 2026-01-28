@@ -146,7 +146,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
             <div
                 ref={setNodeRef}
                 className={cn(
-                    "bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-2 transition-colors",
+                    "bg-gray-50 border-2 border-solid border-gray-200 rounded-lg p-2 transition-colors",
                     // Altura dinâmica: abraça o conteúdo (h-fit) com altura mínima apenas quando vazio
                     // Inbox: altura mínima muito baixa para empty state compacto
                     // Outros grupos: altura mínima maior para melhor área de drop
@@ -208,7 +208,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                             id === "inbox" || id === "Inbox" ? (
                                 <TaskGroupEmpty variant="inbox">
                                     <QuickTaskAdd
-                                        placeholder="Digite para adicionar tarefa ao Inbox..."
+                                        placeholder="Digite para adicionar tarefa ao BACKLOG/INBOX..."
                                         autoFocus={false}
                                         onCancel={handleCancelAdd}
                                         onSubmit={handleSubmitAdd}

@@ -2,7 +2,6 @@
 
 import { Calendar, List, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,30 +36,19 @@ export function CalendarViewMenu({ currentView, onViewChange }: CalendarViewMenu
         <DropdownMenuTrigger asChild>
           <Button 
             variant="ghost" 
-            size="sm" 
+            size="icon" 
+            title={currentOption?.label ? `Visualização (${currentOption.label})` : "Visualização"}
             className={cn(
-              "h-9 px-3 transition-all flex items-center justify-center",
+              "h-9 w-9 transition-all flex items-center justify-center",
               hasActiveView 
                 ? "text-green-700 hover:text-green-800 hover:bg-green-50" 
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             )}
           >
             {currentOption?.icon && (
-              <span className={cn("mr-2", hasActiveView ? "text-green-600" : "text-gray-500")}>
+              <span className={cn(hasActiveView ? "text-green-600" : "text-gray-500")}>
                 {currentOption.icon}
               </span>
-            )}
-            Visualização
-            {hasActiveView && (
-              <>
-                <div className="mx-2 h-4 w-[1px] bg-green-200" />
-                <Badge 
-                  variant="secondary" 
-                  className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
-                >
-                  {currentOption?.label || "Mês"}
-                </Badge>
-              </>
             )}
           </Button>
         </DropdownMenuTrigger>

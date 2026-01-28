@@ -21,7 +21,7 @@ interface WeeklyViewProps {
 export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate, currentWorkspaceId, isPersonal = true }: WeeklyViewProps) {
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
   const shouldReduceMotion = useReducedMotion();
-  const daysToShow = 5;
+  const daysToShow: number = 5;
 
   const formatLocalDateKey = (date: Date) => {
     const year = date.getFullYear();

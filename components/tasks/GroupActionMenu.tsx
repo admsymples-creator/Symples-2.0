@@ -201,7 +201,7 @@ export function GroupActionMenu({
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-48">
-                        {/* Limpar Inbox */}
+                        {/* Limpar Backlog/Inbox */}
                         {onClear && (
                             <DropdownMenuItem
                                 onClick={(e) => {
@@ -212,7 +212,7 @@ export function GroupActionMenu({
                                 disabled={isClearing}
                             >
                                 <Eraser className="w-4 h-4 mr-2" />
-                                Limpar Inbox
+                                Limpar BACKLOG/INBOX
                             </DropdownMenuItem>
                         )}
                     </DropdownMenuContent>
@@ -222,8 +222,8 @@ export function GroupActionMenu({
                 <ConfirmModal
                     open={isClearModalOpen}
                     onOpenChange={setIsClearModalOpen}
-                    title="Limpar Inbox?"
-                    description={`Isso irá mover ${getTasksToClearCount("all")} tarefas do Inbox para o arquivo/concluídas. Confirma?`}
+                    title="Limpar BACKLOG/INBOX?"
+                    description={`Isso irá mover ${getTasksToClearCount("all")} tarefas do BACKLOG/INBOX para o arquivo/concluídas. Confirma?`}
                     confirmText="Limpar Tudo"
                     isLoading={isClearing}
                     onConfirm={confirmClear}

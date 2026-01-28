@@ -133,9 +133,11 @@ export type Database = {
           updated_at: string | null
           workspace_id: string | null
           recurrence_type: "daily" | "weekly" | "monthly" | "custom" | null
+          recurrence_parent_id: string | null
           recurrence_interval: number | null
           recurrence_end_date: string | null
           recurrence_count: number | null
+          recurrence_days: number[] | null
           subtasks: Json | null
           tags: string[] | null
           group_id: string | null
@@ -157,9 +159,11 @@ export type Database = {
           updated_at?: string | null
           workspace_id?: string | null
           recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null
+          recurrence_parent_id?: string | null
           recurrence_interval?: number | null
           recurrence_end_date?: string | null
           recurrence_count?: number | null
+          recurrence_days?: number[] | null
           subtasks?: Json | null
           tags?: string[] | null
           group_id?: string | null
@@ -181,9 +185,11 @@ export type Database = {
           updated_at?: string | null
           workspace_id?: string | null
           recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null
+          recurrence_parent_id?: string | null
           recurrence_interval?: number | null
           recurrence_end_date?: string | null
           recurrence_count?: number | null
+          recurrence_days?: number[] | null
           subtasks?: Json | null
           tags?: string[] | null
           group_id?: string | null

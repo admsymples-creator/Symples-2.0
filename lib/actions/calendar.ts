@@ -21,6 +21,7 @@ export interface CalendarEvent {
     recurrence_type?: string | null;
     recurrence_parent_id?: string | null;
     recurrence_interval?: number | null;
+    recurrence_days?: number[] | null;
     is_virtual?: boolean;
     tags?: string[];
   };
@@ -80,7 +81,7 @@ export async function getTasksForCalendar(
     // Query 1: Tarefas atribuídas ao usuário via assignee_id (de todos os workspaces)
     const query1 = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, recurrence_interval, recurrence_days, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .eq("assignee_id", user.id)
@@ -90,7 +91,7 @@ export async function getTasksForCalendar(
     // Query 2: Tarefas pessoais (sem workspace)
     const query2 = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, recurrence_interval, recurrence_days, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .is("workspace_id", null)
@@ -113,6 +114,8 @@ export async function getTasksForCalendar(
           is_personal,
           recurrence_type,
           recurrence_parent_id,
+          recurrence_interval,
+          recurrence_days,
           tags
         )
       `)
@@ -167,7 +170,7 @@ export async function getTasksForCalendar(
     // Tarefas pessoais (sem workspace)
     const query = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, recurrence_interval, recurrence_days, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .is("workspace_id", null)
@@ -185,7 +188,7 @@ export async function getTasksForCalendar(
     // Query 1: Tarefas atribuídas via assignee_id
     const query1 = supabase
       .from("tasks")
-      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, tags")
+      .select("id, title, due_date, status, priority, workspace_id, is_personal, recurrence_type, recurrence_parent_id, recurrence_interval, recurrence_days, tags")
       .neq("status", "archived")
       .not("due_date", "is", null)
       .eq("workspace_id", workspaceId)
@@ -208,6 +211,8 @@ export async function getTasksForCalendar(
           is_personal,
           recurrence_type,
           recurrence_parent_id,
+          recurrence_interval,
+          recurrence_days,
           tags
         )
       `)
@@ -347,6 +352,8 @@ export async function getTasksForCalendar(
         workspace_name: task.workspace_id ? workspaceMap.get(task.workspace_id) || null : null,
         recurrence_type: (task as any).recurrence_type || null,
         recurrence_parent_id: (task as any).recurrence_parent_id || null,
+        recurrence_interval: (task as any).recurrence_interval || null,
+        recurrence_days: (task as any).recurrence_days || null,
         tags: task.tags || [], // Adicionar tags nas props estendidas
       },
       backgroundColor,

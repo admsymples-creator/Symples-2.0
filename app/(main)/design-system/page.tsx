@@ -75,9 +75,11 @@ export default function DesignSystemPage() {
         origin_context: null,
         // Novos campos obrigatórios
         recurrence_type: null,
+        recurrence_parent_id: null,
         recurrence_interval: null,
         recurrence_end_date: null,
         recurrence_count: 0,
+        recurrence_days: null,
         group_id: null,
         subtasks: null,
         tags: []

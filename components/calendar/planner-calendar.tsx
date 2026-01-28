@@ -163,16 +163,10 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         // Parsers básicos
         const startDate = new Date(event.start);
         let nextDate = new Date(startDate);
-        // Intervalo padrão 1 se não definido
-        // Nota: O tipo CalendarEvent do frontend não tem recurrence_interval explicitamente tipado no extendedProps no arquivo server,
-        // mas assumimos que o backend retorna ou podemos adicionar se faltar.
-        // Se faltar, assumiremos 1.
-        // Para robustez, podemos buscar do evento original se disponível, mas aqui só temos CalendarEvent.
-        // Assumindo 1 por enquanto (diário/semanal simples) ou precisaríamos que getTasksForCalendar retornasse o intervalo.
-        // Verifiquei actions/calendar.ts e recurrence_interval NÃO está no select.
-        // FIX: Precisamos pedir para adicionar recurrence_interval no select do calendar.ts ou assumir 1.
-        // Por hora, assumo 1. O ideal seria o backend retornar.
-        const interval = 1;
+        const interval = event.extendedProps.recurrence_interval || 1;
+        const recurrenceDays = Array.isArray(event.extendedProps.recurrence_days)
+          ? event.extendedProps.recurrence_days
+          : [];
 
         // Projetar
         const now = new Date();
@@ -181,40 +175,89 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         let loops = 0;
         const MAX_LOOPS = 50;
 
-        while (nextDate < limitDate && loops < MAX_LOOPS) {
-          loops++;
-          const type = event.extendedProps.recurrence_type;
+        const type = event.extendedProps.recurrence_type;
 
-          if (type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
-          else if (type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
-          else if (type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
-          else if (type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
+        if ((type === 'weekly' || type === 'custom') && recurrenceDays.length > 0) {
+          const daySet = new Set<number>(recurrenceDays);
+          const baseDate = new Date(startDate);
+          baseDate.setHours(0, 0, 0, 0);
+          const baseTime = {
+            hours: startDate.getHours(),
+            minutes: startDate.getMinutes(),
+            seconds: startDate.getSeconds(),
+            ms: startDate.getMilliseconds(),
+          };
 
-          if (nextDate > limitDate) break;
+          const cursor = new Date(now);
+          if (cursor < baseDate) {
+            cursor.setTime(baseDate.getTime());
+          }
+          cursor.setDate(cursor.getDate() + 1);
 
-          // Ignorar passado
-          if (nextDate <= now) continue;
+          while (cursor <= limitDate && loops < MAX_LOOPS) {
+            loops++;
 
-          const nextDateISO = nextDate.toISOString();
-          const nextDateStr = nextDateISO.split('T')[0];
+            if (daySet.has(cursor.getDay())) {
+              const nextDateWithTime = new Date(cursor);
+              nextDateWithTime.setHours(baseTime.hours, baseTime.minutes, baseTime.seconds, baseTime.ms);
+              const nextDateISO = nextDateWithTime.toISOString();
+              const nextDateStr = nextDateISO.split('T')[0];
 
-          const uniqueKey = `${nextDateStr}-${event.title}-${type}`;
-          if (processedKeys.has(uniqueKey)) continue;
+              const uniqueKey = `${nextDateStr}-${event.title}-${type}`;
+              if (!processedKeys.has(uniqueKey)) {
+                virtualEvents.push({
+                  ...event,
+                  id: `virtual-${event.id}-${nextDateWithTime.getTime()}`,
+                  start: event.allDay ? nextDateStr : nextDateISO,
+                  extendedProps: {
+                    ...event.extendedProps,
+                    status: 'todo',
+                    is_virtual: true as any
+                  },
+                  classNames: [...(event.classNames || []), 'virtual-event']
+                });
 
-          // Criar evento virtual
-          virtualEvents.push({
-            ...event,
-            id: `virtual-${event.id}-${nextDate.getTime()}`,
-            start: event.allDay ? nextDateStr : nextDateISO,
-            extendedProps: {
-              ...event.extendedProps,
-              status: 'todo',
-              is_virtual: true as any // Forçar tipo se não existir na interface
-            },
-            classNames: [...(event.classNames || []), 'virtual-event']
-          });
+                processedKeys.add(uniqueKey);
+              }
+            }
 
-          processedKeys.add(uniqueKey);
+            cursor.setDate(cursor.getDate() + 1);
+          }
+        } else {
+          while (nextDate < limitDate && loops < MAX_LOOPS) {
+            loops++;
+
+            if (type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
+            else if (type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
+            else if (type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
+            else if (type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
+
+            if (nextDate > limitDate) break;
+
+            // Ignorar passado
+            if (nextDate <= now) continue;
+
+            const nextDateISO = nextDate.toISOString();
+            const nextDateStr = nextDateISO.split('T')[0];
+
+            const uniqueKey = `${nextDateStr}-${event.title}-${type}`;
+            if (processedKeys.has(uniqueKey)) continue;
+
+            // Criar evento virtual
+            virtualEvents.push({
+              ...event,
+              id: `virtual-${event.id}-${nextDate.getTime()}`,
+              start: event.allDay ? nextDateStr : nextDateISO,
+              extendedProps: {
+                ...event.extendedProps,
+                status: 'todo',
+                is_virtual: true as any // Forçar tipo se não existir na interface
+              },
+              classNames: [...(event.classNames || []), 'virtual-event']
+            });
+
+            processedKeys.add(uniqueKey);
+          }
         }
       });
 
