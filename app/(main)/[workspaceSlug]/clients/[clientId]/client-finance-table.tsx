@@ -8,6 +8,8 @@ import { EditTransactionModal } from "@/components/finance/EditTransactionModal"
 import { PenLine } from "lucide-react";
 import { updateTransaction } from "@/lib/actions/finance";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 type Transaction = {
   id: string;
@@ -40,15 +42,17 @@ const STATUS_BADGE_CLASSES: Record<Transaction["status"], string> = {
 
 interface ClientFinanceTableProps {
   transactions: Transaction[];
-  formatCurrency: (value: number) => string;
-  formatDate: (value: string) => string;
 }
 
-export function ClientFinanceTable({ transactions, formatCurrency, formatDate }: ClientFinanceTableProps) {
+export function ClientFinanceTable({ transactions }: ClientFinanceTableProps) {
   const [items, setItems] = useState<Transaction[]>(transactions);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 
   const handleStatusChange = async (id: string, nextStatus: Transaction["status"]) => {
     const previous = items.find((t) => t.id === id);
@@ -80,6 +84,13 @@ export function ClientFinanceTable({ transactions, formatCurrency, formatDate }:
     setEditOpen(false);
   };
 
+  const formatDateSafe = (value?: string | null) => {
+    if (!value) return "--";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "--";
+    return format(date, "dd/MM/yyyy", { locale: ptBR });
+  };
+
   return (
     <>
       <div className="overflow-x-auto">
@@ -98,7 +109,7 @@ export function ClientFinanceTable({ transactions, formatCurrency, formatDate }:
             {items.map((t) => (
               <tr key={t.id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
                 <td className="px-4 py-3 text-gray-600">
-                  {formatDate(t.due_date || t.created_at || "")}
+                  {formatDateSafe(t.due_date || t.created_at)}
                 </td>
                 <td className="px-4 py-3 font-medium text-gray-900">{t.description}</td>
                 <td className="px-4 py-3 text-gray-500">
@@ -139,10 +150,10 @@ export function ClientFinanceTable({ transactions, formatCurrency, formatDate }:
                     <PenLine className="h-3.5 w-3.5" />
                   </Button>
                 </td>
-                <td className={`px-4 py-3 text-right font-medium ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
-                  {t.type === "income" ? "+" : "-"}
-                  {formatCurrency(Number(t.amount))}
-                </td>
+              <td className={`px-4 py-3 text-right font-medium ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                {t.type === "income" ? "+" : "-"}
+                {currencyFormatter.format(Number(t.amount))}
+              </td>
               </tr>
             ))}
           </tbody>

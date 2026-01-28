@@ -240,11 +240,7 @@ export default async function ClientDetailsPage({
                   </div>
                 ) : (
                   <Card className="border-gray-100 shadow-sm overflow-hidden">
-                    <ClientFinanceTable
-                      transactions={finance.transactions as any}
-                      formatCurrency={formatCurrency}
-                      formatDate={(value) => format(new Date(value), "dd/MM/yyyy")}
-                    />
+                    <ClientFinanceTable transactions={finance.transactions as any} />
                   </Card>
                 )}
               </div>
