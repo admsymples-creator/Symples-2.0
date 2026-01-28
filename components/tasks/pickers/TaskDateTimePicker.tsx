@@ -22,6 +22,7 @@ interface TaskDateTimePickerProps {
     recurrenceDays?: number[] | null;
     onRecurrenceDaysChange?: (days: number[]) => void;
     allowCustomRecurrence?: boolean;
+    onConfirmApplied?: () => void;
 }
 
 // Funções utilitárias para atalhos
@@ -56,6 +57,7 @@ export function TaskDateTimePicker({
     recurrenceDays: initialRecurrenceDays,
     onRecurrenceDaysChange,
     allowCustomRecurrence = true,
+    onConfirmApplied,
 }: TaskDateTimePickerProps) {
     const [isMounted, setIsMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
@@ -155,6 +157,7 @@ export function TaskDateTimePicker({
             }
         }
         setIsOpen(false);
+        onConfirmApplied?.();
     };
 
     const handleQuickSelect = (quickDate: Date) => {
@@ -193,10 +196,24 @@ export function TaskDateTimePicker({
             }
         } else {
             // Definir padrão como 'daily' quando ativar
-            const defaultType = 'daily';
+            const defaultType = recurrenceType || 'daily';
             setRecurrenceType(defaultType);
             if (onRecurrenceChange) {
                 onRecurrenceChange(defaultType);
+            }
+
+            if (defaultType === "weekly" || defaultType === "custom") {
+                if (recurrenceDays.length === 0) {
+                    const baseDate = selectedDate ?? new Date();
+                    const next = [baseDate.getDay()];
+                    lastChangeSourceRef.current = "internal";
+                    setRecurrenceDays(next);
+                    if (onRecurrenceDaysChange) {
+                        onRecurrenceDaysChange(next);
+                    }
+                } else if (onRecurrenceDaysChange) {
+                    onRecurrenceDaysChange(recurrenceDays);
+                }
             }
         }
     };
@@ -301,34 +318,6 @@ export function TaskDateTimePicker({
                     {/* Coluna 1: Atalhos, Hora, Recorrência, Botões */}
                     <div className="flex flex-col gap-4 w-[220px] p-4 justify-between">
                         <div className="flex flex-col gap-4">
-                            {/* Atalhos Rápidos */}
-                            <div className="flex flex-col gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-xs h-7 justify-start"
-                                    onClick={() => handleQuickSelect(getToday())}
-                                >
-                                    Hoje
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-xs h-7 justify-start"
-                                    onClick={() => handleQuickSelect(getTomorrow())}
-                                >
-                                    Amanhã
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-xs h-7 justify-start"
-                                    onClick={() => handleQuickSelect(getNextWeek())}
-                                >
-                                    Próxima Semana
-                                </Button>
-                            </div>
-
                             {/* Hora */}
                             <div className="space-y-2">
                                 <div className="text-xs font-medium text-gray-700">Hora</div>
@@ -445,7 +434,7 @@ export function TaskDateTimePicker({
                                 className="text-xs h-7 w-full bg-green-600 hover:bg-green-700"
                                 onClick={handleConfirm}
                             >
-                                Confirmar
+                                Agendar
                             </Button>
                         </div>
                     </div>

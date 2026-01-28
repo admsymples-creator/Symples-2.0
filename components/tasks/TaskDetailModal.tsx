@@ -929,8 +929,10 @@ export function TaskDetailModal({
                     updates.status = status;
                     hasUpdates = true;
                 }
-                if (dueDate !== (task?.dueDate || "")) {
-                    updates.due_date = dueDate || null;
+                const baseDueDate = task?.dueDate || (task as any)?.due_date || null;
+                const currentDateOnly = baseDueDate ? formatLocalDateString(baseDueDate) : "";
+                if (dueDate !== currentDateOnly) {
+                    updates.due_date = dueDate ? buildDueDateISO(dueDate, baseDueDate) : null;
                     hasUpdates = true;
                 }
 
@@ -1046,7 +1048,7 @@ export function TaskDetailModal({
                         setTitle(cachedBasic.title || "");
                         setDescription(cachedBasic.description || "");
                         setStatus(cachedBasic.status || "todo");
-                        setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
+                        setDueDate(cachedBasic.due_date ? formatLocalDateString(cachedBasic.due_date) : "");
                         setWorkspaceId(cachedBasic.workspace_id || null);
 
                         // Usar assignees do cache (já inclui task_members)
@@ -1116,7 +1118,7 @@ export function TaskDetailModal({
                         setTitle(basicDetails.title || "");
                         setDescription(basicDetails.description || "");
                         setStatus(basicDetails.status || "todo");
-                        setDueDate(basicDetails.due_date ? new Date(basicDetails.due_date).toISOString().split("T")[0] : "");
+                        setDueDate(basicDetails.due_date ? formatLocalDateString(basicDetails.due_date) : "");
                         setWorkspaceId(basicDetails.workspace_id || null);
 
                         // Usar assignees dos detalhes (já inclui task_members)
@@ -2577,22 +2579,43 @@ export function TaskDetailModal({
         }
     };
 
-    // Helper para converter string YYYY-MM-DD para Date no timezone local
-    // Isso evita o problema de timezone onde new Date("YYYY-MM-DD") interpreta como UTC
+    // Helpers de data no timezone local (evita shifts UTC)
     const parseLocalDate = (dateString: string): Date => {
         const [year, month, day] = dateString.split('-').map(Number);
         return new Date(year, month - 1, day);
     };
 
+    const formatLocalDateString = (dateString: string): string => {
+        const d = new Date(dateString);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    };
+
+    const buildDueDateISO = (dateOnly: string, baseDate?: string | null): string => {
+        const [year, month, day] = dateOnly.split("-").map(Number);
+        const result = new Date(year, month - 1, day);
+        if (baseDate) {
+            const base = new Date(baseDate);
+            result.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+        } else {
+            // meio-dia local reduz risco de shift ao serializar
+            result.setHours(12, 0, 0, 0);
+        }
+        return result.toISOString();
+    };
+
     const handleDueDateChange = async (date: Date | null) => {
-        const dateString = date ? date.toISOString().split("T")[0] : "";
+        const dateString = date ? formatLocalDateString(date.toISOString()) : "";
         const oldDate = dueDate;
         setDueDate(dateString);
 
         if (currentTaskId && !isCreateMode) {
             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
             // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
-            const optimisticDueDate = date ? date.toISOString() : undefined;
+            const baseDueDate = (task?.dueDate || (task as any)?.due_date || null);
+            const optimisticDueDate = date ? buildDueDateISO(formatLocalDateString(date.toISOString()), baseDueDate) : undefined;
             onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
 
             try {
@@ -2600,7 +2623,7 @@ export function TaskDetailModal({
                 const result = await updateTaskField(
                     currentTaskId,
                     "due_date",
-                    date ? date.toISOString() : null
+                    date ? buildDueDateISO(formatLocalDateString(date.toISOString()), baseDueDate) : null
                 );
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate }, { refresh: false });

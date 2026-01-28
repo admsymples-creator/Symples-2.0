@@ -67,8 +67,9 @@ export function DayColumn({
   const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement | null>(null);
   /* --- STATE: Local Persistence for Created Tasks --- */
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Mantém tarefas criadas visíveis até que o servidor as retorne (evita desaparecimento)
@@ -147,14 +148,17 @@ export function DayColumn({
     if (showTutorialHint) setShowTutorialHint(false);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQuickAddValue(e.target.value);
-    e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
 
     if (showTutorialHint && e.target.value.trim().length > 0) {
       setShowTutorialHint(false);
     }
+  };
+
+  const focusQuickAddInput = () => {
+    if (!inputRef.current) return;
+    inputRef.current.focus();
   };
 
   const processBatchInput = (text: string): string[] => {
@@ -222,12 +226,13 @@ export function DayColumn({
     if (tasksToCreate.length === 0) return;
 
     setQuickAddValue("");
+    focusQuickAddInput();
     if (inputRef.current) inputRef.current.style.height = 'auto';
     setIsCreating(true);
 
     // Capturar selectedDateTime e recurrenceType antes de qualquer operação assíncrona
     const currentRecurrenceType = recurrenceTypeRef.current ?? recurrenceType;
-    const currentRecurrenceDays = recurrenceDaysRef.current.length > 0 ? recurrenceDaysRef.current : recurrenceDays;
+    let currentRecurrenceDays = recurrenceDaysRef.current.length > 0 ? recurrenceDaysRef.current : recurrenceDays;
     const currentSelectedDateTime = selectedDateTime;
 
     let dueDateISO: string | undefined = undefined;
@@ -244,8 +249,18 @@ export function DayColumn({
       dueDateISO = adjustedDateTime.toISOString();
     } else if (dateObj) {
       const d = new Date(dateObj);
-      d.setHours(0, 0, 0, 0);
+      // Se estiver recorrente e não escolheu horário, usar padrão 09:00
+      if (currentRecurrenceType) {
+        d.setHours(9, 0, 0, 0);
+      } else {
+        d.setHours(0, 0, 0, 0);
+      }
       dueDateISO = d.toISOString();
+    }
+
+    if ((currentRecurrenceType === "weekly" || currentRecurrenceType === "custom") && currentRecurrenceDays.length === 0) {
+      const base = currentSelectedDateTime ?? (dateObj ? new Date(dateObj) : new Date());
+      currentRecurrenceDays = [base.getDay()];
     }
 
     console.log("[DayColumn] Prepared data", {
@@ -334,7 +349,12 @@ export function DayColumn({
         }
 
         onTaskUpdate?.();
-        router.refresh();
+        if (typeof window !== "undefined") {
+          const ts = Date.now();
+          sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+          window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+        }
+        setTimeout(focusQuickAddInput, 0);
       }
 
       if (failedCount === results.length) {
@@ -355,6 +375,7 @@ export function DayColumn({
       setQuickAddValue(rawValue);
     } finally {
       setIsCreating(false);
+      setTimeout(focusQuickAddInput, 0);
     }
   };
 
@@ -369,11 +390,20 @@ export function DayColumn({
 
       await updateTask({ id, status: checked ? "done" : "todo" });
       onTaskUpdate?.(); // Notificar atualização
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
     } catch (error) {
       console.error("Erro ao atualizar status:", error);
       toast.error("Erro ao atualizar tarefa");
-      router.refresh(); // Reverte estado
+      startTransition(() => {
+        addOptimisticTask({
+          type: 'update',
+          task: { id, status: checked ? "todo" : "done" }
+        });
+      });
     }
   };
 
@@ -456,12 +486,20 @@ export function DayColumn({
       }
 
       onTaskUpdate?.();
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
 
     } catch (error) {
       console.error("Erro ao excluir:", error);
       toast.error("Erro ao processar exclusão");
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
     } finally {
       setIsDeleting(false);
       setShowDeleteModal(false);
@@ -480,11 +518,19 @@ export function DayColumn({
       });
       await updateTask({ id, title });
       onTaskUpdate?.(); // Notificar atualização
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
     } catch (error) {
       console.error("Erro ao editar:", error);
       toast.error("Erro ao editar tarefa");
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
     }
   };
 
@@ -498,11 +544,19 @@ export function DayColumn({
       });
       await updateTask({ id, workspace_id: wid, is_personal: false });
       onTaskUpdate?.(); // Notificar atualização
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
     } catch (error) {
       console.error("Erro ao mover:", error);
       toast.error("Erro ao mover tarefa");
-      router.refresh();
+      if (typeof window !== "undefined") {
+        const ts = Date.now();
+        sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+        window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+      }
     }
   };
 
@@ -571,7 +625,11 @@ export function DayColumn({
                   onMoveToWorkspace={handleMove}
                   onDateUpdate={() => {
                     onTaskUpdate?.();
-                    router.refresh();
+                    if (typeof window !== "undefined") {
+                      const ts = Date.now();
+                      sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+                      window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+                    }
                   }}
                   onOpenDetails={handleOpenDetails}
                 />
@@ -594,7 +652,7 @@ export function DayColumn({
       <div className="flex-none px-3 pb-3 pt-2 relative">
         <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
 
-        <form onSubmit={handleQuickAddSubmit} className="relative z-10">
+        <form ref={formRef} onSubmit={handleQuickAddSubmit} className="relative z-10">
 
           {/* Tutorial Tooltip Hint */}
           {highlightInput && isToday && !isQuickAddFocused && (
@@ -622,7 +680,7 @@ export function DayColumn({
 
           <div className="flex items-center gap-1 px-3 py-2 border-t border-gray-50 bg-gray-50/50 relative z-10 overflow-visible">
             <input
-              ref={inputRef as any}
+              ref={inputRef}
               placeholder="Nova tarefa..."
               value={quickAddValue}
               onChange={(e) => {
@@ -637,9 +695,9 @@ export function DayColumn({
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   e.currentTarget.form?.requestSubmit();
+                  e.currentTarget.focus();
                 }
               }}
-              disabled={isCreating}
               className="flex-1 min-w-0 bg-transparent border-none outline-none text-xs text-gray-800 placeholder:text-gray-400 h-7"
             />
 
@@ -657,6 +715,11 @@ export function DayColumn({
                 recurrenceDaysRef.current = days;
               }}
               allowCustomRecurrence={false}
+              onConfirmApplied={() => {
+                if (quickAddValue.trim()) {
+                  formRef.current?.requestSubmit();
+                }
+              }}
               align="start"
               side="top"
               trigger={
@@ -718,7 +781,11 @@ export function DayColumn({
           task={sortedTasks.find((t) => String(t.id) === selectedTaskId) as any}
           onTaskUpdated={() => {
             onTaskUpdate?.();
-            router.refresh();
+            if (typeof window !== "undefined") {
+              const ts = Date.now();
+              sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+              window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+            }
           }}
         />
       )}

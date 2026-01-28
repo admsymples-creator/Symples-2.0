@@ -13,13 +13,19 @@ export function HomePageClient() {
 
   const handleTaskCreated = () => {
     setIsCreateTaskModalOpen(false);
-    // Recarregar a página para atualizar os dados
-    setTimeout(() => window.location.reload(), 500);
+    if (typeof window !== "undefined") {
+      const ts = Date.now();
+      sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+      window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+    }
   };
 
   const handleTaskUpdated = () => {
-    // Recarregar a página para atualizar os dados
-    setTimeout(() => window.location.reload(), 500);
+    if (typeof window !== "undefined") {
+      const ts = Date.now();
+      sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+      window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+    }
   };
 
   return (

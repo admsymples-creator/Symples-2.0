@@ -59,8 +59,11 @@ export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyView
 
   const handleTaskCreated = () => {
     setIsCreateTaskModalOpen(false);
-    // Recarregar dados da página para mostrar as novas tarefas
-    router.refresh();
+    if (typeof window !== "undefined") {
+      const ts = Date.now();
+      sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+      window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+    }
   };
 
   const handleTaskUpdated = () => {

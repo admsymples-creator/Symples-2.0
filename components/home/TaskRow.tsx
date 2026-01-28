@@ -243,7 +243,7 @@ export function TaskRow({
   return (
     <div
       className={cn(
-        "relative w-full flex items-center justify-between py-0.5 border-b border-gray-50 last:border-0 transition-colors group",
+        "relative w-full flex items-center justify-between py-0.5 min-h-7 border-b border-gray-50 last:border-0 transition-colors group",
         isVirtual ? "opacity-50 bg-gray-50/50 hover:bg-gray-50 cursor-default" : "hover:bg-gray-50"
       )}
     >
