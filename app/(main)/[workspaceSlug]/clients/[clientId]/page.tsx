@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { ClientFinanceTable } from "./client-finance-table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   ArrowLeft, 
@@ -239,50 +240,11 @@ export default async function ClientDetailsPage({
                   </div>
                 ) : (
                   <Card className="border-gray-100 shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
-                          <tr>
-                            <th className="px-4 py-3">Data</th>
-                            <th className="px-4 py-3">Descrição</th>
-                            <th className="px-4 py-3">Categoria</th>
-                            <th className="px-4 py-3">Status</th>
-                            <th className="px-4 py-3 text-right">Valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {finance.transactions.map((t: any) => (
-                            <tr key={t.id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
-                              <td className="px-4 py-3 text-gray-600">
-                                {format(new Date(t.due_date || t.created_at), "dd/MM/yyyy")}
-                              </td>
-                              <td className="px-4 py-3 font-medium text-gray-900">{t.description}</td>
-                              <td className="px-4 py-3 text-gray-500">
-                                <Badge variant="outline" className="font-normal text-xs">
-                                  {t.category}
-                                </Badge>
-                              </td>
-                              <td className="px-4 py-3">
-                                <Badge 
-                                  className={`
-                                    font-normal text-xs capitalize
-                                    ${t.status === 'paid' ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200' : 
-                                      t.status === 'pending' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200' : 
-                                      'bg-gray-100 text-gray-700'}
-                                  `}
-                                  variant="outline"
-                                >
-                                  {t.status === 'paid' ? 'Pago' : t.status === 'pending' ? 'Pendente' : t.status}
-                                </Badge>
-                              </td>
-                              <td className={`px-4 py-3 text-right font-medium ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                                {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount))}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <ClientFinanceTable
+                      transactions={finance.transactions as any}
+                      formatCurrency={formatCurrency}
+                      formatDate={(value) => format(new Date(value), "dd/MM/yyyy")}
+                    />
                   </Card>
                 )}
               </div>

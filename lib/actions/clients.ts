@@ -271,7 +271,7 @@ export async function getClientDetails(clientId: string) {
     // 2. Métricas Financeiras e Transações
     const { data: transactions } = await supabase
         .from("transactions")
-        .select("id, amount, type, status, due_date, description, category, created_at")
+        .select("id, amount, type, status, due_date, description, category, created_at, is_recurring, counterparty_name, client_id, workspace_id")
         .eq("client_id", clientId)
         .order("due_date", { ascending: false });
 

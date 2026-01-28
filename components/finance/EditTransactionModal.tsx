@@ -62,7 +62,7 @@ interface EditTransactionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   transaction: Transaction | null;
-  onSuccess?: () => void;
+  onSuccess?: (updated?: Transaction) => void;
 }
 
 type TransactionType = "income" | "expense";
@@ -165,7 +165,20 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
       if (result.success) {
         toast.success("Transação atualizada com sucesso!");
         onOpenChange(false);
-        onSuccess?.();
+        onSuccess?.({
+          id: transaction.id,
+          amount: numericAmount,
+          type,
+          description,
+          category: category || (type === "income" ? DEFAULT_INCOME_CATEGORY : DEFAULT_EXPENSE_CATEGORY),
+          due_date: dueDate ? dueDate.toISOString() : null,
+          created_at: (date || new Date()).toISOString(),
+          status,
+          is_recurring: isRecurring,
+          counterparty_name: transaction.counterparty_name ?? null,
+          client_id: clientId,
+          workspace_id: transaction.workspace_id ?? null,
+        });
       } else {
         toast.error(result.error || "Erro ao atualizar transação");
       }
@@ -412,5 +425,4 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onSucces
     </Dialog>
   );
 }
-
 
