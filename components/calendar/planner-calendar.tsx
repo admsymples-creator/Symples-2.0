@@ -165,7 +165,9 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
         let nextDate = new Date(startDate);
         const interval = event.extendedProps.recurrence_interval || 1;
         const recurrenceDays = Array.isArray(event.extendedProps.recurrence_days)
-          ? event.extendedProps.recurrence_days
+          ? (event.extendedProps.recurrence_days as Array<number | string>)
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value))
           : [];
 
         // Projetar

@@ -58,6 +58,8 @@ export function DayColumn({
   const [selectedDateTime, setSelectedDateTime] = useState<Date | null>(null);
   const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(null);
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
+  const recurrenceTypeRef = useRef<'daily' | 'weekly' | 'monthly' | 'custom' | null>(null);
+  const recurrenceDaysRef = useRef<number[]>([]);
   const [showTutorialHint, setShowTutorialHint] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -235,13 +237,22 @@ export function DayColumn({
     setIsCreating(true);
 
     // Capturar selectedDateTime e recurrenceType antes de qualquer operação assíncrona
-    const currentRecurrenceType = recurrenceType;
-    const currentRecurrenceDays = recurrenceDays;
+    const currentRecurrenceType = recurrenceTypeRef.current ?? recurrenceType;
+    const currentRecurrenceDays = recurrenceDaysRef.current.length > 0 ? recurrenceDaysRef.current : recurrenceDays;
     const currentSelectedDateTime = selectedDateTime;
 
     let dueDateISO: string | undefined = undefined;
     if (currentSelectedDateTime) {
-      dueDateISO = currentSelectedDateTime.toISOString();
+      const now = new Date();
+      const isSameDay =
+        currentSelectedDateTime.getFullYear() === now.getFullYear() &&
+        currentSelectedDateTime.getMonth() === now.getMonth() &&
+        currentSelectedDateTime.getDate() === now.getDate();
+      let adjustedDateTime = new Date(currentSelectedDateTime);
+      if (isSameDay && adjustedDateTime < now) {
+        adjustedDateTime.setDate(adjustedDateTime.getDate() + 1);
+      }
+      dueDateISO = adjustedDateTime.toISOString();
     } else if (dateObj) {
       const d = new Date(dateObj);
       d.setHours(0, 0, 0, 0);
@@ -329,6 +340,8 @@ export function DayColumn({
           setSelectedDateTime(null);
           setRecurrenceType(null);
           setRecurrenceDays([]);
+          recurrenceTypeRef.current = null;
+          recurrenceDaysRef.current = [];
         }
 
         onTaskUpdate?.();
@@ -412,7 +425,11 @@ export function DayColumn({
         if (task && task.recurrence_type) {
           const current = new Date(task.due_date || new Date());
           const interval = task.recurrence_interval || 1;
-          const recurrenceDaysList = Array.isArray((task as any).recurrence_days) ? (task as any).recurrence_days as number[] : [];
+          const recurrenceDaysList = Array.isArray((task as any).recurrence_days)
+            ? ((task as any).recurrence_days as Array<number | string>)
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value))
+            : [];
 
           let nextDate = new Date(current);
           if ((task.recurrence_type === 'weekly' || task.recurrence_type === 'custom') && recurrenceDaysList.length > 0) {
@@ -641,9 +658,15 @@ export function DayColumn({
               date={selectedDateTime}
               onSelect={setSelectedDateTime}
               recurrenceType={recurrenceType}
-              onRecurrenceChange={setRecurrenceType}
+              onRecurrenceChange={(type) => {
+                setRecurrenceType(type);
+                recurrenceTypeRef.current = type;
+              }}
               recurrenceDays={recurrenceDays}
-              onRecurrenceDaysChange={setRecurrenceDays}
+              onRecurrenceDaysChange={(days) => {
+                setRecurrenceDays(days);
+                recurrenceDaysRef.current = days;
+              }}
               allowCustomRecurrence={false}
               align="start"
               side="top"

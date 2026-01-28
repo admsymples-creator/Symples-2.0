@@ -65,6 +65,13 @@ export function TaskDateTimePicker({
     const [recurrenceEnabled, setRecurrenceEnabled] = useState<boolean>(initialRecurrenceType !== null && initialRecurrenceType !== undefined);
     const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(initialRecurrenceType || null);
     const [recurrenceDays, setRecurrenceDays] = useState<number[]>(() => Array.isArray(initialRecurrenceDays) ? initialRecurrenceDays : []);
+    const lastDaysFromPropsRef = React.useRef<string>("");
+    const lastEmittedDaysRef = React.useRef<string>("");
+    const lastChangeSourceRef = React.useRef<"props" | "internal" | null>(null);
+
+    const getDaysKey = (days: number[]) => {
+        return [...days].sort((a, b) => a - b).join(",");
+    };
 
     // Garantir que renderiza apenas no cliente para evitar problemas de hidratação
     useEffect(() => {
@@ -81,9 +88,12 @@ export function TaskDateTimePicker({
     }, [date]);
 
     useEffect(() => {
-        if (Array.isArray(initialRecurrenceDays)) {
-            setRecurrenceDays(initialRecurrenceDays);
-        }
+        if (!Array.isArray(initialRecurrenceDays)) return;
+        const incomingKey = getDaysKey(initialRecurrenceDays);
+        if (incomingKey === lastDaysFromPropsRef.current) return;
+        lastDaysFromPropsRef.current = incomingKey;
+        lastChangeSourceRef.current = "props";
+        setRecurrenceDays(initialRecurrenceDays);
     }, [initialRecurrenceDays]);
 
     const handleDateSelect = (newDate: Date | undefined) => {
@@ -134,6 +144,16 @@ export function TaskDateTimePicker({
 
     const handleConfirm = () => {
         onSelect(selectedDate);
+        if (onRecurrenceChange) {
+            onRecurrenceChange(recurrenceEnabled ? (recurrenceType || "daily") : null);
+        }
+        if (onRecurrenceDaysChange) {
+            if (recurrenceEnabled && (recurrenceType === "weekly" || recurrenceType === "custom")) {
+                onRecurrenceDaysChange(recurrenceDays);
+            } else {
+                onRecurrenceDaysChange([]);
+            }
+        }
         setIsOpen(false);
     };
 
@@ -163,9 +183,13 @@ export function TaskDateTimePicker({
         setRecurrenceEnabled(checked);
         if (!checked) {
             setRecurrenceType(null);
+            lastChangeSourceRef.current = "internal";
             setRecurrenceDays([]);
             if (onRecurrenceChange) {
                 onRecurrenceChange(null);
+            }
+            if (onRecurrenceDaysChange) {
+                onRecurrenceDaysChange([]);
             }
         } else {
             // Definir padrão como 'daily' quando ativar
@@ -184,11 +208,16 @@ export function TaskDateTimePicker({
             onRecurrenceChange(newType);
         }
         if (newType !== "weekly" && newType !== "custom") {
+            lastChangeSourceRef.current = "internal";
             setRecurrenceDays([]);
+            if (onRecurrenceDaysChange) {
+                onRecurrenceDaysChange([]);
+            }
         }
     };
 
     const handleRecurrenceDaysChange = (day: number) => {
+        lastChangeSourceRef.current = "internal";
         setRecurrenceDays((prev) => {
             const exists = prev.includes(day);
             return exists ? prev.filter((d) => d !== day) : [...prev, day];
@@ -203,12 +232,22 @@ export function TaskDateTimePicker({
         const baseDate = selectedDate ?? new Date();
         const defaultDay = baseDate.getDay();
         const next = [defaultDay];
+        lastChangeSourceRef.current = "internal";
         setRecurrenceDays(next);
-    }, [recurrenceEnabled, recurrenceType, selectedDate, recurrenceDays.length, onRecurrenceDaysChange]);
+    }, [recurrenceEnabled, recurrenceType, selectedDate, recurrenceDays.length]);
 
     useEffect(() => {
         if (onRecurrenceDaysChange) {
+            const key = getDaysKey(recurrenceDays);
+            if (key === lastEmittedDaysRef.current) return;
+            if (lastChangeSourceRef.current === "props" && key === lastDaysFromPropsRef.current) {
+                lastEmittedDaysRef.current = key;
+                lastChangeSourceRef.current = null;
+                return;
+            }
             onRecurrenceDaysChange(recurrenceDays);
+            lastEmittedDaysRef.current = key;
+            lastChangeSourceRef.current = "internal";
         }
     }, [recurrenceDays, onRecurrenceDaysChange]);
 

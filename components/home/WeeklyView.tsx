@@ -80,7 +80,9 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         ? task.recurrence_count
         : null;
       const recurrenceDays = Array.isArray((task as any).recurrence_days)
-        ? ((task as any).recurrence_days as number[])
+        ? ((task as any).recurrence_days as Array<number | string>)
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value))
         : [];
 
       // Projetar até o limite da visualização
