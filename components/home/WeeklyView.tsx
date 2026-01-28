@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { DayColumn } from "@/components/home/DayColumn";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Database } from "@/types/database.types";
+import { PlannerCalendar } from "@/components/calendar/planner-calendar";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -18,23 +19,20 @@ interface WeeklyViewProps {
 }
 
 export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate, currentWorkspaceId, isPersonal = true }: WeeklyViewProps) {
-  // Estado local para controlar a visualização (3 ou 5 dias)
-  const [daysToShow, setDaysToShow] = useState<3 | 5>(5);
+  const [viewMode, setViewMode] = useState<"week" | "month">("week");
   const shouldReduceMotion = useReducedMotion();
+  const daysToShow = 5;
 
-  // Carregar preferência salva no mount
-  useEffect(() => {
-    const saved = localStorage.getItem("dashboard_daysToShow");
-    if (saved === "3" || saved === "5") {
-      setDaysToShow(parseInt(saved) as 3 | 5);
-    }
-  }, []);
+  const formatLocalDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
 
-  // Salvar preferência ao mudar
-  const handleViewChange = (value: string) => {
-    const newValue = parseInt(value) as 3 | 5;
-    setDaysToShow(newValue);
-    localStorage.setItem("dashboard_daysToShow", value);
+  const handleViewModeChange = (value: string) => {
+    const mode = value === "month" ? "month" : "week";
+    setViewMode(mode);
   };
 
   // Agrupar tarefas por dia (Memoizado)
@@ -49,10 +47,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
 
       // Usar SEMPRE o horário local para agrupamento visual, pois as colunas são dias locais.
       // Isso evita que tarefas de workspace (UTC) de fim de dia caiam no dia seguinte visualmente.
-      const dateKey = taskDate.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-      });
+      const dateKey = formatLocalDateKey(taskDate);
 
       if (!grouped[dateKey]) grouped[dateKey] = [];
       grouped[dateKey].push(task);
@@ -60,7 +55,8 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
       // Marcar chave única para evitar gerar virtual neste mesmo dia para esta série
       // Usando ID ou título como "chave da série" simples por enquanto
       if (task.recurrence_type) {
-        const uniqueKey = `${dateKey}-${task.title}-${task.recurrence_type}`;
+        const seriesKey = task.recurrence_parent_id || task.id;
+        const uniqueKey = `${dateKey}-${seriesKey}`;
         processedKeys.add(uniqueKey);
       }
     });
@@ -79,6 +75,13 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
       const taskDate = new Date(task.due_date);
       let nextDate = new Date(taskDate);
       const interval = task.recurrence_interval || 1;
+      const recurrenceEndDate = task.recurrence_end_date ? new Date(task.recurrence_end_date) : null;
+      const maxOccurrences = typeof task.recurrence_count === "number" && task.recurrence_count > 0
+        ? task.recurrence_count
+        : null;
+      const recurrenceDays = Array.isArray((task as any).recurrence_days)
+        ? ((task as any).recurrence_days as number[])
+        : [];
 
       // Projetar até o limite da visualização
       const now = new Date();
@@ -87,53 +90,144 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
       let loops = 0;
       const MAX_LOOPS = 50;
 
-      while (nextDate < limitDate && loops < MAX_LOOPS) {
-        loops++;
+      if ((task.recurrence_type === 'weekly' || task.recurrence_type === 'custom') && recurrenceDays.length > 0) {
+        const daySet = new Set<number>(recurrenceDays);
+        const baseDate = new Date(taskDate);
+        baseDate.setHours(0, 0, 0, 0);
+        const baseTime = {
+          hours: taskDate.getHours(),
+          minutes: taskDate.getMinutes(),
+          seconds: taskDate.getSeconds(),
+          ms: taskDate.getMilliseconds(),
+        };
 
-        // Calcular próxima data baseada no tipo
-        if (task.recurrence_type === 'daily') {
+        const cursor = new Date(now);
+        if (cursor < baseDate) {
+          cursor.setTime(baseDate.getTime());
+        }
+        cursor.setDate(cursor.getDate() + 1);
+
+        let occurrences = 1;
+        while (cursor <= limitDate && loops < MAX_LOOPS) {
+          loops++;
+
+          const daysSinceBase = Math.floor((cursor.getTime() - baseDate.getTime()) / (24 * 60 * 60 * 1000));
+          const weeksSinceBase = Math.floor(daysSinceBase / 7);
+
+          if (daySet.has(cursor.getDay()) && weeksSinceBase % interval === 0) {
+            const nextDateKey = formatLocalDateKey(cursor);
+            const seriesKey = task.recurrence_parent_id || task.id;
+            const uniqueKey = `${nextDateKey}-${seriesKey}`;
+            if (!processedKeys.has(uniqueKey)) {
+              const nextDateWithTime = new Date(cursor);
+              nextDateWithTime.setHours(baseTime.hours, baseTime.minutes, baseTime.seconds, baseTime.ms);
+
+              if (recurrenceEndDate && nextDateWithTime > recurrenceEndDate) {
+                break;
+              }
+              if (maxOccurrences !== null && occurrences >= maxOccurrences) {
+                break;
+              }
+
+              const virtualTask = {
+                ...task,
+                id: `virtual-${task.id}-${nextDateWithTime.getTime()}`,
+                due_date: nextDateWithTime.toISOString(),
+                status: 'todo',
+                is_virtual: true,
+              } as Task & { is_virtual?: boolean };
+
+              if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
+              grouped[nextDateKey].push(virtualTask);
+              processedKeys.add(uniqueKey);
+              occurrences += 1;
+            }
+          }
+
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      } else {
+        const dayMs = 24 * 60 * 60 * 1000;
+        let occurrences = 1;
+
+        // Sempre pular a data base (tarefa real) e avan?ar para a pr?xima ocorr?ncia
+        if (task.recurrence_type === 'daily' || task.recurrence_type === 'custom') {
           nextDate.setDate(nextDate.getDate() + interval);
         } else if (task.recurrence_type === 'weekly') {
           nextDate.setDate(nextDate.getDate() + (7 * interval));
         } else if (task.recurrence_type === 'monthly') {
           nextDate.setMonth(nextDate.getMonth() + interval);
-        } else if (task.recurrence_type === 'custom') {
-          nextDate.setDate(nextDate.getDate() + interval);
         }
 
-        // Se passou do limite, parar
-        if (nextDate > limitDate) break;
+        // Fast-forward quando a tarefa base ? antiga (evita limite de loops)
+        if (nextDate <= now) {
+          if (task.recurrence_type === 'daily' || task.recurrence_type === 'custom') {
+            const daysDiff = Math.floor((now.getTime() - nextDate.getTime()) / dayMs);
+            const steps = Math.floor(daysDiff / interval);
+            nextDate.setDate(nextDate.getDate() + (steps * interval));
+            if (nextDate <= now) nextDate.setDate(nextDate.getDate() + interval);
+          } else if (task.recurrence_type === 'weekly') {
+            const weeksDiff = Math.floor((now.getTime() - nextDate.getTime()) / dayMs / 7);
+            const steps = Math.floor(weeksDiff / interval);
+            nextDate.setDate(nextDate.getDate() + (steps * 7 * interval));
+            if (nextDate <= now) nextDate.setDate(nextDate.getDate() + (7 * interval));
+          } else if (task.recurrence_type === 'monthly') {
+            const monthsDiff = (now.getFullYear() - nextDate.getFullYear()) * 12 + (now.getMonth() - nextDate.getMonth());
+            const steps = Math.floor(monthsDiff / interval);
+            nextDate.setMonth(nextDate.getMonth() + (steps * interval));
+            if (nextDate <= now) nextDate.setMonth(nextDate.getMonth() + interval);
+          }
+        }
 
-        // Se data gerada é anterior ou igual a hoje (fim do dia de hoje), pular
-        // Queremos mostrar apenas tarefas de AMANHÃ em diante como virtuais
-        if (nextDate <= now) continue;
+        while (nextDate <= limitDate && loops < MAX_LOOPS) {
+          loops++;
 
-        // Gerar chave de data para o agrupamento (Local Time)
-        const nextDateKey = nextDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          if (recurrenceEndDate && nextDate > recurrenceEndDate) break;
+          if (maxOccurrences !== null && occurrences >= maxOccurrences) {
+            break;
+          }
 
-        // Verificar conflito: Já existe tarefa real dessa série neste dia?
-        const uniqueKey = `${nextDateKey}-${task.title}-${task.recurrence_type}`;
-        if (processedKeys.has(uniqueKey)) continue;
+          // Gerar chave de data para o agrupamento (Local Time)
+          const nextDateKey = formatLocalDateKey(nextDate);
 
-        // Criar Tarefa Virtual
-        const virtualTask = {
-          ...task,
-          id: `virtual-${task.id}-${nextDate.getTime()}`,
-          due_date: nextDate.toISOString(),
-          status: 'todo', // Sempre 'todo'
-          is_virtual: true, // Flag para UI
-        } as Task & { is_virtual?: boolean };
+          // Verificar conflito: J? existe tarefa real dessa s?rie neste dia?
+          const seriesKey = task.recurrence_parent_id || task.id;
+          const uniqueKey = `${nextDateKey}-${seriesKey}`;
+          if (!processedKeys.has(uniqueKey)) {
+            // Criar Tarefa Virtual
+            const virtualTask = {
+              ...task,
+              id: `virtual-${task.id}-${nextDate.getTime()}`,
+              due_date: nextDate.toISOString(),
+              status: 'todo', // Sempre 'todo'
+              is_virtual: true, // Flag para UI
+            } as Task & { is_virtual?: boolean };
 
-        if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
-        grouped[nextDateKey].push(virtualTask);
+            if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
+            grouped[nextDateKey].push(virtualTask);
+            processedKeys.add(uniqueKey);
+            occurrences += 1;
+          }
 
-        // Adicionar aos processados para não duplicar se houver múltiplas instâncias loopando
-        processedKeys.add(uniqueKey);
+          // Avan?ar para a pr?xima ocorr?ncia
+          if (task.recurrence_type === 'daily' || task.recurrence_type === 'custom') {
+            nextDate = new Date(nextDate);
+            nextDate.setDate(nextDate.getDate() + interval);
+          } else if (task.recurrence_type === 'weekly') {
+            nextDate = new Date(nextDate);
+            nextDate.setDate(nextDate.getDate() + (7 * interval));
+          } else if (task.recurrence_type === 'monthly') {
+            nextDate = new Date(nextDate);
+            nextDate.setMonth(nextDate.getMonth() + interval);
+          } else {
+            break;
+          }
+        }
       }
     });
 
     return grouped;
-  }, [tasks, daysToShow]);
+  }, [tasks]);
 
   // Gerar dias para exibição
   const weekDays = useMemo(() => {
@@ -161,32 +255,32 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
       date.setDate(today.getDate() + i);
       const dayOfWeek = date.getDay();
       const isToday = i === 0;
-      const dateKey = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      const dateKey = formatLocalDateKey(date);
 
       days.push({
         id: dateKey, // ID estável para animação
         name: fullDayNames[dayOfWeek],
         shortName: dayNames[dayOfWeek],
-        date: dateKey,
+        date: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
         dateObj: date,
         tasks: tasksByDay[dateKey] || [],
         isToday,
       });
     }
     return days;
-  }, [daysToShow, tasksByDay]);
+  }, [tasksByDay]);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-gray-900">
-          Visão Semanal
+          {viewMode === "month" ? "Visão Mensal" : "Visão Semanal"}
         </h2>
         <div className="flex items-center gap-3">
-          <Tabs value={daysToShow.toString()} onValueChange={handleViewChange}>
+          <Tabs value={viewMode} onValueChange={handleViewModeChange}>
             <TabsList variant="default">
-              <TabsTrigger value="3" variant="default">3 Dias</TabsTrigger>
-              <TabsTrigger value="5" variant="default">Semana</TabsTrigger>
+              <TabsTrigger value="week" variant="default">Semana</TabsTrigger>
+              <TabsTrigger value="month" variant="default">Mês</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -194,29 +288,39 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
 
       <AnimatePresence mode="sync" initial={false}>
         <motion.div
-          key={daysToShow}
+          key={viewMode}
           initial={shouldReduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
           transition={shouldReduceMotion ? undefined : { duration: 0.15 }}
-          className={`grid gap-4 ${daysToShow === 3 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1 md:grid-cols-3 lg:grid-cols-5"}`}
         >
-          {weekDays.map((day) => (
-            <div key={day.id}>
-              <DayColumn
-                dayName={day.name}
-                date={day.date}
-                dateObj={day.dateObj}
-                tasks={day.tasks}
-                isToday={day.isToday}
-                workspaces={workspaces}
-                highlightInput={highlightInput && day.isToday}
-                onTaskUpdate={onTaskUpdate}
-                currentWorkspaceId={currentWorkspaceId}
-                isPersonalContext={isPersonal}
+          {viewMode === "month" ? (
+            <div className="h-[720px]">
+              <PlannerCalendar
+                workspaceId={isPersonal ? null : (currentWorkspaceId ?? undefined)}
+                hideViewTabs={true}
               />
             </div>
-          ))}
+          ) : (
+            <div className="grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-5">
+              {weekDays.map((day) => (
+                <div key={day.id}>
+                  <DayColumn
+                    dayName={day.name}
+                    date={day.date}
+                    dateObj={day.dateObj}
+                    tasks={day.tasks}
+                    isToday={day.isToday}
+                    workspaces={workspaces}
+                    highlightInput={highlightInput && day.isToday}
+                    onTaskUpdate={onTaskUpdate}
+                    currentWorkspaceId={currentWorkspaceId}
+                    isPersonalContext={isPersonal}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </motion.div>
       </AnimatePresence>
     </div>

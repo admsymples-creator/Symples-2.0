@@ -623,6 +623,7 @@ export async function createTask(data: {
   recurrence_interval?: number | null;
   recurrence_end_date?: string | null;
   recurrence_count?: number | null;
+  recurrence_days?: number[] | null;
   group_id?: string | null;
   tags?: string[];
   position?: number;
@@ -693,7 +694,8 @@ export async function createTask(data: {
     recurrence_type: data.recurrence_type || null,
     recurrence_interval: data.recurrence_interval || (data.recurrence_type ? 1 : null),
     recurrence_end_date: data.recurrence_end_date || null,
-    recurrence_count: 0,
+    recurrence_count: typeof data.recurrence_count === "number" ? data.recurrence_count : null,
+    recurrence_days: Array.isArray(data.recurrence_days) && data.recurrence_days.length > 0 ? data.recurrence_days : null,
     // Group and Tags
     group_id: data.group_id || null,
     tags: data.tags || null,
@@ -802,22 +804,46 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
 
         let nextDate = parseISO(currentTask.due_date);
         const interval = currentTask.recurrence_interval || 1;
+        const recurrenceDays = Array.isArray((currentTask as any).recurrence_days)
+          ? ((currentTask as any).recurrence_days as number[])
+          : [];
 
-        // Calcular próxima data
-        switch (currentTask.recurrence_type) {
-          case "daily":
-            nextDate = addDays(nextDate, interval);
+        if ((currentTask.recurrence_type === "weekly" || currentTask.recurrence_type === "custom") && recurrenceDays.length > 0) {
+          const daySet = new Set<number>(recurrenceDays);
+          const base = new Date(nextDate);
+          base.setHours(0, 0, 0, 0);
+          let found = false;
+
+          for (let i = 1; i <= 14; i++) {
+            const candidate = new Date(base);
+            candidate.setDate(base.getDate() + i);
+            if (!daySet.has(candidate.getDay())) continue;
+            candidate.setHours(nextDate.getHours(), nextDate.getMinutes(), nextDate.getSeconds(), nextDate.getMilliseconds());
+            nextDate = candidate;
+            found = true;
             break;
-          case "weekly":
-            nextDate = addWeeks(nextDate, interval);
-            break;
-          case "monthly":
-            nextDate = addMonths(nextDate, interval);
-            break;
-          case "custom":
-            // Fallback para diário se não especificado
-            nextDate = addDays(nextDate, interval);
-            break;
+          }
+
+          if (!found) {
+            nextDate = addDays(nextDate, 7);
+          }
+        } else {
+          // Calcular próxima data
+          switch (currentTask.recurrence_type) {
+            case "daily":
+              nextDate = addDays(nextDate, interval);
+              break;
+            case "weekly":
+              nextDate = addWeeks(nextDate, interval);
+              break;
+            case "monthly":
+              nextDate = addMonths(nextDate, interval);
+              break;
+            case "custom":
+              // Fallback para diário se não especificado
+              nextDate = addDays(nextDate, interval);
+              break;
+          }
         }
 
         const nextDateISO = nextDate.toISOString();
@@ -833,8 +859,10 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
 
         // Verificar contagem
         let nextCount = currentTask.recurrence_count;
-        if (shouldCreate && nextCount !== null) {
-          if (nextCount > 1) {
+        if (shouldCreate && typeof nextCount === "number") {
+          if (nextCount <= 0) {
+            nextCount = null;
+          } else if (nextCount > 1) {
             nextCount = nextCount - 1;
           } else {
             shouldCreate = false;
@@ -860,6 +888,7 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
             recurrence_type: currentTask.recurrence_type,
             recurrence_interval: currentTask.recurrence_interval,
             recurrence_end_date: currentTask.recurrence_end_date,
+            recurrence_days: (currentTask as any).recurrence_days || null,
             recurrence_count: nextCount
           });
         }

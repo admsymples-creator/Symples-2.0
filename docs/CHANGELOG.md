@@ -42,6 +42,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Melhor feedback visual durante gravação de áudio
 
 ### Fixed
+- **Recorrência diária na Home (WeeklyView):**
+  - Projeção de ocorrências diárias agora faz fast-forward quando a tarefa base é antiga
+  - Corrigido desaparecimento de ocorrências futuras nos cards da semana
+- **Home > DayColumn (Ir para tarefa):**
+  - “Ir” abre o modal de detalhes na Home sem navegar para `/tasks`
 - **Correção de Drag-and-Drop em Tarefas de Projetos:**
   - Corrigido problema onde DND não funcionava quando havia `tagFilter` (projetos)
   - Adicionado fallback para `localTasks` quando `localTasksRef.current` está vazio
@@ -127,6 +132,8 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Rollback automático em caso de erro
 
 ### Changed
+- **DayColumn (Recorrência):**
+  - Removida a opção “Personalizada” no picker de recorrência do DayColumn
 - **TaskRowMinify**: Altura reduzida de `h-14` (56px) para `h-11` (44px) para interface mais compacta
 - **TaskGroup**: Espaçamento entre grupos aumentado de `gap-4` para `gap-6`
 - **TaskGroup**: Margin-top adicionado nos títulos dos grupos (`mt-4`)

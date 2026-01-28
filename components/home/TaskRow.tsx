@@ -33,6 +33,7 @@ interface TaskRowProps {
   onDelete?: (id: string) => void;
   onMoveToWorkspace?: (id: string, workspaceId: string) => void;
   onDateUpdate?: () => void;
+  onOpenDetails?: (id: string) => void;
 }
 
 export function TaskRow({
@@ -43,6 +44,7 @@ export function TaskRow({
   onDelete,
   onMoveToWorkspace,
   onDateUpdate,
+  onOpenDetails,
 }: TaskRowProps) {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
@@ -219,14 +221,18 @@ export function TaskRow({
 
   // Handler para navegar para detalhes da tarefa no workspace
   const handleGoToTaskDetails = () => {
+    if (onOpenDetails) {
+      onOpenDetails(task.id);
+      return;
+    }
     if (!task.workspace_id) return;
 
     // Encontrar o workspace para obter o slug
     const taskWorkspace = workspaces.find((ws) => ws.id === task.workspace_id);
-    if (!taskWorkspace) return;
 
     // Construir URL: /[workspaceSlug]/tasks?taskId=[taskId]
-    const workspaceSlug = taskWorkspace.slug || taskWorkspace.id;
+    // Fallback: se não tiver o workspace na lista, usar o próprio workspace_id
+    const workspaceSlug = taskWorkspace?.slug || taskWorkspace?.id || task.workspace_id;
     const url = `/${workspaceSlug}/tasks?taskId=${task.id}`;
     router.push(url);
   };
@@ -237,7 +243,7 @@ export function TaskRow({
   return (
     <div
       className={cn(
-        "relative w-full flex items-start justify-between py-0.5 border-b border-gray-50 last:border-0 transition-colors group min-h-[28px]",
+        "relative w-full flex items-center justify-between py-0.5 border-b border-gray-50 last:border-0 transition-colors group",
         isVirtual ? "opacity-50 bg-gray-50/50 hover:bg-gray-50 cursor-default" : "hover:bg-gray-50"
       )}
     >
@@ -252,7 +258,7 @@ export function TaskRow({
       {/* Conteúdo Esquerda */}
       <div
         className={cn(
-          "flex items-center flex-1 min-w-0 pt-0.5 pr-2 h-full",
+          "flex items-center flex-1 min-w-0 pr-2",
           !isPersonal ? "pl-4" : "pl-2"
         )}
       >
@@ -270,7 +276,7 @@ export function TaskRow({
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={saveEdit}
             onKeyDown={handleKeyDown}
-            className="text-sm ml-3 flex-1 bg-white border border-green-500 rounded-sm px-1.5 py-0.5 outline-none text-gray-900 shadow-sm h-6"
+            className="text-xs ml-3 flex-1 bg-white border border-green-500 rounded-sm px-1.5 py-0.5 outline-none text-gray-900 shadow-sm h-6"
           />
         ) : (
           <div className="flex items-center gap-2 ml-3 flex-1 min-w-0">
@@ -280,7 +286,7 @@ export function TaskRow({
                   <p
                     onDoubleClick={startEditing}
                     className={cn(
-                      "text-sm flex-1 truncate leading-snug select-none cursor-default",
+                      "text-xs flex-1 truncate leading-snug select-none cursor-default",
                       isChecked
                         ? "line-through text-gray-500"
                         : "text-gray-700"

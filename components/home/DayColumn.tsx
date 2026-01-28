@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useOptimistic, startTransition } from "react";
-import { FolderOpen, Calendar as CalendarIcon, Repeat } from "lucide-react";
+import dynamic from "next/dynamic";
+import { FolderOpen, Calendar as CalendarIcon, Repeat, Send } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
 import { cn } from "@/lib/utils";
 import { createTask, deleteTask, updateTask, getTaskRecurrenceInfo } from "@/lib/actions/tasks";
@@ -11,6 +12,11 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { DeleteRecurringTaskModal } from "@/components/modals/delete-recurring-task-modal";
+
+const TaskDetailModal = dynamic(
+  () => import("@/components/tasks/TaskDetailModal").then((mod) => mod.TaskDetailModal),
+  { ssr: false }
+);
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -51,11 +57,14 @@ export function DayColumn({
   const [isCreating, setIsCreating] = useState(false);
   const [selectedDateTime, setSelectedDateTime] = useState<Date | null>(null);
   const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(null);
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [showTutorialHint, setShowTutorialHint] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   /* --- STATE: Local Persistence for Created Tasks --- */
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -213,6 +222,7 @@ export function DayColumn({
       val: rawValue,
       selectedDate: selectedDateTime,
       recurrence: recurrenceType,
+      recurrenceDays,
       isPersonal: isPersonalContext,
       wsId: currentWorkspaceId
     });
@@ -226,6 +236,7 @@ export function DayColumn({
 
     // Capturar selectedDateTime e recurrenceType antes de qualquer operação assíncrona
     const currentRecurrenceType = recurrenceType;
+    const currentRecurrenceDays = recurrenceDays;
     const currentSelectedDateTime = selectedDateTime;
 
     let dueDateISO: string | undefined = undefined;
@@ -240,7 +251,8 @@ export function DayColumn({
     console.log("[DayColumn] Prepared data", {
       tasksToCreate,
       dueDateISO,
-      currentRecurrenceType
+      currentRecurrenceType,
+      currentRecurrenceDays
     });
 
     // Optimistic Update
@@ -261,6 +273,7 @@ export function DayColumn({
       created_by: null,
       origin_context: null,
       recurrence_type: currentRecurrenceType || null,
+      recurrence_days: Array.isArray(currentRecurrenceDays) && currentRecurrenceDays.length > 0 ? currentRecurrenceDays : null,
     } as Task));
 
     tempTasks.forEach((tempTask) => {
@@ -278,6 +291,7 @@ export function DayColumn({
           status: "todo" as any,
           is_personal: isPersonalContext,
           recurrence_type: currentRecurrenceType || undefined,
+          recurrence_days: Array.isArray(currentRecurrenceDays) && currentRecurrenceDays.length > 0 ? currentRecurrenceDays : undefined,
         };
         console.log("[DayColumn] Calling createTask with payload:", payload);
         return createTask(payload);
@@ -307,6 +321,7 @@ export function DayColumn({
         if (tasksToCreate.length === 1 || successCount === tasksToCreate.length) {
           setSelectedDateTime(null);
           setRecurrenceType(null);
+          setRecurrenceDays([]);
         }
 
         onTaskUpdate?.();
@@ -353,6 +368,11 @@ export function DayColumn({
     }
   };
 
+  const handleOpenDetails = (id: string) => {
+    setSelectedTaskId(String(id));
+    setIsDetailModalOpen(true);
+  };
+
   const handleDelete = (taskId: string) => {
     // Verificar se é recorrente
     const task = tasks.find(t => t.id === taskId);
@@ -385,9 +405,22 @@ export function DayColumn({
         if (task && task.recurrence_type) {
           const current = new Date(task.due_date || new Date());
           const interval = task.recurrence_interval || 1;
+          const recurrenceDaysList = Array.isArray((task as any).recurrence_days) ? (task as any).recurrence_days as number[] : [];
 
           let nextDate = new Date(current);
-          if (task.recurrence_type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
+          if ((task.recurrence_type === 'weekly' || task.recurrence_type === 'custom') && recurrenceDaysList.length > 0) {
+            const daySet = new Set<number>(recurrenceDaysList);
+            const base = new Date(current);
+            base.setHours(0, 0, 0, 0);
+            for (let i = 1; i <= 14; i++) {
+              const candidate = new Date(base);
+              candidate.setDate(base.getDate() + i);
+              if (!daySet.has(candidate.getDay())) continue;
+              candidate.setHours(current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds());
+              nextDate = candidate;
+              break;
+            }
+          } else if (task.recurrence_type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
           else if (task.recurrence_type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
           else if (task.recurrence_type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
           else if (task.recurrence_type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
@@ -463,7 +496,7 @@ export function DayColumn({
   return (
     <div
       className={cn(
-        "group/column flex flex-col h-full min-h-[500px] max-h-[80vh] rounded-2xl transition-all duration-300",
+        "group/column flex flex-col h-full min-h-[420px] max-h-[67vh] rounded-2xl transition-all duration-300",
         isToday
           ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md"
           : "bg-surface border border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
@@ -474,27 +507,29 @@ export function DayColumn({
         "flex-none p-4 border-b border-transparent transition-colors",
         isToday ? "border-gray-200" : "group-hover/column:border-gray-100"
       )}>
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between">
           <span className={cn(
-            "text-[10px] font-bold uppercase tracking-wider",
+            "text-xs font-bold uppercase tracking-wider",
             isToday ? "text-gray-900" : "text-gray-500"
           )}>
             {dayName}
           </span>
-          {pendingCount > 0 && (
+          <div className="flex items-center gap-2">
+            {pendingCount > 0 && (
+              <span className={cn(
+                "text-xs font-medium px-2 py-0.5 rounded-full",
+                isToday ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+              )}>
+                {pendingCount}
+              </span>
+            )}
             <span className={cn(
-              "text-[10px] font-medium px-2 py-0.5 rounded-full",
-              isToday ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+              "text-xs font-semibold tracking-tight",
+              isToday ? "text-gray-900" : "text-gray-700"
             )}>
-              {pendingCount}
+              {date}
             </span>
-          )}
-        </div>
-        <div className={cn(
-          "text-lg font-semibold tracking-tight",
-          isToday ? "text-gray-900" : "text-gray-700"
-        )}>
-          {date}
+          </div>
         </div>
       </div>
 
@@ -525,6 +560,7 @@ export function DayColumn({
                     onTaskUpdate?.();
                     router.refresh();
                   }}
+                  onOpenDetails={handleOpenDetails}
                 />
               ))}
             </div>
@@ -571,75 +607,69 @@ export function DayColumn({
               />
             )}
 
-            <div className="flex items-start gap-2 px-3 py-2 relative z-10">
-              <textarea
-                ref={inputRef}
-                placeholder="Nova tarefa..."
-                value={quickAddValue}
-                onChange={handleInputChange}
-                onFocus={handleInputFocus}
-                onBlur={() => setIsQuickAddFocused(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    e.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                disabled={isCreating}
-                rows={1}
-                className="flex-1 bg-transparent border-none outline-none text-sm text-gray-800 placeholder:text-gray-400 resize-none py-1 min-h-[24px] max-h-[120px]"
-              />
-            </div>
+          <div className="flex items-center gap-1 px-3 py-2 border-t border-gray-50 bg-gray-50/50 relative z-10 overflow-visible">
+            <input
+              ref={inputRef as any}
+              placeholder="Nova tarefa..."
+              value={quickAddValue}
+              onChange={(e) => {
+                setQuickAddValue(e.target.value);
+                if (showTutorialHint && e.target.value.trim().length > 0) {
+                  setShowTutorialHint(false);
+                }
+              }}
+              onFocus={handleInputFocus}
+              onBlur={() => setIsQuickAddFocused(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
+              disabled={isCreating}
+              className="flex-1 min-w-0 bg-transparent border-none outline-none text-xs text-gray-800 placeholder:text-gray-400 h-7"
+            />
 
-            <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-gray-50 bg-gray-50/50 relative z-10">
-              <div className="flex items-center gap-1">
-                <TaskDateTimePicker
-                  date={selectedDateTime}
-                  onSelect={setSelectedDateTime}
-                  recurrenceType={recurrenceType}
-                  onRecurrenceChange={setRecurrenceType}
-                  align="start"
-                  side="top"
-                  trigger={
-                    <button type="button" className={cn(
-                      "p-1.5 rounded-md hover:bg-gray-200 transition-colors flex items-center gap-1.5 text-xs font-medium",
-                      selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
-                    )}>
-                      {recurrenceType ? <Repeat className="w-3.5 h-3.5" /> : <CalendarIcon className="w-3.5 h-3.5" />}
-                      {recurrenceType ? (
-                        recurrenceType === 'daily' ? 'Diário' :
-                          recurrenceType === 'weekly' ? 'Semanal' :
-                            recurrenceType === 'monthly' ? 'Mensal' : 'Personalizado'
-                      ) : (
-                        selectedDateTime ? "Data definida" : "Agendar"
-                      )}
-                    </button>
-                  }
-                />
-              </div>
+            <TaskDateTimePicker
+              date={selectedDateTime}
+              onSelect={setSelectedDateTime}
+              recurrenceType={recurrenceType}
+              onRecurrenceChange={setRecurrenceType}
+              recurrenceDays={recurrenceDays}
+              onRecurrenceDaysChange={setRecurrenceDays}
+              allowCustomRecurrence={false}
+              align="start"
+              side="top"
+              trigger={
+                <button
+                  type="button"
+                  className={cn(
+                    "h-7 w-7 rounded-md hover:bg-gray-200 transition-colors flex items-center justify-center flex-shrink-0",
+                    selectedDateTime ? "bg-gray-900 text-white" : "text-gray-500"
+                  )}
+                  aria-label="Agendar"
+                  title="Agendar"
+                >
+                  {recurrenceType ? <Repeat className="w-3.5 h-3.5" /> : <CalendarIcon className="w-3.5 h-3.5" />}
+                </button>
+              }
+            />
 
-              <div className="flex items-center gap-2">
-                {(isQuickAddFocused || quickAddValue) && (
-                  <span className="text-[10px] text-gray-400 hidden sm:inline">
-                    Shift+Enter para nova linha
-                  </span>
-                )}
-                {(isQuickAddFocused || quickAddValue) && (
-                  <button
-                    type="submit"
-                    disabled={isCreating || !quickAddValue.trim()}
-                    className={cn(
-                      "text-[10px] font-medium px-2 py-1 rounded hover:bg-gray-200 transition-colors",
-                      isCreating || !quickAddValue.trim()
-                        ? "text-gray-400 cursor-not-allowed"
-                        : "text-gray-600 hover:text-gray-900"
-                    )}
-                  >
-                    Salvar
-                  </button>
-                )}
-              </div>
-            </div>
+            <button
+              type="submit"
+              disabled={isCreating || !quickAddValue.trim()}
+              className={cn(
+                "h-7 w-7 rounded-md hover:bg-gray-200 transition-colors flex items-center justify-center flex-shrink-0",
+                isCreating || !quickAddValue.trim()
+                  ? "text-gray-400 cursor-not-allowed"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+              aria-label="Salvar"
+              title="Salvar"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          </div>
           </div>
         </form>
       </div>
@@ -661,6 +691,18 @@ export function DayColumn({
         onConfirm={confirmDelete}
         isLoading={isDeleting}
       />
+
+      {selectedTaskId && (
+        <TaskDetailModal
+          open={isDetailModalOpen}
+          onOpenChange={setIsDetailModalOpen}
+          task={sortedTasks.find((t) => String(t.id) === selectedTaskId) as any}
+          onTaskUpdated={() => {
+            onTaskUpdate?.();
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

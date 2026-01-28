@@ -19,6 +19,9 @@ interface TaskDateTimePickerProps {
     side?: "top" | "bottom" | "left" | "right";
     recurrenceType?: 'daily' | 'weekly' | 'monthly' | 'custom' | null;
     onRecurrenceChange?: (type: 'daily' | 'weekly' | 'monthly' | 'custom' | null) => void;
+    recurrenceDays?: number[] | null;
+    onRecurrenceDaysChange?: (days: number[]) => void;
+    allowCustomRecurrence?: boolean;
 }
 
 // Funções utilitárias para atalhos
@@ -50,6 +53,9 @@ export function TaskDateTimePicker({
     side = "left",
     recurrenceType: initialRecurrenceType,
     onRecurrenceChange,
+    recurrenceDays: initialRecurrenceDays,
+    onRecurrenceDaysChange,
+    allowCustomRecurrence = true,
 }: TaskDateTimePickerProps) {
     const [isMounted, setIsMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
@@ -58,6 +64,7 @@ export function TaskDateTimePicker({
     const [minute, setMinute] = useState<number>(date ? date.getMinutes() : 0);
     const [recurrenceEnabled, setRecurrenceEnabled] = useState<boolean>(initialRecurrenceType !== null && initialRecurrenceType !== undefined);
     const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(initialRecurrenceType || null);
+    const [recurrenceDays, setRecurrenceDays] = useState<number[]>(() => Array.isArray(initialRecurrenceDays) ? initialRecurrenceDays : []);
 
     // Garantir que renderiza apenas no cliente para evitar problemas de hidratação
     useEffect(() => {
@@ -72,6 +79,12 @@ export function TaskDateTimePicker({
             setMinute(date.getMinutes());
         }
     }, [date]);
+
+    useEffect(() => {
+        if (Array.isArray(initialRecurrenceDays)) {
+            setRecurrenceDays(initialRecurrenceDays);
+        }
+    }, [initialRecurrenceDays]);
 
     const handleDateSelect = (newDate: Date | undefined) => {
         if (!newDate) {
@@ -138,6 +151,7 @@ export function TaskDateTimePicker({
         setMinute(0);
         setRecurrenceEnabled(false);
         setRecurrenceType(null);
+        setRecurrenceDays([]);
         onSelect(null);
         if (onRecurrenceChange) {
             onRecurrenceChange(null);
@@ -149,6 +163,7 @@ export function TaskDateTimePicker({
         setRecurrenceEnabled(checked);
         if (!checked) {
             setRecurrenceType(null);
+            setRecurrenceDays([]);
             if (onRecurrenceChange) {
                 onRecurrenceChange(null);
             }
@@ -168,11 +183,47 @@ export function TaskDateTimePicker({
         if (onRecurrenceChange) {
             onRecurrenceChange(newType);
         }
+        if (newType !== "weekly" && newType !== "custom") {
+            setRecurrenceDays([]);
+        }
     };
+
+    const handleRecurrenceDaysChange = (day: number) => {
+        setRecurrenceDays((prev) => {
+            const exists = prev.includes(day);
+            return exists ? prev.filter((d) => d !== day) : [...prev, day];
+        });
+    };
+
+    useEffect(() => {
+        if (!recurrenceEnabled) return;
+        if (recurrenceType !== "weekly" && recurrenceType !== "custom") return;
+        if (recurrenceDays.length > 0) return;
+
+        const baseDate = selectedDate ?? new Date();
+        const defaultDay = baseDate.getDay();
+        const next = [defaultDay];
+        setRecurrenceDays(next);
+    }, [recurrenceEnabled, recurrenceType, selectedDate, recurrenceDays.length, onRecurrenceDaysChange]);
+
+    useEffect(() => {
+        if (onRecurrenceDaysChange) {
+            onRecurrenceDaysChange(recurrenceDays);
+        }
+    }, [recurrenceDays, onRecurrenceDaysChange]);
 
     // Gerar opções de hora (0-23)
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const minutes = [0, 15, 30, 45];
+    const weekDayOptions = [
+        { value: 1, label: "S", name: "Segunda" },
+        { value: 2, label: "T", name: "Terça" },
+        { value: 3, label: "Q", name: "Quarta" },
+        { value: 4, label: "Q", name: "Quinta" },
+        { value: 5, label: "S", name: "Sexta" },
+        { value: 6, label: "S", name: "Sábado" },
+        { value: 0, label: "D", name: "Domingo" },
+    ];
 
     // Se não houver children, usar o trigger padrão
     const defaultTrigger = (
@@ -286,7 +337,8 @@ export function TaskDateTimePicker({
                                         </label>
                                     </div>
                                     {recurrenceEnabled && (
-                                        <Select
+                                        <>
+                                            <Select
                                             value={recurrenceType || 'daily'}
                                             onValueChange={handleRecurrenceTypeChange}
                                         >
@@ -297,9 +349,39 @@ export function TaskDateTimePicker({
                                                 <SelectItem value="daily">Diária</SelectItem>
                                                 <SelectItem value="weekly">Semanal</SelectItem>
                                                 <SelectItem value="monthly">Mensal</SelectItem>
-                                                <SelectItem value="custom" disabled>Personalizada</SelectItem>
+                                                {allowCustomRecurrence && (
+                                                    <SelectItem value="custom">Personalizada</SelectItem>
+                                                )}
                                             </SelectContent>
                                         </Select>
+                                        {(recurrenceType === "weekly" || recurrenceType === "custom") && (
+                                            <div className="space-y-2">
+                                                <div className="text-[11px] font-medium text-gray-600">Dias da semana</div>
+                                                <div className="flex items-center gap-1">
+                                                    {weekDayOptions.map((day) => {
+                                                        const isSelected = recurrenceDays.includes(day.value);
+                                                        return (
+                                                            <button
+                                                                key={day.value}
+                                                                type="button"
+                                                                onClick={() => handleRecurrenceDaysChange(day.value)}
+                                                                className={cn(
+                                                                    "h-7 w-7 rounded-full text-[11px] font-semibold border transition-colors",
+                                                                    isSelected
+                                                                        ? "bg-green-600 text-white border-green-600"
+                                                                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800"
+                                                                )}
+                                                                aria-label={day.name}
+                                                                title={day.name}
+                                                            >
+                                                                {day.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                        </>
                                     )}
                                 </div>
                             )}
