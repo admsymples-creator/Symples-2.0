@@ -177,31 +177,20 @@ export function DayColumn({
     const combined = [...optimisticTasks, ...uniqueCreatedTasks];
 
     return combined.sort((a, b) => {
-      const aIsPersonal = a.is_personal || !a.workspace_id;
-      const bIsPersonal = b.is_personal || !b.workspace_id;
-
-      // CORREÇÃO: Ordenar tarefas pessoais cronologicamente (por due_date/hora)
-      if (aIsPersonal && bIsPersonal) {
-        // Ambas são pessoais: ordenar por data/hora
-        if (a.due_date && b.due_date) {
-          const timeA = new Date(a.due_date).getTime();
-          const timeB = new Date(b.due_date).getTime();
-          return timeA - timeB;
-        }
-        if (a.due_date) return -1; // a tem data, b não -> a primeiro
-        if (b.due_date) return 1; // b tem data, a não -> b primeiro
-        // Nenhuma tem data: manter ordem original (ou por criação)
-        if (a.created_at && b.created_at) {
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        }
-        return 0;
+      // Ordenar sempre por horário da due_date quando existir (cronológico no dia)
+      const aHasDue = !!a.due_date;
+      const bHasDue = !!b.due_date;
+      if (aHasDue && bHasDue) {
+        const timeA = new Date(a.due_date as string).getTime();
+        const timeB = new Date(b.due_date as string).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+      } else if (aHasDue && !bHasDue) {
+        return -1;
+      } else if (!aHasDue && bHasDue) {
+        return 1;
       }
 
-      // Separar pessoais de workspace: pessoais primeiro
-      if (aIsPersonal && !bIsPersonal) return -1;
-      if (!aIsPersonal && bIsPersonal) return 1;
-
-      // Ambas são workspace: manter ordem original (ou por criação)
+      // Fallback: ordem de criação
       if (a.created_at && b.created_at) {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       }
