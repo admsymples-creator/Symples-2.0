@@ -647,7 +647,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           eventDisplay="block"
           moreLinkClick="popover"
           moreLinkText="mais"
-          eventClassNames="calendar-event"
           dayMaxEventRows={3}
           eventOrder="start,title"
           locale={ptBrLocale}
