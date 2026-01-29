@@ -59,9 +59,13 @@ interface PlannerCalendarProps {
    * Callback externo para recarregar eventos (chamado quando tarefa é criada externamente)
    */
   onExternalTaskCreated?: () => void;
+  /**
+   * Se true, o calendário ocupa 100% da altura do container (evita espaço vazio)
+   */
+  fillHeight?: boolean;
 }
 
-export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = false, hideViewTabs = false, onControlsReady, onExternalTaskCreated }: PlannerCalendarProps = {}) {
+export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = false, hideViewTabs = false, onControlsReady, onExternalTaskCreated, fillHeight = false }: PlannerCalendarProps = {}) {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
 
@@ -601,7 +605,10 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
           initialView={effectiveView}
-          height="auto"
+          height={fillHeight ? "100%" : "auto"}
+          expandRows={true}
+          fixedWeekCount={true}
+          eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
           events={events}
           editable={true}
           droppable={true}
@@ -641,18 +648,29 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           moreLinkClick="popover"
           moreLinkText="mais"
           eventClassNames="calendar-event"
-          dayMaxEvents={3}
+          dayMaxEventRows={3}
+          eventOrder="start,title"
           locale={ptBrLocale}
+          eventClassNames={(arg) => {
+            const classes = ["calendar-event"];
+            const isRecurring = !!arg.event.extendedProps.recurrence_type || !!arg.event.extendedProps.recurrence_parent_id;
+            if (isRecurring) classes.push("recurring-event");
+            if (arg.event.extendedProps.is_virtual) classes.push("virtual-event");
+            return classes;
+          }}
           eventContent={(eventInfo) => {
             const isCompleted = eventInfo.event.extendedProps.status === "done";
             const recurrenceType = eventInfo.event.extendedProps.recurrence_type;
             const recurrenceParentId = eventInfo.event.extendedProps.recurrence_parent_id;
             const isRecurring = !!recurrenceType || !!recurrenceParentId;
             const isVirtual = eventInfo.event.extendedProps.is_virtual;
+            const timeLabel = eventInfo.event.allDay
+              ? ""
+              : (eventInfo.timeText || (eventInfo.event.start ? format(eventInfo.event.start, "HH:mm") : ""));
 
             // Ícone SVG de recorrência (RefreshCw)
             const recurrenceIcon = isRecurring ? `
-              <svg class="fc-recurrence-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; margin-left: 4px; color: #3b82f6;">
+              <svg class="fc-recurrence-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; margin-right: 4px; color: #3b82f6;">
                 <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
               </svg>
             ` : '';
@@ -661,11 +679,11 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
             return {
               html: `
-                <div class="fc-event-main-frame" style="${opacityStyle}">
-                  <div class="fc-event-time">${eventInfo.timeText || ""}${recurrenceIcon}</div>
+                <div class="fc-event-main-frame fc-event-main-row" style="${opacityStyle}">
                   <div class="fc-event-title-container">
                     <div class="fc-event-title ${isCompleted ? "line-through" : ""}">${eventInfo.event.title} ${isVirtual ? '(Futuro)' : ''}</div>
                   </div>
+                  <div class="fc-event-time">${recurrenceIcon}${timeLabel}</div>
                 </div>
               `,
             };
@@ -720,3 +738,6 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
     </div>
   );
 }
+
+
+

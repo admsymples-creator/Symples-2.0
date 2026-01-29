@@ -116,6 +116,25 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
     return grouped;
   }, [tasks]);
 
+  const monthStats = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+
+    const tasksInMonth = tasks.filter((task) => {
+      if (!task.due_date) return false;
+      const due = new Date(task.due_date);
+      return due >= monthStart && due <= monthEnd;
+    });
+
+    const doneCount = tasksInMonth.filter((task) => task.status === "done").length;
+    const totalCount = tasksInMonth.length;
+    const progress = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+    return { doneCount, totalCount, progress };
+  }, [tasks]);
+
   // Gerar dias para exibição
   const weekDays = useMemo(() => {
     const today = new Date();
@@ -171,8 +190,12 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
       <AnimatePresence mode="wait">
         <motion.div key={viewMode} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
           {viewMode === "month" ? (
-            <div className="h-[600px] border rounded-xl flex items-center justify-center bg-gray-50">
-               <p className="text-gray-400 italic">Calendário Mensal</p>
+            <div className="h-[720px]">
+              <PlannerCalendar
+                workspaceId={isPersonal ? null : (currentWorkspaceId ?? undefined)}
+                hideViewTabs={true}
+                fillHeight={true}
+              />
             </div>
           ) : (
             <div className="overflow-hidden">
@@ -217,3 +240,4 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
     </div>
   );
 }
+

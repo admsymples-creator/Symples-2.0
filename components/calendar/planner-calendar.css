@@ -62,7 +62,22 @@
 .fc-event-main-frame {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+.fc-event-main-row {
+  justify-content: space-between;
+}
+
+.fc-event-title-container {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fc-event-time {
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .fc-event-time {
@@ -283,4 +298,44 @@
   .fc-toolbar-title {
     font-size: 1rem;
   }
+}
+.recurring-event {
+  background: transparent !important;
+  border: none;
+  color: #64748b;
+}
+
+.recurring-event .fc-event-time,
+.recurring-event .fc-event-title {
+  color: inherit;
+}
+
+.fc-daygrid-day-frame {
+  display: flex;
+  flex-direction: column;
+}
+
+.fc-daygrid-day-events {
+  overflow: hidden;
+}
+
+/* Forçar altura uniforme das linhas no mês */
+.fc-dayGridMonth-view .fc-view-harness,
+.fc-dayGridMonth-view .fc-view-harness-active,
+.fc-dayGridMonth-view .fc-daygrid,
+.fc-dayGridMonth-view .fc-daygrid-body {
+  height: 100%;
+}
+
+.fc-dayGridMonth-view .fc-daygrid-body table {
+  height: 100%;
+  table-layout: fixed;
+}
+
+.fc-dayGridMonth-view .fc-daygrid-body tr {
+  height: calc(100% / 6);
+}
+
+.fc-dayGridMonth-view .fc-daygrid-day-frame {
+  height: 100%;
 }
