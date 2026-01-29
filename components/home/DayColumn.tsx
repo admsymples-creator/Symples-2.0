@@ -67,10 +67,13 @@ export function DayColumn({
   const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   /* --- STATE: Local Persistence for Created Tasks --- */
   const inputRef = useRef<HTMLInputElement | null>(null);
   const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Mantém tarefas criadas visíveis até que o servidor as retorne (evita desaparecimento)
   const [createdTasks, setCreatedTasks] = useState<Task[]>([]);
@@ -143,6 +146,15 @@ export function DayColumn({
     };
   }, [highlightInput, isToday]);
 
+  const updateScrollIndicators = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const isOverflow = el.scrollHeight - el.clientHeight > 8;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+    setIsOverflowing(isOverflow);
+    setIsAtBottom(atBottom);
+  };
+
   const handleInputFocus = () => {
     setIsQuickAddFocused(true);
     if (showTutorialHint) setShowTutorialHint(false);
@@ -202,6 +214,13 @@ export function DayColumn({
       return 0;
     });
   }, [optimisticTasks, createdTasks]);
+
+  useEffect(() => {
+    updateScrollIndicators();
+    const handleResize = () => updateScrollIndicators();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [sortedTasks.length, highlightInput, isToday]);
 
   const pendingCount = useMemo(() =>
     // Contar também as createdTasks pendentes
@@ -602,6 +621,8 @@ export function DayColumn({
 
       {/* --- TASK LIST (SCROLL AREA) --- */}
       <div
+        ref={scrollRef}
+        onScroll={updateScrollIndicators}
         className={cn(
           "flex-1 px-2 py-2 relative flex flex-col",
           // CORREÇÃO: Scroll apenas se houver itens. Hidden se vazio para travar o layout.
@@ -645,6 +666,15 @@ export function DayColumn({
             </div>
             <p className="text-xs font-medium text-gray-400">Vazio</p>
           </div>
+        )}
+
+        {isOverflowing && !isAtBottom && (
+          <>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white via-white/70 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] font-medium text-gray-400">
+              Mais tarefas abaixo
+            </div>
+          </>
         )}
       </div>
 

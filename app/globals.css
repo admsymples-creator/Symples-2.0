@@ -121,9 +121,14 @@
 }
 
 /* Custom Scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
-  width: 3px;
-  height: 3px; /* Para scroll horizontal também */
+  width: 1px;
+  height: 1px; /* Para scroll horizontal também */
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -131,12 +136,22 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #e5e7eb; /* Mais claro para ser sutil */
+  background: transparent;
   border-radius: 10px;
+  transition: background-color 300ms ease;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #d1d5db;
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* Mostrar scrollbar sutil apenas quando a coluna estiver em hover */
+.group\/column:hover .custom-scrollbar {
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.group\/column:hover .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
 }
 
 @layer utilities {
