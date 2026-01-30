@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  // output: 'standalone' desativado para que "next start" sirva chunks estáticos corretamente (evita 500).
+  // Para deploy Docker, ative standalone e use: node .next/standalone/server.js + copiar .next/static e public.
   productionBrowserSourceMaps: true,
   experimental: {
     serverActions: {

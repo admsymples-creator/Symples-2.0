@@ -5,11 +5,17 @@ import { redirect } from "next/navigation";
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string }>;
+  searchParams: Promise<{ invite?: string; trial_days?: string; trial_plan?: string; email?: string }>;
 }) {
   // ✅ CORREÇÃO: Next.js 15+ requer await para searchParams (são Promises)
   const resolvedSearchParams = await searchParams;
   const inviteToken = resolvedSearchParams.invite;
+  const trialDaysParam = resolvedSearchParams.trial_days;
+  const trialPlanParam = resolvedSearchParams.trial_plan;
+  const prefillEmail = resolvedSearchParams.email;
+  const trialDaysValue = trialDaysParam ? Number(trialDaysParam) : null;
+  const trialDays = trialDaysValue && [15, 30, 60].includes(trialDaysValue) ? trialDaysValue : undefined;
+  const trialPlan = trialPlanParam && ['pro', 'business'].includes(trialPlanParam) ? (trialPlanParam as 'pro' | 'business') : undefined;
   
   // Se houver token de convite, verificar se o usuário já está logado
   // Se estiver, redirecionar para a página de aceite do convite
@@ -23,6 +29,6 @@ export default async function SignupPage({
     }
   }
   
-  return <SignupForm inviteToken={inviteToken} />;
+  return <SignupForm inviteToken={inviteToken} trialDays={trialDays} trialPlan={trialPlan} prefillEmail={prefillEmail} />;
 }
 

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
@@ -206,6 +206,16 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const initialTaskIdRef = useRef<string | null>(null);
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
+
+    const handleToggleGroupCollapse = useCallback((groupId: string) => {
+        setCollapsedGroupIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(groupId)) next.delete(groupId);
+            else next.add(groupId);
+            return next;
+        });
+    }, []);
 
     // ? CORREÇÃO: Inicializar availableGroups com initialGroups se disponível (evita flicker)
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string; color: string | null }>>(() => {
@@ -3301,6 +3311,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                     onAddTask={viewOption === "group" || viewOption === "project" || viewOption === "status" ? handleAddTaskToGroup : undefined}
                                                                     showProjectTag={true}
                                                                     tagFilter={tagFilter || undefined}
+                                                                    collapsed={collapsedGroupIds.has(group.id)}
+                                                                    onToggleCollapse={handleToggleGroupCollapse}
                                                                 />
                                                             );
                                                         })}
@@ -3369,6 +3381,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                 onAddTask={viewOption === "group" || viewOption === "project" || viewOption === "status" ? handleAddTaskToGroup : undefined}
                                                                 showProjectTag={true}
                                                                 tagFilter={tagFilter || undefined}
+                                                                collapsed={collapsedGroupIds.has(group.id)}
+                                                                onToggleCollapse={handleToggleGroupCollapse}
                                                             />
                                                         );
                                                     })}

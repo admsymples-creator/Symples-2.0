@@ -71,24 +71,32 @@ export async function createWorkspace(formData: FormData) {
   };
 
   const planTier = getPlanTier(existingWorkspaces);
+  const trialDaysValue = Number(user.user_metadata?.trial_days);
+  const trialPlanValue = (user.user_metadata as any)?.trial_plan as 'pro' | 'business' | undefined;
+  const isTrialInvite = [15, 30, 60].includes(trialDaysValue);
+  const selectedTrialPlan = trialPlanValue && ['pro', 'business'].includes(trialPlanValue) ? trialPlanValue : 'pro';
+  const effectivePlanTier = isTrialInvite ? selectedTrialPlan : planTier;
+  const insertPlan = isTrialInvite ? selectedTrialPlan : 'pro';
 
-  if (!hasAgencyAccount && planTier !== "agency") {
+  if (!hasAgencyAccount && effectivePlanTier !== "agency") {
     if (isPersonalName && personalWorkspaces.length >= 1) {
       return { error: "Você já tem um workspace pessoal." };
     }
 
-    if (planTier === "starter" && !isPersonalName) {
+    if (effectivePlanTier === "starter" && !isPersonalName) {
       return { error: "Plano Pessoal permite apenas um workspace pessoal." };
     }
 
-    if ((planTier === "pro" || planTier === "business") && isPersonalName && personalWorkspaces.length >= 1) {
+    if ((effectivePlanTier === "pro" || effectivePlanTier === "business") && isPersonalName && personalWorkspaces.length >= 1) {
       return { error: "Seu plano permite apenas 1 workspace pessoal." };
     }
 
-    if ((planTier === "pro" || planTier === "business") && !isPersonalName && professionalWorkspaces.length >= 1) {
+    if ((effectivePlanTier === "pro" || effectivePlanTier === "business") && !isPersonalName && professionalWorkspaces.length >= 1) {
       return { error: "Seu plano permite apenas 1 workspace profissional." };
     }
   }
+
+  const shouldApplyTrialDays = existingWorkspaces.length === 0;
 
   // 3. Gerar Magic Code (#START-XXXX) e Slug
   const randomCode = Math.floor(1000 + Math.random() * 9000)
@@ -105,7 +113,9 @@ export async function createWorkspace(formData: FormData) {
 
   // 4. Insert (Supabase)
   // Inserir Workspace com Trial
-  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(); // 14 dias no futuro
+  const trialDaysValueSafe = shouldApplyTrialDays && isTrialInvite ? trialDaysValue : null;
+  const trialDays = trialDaysValueSafe ? trialDaysValueSafe : 14;
+  const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
   
   const { data: workspace, error: workspaceError } = await supabase
     .from('workspaces')
@@ -117,7 +127,7 @@ export async function createWorkspace(formData: FormData) {
       plan: 'pro', // Trial padrão: Pro
       subscription_status: 'trialing', // Status de trial
       trial_ends_at: trialEndsAt, // 14 dias no futuro
-      member_limit: 5, // Limite do Pro durante trial
+      member_limit: insertPlan === 'business' ? 15 : 5, // Limite baseado no plano durante trial
       // segment: segment 
     })
     .select()
@@ -150,6 +160,12 @@ export async function createWorkspace(formData: FormData) {
   }
 
   // Limpar cache para que o novo workspace apareça imediatamente apÇüs o redirect
+  try {
+    await supabase.auth.updateUser({ data: { trial_days: null, trial_plan: null } });
+  } catch (error) {
+    console.error('Erro ao limpar trial_days do usuario:', error);
+  }
+
   await clearUserWorkspacesCache(user.id);
 
   // Revalidar o layout principal para atualizar a lista de workspaces

@@ -7,6 +7,8 @@ type WorkspaceItem = {
   name: string;
   slug: string | null;
   logo_url?: string | null;
+  member_limit?: number | null;
+  member_count?: number | null;
 };
 
 type WorkspacesContextValue = {

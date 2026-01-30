@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { PlannerCalendar } from "@/components/calendar/planner-calendar";
 import { WeeklyView } from "@/components/home/WeeklyView";
 import { Database } from "@/types/database.types";
-import { useRouter } from "next/navigation";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -13,25 +12,31 @@ interface PlannerContentProps {
   workspaces: { id: string; name: string }[];
   workspaceId?: string | undefined;
   isPersonal?: boolean;
+  onRefetchTasks?: () => Promise<void>;
 }
 
-export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = false }: PlannerContentProps) {
-  const router = useRouter();
+export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = false, onRefetchTasks }: PlannerContentProps) {
+  const isPersonalMode = true;
+  const workspaceIdForCalendar = isPersonalMode ? null : workspaceId;
   const calendarReloadRef = useRef<(() => void) | null>(null);
 
-  // Handler para quando tarefa é criada/atualizada na WeeklyView
-  const handleWeeklyViewUpdate = () => {
-    // Disparar evento customizado para o calendário escutar
+  useEffect(() => {
+    document.cookie = "planner_personal=1; path=/";
+    return () => {
+      document.cookie = "planner_personal=; Max-Age=0; path=/";
+    };
+  }, []);
+
+  // Handler para quando tarefa é criada/atualizada na WeeklyView — refetch no cliente (mesma query do servidor)
+  // Não usar router.refresh() aqui: o servidor pode devolver cache e o efeito setTasks(initialTasks) sobrescreve a lista
+  const handleWeeklyViewUpdate = async () => {
+    await onRefetchTasks?.();
     window.dispatchEvent(new CustomEvent('planner-task-updated'));
-    // Recarregar o calendário imediatamente se disponível
     if (calendarReloadRef.current) {
       setTimeout(() => {
         calendarReloadRef.current?.();
       }, 100);
     }
-    // NÃO fazer router.refresh() imediato - a atualização otimista já cobre a UI
-    // O refresh será feito automaticamente quando necessário (ex: navegação)
-    // router.refresh() estava causando a tarefa a desaparecer
   };
 
   // Handler para quando controles do calendário estão prontos
@@ -56,18 +61,20 @@ export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = fa
         tasks={tasks}
         workspaces={workspaces}
         onTaskUpdate={handleWeeklyViewUpdate}
-        currentWorkspaceId={workspaceId}
-        isPersonal={isPersonal}
+        currentWorkspaceId={workspaceIdForCalendar}
+        isPersonal={isPersonalMode}
+        originContext="planner"
       />
 
       {/* Calendário */}
       <div className="relative h-full w-full">
         <div className="h-[calc(100vh-300px)]">
           <PlannerCalendar
-            workspaceId={workspaceId}
+            workspaceId={workspaceIdForCalendar}
             hideViewTabs={true}
             onControlsReady={handleCalendarControlsReady}
             onExternalTaskCreated={handleWeeklyViewUpdate}
+            forcePersonal={isPersonalMode}
           />
         </div>
       </div>

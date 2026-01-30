@@ -2,8 +2,8 @@ import { PlannerPageClient } from "../../planner/planner-page-client";
 import { getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { getTasks } from "@/lib/actions/tasks";
 import { notFound } from "next/navigation";
-import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { getUserWorkspaces, Profile, Workspace } from "@/lib/actions/user";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 
 interface PageProps {
   params: Promise<{ workspaceSlug: string }>;
@@ -47,37 +47,48 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
     return notFound();
   }
 
-  // 2. Detectar se é pessoal
-  const workspace = workspaces.find(w => w.id === workspaceId);
-  const isPersonal = workspace ? isPersonalWorkspace(workspace, workspaces) : false;
+  const forcePersonal = true;
 
-  // 3. Calcular range da semana expandido
-  // A WeeklyView usa uma janela deslizante (Today - 2 a Today + 2) ou mais.
-  // Buscamos um range maior (-7 a +7 dias) para garantir que dias futuros/passados próximos estejam cobertos
-  // e evitar que tarefas sumam quando o dia atual é Domingo (e a query original buscava só até Domingo)
+  // 2. Detectar se é pessoal (para UI); planner mostra pessoal + workspace atual
+  const workspace = workspaces.find(w => w.id === workspaceId);
+  const isPersonal = forcePersonal ? true : (workspace ? isPersonalWorkspace(workspace, workspaces) : false);
+
+  // 3. Calcular range expandido (-14 a +14 dias) para tarefas não sumirem após refresh (fuso/limites)
   const today = new Date();
   const startRange = new Date(today);
-  startRange.setDate(today.getDate() - 7);
+  startRange.setDate(today.getDate() - 14);
   startRange.setHours(0, 0, 0, 0);
 
   const endRange = new Date(today);
-  endRange.setDate(today.getDate() + 7);
+  endRange.setDate(today.getDate() + 14);
   endRange.setHours(23, 59, 59, 999);
 
-  // 4. Buscar tarefas iniciais da semana
-  const tasksStartTime = Date.now();
-  const initialTasks = await getTasks({
-    workspaceId: isPersonal ? undefined : workspaceId,
-    assigneeId: "current",
-    dueDateStart: startRange.toISOString(),
-    dueDateEnd: endRange.toISOString(),
-  });
-  // Performance logs removed for production
+  const dueDateStart = startRange.toISOString();
+  const dueDateEnd = endRange.toISOString();
 
-  // Filtrar por workspace se não for pessoal
-  const filteredTasks = isPersonal
-    ? initialTasks
-    : initialTasks.filter(task => task.workspace_id === workspaceId);
+  // 4. Buscar tarefas: pessoais + do workspace atual (sem filtrar por assignee para aparecer todas)
+  const [personalTasks, workspaceTasks] = await Promise.all([
+    getTasks({
+      workspaceId: null,
+      assigneeId: undefined,
+      dueDateStart,
+      dueDateEnd,
+    }),
+    getTasks({
+      workspaceId,
+      assigneeId: undefined,
+      dueDateStart,
+      dueDateEnd,
+    }),
+  ]);
+
+  // Mesclar e remover duplicatas (por id)
+  const seenIds = new Set<string>();
+  const filteredTasks = [...personalTasks, ...workspaceTasks].filter((task) => {
+    if (seenIds.has(task.id)) return false;
+    seenIds.add(task.id);
+    return true;
+  });
 
   // Performance logs removed for production
 
@@ -100,6 +111,7 @@ export default async function WorkspacePlannerPage({ params }: PageProps) {
               workspaceId={workspaceId}
               isPersonal={isPersonal}
               workspaces={workspaces}
+              forcePersonal={forcePersonal}
             />
           </div>
         </div>

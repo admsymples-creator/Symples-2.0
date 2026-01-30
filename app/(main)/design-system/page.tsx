@@ -82,7 +82,8 @@ export default function DesignSystemPage() {
         recurrence_days: null,
         group_id: null,
         subtasks: null,
-        tags: []
+        tags: [],
+        visible_on_board: true,
     };
 
     const categories = [

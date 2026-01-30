@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { getPlanLimits } from "@/lib/utils/subscription-helpers";
 
 export default async function AdminWorkspacesPage({
     searchParams,
@@ -75,7 +76,7 @@ export default async function AdminWorkspacesPage({
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-muted-foreground">
-                                        {ws.members?.[0]?.count || 0}
+                                        {`${ws.members?.[0]?.count || 0}/${ws.member_limit ?? getPlanLimits(ws.plan || null, ws.subscription_status || null)}`}
                                     </td>
                                     <td className="px-6 py-4 text-muted-foreground">
                                         {ws.created_at

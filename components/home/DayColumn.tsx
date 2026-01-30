@@ -34,9 +34,10 @@ interface DayColumnProps {
 
   workspaces?: { id: string; name: string }[];
   highlightInput?: boolean;
-  onTaskUpdate?: () => void;
+  onTaskUpdate?: () => void | Promise<void>;
   currentWorkspaceId?: string | null;
   isPersonalContext?: boolean;
+  originContext?: string;
 }
 
 export function DayColumn({
@@ -50,6 +51,7 @@ export function DayColumn({
   onTaskUpdate,
   currentWorkspaceId,
   isPersonalContext = true,
+  originContext,
 }: DayColumnProps) {
   const router = useRouter();
   const [quickAddValue, setQuickAddValue] = useState("");
@@ -93,30 +95,16 @@ export function DayColumn({
   const [optimisticTasks, addOptimisticTask] = useOptimistic(
     tasks,
     (state: Task[], action: OptimisticAction) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:59', message: 'HYP-REDUCER: Optimistic reducer called', data: { actionType: action.type, stateCount: state.length, actionId: action.type === 'add' ? action.task.id : action.type === 'delete' ? action.id : action.task.id }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
-      // #endregion
       switch (action.type) {
         case 'add':
-          // Evitar duplicatas: verificar se a tarefa já existe
           const exists = state.some(t => t.id === action.task.id);
           if (exists) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:65', message: 'HYP-REDUCER: Task exists, updating', data: { taskId: action.task.id }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
-            // #endregion
-            // Se já existe, atualizar ao invés de adicionar (pode ser substituição de temp por real)
             return state.map(t => t.id === action.task.id ? action.task : t);
           }
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:69', message: 'HYP-REDUCER: Adding new task', data: { taskId: action.task.id, newStateCount: state.length + 1 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
-          // #endregion
           return [...state, action.task];
         case 'update':
           return state.map(t => t.id === action.task.id ? { ...t, ...action.task } : t);
         case 'delete':
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/3cb1781a-45f3-4822-84f0-70123428e0e4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'components/home/DayColumn.tsx:73', message: 'HYP-REDUCER: Deleting task', data: { taskId: action.id, stateCount: state.length, willBeRemoved: state.filter(t => t.id === action.id).length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'REDUCER' }) }).catch(() => { });
-          // #endregion
           return state.filter(t => t.id !== action.id);
         default:
           return state;
@@ -185,11 +173,6 @@ export function DayColumn({
     // createdTasks só existem se NÃO estiverem em optimisticTasks (que é derivado de tasks prop + optimistic actions)
     const optimisticIds = new Set(optimisticTasks.map(t => t.id));
     const uniqueCreatedTasks = createdTasks.filter(t => !optimisticIds.has(t.id));
-
-    if (uniqueCreatedTasks.length > 0) {
-      console.log(`[DayColumn ${dayName}] Merging createdTasks:`, uniqueCreatedTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date })));
-    }
-
     const combined = [...optimisticTasks, ...uniqueCreatedTasks];
 
     return combined.sort((a, b) => {
@@ -215,12 +198,21 @@ export function DayColumn({
     });
   }, [optimisticTasks, createdTasks]);
 
+  // Atualizar indicadores de scroll quando tarefas mudam ou scroll container redimensiona
   useEffect(() => {
     updateScrollIndicators();
-    const handleResize = () => updateScrollIndicators();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [sortedTasks.length, highlightInput, isToday]);
+    
+    // Usar ResizeObserver ao invés de window resize listener (mais eficiente)
+    const el = scrollRef.current;
+    if (!el) return;
+    
+    const resizeObserver = new ResizeObserver(() => {
+      updateScrollIndicators();
+    });
+    resizeObserver.observe(el);
+    
+    return () => resizeObserver.disconnect();
+  }, [sortedTasks.length]);
 
   const pendingCount = useMemo(() =>
     // Contar também as createdTasks pendentes
@@ -231,15 +223,6 @@ export function DayColumn({
     e.preventDefault();
     const rawValue = quickAddValue;
     if (!rawValue.trim()) return;
-
-    console.log("[DayColumn] handleQuickAddSubmit started", {
-      val: rawValue,
-      selectedDate: selectedDateTime,
-      recurrence: recurrenceType,
-      recurrenceDays,
-      isPersonal: isPersonalContext,
-      wsId: currentWorkspaceId
-    });
 
     const tasksToCreate = processBatchInput(rawValue);
     if (tasksToCreate.length === 0) return;
@@ -282,13 +265,6 @@ export function DayColumn({
       currentRecurrenceDays = [base.getDay()];
     }
 
-    console.log("[DayColumn] Prepared data", {
-      tasksToCreate,
-      dueDateISO,
-      currentRecurrenceType,
-      currentRecurrenceDays
-    });
-
     // Optimistic Update
     const baseId = Date.now();
     const tempTasks = tasksToCreate.map((title, index) => ({
@@ -305,7 +281,7 @@ export function DayColumn({
       assignee_id: null,
       priority: null,
       created_by: null,
-      origin_context: null,
+      origin_context: originContext || null,
       client_id: null,
       recurrence_interval: null,
       recurrence_end_date: null,
@@ -331,10 +307,11 @@ export function DayColumn({
           workspace_id: isPersonalContext ? null : currentWorkspaceId,
           status: "todo" as any,
           is_personal: isPersonalContext,
+          origin_context: originContext,
           recurrence_type: currentRecurrenceType || undefined,
           recurrence_days: Array.isArray(currentRecurrenceDays) && currentRecurrenceDays.length > 0 ? currentRecurrenceDays : undefined,
+          assignee_id: "current", // Atribuir ao usuário atual para aparecer na query filtrada
         };
-        console.log("[DayColumn] Calling createTask with payload:", payload);
         return createTask(payload);
       });
 
@@ -356,7 +333,6 @@ export function DayColumn({
           .filter(r => r.success && r.data)
           .map(r => r.data!);
 
-        console.log("[DayColumn] Success! Adding to createdTasks:", newRealTasks);
         setCreatedTasks(prev => [...prev, ...newRealTasks]);
 
         if (tasksToCreate.length === 1 || successCount === tasksToCreate.length) {
@@ -558,10 +534,11 @@ export function DayColumn({
       startTransition(() => {
         addOptimisticTask({
           type: 'update',
-          task: { id, workspace_id: wid, is_personal: false }
+          task: { id, workspace_id: wid, is_personal: false, visible_on_board: true, group_id: null }
         });
       });
-      await updateTask({ id, workspace_id: wid, is_personal: false });
+      // Enviar para o inbox (group_id: null) do workspace selecionado
+      await updateTask({ id, workspace_id: wid, is_personal: false, visible_on_board: true, group_id: null });
       onTaskUpdate?.(); // Notificar atualização
       if (typeof window !== "undefined") {
         const ts = Date.now();

@@ -41,6 +41,21 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser()
 
       if (user) {
+        const trialDaysParam = searchParams.get('trial_days');
+        const trialPlanParam = searchParams.get('trial_plan');
+        const trialDaysValue = trialDaysParam ? Number(trialDaysParam) : null;
+        const trialPlanValue = trialPlanParam && ['pro', 'business'].includes(trialPlanParam) ? trialPlanParam : null;
+        if ((trialDaysValue && [15, 30, 60].includes(trialDaysValue)) || trialPlanValue) {
+          const { error: trialUpdateError } = await supabase.auth.updateUser({
+            data: {
+              ...(trialDaysValue && [15, 30, 60].includes(trialDaysValue) ? { trial_days: String(trialDaysValue) } : {}),
+              ...(trialPlanValue ? { trial_plan: trialPlanValue } : {}),
+            },
+          });
+          if (trialUpdateError) {
+            console.error('[Auth Callback] Erro ao salvar trial_days/trial_plan:', trialUpdateError);
+          }
+        }
         // TASK 3: Se houver token de convite (da URL ou cookie), ACEITAR IMEDIATAMENTE
         if (inviteToken) {
           try {

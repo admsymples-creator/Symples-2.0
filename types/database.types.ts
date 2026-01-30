@@ -141,6 +141,7 @@ export type Database = {
           subtasks: Json | null
           tags: string[] | null
           group_id: string | null
+          visible_on_board: boolean | null
         }
         Insert: {
           assignee_id?: string | null
@@ -167,6 +168,7 @@ export type Database = {
           subtasks?: Json | null
           tags?: string[] | null
           group_id?: string | null
+          visible_on_board?: boolean | null
         }
         Update: {
           assignee_id?: string | null
@@ -193,6 +195,7 @@ export type Database = {
           subtasks?: Json | null
           tags?: string[] | null
           group_id?: string | null
+          visible_on_board?: boolean | null
         }
         Relationships: [
           {

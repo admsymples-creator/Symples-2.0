@@ -22,6 +22,8 @@ export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], "id" | "name" | "slug"> & {
   logo_url?: string | null;
   created_at?: string | null;
+  member_limit?: number | null;
+  member_count?: number | null;
 };
 
 type CacheEntry<T> = { value: T; expiresAt: number };
@@ -118,7 +120,8 @@ export async function getUserWorkspaces(options?: { forceRefresh?: boolean }) {
         name,
         slug,
         logo_url,
-        created_at
+        created_at,
+        member_limit
       )
     `)
     .eq("user_id", user.id);
@@ -163,11 +166,33 @@ export async function getUserWorkspaces(options?: { forceRefresh?: boolean }) {
     return (a.name || "").localeCompare(b.name || "", "pt-BR", { sensitivity: "base" });
   });
 
-  console.log("? [getUserWorkspaces] Workspaces transformados:", sortedWorkspaces.length);
+  const workspaceIds = sortedWorkspaces.map((workspace) => workspace.id).filter(Boolean);
+  let memberCountsByWorkspace = new Map<string, number>();
+  if (workspaceIds.length > 0) {
+    const { data: workspaceMembers } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .in("workspace_id", workspaceIds);
+    memberCountsByWorkspace = new Map<string, number>();
+    (workspaceMembers || []).forEach((member) => {
+      if (!member?.workspace_id) return;
+      memberCountsByWorkspace.set(
+        member.workspace_id,
+        (memberCountsByWorkspace.get(member.workspace_id) || 0) + 1
+      );
+    });
+  }
 
-  writeCache(workspacesCache, user.id, sortedWorkspaces);
-  logPerf("getUserWorkspaces", perfStart, { count: sortedWorkspaces.length });
-  return sortedWorkspaces;
+  const workspacesWithCounts = sortedWorkspaces.map((workspace) => ({
+    ...workspace,
+    member_count: memberCountsByWorkspace.get(workspace.id) || 0,
+  }));
+
+  console.log("? [getUserWorkspaces] Workspaces transformados:", workspacesWithCounts.length);
+
+  writeCache(workspacesCache, user.id, workspacesWithCounts);
+  logPerf("getUserWorkspaces", perfStart, { count: workspacesWithCounts.length });
+  return workspacesWithCounts;
 }
 
 /**
@@ -225,7 +250,10 @@ export async function ensurePersonalWorkspace(): Promise<{ success: boolean; wor
 
   // Criar workspace pessoal
   const slug = `pessoal-${user.id.slice(0, 8)}`;
-  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const shouldApplyTrialDays = (existingWorkspaces || []).length === 0;
+  const trialDaysValue = shouldApplyTrialDays ? Number((user as any).user_metadata?.trial_days) : null;
+  const trialDays = trialDaysValue && [15, 30, 60].includes(trialDaysValue) ? trialDaysValue : 14;
+  const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: newWorkspace, error: createError } = await supabase
     .from("workspaces")

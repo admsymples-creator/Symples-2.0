@@ -25,6 +25,8 @@ interface Workspace {
     name: string;
     slug: string | null;
     logo_url?: string | null;
+    member_limit?: number | null;
+    member_count?: number | null;
 }
 
 interface SidebarWorkspaceSwitcherProps {
@@ -189,9 +191,11 @@ export function SidebarWorkspaceSwitcher({
                                     )}
                                 </div>
                                 <span className="flex-1 truncate min-w-0">{workspace.name}</span>
-                                {workspace.id === activeWorkspaceId && (
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#050815] flex-shrink-0" />
-                                )}
+                                <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+                                    {workspace.id === activeWorkspaceId && (
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#050815]" />
+                                    )}
+                                </div>
                             </DropdownMenuItem>
                         ))}
                         <DropdownMenuSeparator />

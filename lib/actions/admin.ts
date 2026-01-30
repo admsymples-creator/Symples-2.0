@@ -13,6 +13,9 @@ const ADMIN_EMAILS_HARDCODED = [
     "adm.brandify@gmail.com",
     "brasaofernando@gmail.com"
 ];
+const SUPPORT_SESSION_MINUTES = 15;
+const TRIAL_INVITE_DAYS = new Set([15, 30, 60]);
+const TRIAL_INVITE_PLANS = new Set(['pro', 'business']);
 
 async function checkAdminAccess() {
     const supabase = await createServerClient();
@@ -102,8 +105,30 @@ export async function getAdminUsers(search?: string) {
     const userIds = data.map((user) => user.id).filter(Boolean);
     const { data: workspaces } = await adminDb
         .from('workspaces')
-        .select('id, name, slug, owner_id, plan, subscription_status, created_at')
+        .select('id, name, slug, owner_id, plan, subscription_status, trial_ends_at, member_limit, created_at')
         .in('owner_id', userIds);
+
+    const workspaceIds = (workspaces || []).map((ws) => ws.id).filter(Boolean);
+    const { data: workspaceMembers } = workspaceIds.length > 0
+        ? await adminDb
+            .from('workspace_members')
+            .select('workspace_id')
+            .in('workspace_id', workspaceIds)
+        : { data: [] as Array<{ workspace_id: string }> };
+
+    const memberCountByWorkspace = new Map<string, number>();
+    (workspaceMembers || []).forEach((member) => {
+        if (!member?.workspace_id) return;
+        memberCountByWorkspace.set(
+            member.workspace_id,
+            (memberCountByWorkspace.get(member.workspace_id) || 0) + 1
+        );
+    });
+
+    const { data: memberships } = await adminDb
+        .from('workspace_members')
+        .select('user_id, role, workspace_id')
+        .in('user_id', userIds);
 
     const workspacesByOwner = new Map<string, Array<any>>();
     (workspaces || []).forEach((ws) => {
@@ -111,6 +136,14 @@ export async function getAdminUsers(search?: string) {
         const list = workspacesByOwner.get(ws.owner_id) || [];
         list.push(ws);
         workspacesByOwner.set(ws.owner_id, list);
+    });
+
+    const membershipsByUser = new Map<string, Array<any>>();
+    (memberships || []).forEach((member) => {
+        if (!member?.user_id) return;
+        const list = membershipsByUser.get(member.user_id) || [];
+        list.push(member);
+        membershipsByUser.set(member.user_id, list);
     });
 
     const pickPrimaryWorkspace = (list: Array<any>) => {
@@ -131,11 +164,116 @@ export async function getAdminUsers(search?: string) {
     return data.map((user) => {
         const owned = workspacesByOwner.get(user.id) || [];
         const primaryWorkspace = pickPrimaryWorkspace(owned);
+        const userMemberships = membershipsByUser.get(user.id) || [];
+        const primaryMembership = primaryWorkspace
+            ? userMemberships.find((member) => member.workspace_id === primaryWorkspace.id)
+            : userMemberships[0];
         return {
             ...user,
             primaryWorkspace,
+            primaryMembership,
+            primaryWorkspaceMemberCount: primaryWorkspace
+                ? memberCountByWorkspace.get(primaryWorkspace.id) || 0
+                : 0,
         };
     });
+}
+
+export async function createSupportLoginLink(params: { userId: string; reason: string }) {
+    const adminUser = await checkAdminAccess();
+    const userId = params?.userId?.toString().trim();
+    const reason = params?.reason?.toString().trim();
+
+    if (!userId || !reason) {
+        return { url: null, error: "missing_params", message: "Parametros invalidos" };
+    }
+
+    const adminDb = await createServiceRoleClient();
+    const { data: profile, error: profileError } = await adminDb
+        .from("profiles")
+        .select("email")
+        .eq("id", userId)
+        .single();
+
+    if (profileError || !profile?.email) {
+        console.error("[createSupportLoginLink] Email nao encontrado:", profileError);
+        return { url: null, error: "missing_email", message: "Email nao encontrado" };
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MINUTES * 60 * 1000).toISOString();
+    const nextPath = `/home?support=1&support_expires=${encodeURIComponent(expiresAt)}`;
+    const redirectTo = `${baseUrl}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+    const { data: linkData, error: linkError } = await adminDb.auth.admin.generateLink({
+        type: "magiclink",
+        email: profile.email,
+        options: {
+            redirectTo,
+        },
+    });
+
+    if (linkError || !linkData?.properties?.action_link) {
+        console.error("[createSupportLoginLink] Erro ao gerar magic link:", linkError);
+        return { url: null, error: "link_failed", message: linkError?.message || "Falha ao gerar link" };
+    }
+
+    await adminDb.from("audit_logs").insert({
+        action: "support_login",
+        user_id: adminUser.id,
+        details: {
+            target_user_id: userId,
+            target_email: profile.email,
+            reason,
+            redirect_to: redirectTo,
+            opened_in_new_tab: true,
+            expires_at: expiresAt,
+            requested_at: new Date().toISOString(),
+        },
+    });
+
+    return { url: linkData.properties.action_link };
+}
+
+export async function createTrialInviteLink(params: { email: string; trialDays: number; trialPlan: 'pro' | 'business' }) {
+    const adminUser = await checkAdminAccess();
+    const email = params?.email?.toString().trim().toLowerCase();
+    const trialDays = Number(params?.trialDays);
+    const trialPlan = params?.trialPlan;
+
+    if (!trialPlan || !TRIAL_INVITE_PLANS.has(trialPlan)) {
+        return { success: false, error: 'invalid_trial_plan' };
+    }
+
+    if (!email || !email.includes("@")) {
+        return { success: false, error: "invalid_email" };
+    }
+
+    if (!TRIAL_INVITE_DAYS.has(trialDays)) {
+        return { success: false, error: "invalid_trial_days" };
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const inviteLink = `${baseUrl}/signup?trial_days=${trialDays}&trial_plan=${trialPlan}&email=${encodeURIComponent(email)}&trial_source=admin`;
+
+    await createServiceRoleClient()
+        .then((adminDb) =>
+            adminDb.from("audit_logs").insert({
+                action: "trial_invite",
+                user_id: adminUser.id,
+                details: {
+                    target_email: email,
+                    trial_days: trialDays,
+                    trial_plan: trialPlan,
+                    invite_link: inviteLink,
+                    created_at: new Date().toISOString(),
+                },
+            })
+        )
+        .catch((error) => {
+            console.error("[createTrialInviteLink] audit log error:", error);
+        });
+
+    return { success: true, inviteLink };
 }
 
 export async function getAdminWorkspaces(search?: string) {

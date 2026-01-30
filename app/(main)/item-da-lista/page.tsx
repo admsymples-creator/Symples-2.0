@@ -52,7 +52,8 @@ export default function ItemDaListaPage() {
         recurrence_days: null,
         group_id: null,
         subtasks: null,
-        tags: []
+        tags: [],
+        visible_on_board: true,
     };
 
     // Mock data para KanbanCard

@@ -21,7 +21,7 @@ export default async function MainLayout({
     ]);
 
     if (!user) {
-        return null;
+        redirect("/login");
     }
 
     // Garantir que o usuário tenha workspace pessoal (apenas se não tiver nenhum workspace)
@@ -106,6 +106,7 @@ export default async function MainLayout({
             initialSubscription={subscription}
             initialProjectsTags={initialProjectsTags}
             initialProjectsIcons={initialProjectsIcons}
+            initialWorkspaceId={activeWorkspace?.id}
         >
             {children}
         </AppShell>

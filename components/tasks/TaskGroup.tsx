@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, memo, useState, useCallback } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { TaskRowMinify } from "./TaskRowMinify";
 import { TaskRowSkeleton } from "./TaskRowSkeleton";
 import { TaskSectionHeader } from "./TaskSectionHeader";
@@ -57,9 +58,11 @@ interface TaskGroupProps {
     onAddTask?: (groupId: string, title: string, dueDate?: Date | null, assigneeId?: string | null, tags?: string[]) => Promise<void> | void;
     showProjectTag?: boolean; // ✅ Mostrar tag de projeto ao invés de workspace
     tagFilter?: string | null; // ✅ Tag do projeto atual (para incluir ao criar tarefa)
+    collapsed?: boolean;
+    onToggleCollapse?: (groupId: string) => void;
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false, tagFilter }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false, tagFilter, collapsed = false, onToggleCollapse }: TaskGroupProps) {
     const [isAdding, setIsAdding] = useState(false);
 
     // Normalizar IDs para string (dnd-kit requer strings)
@@ -118,6 +121,18 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                     title={title}
                     count={tasks.length}
                     color={colorForIndicator}
+                    leftContent={
+                        onToggleCollapse ? (
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onToggleCollapse(id); }}
+                                className="p-0.5 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                                aria-label={collapsed ? "Expandir grupo" : "Colapsar grupo"}
+                            >
+                                {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                        ) : undefined
+                    }
                     actions={
                         showGroupActions &&
                             (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup || onReorderGroup) ? (
@@ -142,18 +157,16 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                 />
             </div>
 
-            {/* Container Droppable com Lista de Tarefas */}
+            {/* Container Droppable com Lista de Tarefas (oculto quando colapsado) */}
             <div
                 ref={setNodeRef}
                 className={cn(
                     "bg-gray-50 border-2 border-solid border-gray-200 rounded-lg p-2 transition-colors",
-                    // Altura dinâmica: abraça o conteúdo (h-fit) com altura mínima apenas quando vazio
-                    // Inbox: altura mínima muito baixa para empty state compacto
-                    // Outros grupos: altura mínima maior para melhor área de drop
                     id === "inbox" || id === "Inbox"
                         ? "h-fit min-h-[60px]"
                         : "h-fit min-h-[100px]",
-                    isOver && "bg-blue-50 border-blue-300 border-solid"
+                    isOver && "bg-blue-50 border-blue-300 border-solid",
+                    collapsed && "hidden"
                 )}
             >
                 {tasks.length > 0 || (onAddTask && isAdding) ? (
@@ -265,7 +278,8 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
         prev.onColorChange !== next.onColorChange ||
         prev.onDeleteGroup !== next.onDeleteGroup ||
         prev.onClearGroup !== next.onClearGroup ||
-        prev.showGroupActions !== next.showGroupActions;
+        prev.showGroupActions !== next.showGroupActions ||
+        prev.collapsed !== next.collapsed;
 
     return !shouldRender; // Retorna true se NÃO deve re-renderizar
 });

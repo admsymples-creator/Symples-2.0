@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
 import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
@@ -8,7 +8,7 @@ import { getTasks, getWorkspaceIdBySlug } from "@/lib/actions/tasks";
 import { PlannerContent } from "@/components/planner/PlannerContent";
 import { Database } from "@/types/database.types";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
-import { getCachedPlannerTasks, setCachedPlannerTasks } from "@/lib/utils/planner-cache";
+import { getCachedPlannerTasks, setCachedPlannerTasks, clearPlannerCache } from "@/lib/utils/planner-cache";
 
 import { Workspace } from "@/lib/actions/user";
 
@@ -37,11 +37,13 @@ interface PlannerClientProps {
   initialWorkspaceId?: string;
   initialIsPersonal?: boolean;
   preloadedWorkspaces?: Workspace[];
+  forcePersonal?: boolean;
 }
 
-export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPersonal, preloadedWorkspaces }: PlannerClientProps = {}) {
+export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPersonal, preloadedWorkspaces, forcePersonal }: PlannerClientProps = {}) {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const isForcedPersonal = forcePersonal ?? false;
   // Se preloadedWorkspaces foi passado, usar como "initial data" para o hook também se possível, mas aqui vamos priorizar
   const contextWorkspaces = useWorkspaces();
   const initialWorkspaces = preloadedWorkspaces || contextWorkspaces;
@@ -59,7 +61,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
         return {
           id: initialWorkspaceId,
           name: workspace.name || "Workspace",
-          isPersonal: initialIsPersonal ?? false
+          isPersonal: isForcedPersonal ? true : (initialIsPersonal ?? false)
         };
       }
     }
@@ -70,6 +72,15 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   // Detectar workspace atual da URL e verificar se é pessoal
   useEffect(() => {
     if (!isLoaded) return;
+    if (isForcedPersonal) {
+      setCurrentWorkspace({
+        id: 'personal',
+        name: 'Pessoal',
+        isPersonal: true,
+      });
+      setPendingWorkspaceSlug(null);
+      return;
+    }
     if (!initialWorkspaces || initialWorkspaces.length === 0) {
       setCurrentWorkspace(null);
       setPendingWorkspaceSlug(null);
@@ -119,7 +130,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
         setCurrentWorkspace(null);
       }
     }
-  }, [pathname, activeWorkspaceId, isLoaded, initialWorkspaces]);
+  }, [pathname, activeWorkspaceId, isLoaded, initialWorkspaces, isForcedPersonal]);
 
   useEffect(() => {
     if (!pendingWorkspaceSlug || !initialWorkspaces || initialWorkspaces.length === 0) {
@@ -160,24 +171,21 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
   }, [pendingWorkspaceSlug, initialWorkspaces]);
 
   const hasLoadedOnceRef = useRef(false);
+  const lastRefetchAtRef = useRef(0);
   const { isSwitchingWorkspace } = useWorkspaceLoading();
 
-  // CORREÇÃO: Sincronizar tasks com initialTasks sempre que o prop mudar (ex: router.refresh())
-  // Isso garante que atualizações vindas do servidor (após criação de tarefa) sejam refletidas no estado
+  // Sincronizar tasks com initialTasks só na primeira carga; não sobrescrever após refetch
   useEffect(() => {
-    if (initialTasks !== undefined) {
-      setTasks(initialTasks);
-      // Se recebemos dados novos do servidor, podemos considerar carregado
-      setLoading(false);
-
-      // Atualizar cache também para manter consistência se o usuário navegar
-      if (currentWorkspace) {
-        setCachedPlannerTasks(
-          currentWorkspace.isPersonal ? null : currentWorkspace.id,
-          currentWorkspace.isPersonal,
-          initialTasks
-        );
-      }
+    if (initialTasks === undefined) return;
+    if (Date.now() - lastRefetchAtRef.current < 5000) return;
+    setTasks(initialTasks);
+    setLoading(false);
+    if (currentWorkspace) {
+      setCachedPlannerTasks(
+        currentWorkspace.isPersonal ? null : currentWorkspace.id,
+        currentWorkspace.isPersonal,
+        initialTasks
+      );
     }
   }, [initialTasks, currentWorkspace]);
 
@@ -227,28 +235,28 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
         // A WeeklyView usa janela deslizante, então precisamos de mais dias que apenas a semana civil
         const today = new Date();
         const startRange = new Date(today);
-        startRange.setDate(today.getDate() - 7);
+        startRange.setDate(today.getDate() - 14);
         startRange.setHours(0, 0, 0, 0);
 
         const endRange = new Date(today);
-        endRange.setDate(today.getDate() + 7);
+        endRange.setDate(today.getDate() + 14);
         endRange.setHours(23, 59, 59, 999);
 
         // OTIMIZAÇÃO: Usar Promise para não bloquear UI
+        // Planner: não filtrar por assignee (tarefas criadas no planner têm assignee_id null)
         const fetchPromise = currentWorkspace.isPersonal
-          ? // Workspace pessoal: buscar todas as tarefas atribuídas ao usuário do range
-          getTasks({
-            assigneeId: "current",
-            dueDateStart: startRange.toISOString(),
-            dueDateEnd: endRange.toISOString(),
-          })
-          : // Workspace profissional: buscar apenas tarefas do workspace ativo do range
-          getTasks({
-            workspaceId: currentWorkspace.id,
-            assigneeId: "current",
-            dueDateStart: startRange.toISOString(),
-            dueDateEnd: endRange.toISOString(),
-          });
+          ? getTasks({
+              workspaceId: null,
+              assigneeId: undefined,
+              dueDateStart: startRange.toISOString(),
+              dueDateEnd: endRange.toISOString(),
+            })
+          : getTasks({
+              workspaceId: currentWorkspace.id,
+              assigneeId: undefined,
+              dueDateStart: startRange.toISOString(),
+              dueDateEnd: endRange.toISOString(),
+            });
 
         const fetchedTasks = await fetchPromise;
 
@@ -286,6 +294,72 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     hasLoadedOnceRef.current = false;
   }, [currentWorkspace?.id, currentWorkspace?.isPersonal]);
 
+  // Refetch: mesma query do servidor (pessoal + workspace, sem assignee) — chamado após criar/editar tarefa no planner
+  const refetchPlannerTasks = useCallback(async () => {
+    // Pequeno delay para a escrita no banco estar visível
+    await new Promise((r) => setTimeout(r, 200));
+    // Limpar cache para nenhum efeito sobrescrever com dados antigos
+    if (currentWorkspace) {
+      clearPlannerCache(
+        currentWorkspace.isPersonal ? null : currentWorkspace.id,
+        currentWorkspace.isPersonal
+      );
+    }
+
+    const today = new Date();
+    const startRange = new Date(today);
+    startRange.setDate(today.getDate() - 14);
+    startRange.setHours(0, 0, 0, 0);
+    const endRange = new Date(today);
+    endRange.setDate(today.getDate() + 14);
+    endRange.setHours(23, 59, 59, 999);
+    const dueDateStart = startRange.toISOString();
+    const dueDateEnd = endRange.toISOString();
+
+    const [personalTasks, workspaceTasks] = await Promise.all([
+      getTasks({
+        workspaceId: null,
+        assigneeId: undefined,
+        dueDateStart,
+        dueDateEnd,
+      }),
+      initialWorkspaceId
+        ? getTasks({
+            workspaceId: initialWorkspaceId,
+            assigneeId: undefined,
+            dueDateStart,
+            dueDateEnd,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const seenIds = new Set<string>();
+    const merged = [...(personalTasks || []), ...(workspaceTasks || [])].filter((task) => {
+      if (seenIds.has(task.id)) return false;
+      seenIds.add(task.id);
+      return true;
+    });
+
+    lastRefetchAtRef.current = Date.now();
+    setTasks(merged as Task[]);
+    if (currentWorkspace) {
+      setCachedPlannerTasks(
+        currentWorkspace.isPersonal ? null : currentWorkspace.id,
+        currentWorkspace.isPersonal,
+        merged as Task[]
+      );
+    }
+  }, [initialWorkspaceId, currentWorkspace]);
+
+  // Refetch no mount: lista do planner vem sempre da mesma busca (pessoal + workspace, sem assignee)
+  const refetchedOnMountRef = useRef(false);
+  useEffect(() => {
+    if (!currentWorkspace || refetchedOnMountRef.current) return;
+    if (currentWorkspace.isPersonal && !initialWorkspaceId) return; // slug ainda não resolvido
+    refetchedOnMountRef.current = true;
+    refetchPlannerTasks();
+  }, [currentWorkspace, initialWorkspaceId, refetchPlannerTasks]);
+
   // Se temos dados iniciais e tasks, renderizar imediatamente mesmo sem currentWorkspace definido
   // (currentWorkspace será resolvido pelo useEffect, mas não deve bloquear renderização)
   if (initialTasks !== undefined && tasks.length >= 0 && !loading) {
@@ -298,6 +372,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
           workspaces={initialWorkspaces}
           workspaceId={currentWorkspace?.isPersonal ? undefined : currentWorkspace?.id}
           isPersonal={currentWorkspace?.isPersonal ?? initialIsPersonal ?? false}
+          onRefetchTasks={refetchPlannerTasks}
         />
       );
     }
@@ -346,6 +421,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
       workspaces={initialWorkspaces}
       workspaceId={currentWorkspace?.isPersonal ? undefined : currentWorkspace?.id}
       isPersonal={currentWorkspace?.isPersonal ?? false}
+      onRefetchTasks={refetchPlannerTasks}
     />
   );
 }

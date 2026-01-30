@@ -1,6 +1,7 @@
 "use server";
 
 import { createServerActionClient } from "@/lib/supabase/server";
+import { cookies, headers } from "next/headers";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import { Database } from "@/types/database.types";
@@ -227,7 +228,8 @@ export async function getTasks(filters?: {
     // O filtro de assignee será aplicado abaixo
   } else if (filters.workspaceId === null) {
     // Tarefas Pessoais (sem workspace e criadas pelo usuário)
-    query = query.is("workspace_id", null).eq("created_by", user.id);
+    // IMPORTANTE: filtrar também por is_personal=true para corresponder à política RLS
+    query = query.is("workspace_id", null).eq("created_by", user.id).eq("is_personal", true);
   } else {
     // Tarefas do Workspace (já verificamos que o usuário é membro acima)
     query = query.eq("workspace_id", filters.workspaceId);
@@ -309,9 +311,11 @@ export async function getTasks(filters?: {
           if (filters?.workspaceId) {
             if (task.workspace_id !== filters.workspaceId) return false;
           }
-          // Se workspaceId for null (Pessoal), aceitar tarefas sem workspace (opcional, dependendo da regra de negócio)
-          // ou tarefas de workspace que o usuário tem acesso (já garantido pelo filtro de task_members)
-          // Mas para "Minhas Tarefas" geral, geralmente queremos ver tudo.
+
+          // ✅ Planner: só incluir tarefas com data no intervalo exibido (responsável + data)
+          if (!task.due_date) return false;
+          if (filters?.dueDateStart && task.due_date < filters.dueDateStart) return false;
+          if (filters?.dueDateEnd && task.due_date > filters.dueDateEnd) return false;
 
           return true;
         });
@@ -642,6 +646,36 @@ export async function createTask(data: {
     return { success: false, error: "Usuário não autenticado" };
   }
 
+  if (data.is_personal === true) {
+    data.workspace_id = null;
+  }
+
+  let plannerPersonalCookie: string | undefined;
+  try {
+    const cookieStore = await cookies();
+    plannerPersonalCookie = cookieStore.get("planner_personal")?.value;
+  } catch {
+    plannerPersonalCookie = undefined;
+  }
+
+  let referer = "";
+  try {
+    const headerStore = await headers();
+    referer = headerStore.get("referer") || "";
+  } catch {
+    referer = "";
+  }
+
+  const isPlannerRequest = plannerPersonalCookie === "1" || referer.includes("/planner") || data.origin_context === "planner";
+  const isWeeklyViewOnly = data.origin_context === "weekly_view";
+  if (isPlannerRequest) {
+    data.workspace_id = null;
+    data.is_personal = true;
+    data.origin_context = data.origin_context || "planner";
+  }
+
+  const visibleOnBoard = !(isPlannerRequest || isWeeklyViewOnly);
+
   // Validação de acesso ao workspace se fornecido
   // Validação de acesso ao workspace se fornecido
   if (data.workspace_id) {
@@ -680,13 +714,16 @@ export async function createTask(data: {
     }
   }
 
+  // Resolver assignee_id: "current" para o ID do usuário atual
+  const resolvedAssigneeId = data.assignee_id === "current" ? user.id : data.assignee_id;
+
   const taskData: any = {
     title: data.title,
     due_date: data.due_date || null,
     workspace_id: data.workspace_id || null, // Se undefined/null, grava null (tarefa pessoal ou sem workspace)
     status: data.status || "todo",
     created_by: user.id,
-    assignee_id: data.assignee_id || user.id, // Se não passar, auto-atribui
+    assignee_id: resolvedAssigneeId !== undefined ? resolvedAssigneeId : null, // Default: sem responsável
     priority: (data.priority as any) || "medium",
     is_personal: data.is_personal ?? (data.workspace_id ? false : true), // Default: True se não tiver WS
     description: data.description || null,
@@ -699,6 +736,7 @@ export async function createTask(data: {
     // Group and Tags
     group_id: data.group_id || null,
     tags: data.tags || null,
+    visible_on_board: visibleOnBoard,
   };
 
   if (typeof data.position === "number" && Number.isFinite(data.position)) {
@@ -743,6 +781,48 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
   const { id, ...updates } = params;
 
   console.log("[updateTask] Atualizando tarefa:", { id, updates });
+
+  // Ao adicionar responsável (assignee não-nulo), tarefa vai para o quadro
+  if (updates.assignee_id !== undefined && updates.assignee_id !== null) {
+    updates.visible_on_board = true;
+    const { data: currentTask } = await supabase
+      .from("tasks")
+      .select("workspace_id")
+      .eq("id", id)
+      .single();
+    if (currentTask && currentTask.workspace_id === null) {
+      let activeWorkspaceId: string | null = null;
+      try {
+        const cookieStore = await cookies();
+        activeWorkspaceId = cookieStore.get("active_workspace_id")?.value ?? null;
+      } catch {
+        activeWorkspaceId = null;
+      }
+      if (activeWorkspaceId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: workspace } = await supabase
+            .from("workspaces")
+            .select("owner_id")
+            .eq("id", activeWorkspaceId)
+            .single();
+          const isOwner = workspace?.owner_id === user.id;
+          const { data: member } = !isOwner
+            ? await supabase
+                .from("workspace_members")
+                .select("user_id")
+                .eq("workspace_id", activeWorkspaceId)
+                .eq("user_id", user.id)
+                .single()
+            : { data: { user_id: user.id } };
+          if (isOwner || member) {
+            updates.workspace_id = activeWorkspaceId;
+            updates.is_personal = false;
+          }
+        }
+      }
+    }
+  }
 
   // Fazer o update diretamente sem select para evitar problemas de RLS
   // O Supabase retorna erro apenas se houver problema de permissão ou sintaxe
@@ -1610,7 +1690,8 @@ export async function getTasksForWorkspace(workspaceId: string, tag?: string | n
           )
             `)
     .eq("workspace_id", workspaceId) // ✅ Scope: Apenas tarefas do workspace
-    .neq("status", "archived"); // ✅ Status: Exclui tarefas arquivadas (soft delete via status)
+    .neq("status", "archived") // ✅ Status: Exclui tarefas arquivadas (soft delete via status)
+    .or("visible_on_board.eq.true,visible_on_board.is.null"); // ✅ Quadro: só tarefas liberadas para o quadro (null = legado)
 
   // ✅ Filtro de tag (projeto) se fornecido
   if (tag) {
@@ -1939,7 +2020,9 @@ export async function bulkArchiveTasks(
     // Filtro de Grupo
     if (!options.groupId || options.groupId === "inbox" || options.groupId === "Inbox") {
       // Inbox = group_id IS NULL
-      query = query.is("group_id", null);
+      // IMPORTANTE: Apenas arquivar tarefas que estão no quadro (visible_on_board = true)
+      // para não afetar tarefas do WeeklyView que ainda não foram enviadas para o quadro
+      query = query.is("group_id", null).eq("visible_on_board", true);
     } else {
       // Grupo específico
       query = query.eq("group_id", options.groupId);

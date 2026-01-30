@@ -12,6 +12,7 @@ import { GlobalAssistantSheet } from "@/components/assistant/GlobalAssistantShee
 import { WorkspaceLoadingOverlay } from "@/components/layout/WorkspaceLoadingOverlay";
 import { WorkspaceSkeleton } from "@/components/skeletons/WorkspaceSkeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SupportSessionBanner } from "@/components/layout/SupportSessionBanner";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 
@@ -64,6 +65,7 @@ function LayoutContent({ children, user, initialSubscription, initialProjectsTag
                     isCollapsed ? "pl-[64px]" : "pl-[260px]"
                 )}
             >
+                <SupportSessionBanner />
                 <Header user={user} />
                 <main className="flex-1 overflow-auto">
                     {children}

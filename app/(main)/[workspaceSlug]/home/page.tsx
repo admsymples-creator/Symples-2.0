@@ -50,13 +50,14 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   endOfWeek.setHours(23, 59, 59, 999);
 
-  // Range estendido para buscar tarefas (buffer de timezone)
-  // Isso evita que tarefas criadas em UTC-X, que caem no dia anterior/seguinte em UTC, sejam filtradas
+  // Range estendido para buscar tarefas (buffer de timezone + navegação)
+  // Permite que o usuário navegue ±14 dias sem precisar recarregar
+  // Também evita que tarefas criadas em UTC-X sejam filtradas
   const taskFetchStart = new Date(startOfWeek);
-  taskFetchStart.setDate(taskFetchStart.getDate() - 2);
+  taskFetchStart.setDate(taskFetchStart.getDate() - 14);
 
   const taskFetchEnd = new Date(endOfWeek);
-  taskFetchEnd.setDate(taskFetchEnd.getDate() + 2);
+  taskFetchEnd.setDate(taskFetchEnd.getDate() + 14);
 
   // 4. Buscar dados críticos primeiro (tarefas e notificações) para exibição imediata
   const criticalDataStartTime = Date.now();
@@ -129,6 +130,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
                 workspaces={workspaces.map(({ id, name }) => ({ id, name }))}
                 currentWorkspaceId={workspaceId}
                 isPersonal={isPersonal}
+                originContext="weekly_view"
               />
             </div>
 

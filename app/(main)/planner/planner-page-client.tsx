@@ -43,9 +43,10 @@ interface PlannerPageClientProps {
   workspaceId?: string;
   isPersonal?: boolean;
   workspaces?: Workspace[];
+  forcePersonal?: boolean;
 }
 
-export function PlannerPageClient({ initialTasks, workspaceId, isPersonal, workspaces }: PlannerPageClientProps = {}) {
+export function PlannerPageClient({ initialTasks, workspaceId, isPersonal, workspaces, forcePersonal }: PlannerPageClientProps = {}) {
   // Se temos dados iniciais, passar para o componente
   if (initialTasks !== undefined) {
     return (
@@ -54,6 +55,7 @@ export function PlannerPageClient({ initialTasks, workspaceId, isPersonal, works
         initialWorkspaceId={workspaceId}
         initialIsPersonal={isPersonal}
         preloadedWorkspaces={workspaces}
+        forcePersonal={forcePersonal}
       />
     );
   }

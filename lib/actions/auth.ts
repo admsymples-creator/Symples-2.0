@@ -24,6 +24,8 @@ export async function loginWithPassword(formData: FormData) {
     const email = formData.get('email')?.toString().trim()
     const password = formData.get('password')?.toString()
     const inviteToken = formData.get('inviteToken')?.toString()
+    const trialDaysParam = formData.get('trialDays')?.toString()
+    const trialPlanParam = formData.get('trialPlan')?.toString()
 
     if (!email) {
       return {
@@ -102,6 +104,8 @@ export async function loginWithEmail(formData: FormData) {
     // Extrair email do FormData
     const email = formData.get('email')?.toString().trim()
     const inviteToken = formData.get('inviteToken')?.toString()
+    const trialDaysParam = formData.get('trialDays')?.toString()
+    const trialPlanParam = formData.get('trialPlan')?.toString()
 
     // Validar se o email foi fornecido
     if (!email) {
@@ -126,8 +130,19 @@ export async function loginWithEmail(formData: FormData) {
     // Captura a URL base usando NEXT_PUBLIC_SITE_URL ou fallback para localhost
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
     let emailRedirectTo = `${baseUrl}/auth/callback`
+    const redirectParams = new URLSearchParams()
     if (inviteToken) {
-      emailRedirectTo += `?invite=${inviteToken}`
+      redirectParams.set('invite', inviteToken)
+    }
+    const trialDaysValue = trialDaysParam ? Number(trialDaysParam) : null
+    if (trialDaysValue && [15, 30, 60].includes(trialDaysValue)) {
+      redirectParams.set('trial_days', String(trialDaysValue))
+    }
+    if (trialPlanParam && ['pro', 'business'].includes(trialPlanParam)) {
+      redirectParams.set('trial_plan', trialPlanParam)
+    }
+    if (redirectParams.size > 0) {
+      emailRedirectTo += `?${redirectParams.toString()}`
     }
 
     // Chamar signInWithOtp do Supabase
@@ -212,6 +227,8 @@ export async function signupWithPassword(formData: FormData) {
     const password = formData.get('password')?.toString()
     const fullName = formData.get('fullName')?.toString().trim()
     const inviteToken = formData.get('inviteToken')?.toString()
+    const trialDaysParam = formData.get('trialDays')?.toString()
+    const trialPlanParam = formData.get('trialPlan')?.toString()
 
     if (!email) {
       return {
@@ -245,14 +262,31 @@ export async function signupWithPassword(formData: FormData) {
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
     
     let emailRedirectTo = `${baseUrl}/auth/callback`
+    const redirectParams = new URLSearchParams()
     if (inviteToken) {
-      emailRedirectTo += `?invite=${inviteToken}`
+      redirectParams.set('invite', inviteToken)
+    }
+    const trialDaysValue = trialDaysParam ? Number(trialDaysParam) : null
+    if (trialDaysValue && [15, 30, 60].includes(trialDaysValue)) {
+      redirectParams.set('trial_days', String(trialDaysValue))
+    }
+    if (trialPlanParam && ['pro', 'business'].includes(trialPlanParam)) {
+      redirectParams.set('trial_plan', trialPlanParam)
+    }
+    if (redirectParams.size > 0) {
+      emailRedirectTo += `?${redirectParams.toString()}`
     }
 
     // Preparar metadata com nome se fornecido
     const metadata: Record<string, string> = {}
     if (fullName) {
       metadata.full_name = fullName
+    }
+    if (trialDaysValue && [15, 30, 60].includes(trialDaysValue)) {
+      metadata.trial_days = String(trialDaysValue)
+    }
+    if (trialPlanParam && ['pro', 'business'].includes(trialPlanParam)) {
+      metadata.trial_plan = trialPlanParam
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -365,7 +399,9 @@ export async function resetPassword(formData: FormData) {
 export async function signupWithEmail(formData: FormData) {
   try {
     const email = formData.get('email')?.toString().trim();
-    const inviteToken = formData.get('inviteToken')?.toString();
+    const inviteToken = formData.get('inviteToken')?.toString()
+    const trialDaysParam = formData.get('trialDays')?.toString()
+    const trialPlanParam = formData.get('trialPlan')?.toString();
 
     if (!email) {
       return {
@@ -427,15 +463,25 @@ export async function signupWithEmail(formData: FormData) {
  * @param inviteToken - Token de convite opcional para incluir no callback
  * @returns Objeto com success e message
  */
-export async function signInWithGoogle(inviteToken?: string) {
+export async function signInWithGoogle(inviteToken?: string, trialDays?: number, trialPlan?: 'pro' | 'business') {
   try {
     const supabase = await createServerClient()
 
     // Obter a URL base do ambiente
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-    let redirectTo = `${baseUrl}/auth/callback`;
+    let redirectTo = `${baseUrl}/auth/callback`
+    const redirectParams = new URLSearchParams()
     if (inviteToken) {
-      redirectTo += `?invite=${inviteToken}`;
+      redirectParams.set('invite', inviteToken)
+    }
+    if (trialDays && [15, 30, 60].includes(trialDays)) {
+      redirectParams.set('trial_days', String(trialDays))
+    }
+    if (trialPlan && ['pro', 'business'].includes(trialPlan)) {
+      redirectParams.set('trial_plan', trialPlan)
+    }
+    if (redirectParams.size > 0) {
+      redirectTo += `?${redirectParams.toString()}`
     }
 
     const { data, error } = await supabase.auth.signInWithOAuth({

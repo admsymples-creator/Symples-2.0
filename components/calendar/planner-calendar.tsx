@@ -63,18 +63,21 @@ interface PlannerCalendarProps {
    * Se true, o calendário ocupa 100% da altura do container (evita espaço vazio)
    */
   fillHeight?: boolean;
+  forcePersonal?: boolean;
 }
 
-export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = false, hideViewTabs = false, onControlsReady, onExternalTaskCreated, fillHeight = false }: PlannerCalendarProps = {}) {
+export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = false, hideViewTabs = false, onControlsReady, onExternalTaskCreated, fillHeight = false, forcePersonal = false }: PlannerCalendarProps = {}) {
   const pathname = usePathname();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
 
   // Determinar qual workspaceId usar
-  const effectiveWorkspaceId = propWorkspaceId !== undefined
-    ? propWorkspaceId
-    : pathname === "/planner"
-      ? undefined
-      : activeWorkspaceId ?? undefined;
+  const effectiveWorkspaceId = forcePersonal
+    ? null
+    : propWorkspaceId !== undefined
+      ? propWorkspaceId
+      : pathname === "/planner"
+        ? undefined
+        : activeWorkspaceId ?? undefined;
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [currentView, setCurrentView] = useState<ViewType>("dayGridMonth");
@@ -709,6 +712,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
           status: "todo",
           breadcrumbs: [],
           workspaceId: effectiveWorkspaceId || null,
+          originContext: forcePersonal ? "planner" : undefined,
           subTasks: [],
           activities: [],
         } : selectedTask || undefined}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Edit2, Trash2, Building2, ArrowRight, CornerUpRight, Clock, Calendar as CalendarIcon, RefreshCw } from "lucide-react";
+import { Edit2, Trash2, Building2, ArrowRight, CornerUpRight, Eye, Clock, Calendar as CalendarIcon, RefreshCw } from "lucide-react";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { updateTask } from "@/lib/actions/tasks";
 import { useRouter } from "next/navigation";
@@ -126,6 +126,9 @@ export function TaskRow({
   // Determinar se é tarefa pessoal (Quick Add)
   const isPersonal = task.is_personal || !task.workspace_id;
 
+  // Tarefa está no quadro de tarefas (visível para o time)
+  const isOnBoard = (task as any).visible_on_board === true;
+
   // Gerar cor baseada no workspace_id (hash simples)
   const getWorkspaceColor = (workspaceId: string | null): string => {
     if (!workspaceId) return "#22C55E";
@@ -247,11 +250,12 @@ export function TaskRow({
         isVirtual ? "opacity-50 bg-gray-50/50 hover:bg-gray-50 cursor-default" : "hover:bg-gray-50"
       )}
     >
-      {/* Workspace Bar Vertical */}
+      {/* Barra esquerda: preta = no quadro de tarefas; cor do workspace = não no quadro */}
       {!isPersonal && (
         <div
           className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
-          style={{ backgroundColor: workspaceColor }}
+          style={{ backgroundColor: isOnBoard ? "#000" : workspaceColor }}
+          title={isOnBoard ? "No quadro de tarefas" : undefined}
         />
       )}
 
@@ -337,10 +341,8 @@ export function TaskRow({
                 </Tooltip>
               </TooltipProvider>
             )}
-            {/* Badge do Projeto (primeira tag) ou Workspace */}
+            {/* Tag: nome do projeto (só exibe quando há projeto; não usar fallback "Quadro") */}
             {workspace && !isPersonal && (() => {
-              // Extrair tags: pode estar em task.tags (coluna) ou em origin_context.tags
-              // Type assertion necessário porque tags pode não estar no tipo base
               const taskWithTags = task as any;
               let tags: string[] = [];
               if (taskWithTags.tags && Array.isArray(taskWithTags.tags)) {
@@ -351,23 +353,22 @@ export function TaskRow({
                   tags = contextTags;
                 }
               }
+              const projectName = tags.length > 0 ? tags[0] : null;
 
-              // Prioridade ÚNICA: Tags (Projeto)
-              const firstTag = tags.length > 0 ? tags[0] : null;
-
-              if (firstTag) {
+              if (projectName) {
                 return (
                   <span
-                    className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded text-white truncate max-w-[100px]"
-                    style={{ backgroundColor: workspaceColor }}
-                    title={firstTag}
+                    className={cn(
+                      "flex-shrink-0 font-medium py-0.5 rounded truncate max-w-[100px] text-white",
+                      isOnBoard ? "text-[9px] px-1" : "text-[10px] px-1.5"
+                    )}
+                    style={{ backgroundColor: isOnBoard ? "#000" : workspaceColor }}
+                    title={isOnBoard ? `Projeto: ${projectName} · No quadro` : projectName}
                   >
-                    {firstTag}
+                    {projectName}
                   </span>
                 );
               }
-
-              // Se não tiver tag, não mostra nada (conforme solicitado)
               return null;
             })()}
           </div>
@@ -420,15 +421,15 @@ export function TaskRow({
             <Trash2 className="w-3 h-3" />
           </button>
 
-          {/* Botão "Ir" para detalhes da tarefa (apenas tarefas de workspace) */}
-          {!isPersonal && task.workspace_id && (
+          {/* Ícone de olho: abre a tarefa (modal no planner ou página de tarefas) */}
+          {(onOpenDetails || task.workspace_id) && (
             <button
-              onClick={handleGoToTaskDetails}
+              onClick={() => onOpenDetails ? onOpenDetails(task.id) : handleGoToTaskDetails()}
               className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
-              aria-label="Ir para detalhes da tarefa"
-              title="Ir para detalhes da tarefa"
+              aria-label="Abrir tarefa"
+              title="Abrir tarefa"
             >
-              <ArrowRight className="w-3 h-3" />
+              <Eye className="w-3 h-3" />
             </button>
           )}
 
@@ -436,27 +437,33 @@ export function TaskRow({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
+                  type="button"
                   className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
-                  aria-label="Mover para Workspace"
+                  aria-label="Enviar para quadro de tarefas"
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <CornerUpRight className="w-3 h-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Mover para Workspace</DropdownMenuLabel>
+                <DropdownMenuLabel>Enviar para quadro de tarefas</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {workspaces.map(ws => (
-                  <DropdownMenuItem
-                    key={ws.id}
-                    onClick={() => onMoveToWorkspace?.(task.id, ws.id)}
-                    className="cursor-pointer"
-                    disabled={task.workspace_id === ws.id}
-                  >
-                    <Building2 className="w-3 h-3 mr-2 text-gray-400" />
-                    <span className="truncate">{ws.name}</span>
-                    {task.workspace_id === ws.id && <ArrowRight className="w-3 h-3 ml-auto" />}
-                  </DropdownMenuItem>
-                ))}
+                {workspaces.map(ws => {
+                  // Desabilitar apenas se já está no workspace E já está no quadro
+                  const alreadyOnBoard = task.workspace_id === ws.id && isOnBoard;
+                  return (
+                    <DropdownMenuItem
+                      key={ws.id}
+                      onClick={() => onMoveToWorkspace?.(task.id, ws.id)}
+                      className="cursor-pointer"
+                      disabled={alreadyOnBoard}
+                    >
+                      <Building2 className="w-3 h-3 mr-2 text-gray-400" />
+                      <span className="truncate">{ws.name}</span>
+                      {alreadyOnBoard && <ArrowRight className="w-3 h-3 ml-auto" />}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

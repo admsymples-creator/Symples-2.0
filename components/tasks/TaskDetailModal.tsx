@@ -198,6 +198,7 @@ interface TaskDetailModalProps {
         tags?: string[];
         breadcrumbs: string[];
         workspaceId?: string | null;
+        originContext?: string;
         contextMessage?: {
             type: "audio" | "text";
             content: string;
@@ -531,7 +532,7 @@ export function TaskDetailModal({
 
     useEffect(() => {
         if (!open || !isCreateMode) return;
-        const membersWorkspaceId = workspaceId || activeWorkspaceId || null;
+        const membersWorkspaceId = workspaceId === null ? null : (workspaceId ?? activeWorkspaceId ?? null);
         if (!membersWorkspaceId) {
             setAvailableUsers([]);
             return;
@@ -554,18 +555,31 @@ export function TaskDetailModal({
 
     // Inicializar workspaceId quando task mudar ou modal abrir
     useEffect(() => {
-        if (open) {
-            if (isCreateMode) {
-                // Em modo create, usar o workspace ativo do contexto
-                setWorkspaceId(activeWorkspaceId);
-            } else if (task?.workspaceId || (task as any)?.workspace_id) {
-                setWorkspaceId(task?.workspaceId || (task as any)?.workspace_id || null);
-            } else if (task?.id) {
-                // Se tem task.id mas não tem workspaceId, buscar do backend
-                // Isso será feito no loadBasicData
-            } else {
-                setWorkspaceId(activeWorkspaceId);
+        if (!open) return;
+
+        if (isCreateMode) {
+            if (task && Object.prototype.hasOwnProperty.call(task, "workspaceId")) {
+                setWorkspaceId(task.workspaceId ?? null);
+                return;
             }
+
+            if ((task as any)?.workspace_id !== undefined) {
+                setWorkspaceId((task as any)?.workspace_id ?? null);
+                return;
+            }
+
+            // Em modo create, usar o workspace ativo do contexto quando nao houver override
+            setWorkspaceId(activeWorkspaceId ?? null);
+            return;
+        }
+
+        if (task?.workspaceId || (task as any)?.workspace_id) {
+            setWorkspaceId(task?.workspaceId || (task as any)?.workspace_id || null);
+        } else if (task?.id) {
+            // Se tem task.id mas nao tem workspaceId, buscar do backend
+            // Isso sera feito no loadBasicData
+        } else {
+            setWorkspaceId(activeWorkspaceId ?? null);
         }
     }, [open, task, isCreateMode, activeWorkspaceId]);
 
@@ -879,12 +893,18 @@ export function TaskDetailModal({
                     try {
                         // Mapear status para o tipo aceito por createTask (não aceita "review")
                         const dbStatus = status === "review" ? "in_progress" : status;
+                        const createWorkspaceId = task && Object.prototype.hasOwnProperty.call(task, "workspaceId")
+                            ? (task.workspaceId ?? null)
+                            : (workspaceId ?? null);
+
                         const result = await createTask({
                             title: title.trim(),
                             description: description || "",
                             status: dbStatus as "todo" | "in_progress" | "done" | "archived",
                             due_date: dueDate || null,
-                            workspace_id: workspaceId || null,
+                            workspace_id: createWorkspaceId,
+                            is_personal: createWorkspaceId === null,
+                            origin_context: task?.originContext || undefined,
                             assignee_id: localMembers[0]?.id || null,
                             tags: tagsRef.current.length > 0 ? tagsRef.current : undefined,
                             subtasks: subTasks.map(st => ({

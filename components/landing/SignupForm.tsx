@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,14 @@ import { Loader2, Mail, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 interface SignupFormProps {
   inviteToken?: string;
+  trialDays?: number;
+  trialPlan?: 'pro' | 'business';
+  prefillEmail?: string;
 }
 
-export function SignupForm({ inviteToken }: SignupFormProps) {
+export function SignupForm({ inviteToken, trialDays, trialPlan, prefillEmail }: SignupFormProps) {
     const [fullName, setFullName] = useState("");
-    const [email, setEmail] = useState("");
+    const [email, setEmail] = useState(prefillEmail || "");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -24,6 +27,12 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
     const [isSuccess, setIsSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+    useEffect(() => {
+        if (prefillEmail && !email) {
+            setEmail(prefillEmail);
+        }
+    }, [prefillEmail, email]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -59,6 +68,12 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
             if (inviteToken) {
                 formData.append("inviteToken", inviteToken);
             }
+            if (trialDays) {
+                formData.append("trialDays", String(trialDays));
+            }
+            if (trialPlan) {
+                formData.append("trialPlan", trialPlan);
+            }
 
             const result = await signupWithPassword(formData);
             if (!result.success) {
@@ -78,7 +93,7 @@ export function SignupForm({ inviteToken }: SignupFormProps) {
         try {
             // ✅ CORREÇÃO 1: OAuth usa redirectTo na URL, não precisa de localStorage
             // O cookie já foi salvo na página /invite/[token] como fallback
-            await signInWithGoogle(inviteToken);
+            await signInWithGoogle(inviteToken, trialDays, trialPlan);
         } catch (error) {
             console.error("Erro no signup com Google:", error);
             setIsGoogleLoading(false);
