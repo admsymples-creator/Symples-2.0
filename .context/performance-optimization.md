@@ -411,3 +411,49 @@ const [workspaceId, workspaces] = await Promise.all([
 
 **Data**: 2026-02-02
 **Branch**: `fix/general-02-02`
+
+---
+
+## Fase 7: Filtros persistentes, ordem e grupos vazios (2026-02-02)
+
+### Problemas Identificados
+- Ao voltar da Home para Tarefas, o filtro (agrupar/ordenar) era limpo
+- Ao voltar para "Agrupar por: Personalizado" ou limpar o filtro, a ordem dos grupos dava flicker (uma ordem e depois mudava)
+- Grupos vazios demoravam a aparecer ao trocar para "Personalizado" (grupos com tarefas eram instantâneos)
+- Erro "Cannot read properties of null (reading 'parentNode')" ao usar createPortal(DragOverlay, document.body) antes do body estar disponível
+- Pills verdes de filtro ativo davam sensação de "barra piscando"
+
+### Mudanças Implementadas
+
+**1. Persistência e restauração do filtro**
+- `tasksLastFilter` no localStorage com `{ group, sort }`; leitura em `getLastFilterFromStorage()`
+- Sincronização da URL com estado só quando a URL tem `group`/`sort` (não sobrescreve ao voltar da Home)
+- Restore em `useLayoutEffect`: quando URL sem params, aplica último filtro e, se "group", restaura também `groupOrder` no mesmo tick
+- Sync da URL ao faltar params usa `getLastFilterFromStorage()` para não escrever defaults antes do restore
+
+**2. Ordem dos grupos sem flicker**
+- Em `handleViewOptionChange`, ao escolher "Personalizado", preenchimento de `groupOrder` a partir do localStorage no mesmo handler (junto com `setViewOption`)
+- No restore do filtro (voltar da Home), quando `last.group === "group"`, restaura `groupOrder` no mesmo `useLayoutEffect`
+- `useLayoutEffect` de fallback: quando `viewOption === "group"` e `groupOrder.length === 0` e `availableGroups.length > 0`, restaura ordem do localStorage
+
+**3. Grupos vazios sem delay**
+- Ref `prevWorkspaceTabRef` para detectar mudança real de workspace/aba
+- `setAvailableGroups([])` apenas quando `effectiveWorkspaceId` ou `activeTab` mudam; ao trocar só o filtro (ex.: para "Personalizado") não limpa mais
+- Assim `availableGroups` permanece preenchido e grupos vazios aparecem imediatamente em `groupedData`
+
+**4. Portal DragOverlay (parentNode)**
+- Estado `portalTargetReady` (false → true em `useEffect` após mount)
+- createPortal do DragOverlay só quando `portalTargetReady && typeof document !== "undefined" && document.body`
+
+**5. Indicador de filtro**
+- ViewOptions.tsx e SortMenu.tsx: pills e ícones de "Agrupar por" / "Ordenar por" em slate (não verde) para evitar sensação de barra piscando
+
+### Arquivos Modificados
+- `app/(main)/tasks/tasks-page-client.tsx` — restore filtro/groupOrder, ref workspace/tab, portalTargetReady, handleViewOptionChange com groupOrder
+- `components/tasks/ViewOptions.tsx` — pills e ícone em slate
+- `components/tasks/SortMenu.tsx` — pills e ícone em slate
+
+---
+
+**Data**: 2026-02-02
+**Branch**: `fix/general-02-02`

@@ -42,6 +42,12 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Melhor feedback visual durante gravação de áudio
 
 ### Fixed
+- **Página de Tarefas – filtros, ordem e grupos:**
+  - **Filtro ao voltar da Home:** Restauração do último filtro (localStorage) com `useLayoutEffect`; sync da URL só quando há parâmetros; ao restaurar "Personalizado" também restaura `groupOrder` no mesmo tick.
+  - **Indicador de filtro:** Pills de "Agrupar por" e "Ordenar por" em slate (não verde) para evitar sensação de barra piscando.
+  - **Flicker da ordem ao voltar para Personalizado:** Em `handleViewOptionChange` e no restore, `groupOrder` é preenchido a partir do localStorage no mesmo tick; `useLayoutEffect` de fallback quando `viewOption === "group"` e `groupOrder` vazio.
+  - **Delay em grupos vazios:** `setAvailableGroups([])` só ao mudar workspace ou aba (ref `prevWorkspaceTabRef`); ao trocar só o filtro para "Personalizado", grupos vazios continuam visíveis sem esperar `loadGroups()`.
+  - **createPortal / parentNode null:** Portal do `DragOverlay` só é montado quando `portalTargetReady && document.body` (estado setado em `useEffect` após mount), evitando erro "Cannot read properties of null (reading 'parentNode')".
 - **Filtros Agrupar/Ordenar na página de Tarefas (resposta imediata):**
   - Removidos `useDeferredValue` e `startTransition` que causavam atraso ao trocar "Agrupar por" e "Ordenar por"
   - Estado (`viewOption`/`sortBy`) atualizado de forma síncrona; `groupedData`, `listGroups` e `kanbanColumns` usam os valores diretos

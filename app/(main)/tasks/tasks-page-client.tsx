@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -141,6 +141,24 @@ interface TasksPageProps {
     workspaceId?: string;
 }
 
+const TASKS_LAST_FILTER_KEY = "tasksLastFilter";
+
+function getLastFilterFromStorage(): { group: ViewOption; sort: string } | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const s = localStorage.getItem(TASKS_LAST_FILTER_KEY);
+        if (!s) return null;
+        const p = JSON.parse(s);
+        if (!p || typeof p.group !== "string" || typeof p.sort !== "string") return null;
+        const validGroups: ViewOption[] = ["group", "status", "priority", "date", "assignee", "project"];
+        const validSorts = ["status", "priority", "assignee", "title", "position"];
+        if (!validGroups.includes(p.group) || !validSorts.includes(p.sort)) return null;
+        return { group: p.group, sort: p.sort };
+    } catch {
+        return null;
+    }
+}
+
 // ? Função auxiliar para mapear parâmetro group da URL para ViewOption
 // Trata todos os edge cases: "none", null, undefined -> "group" (padrão)
 function getInitialViewOption(groupParam: string | null, hasProjectFilter: boolean): ViewOption {
@@ -161,8 +179,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const pathname = usePathname();
     const taskIdParam = searchParams.get("taskId");
 
-    // Ler sortBy da URL, com fallback para "position"
-    const urlSort = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
+    // Ler da URL (localStorage só no cliente para evitar hydration mismatch)
+    const groupParam = searchParams.get("group");
+    const sortParam = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
 
     // Ler tag da URL para filtro de projeto (decodificar se presente)
     const tagParam = searchParams.get("tag");
@@ -170,13 +189,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const searchParam = searchParams.get("search");
     const decodedSearch = searchParam ? decodeURIComponent(searchParam) : "";
 
-    // ? Inicializar viewOption da URL (Lazy Initialization para evitar flicker)
-    const initialViewOption = getInitialViewOption(searchParams.get("group"), !!tagFilter);
+    const initialViewOption = getInitialViewOption(groupParam, !!tagFilter);
 
     const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
-    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(urlSort);
+    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(sortParam);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -198,6 +216,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         reloadEvents?: () => void;
     } | null>(null);
     const shouldReduceMotion = useReducedMotion();
+
+    // Portal do DragOverlay só após mount (evita parentNode null quando document.body não existe)
+    const [portalTargetReady, setPortalTargetReady] = useState(false);
+    useEffect(() => {
+        setPortalTargetReady(true);
+    }, []);
 
     // Ref para throttling do handleDragOver
     const dragOverThrottleRef = useRef<number | null>(null);
@@ -1196,18 +1220,49 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
     }, [effectiveWorkspaceId, viewOption]);
 
-    // Carregar grupos quando workspace mudar (tarefas sÃ£o gerenciadas pelo hook useTasks)
+    // Ref para saber se workspace/tab mudou (evita limpar ao só trocar viewOption)
+    const prevWorkspaceTabRef = useRef({ workspaceId: effectiveWorkspaceId, tab: activeTab });
+
+    // Carregar grupos quando workspace/tab mudar (não limpar ao trocar para "Personalizado" — evita delay em grupos vazios)
     useEffect(() => {
         if (!isLoaded) return;
 
-        // Limpar grupos quando workspace/tab mudar
-        setAvailableGroups([]);
+        const workspaceOrTabChanged =
+            prevWorkspaceTabRef.current.workspaceId !== effectiveWorkspaceId ||
+            prevWorkspaceTabRef.current.tab !== activeTab;
+        if (workspaceOrTabChanged) {
+            prevWorkspaceTabRef.current = { workspaceId: effectiveWorkspaceId, tab: activeTab };
+            setAvailableGroups([]);
+        }
 
-        // Carregar grupos em background (nÃ£o bloqueia a UI)
+        // Carregar grupos em background (não bloqueia a UI)
         loadGroups().catch((err) => {
             console.error("Erro ao carregar grupos:", err);
         });
     }, [effectiveWorkspaceId, activeTab, isLoaded, loadGroups]);
+
+    // Ao voltar para "Personalizado" com groupOrder vazio, restaurar ordem do localStorage imediatamente (evita flicker)
+    useLayoutEffect(() => {
+        if (viewOption !== "group") return;
+        if (groupOrder.length > 0) return;
+        if (availableGroups.length === 0) return;
+        if (typeof window === "undefined") return;
+        try {
+            const savedOrder = localStorage.getItem("taskGroupOrder");
+            if (!savedOrder) {
+                setGroupOrder(["inbox", ...availableGroups.map((g) => g.id)]);
+                return;
+            }
+            const parsed = JSON.parse(savedOrder);
+            const groupIds = new Set(availableGroups.map((g) => g.id));
+            const validOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
+            const newGroups = availableGroups.map((g) => g.id).filter((id) => !validOrder.includes(id));
+            const finalOrder = ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
+            if (finalOrder.length > 0) setGroupOrder(finalOrder);
+        } catch {
+            setGroupOrder(["inbox", ...availableGroups.map((g) => g.id)]);
+        }
+    }, [viewOption, groupOrder.length, availableGroups]);
 
     // Buscar membros do workspace
     useEffect(() => {
@@ -2090,27 +2145,83 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return result;
     }, [tagFilter]);
 
-    // Sincronizar sortBy quando URL mudar
+    // Sincronizar sortBy quando URL mudar (só quando URL tem "sort" para não sobrescrever restore ao voltar da Home)
     useEffect(() => {
-        setSortBy(urlSort);
-    }, [urlSort]);
+        if (searchParams.has("sort")) setSortBy(sortParam);
+    }, [sortParam, searchParams]);
 
-    // ? Sincronizar viewOption quando parâmetro group da URL mudar
+    // ? Sincronizar viewOption quando parâmetro group da URL mudar (só quando URL tem "group" para não sobrescrever restore)
     useEffect(() => {
+        if (!searchParams.has("group")) return;
         const groupParam = searchParams.get("group");
         const newViewOption = getInitialViewOption(groupParam, !!tagFilter);
-        // Só atualizar se o valor realmente mudou para evitar re-renders desnecessários
-        setViewOption((current) => {
-            if (current !== newViewOption) {
-                return newViewOption;
-            }
-            return current;
-        });
+        setViewOption((current) => (current !== newViewOption ? newViewOption : current));
     }, [searchParams, tagFilter]);
+
+    // Restaurar último filtro do localStorage quando URL não tiver group/sort (ex.: voltar da Home)
+    // useLayoutEffect para rodar antes do efeito que sincroniza URL, evitando sobrescrever com defaults
+    useLayoutEffect(() => {
+        const groupParam = searchParams.get("group");
+        const sortParamFromUrl = searchParams.get("sort");
+        if (groupParam != null && sortParamFromUrl != null) return;
+        const last = getLastFilterFromStorage();
+        if (!last) return;
+        if (groupParam == null) setViewOption(last.group);
+        if (sortParamFromUrl == null) setSortBy(last.sort as "status" | "priority" | "assignee" | "title" | "position");
+        // Ao restaurar "Personalizado", restaurar ordem dos grupos no mesmo tick (evita flicker)
+        if (last.group === "group" && availableGroups.length > 0 && typeof window !== "undefined") {
+            try {
+                const savedOrder = localStorage.getItem("taskGroupOrder");
+                if (savedOrder) {
+                    const parsed = JSON.parse(savedOrder);
+                    const groupIds = new Set(availableGroups.map((g) => g.id));
+                    const validOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
+                    const newGroups = availableGroups.map((g) => g.id).filter((id) => !validOrder.includes(id));
+                    const finalOrder = ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
+                    if (finalOrder.length > 0) setGroupOrder(finalOrder);
+                } else {
+                    setGroupOrder(["inbox", ...availableGroups.map((g) => g.id)]);
+                }
+            } catch {
+                setGroupOrder(["inbox", ...availableGroups.map((g) => g.id)]);
+            }
+        }
+    }, [searchParams, availableGroups]);
+
+    // Persistir último filtro no localStorage quando agrupar/ordenar mudar
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        try {
+            localStorage.setItem(TASKS_LAST_FILTER_KEY, JSON.stringify({ group: viewOption, sort: sortBy }));
+        } catch {
+            // ignore
+        }
+    }, [viewOption, sortBy]);
 
     // Atualização imediata de filtros (estado síncrono para resposta rápida), URL em segundo plano
     const handleViewOptionChange = useCallback((value: ViewOption) => {
         setViewOption(value);
+        // Ao voltar para "Personalizado", restaurar ordem do localStorage no mesmo tick (evita flicker)
+        if (value === "group") {
+            const groups = availableGroupsRef.current;
+            if (groups.length > 0 && typeof window !== "undefined") {
+                try {
+                    const savedOrder = localStorage.getItem("taskGroupOrder");
+                    if (savedOrder) {
+                        const parsed = JSON.parse(savedOrder);
+                        const groupIds = new Set(groups.map((g) => g.id));
+                        const validOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
+                        const newGroups = groups.map((g) => g.id).filter((id) => !validOrder.includes(id));
+                        const finalOrder = ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
+                        if (finalOrder.length > 0) setGroupOrder(finalOrder);
+                    } else {
+                        setGroupOrder(["inbox", ...groups.map((g) => g.id)]);
+                    }
+                } catch {
+                    setGroupOrder(["inbox", ...groups.map((g) => g.id)]);
+                }
+            }
+        }
         if (urlDebounceRef.current) clearTimeout(urlDebounceRef.current);
         urlDebounceRef.current = setTimeout(() => {
             const params = new URLSearchParams(searchParams.toString());
@@ -2133,15 +2244,30 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }, 300);
     }, [pathname, router, searchParams]);
 
-    // ? Forçar default consistente na URL quando não houver group
+    // ? Sincronizar URL com estado (ou último filtro do localStorage ao voltar da Home) quando não houver group/sort na URL
     useEffect(() => {
         const params = new URLSearchParams(searchParamsString);
-        if (params.has("group")) return;
-        const defaultGroup = "group";
-        params.set("group", defaultGroup);
-        const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-        router.replace(nextUrl, { scroll: false });
-    }, [searchParamsString, tagFilter, pathname, router]);
+        const hasGroup = params.has("group");
+        const hasSort = params.has("sort");
+        if (hasGroup && hasSort) return;
+        // Ao voltar da Home (URL sem params), preferir localStorage para não sobrescrever antes do restore
+        const last = !hasGroup || !hasSort ? getLastFilterFromStorage() : null;
+        let changed = false;
+        if (!hasGroup) {
+            params.set("group", last?.group ?? viewOption);
+            changed = true;
+        }
+        if (!hasSort) {
+            const sort = last?.sort ?? sortBy;
+            if (sort === "position") params.delete("sort");
+            else params.set("sort", sort);
+            changed = true;
+        }
+        if (changed) {
+            const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+            router.replace(nextUrl, { scroll: false });
+        }
+    }, [searchParamsString, tagFilter, pathname, router, viewOption, sortBy]);
 
     // Aplica ordenação visualmente quando sortBy mudar (vindo da URL)
     useEffect(() => {
@@ -3454,7 +3580,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                     )}
                                                 </div>
                                             )}
-                                            {typeof document !== "undefined"
+                                            {portalTargetReady && typeof document !== "undefined" && document.body
                                                 ? createPortal(
                                                     <DragOverlay
                                                         adjustScale={false}
@@ -3508,7 +3634,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                 members={workspaceMembers}
                                                 groupBy={viewOption}
                                             />
-                                            {typeof document !== "undefined"
+                                            {portalTargetReady && typeof document !== "undefined" && document.body
                                                 ? createPortal(
                                                     <DragOverlay
                                                         adjustScale={false}

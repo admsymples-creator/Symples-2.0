@@ -89,12 +89,12 @@ export function SortMenu({ className, sortBy: controlledSort, onSortChange, onPe
     return (
         <div className="flex items-center gap-1">
             {hasActiveSort && (
-                <div className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
                     <span>{getCurrentLabel()}</span>
                     <button
                         type="button"
                         onClick={handleClear}
-                        className="ml-1 rounded-full p-0.5 text-green-600 hover:text-green-800 hover:bg-green-100"
+                        className="ml-1 rounded-full p-0.5 text-slate-600 hover:text-slate-800 hover:bg-slate-100"
                         title="Limpar ordenacao"
                     >
                         <X className="h-3 w-3" />
@@ -110,12 +110,12 @@ export function SortMenu({ className, sortBy: controlledSort, onSortChange, onPe
                         className={cn(
                             "h-9 w-9 transition-all flex items-center justify-center",
                             hasActiveSort
-                                ? "text-green-700 hover:text-green-800 hover:bg-green-50"
+                                ? "text-slate-700 hover:text-slate-800 hover:bg-slate-50"
                                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
                             className
                         )}
                     >
-                        <ArrowUpDown className={cn("w-4 h-4", hasActiveSort ? "text-green-600" : "text-gray-500")} />
+                        <ArrowUpDown className={cn("w-4 h-4", hasActiveSort ? "text-slate-600" : "text-gray-500")} />
                     </Button>
                 </DropdownMenuTrigger>
                 
