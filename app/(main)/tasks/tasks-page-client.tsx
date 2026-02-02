@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, memo, startTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -283,6 +283,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const localTasksRef = useRef<Task[]>([]);
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
     const previousGroupOrderRef = useRef<string[]>([]);
+    const urlDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [projectIconName, setProjectIconName] = useState<string | null>(null);
     const searchParamsString = searchParams.toString();
 
@@ -2090,6 +2091,31 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
     }, [searchParams, tagFilter]);
 
+    // Atualização imediata de filtros (estado primeiro), URL em segundo plano para compartilhar link
+    const handleViewOptionChange = useCallback((value: ViewOption) => {
+        startTransition(() => setViewOption(value));
+        if (urlDebounceRef.current) clearTimeout(urlDebounceRef.current);
+        urlDebounceRef.current = setTimeout(() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set("group", value);
+            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            urlDebounceRef.current = null;
+        }, 300);
+    }, [pathname, router, searchParams]);
+
+    const handleSortByChange = useCallback((value: "status" | "priority" | "assignee" | "title" | "position") => {
+        startTransition(() => setSortBy(value));
+        if (urlDebounceRef.current) clearTimeout(urlDebounceRef.current);
+        urlDebounceRef.current = setTimeout(() => {
+            const params = new URLSearchParams(searchParams.toString());
+            if (value === "position") params.delete("sort");
+            else params.set("sort", value);
+            const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+            router.replace(nextUrl, { scroll: false });
+            urlDebounceRef.current = null;
+        }, 300);
+    }, [pathname, router, searchParams]);
+
     // ? Forçar default consistente na URL quando não houver group
     useEffect(() => {
         const params = new URLSearchParams(searchParamsString);
@@ -3166,8 +3192,12 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                             />
                                         </div>
                                     )}
-                                    <SortMenu onPersistSortOrder={handlePersistSortOrder} />
-                                    <GroupingMenu />
+                                    <SortMenu
+                                        sortBy={sortBy}
+                                        onSortChange={handleSortByChange}
+                                        onPersistSortOrder={handlePersistSortOrder}
+                                    />
+                                    <GroupingMenu value={viewOption} onGroupChange={(v) => handleViewOptionChange(v as ViewOption)} />
                                 </>
                             )}
                             {/* Filtro de Visualiza??o - apenas Calendário */}

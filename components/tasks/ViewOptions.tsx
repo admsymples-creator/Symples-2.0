@@ -16,15 +16,20 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
-export function GroupingMenu() {
+interface GroupingMenuProps {
+  /** Valor controlado pelo pai: UI atualiza na hora, URL em segundo plano */
+  value?: string
+  onGroupChange?: (value: string) => void
+}
+
+export function GroupingMenu({ value: controlledValue, onGroupChange }: GroupingMenuProps = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  // 1. Ler estado da URL (Source of Truth)
-  const currentGroup = searchParams.get("group") || "group"
+  // Estado: controlado pelo pai (value/onGroupChange) ou pela URL
+  const currentGroup = controlledValue ?? searchParams.get("group") ?? "group"
 
-  // 2. Mapeamento de Labels para exibição no Badge
   const groupLabels: Record<string, string> = {
     group: "Personalizado",
     project: "Projeto",
@@ -33,18 +38,21 @@ export function GroupingMenu() {
     assignee: "Responsável"
   }
 
-  // 3. Handler Instantâneo (Reactive Pattern)
   const handleGroupChange = (value: string) => {
+    if (onGroupChange) {
+      onGroupChange(value)
+      return
+    }
     const params = new URLSearchParams(searchParams.toString())
-
     params.set("group", value)
-
-    // scroll: false é CRÍTICO para evitar que a página pule para o topo ao clicar
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  // 4. Handler para limpar filtro (resetar para "none")
   const handleClear = () => {
+    if (onGroupChange) {
+      onGroupChange("group")
+      return
+    }
     const params = new URLSearchParams(searchParams.toString())
     params.set("group", "group")
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
@@ -54,6 +62,19 @@ export function GroupingMenu() {
 
   return (
     <div className="flex items-center gap-1">
+      {isGrouped && (
+        <div className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+          <span>{groupLabels[currentGroup] || "Status"}</span>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="ml-1 rounded-full p-0.5 text-green-600 hover:text-green-800 hover:bg-green-100"
+            title="Limpar agrupamento"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -96,20 +117,6 @@ export function GroupingMenu() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {isGrouped && (
-        <div className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
-          <span>{groupLabels[currentGroup] || "Status"}</span>
-          <button
-            type="button"
-            onClick={handleClear}
-            className="ml-1 rounded-full p-0.5 text-green-600 hover:text-green-800 hover:bg-green-100"
-            title="Limpar agrupamento"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
     </div>
   )
 }

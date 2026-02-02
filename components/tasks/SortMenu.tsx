@@ -19,6 +19,9 @@ export type SortOption = "status" | "priority" | "assignee" | "title" | "positio
 
 interface SortMenuProps {
     className?: string;
+    /** Valor controlado pelo pai: UI atualiza na hora, URL em segundo plano */
+    sortBy?: SortOption;
+    onSortChange?: (value: SortOption) => void;
     onPersistSortOrder?: () => Promise<void>;
 }
 
@@ -30,23 +33,26 @@ const sortOptions: { value: SortOption; label: string }[] = [
     { value: "title", label: "Título (A-Z)" },
 ];
 
-export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
+export function SortMenu({ className, sortBy: controlledSort, onSortChange, onPersistSortOrder }: SortMenuProps) {
     const searchParams = useSearchParams();
     const pathname = usePathname();
     const router = useRouter();
 
-    // Estado Real (URL)
-    const currentSort = (searchParams.get("sort") as SortOption) || "position";
+    const currentSort = (controlledSort ?? (searchParams.get("sort") as SortOption) ?? "position") as SortOption;
 
     const [isOpen, setIsOpen] = useState(false);
 
-    // Sincronizar
     useEffect(() => {
         setIsOpen(false);
-    }, [searchParams]);
+    }, [searchParams, controlledSort]);
 
     const hasActiveSort = currentSort !== "position";
     const handleClear = () => {
+        if (onSortChange) {
+            onSortChange("position");
+            setIsOpen(false);
+            return;
+        }
         const params = new URLSearchParams(searchParams.toString());
         params.delete("sort");
         const newUrl = params.toString()
@@ -57,25 +63,22 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
     };
 
     const handleSortChange = (value: SortOption) => {
+        if (onSortChange) {
+            onSortChange(value);
+            setIsOpen(false);
+            return;
+        }
         const params = new URLSearchParams(searchParams.toString());
         if (value === "position") {
             params.delete("sort");
         } else {
             params.set("sort", value);
         }
-
         const newUrl = params.toString()
             ? `${pathname}?${params.toString()}`
             : pathname;
-
         router.push(newUrl);
         setIsOpen(false);
-
-        if (onPersistSortOrder && value !== "position") {
-            setTimeout(async () => {
-                await onPersistSortOrder();
-            }, 200);
-        }
     };
 
     const getCurrentLabel = () => {
@@ -85,6 +88,19 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
 
     return (
         <div className="flex items-center gap-1">
+            {hasActiveSort && (
+                <div className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                    <span>{getCurrentLabel()}</span>
+                    <button
+                        type="button"
+                        onClick={handleClear}
+                        className="ml-1 rounded-full p-0.5 text-green-600 hover:text-green-800 hover:bg-green-100"
+                        title="Limpar ordenacao"
+                    >
+                        <X className="h-3 w-3" />
+                    </button>
+                </div>
+            )}
             <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                 <DropdownMenuTrigger asChild>
                     <Button
@@ -139,20 +155,6 @@ export function SortMenu({ className, onPersistSortOrder }: SortMenuProps) {
 
                 </DropdownMenuContent>
             </DropdownMenu>
-
-            {hasActiveSort && (
-                <div className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
-                    <span>{getCurrentLabel()}</span>
-                    <button
-                        type="button"
-                        onClick={handleClear}
-                        className="ml-1 rounded-full p-0.5 text-green-600 hover:text-green-800 hover:bg-green-100"
-                        title="Limpar ordenacao"
-                    >
-                        <X className="h-3 w-3" />
-                    </button>
-                </div>
-            )}
         </div>
     );
 }
