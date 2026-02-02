@@ -7,7 +7,7 @@ import { getUserWorkspaces, getUserProfile } from "@/lib/actions/user";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { TrialBanner } from "@/components/home/TrialBanner";
 import { HomeTasksSection } from "@/components/home/HomeTasksSection";
-import { WeeklyView } from "@/components/home/WeeklyView";
+import { HomeWeeklyViewClient } from "@/components/home/HomeWeeklyViewClient";
 import { HomeWorkspaceOverview } from "@/components/home/HomeWorkspaceOverview";
 import { DynamicGreeting } from "@/components/home/DynamicGreeting";
 import { PageLoading } from "@/components/ui/page-loading";
@@ -123,14 +123,13 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
               <TrialBanner />
             </Suspense>
 
-            {/* Visão Semanal (cópia do Planner) */}
+            {/* Visão Semanal (client: state + refetch + atualização otimista de data) */}
             <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <WeeklyView
-                tasks={initialTasks}
+              <HomeWeeklyViewClient
+                initialTasks={initialTasks}
                 workspaces={workspaces.map(({ id, name }) => ({ id, name }))}
-                currentWorkspaceId={workspaceId}
+                workspaceId={workspaceId}
                 isPersonal={isPersonal}
-                originContext="weekly_view"
               />
             </div>
 

@@ -351,6 +351,12 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
     }
   }, [initialWorkspaceId, currentWorkspace]);
 
+  const handleTaskUpdateOptimistic = useCallback((taskId: string, dueDate: string | null) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, due_date: dueDate } : t))
+    );
+  }, []);
+
   // Refetch no mount: lista do planner vem sempre da mesma busca (pessoal + workspace, sem assignee)
   const refetchedOnMountRef = useRef(false);
   useEffect(() => {
@@ -373,6 +379,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
           workspaceId={currentWorkspace?.isPersonal ? undefined : currentWorkspace?.id}
           isPersonal={currentWorkspace?.isPersonal ?? initialIsPersonal ?? false}
           onRefetchTasks={refetchPlannerTasks}
+          onTaskUpdateOptimistic={handleTaskUpdateOptimistic}
         />
       );
     }
@@ -422,6 +429,7 @@ export function PlannerClient({ initialTasks, initialWorkspaceId, initialIsPerso
       workspaceId={currentWorkspace?.isPersonal ? undefined : currentWorkspace?.id}
       isPersonal={currentWorkspace?.isPersonal ?? false}
       onRefetchTasks={refetchPlannerTasks}
+      onTaskUpdateOptimistic={handleTaskUpdateOptimistic}
     />
   );
 }

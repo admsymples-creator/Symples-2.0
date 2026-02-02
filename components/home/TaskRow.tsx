@@ -33,6 +33,8 @@ interface TaskRowProps {
   onDelete?: (id: string) => void;
   onMoveToWorkspace?: (id: string, workspaceId: string) => void;
   onDateUpdate?: () => void;
+  /** Atualização otimista: chamado antes do servidor para a UI refletir na hora */
+  onDateUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
   onOpenDetails?: (id: string) => void;
 }
 
@@ -44,6 +46,7 @@ export function TaskRow({
   onDelete,
   onMoveToWorkspace,
   onDateUpdate,
+  onDateUpdateOptimistic,
   onOpenDetails,
 }: TaskRowProps) {
   const router = useRouter();
@@ -201,21 +204,26 @@ export function TaskRow({
     });
   };
 
-  // Handler para atualizar data/hora da tarefa
+  // Handler para atualizar data/hora da tarefa (otimista: UI atualiza na hora, servidor em background)
   const handleDateUpdate = async (date: Date | null) => {
+    const newDueDate = date ? date.toISOString() : null;
+    onDateUpdateOptimistic?.(task.id, newDueDate);
+
     try {
       const result = await updateTask({
         id: task.id,
-        due_date: date ? date.toISOString() : null,
+        due_date: newDueDate,
       });
 
       if (result.success) {
         onDateUpdate?.();
       } else {
         console.error("Erro ao atualizar data:", result.error);
+        onDateUpdate?.();
       }
     } catch (error) {
       console.error("Erro ao atualizar data:", error);
+      onDateUpdate?.();
     }
   };
 

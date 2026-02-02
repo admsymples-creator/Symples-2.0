@@ -35,6 +35,8 @@ interface DayColumnProps {
   workspaces?: { id: string; name: string }[];
   highlightInput?: boolean;
   onTaskUpdate?: () => void | Promise<void>;
+  /** Atualização otimista de data: (taskId, dueDate) para a UI refletir na hora */
+  onTaskUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
   currentWorkspaceId?: string | null;
   isPersonalContext?: boolean;
   originContext?: string;
@@ -49,6 +51,7 @@ export function DayColumn({
   workspaces = [],
   highlightInput = false,
   onTaskUpdate,
+  onTaskUpdateOptimistic,
   currentWorkspaceId,
   isPersonalContext = true,
   originContext,
@@ -641,6 +644,7 @@ export function DayColumn({
                       window.dispatchEvent(new CustomEvent("home-tasks-updated"));
                     }
                   }}
+                  onDateUpdateOptimistic={onTaskUpdateOptimistic}
                   onOpenDetails={handleOpenDetails}
                 />
               ))}

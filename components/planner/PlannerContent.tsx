@@ -13,9 +13,11 @@ interface PlannerContentProps {
   workspaceId?: string | undefined;
   isPersonal?: boolean;
   onRefetchTasks?: () => Promise<void>;
+  /** Atualização otimista de data: (taskId, dueDate) para a UI refletir na hora */
+  onTaskUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
 }
 
-export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = false, onRefetchTasks }: PlannerContentProps) {
+export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = false, onRefetchTasks, onTaskUpdateOptimistic }: PlannerContentProps) {
   const isPersonalMode = true;
   const workspaceIdForCalendar = isPersonalMode ? null : workspaceId;
   const calendarReloadRef = useRef<(() => void) | null>(null);
@@ -61,6 +63,7 @@ export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = fa
         tasks={tasks}
         workspaces={workspaces}
         onTaskUpdate={handleWeeklyViewUpdate}
+        onTaskUpdateOptimistic={onTaskUpdateOptimistic}
         currentWorkspaceId={workspaceIdForCalendar}
         isPersonal={isPersonalMode}
         originContext="planner"

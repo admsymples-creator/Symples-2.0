@@ -15,6 +15,8 @@ interface WeeklyViewProps {
   workspaces: { id: string; name: string }[];
   highlightInput?: boolean;
   onTaskUpdate?: () => void | Promise<void>;
+  /** Atualização otimista de data: (taskId, dueDate) para a UI refletir na hora */
+  onTaskUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
   currentWorkspaceId?: string | null;
   isPersonal?: boolean;
   originContext?: string;
@@ -59,7 +61,7 @@ function getNextRecurrenceDate(
   return next;
 }
 
-export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate, currentWorkspaceId, isPersonal = true, originContext }: WeeklyViewProps) {
+export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate, onTaskUpdateOptimistic, currentWorkspaceId, isPersonal = true, originContext }: WeeklyViewProps) {
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
   const daysToShow: number = 5;
   const initialWeekOffset = -Math.floor(daysToShow / 2);
@@ -195,16 +197,20 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay) {
           if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
           
-          // Criar tarefa virtual (projetada)
+          // Ocorrência hoje = interativa; ocorrência no futuro = virtual (prévia, opacidade baixa)
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          const nextDayStart = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
+          const isFuture = nextDayStart > todayStart;
+
           const virtualTask: Task = {
             ...task,
             id: `${task.id}-virtual-${nextDateKey}`,
             due_date: nextDate.toISOString(),
             recurrence_parent_id: task.id,
           } as Task;
-          
-          // Marcar como virtual para UI
-          (virtualTask as any).is_virtual = true;
+
+          (virtualTask as any).is_virtual = isFuture;
           
           grouped[nextDateKey].push(virtualTask);
           processedRecurrenceIds.add(projectionKey);
@@ -329,6 +335,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
                       workspaces={workspaces}
                       highlightInput={highlightInput && day.isToday}
                       onTaskUpdate={onTaskUpdate}
+                      onTaskUpdateOptimistic={onTaskUpdateOptimistic}
                       currentWorkspaceId={currentWorkspaceId}
                       isPersonalContext={isPersonal}
                       originContext={originContext}
