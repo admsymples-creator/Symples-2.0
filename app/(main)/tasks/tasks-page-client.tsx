@@ -1544,6 +1544,19 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 const label = STATUS_TO_LABEL[status as keyof typeof STATUS_TO_LABEL];
                 if (label) groups[label] = [];
             });
+        } else if (viewOption === "priority") {
+            // Inicializar todas as prioridades (grupos vazios aparecem na tela) — labels iguais ao priorityLabels
+            ["Urgente", "Alta", priorityLabels["medium"], "Baixa"].forEach(label => { groups[label] = []; });
+        } else if (viewOption === "date") {
+            // Inicializar todos os buckets de data (grupos vazios aparecem na tela)
+            ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"].forEach(label => { groups[label] = []; });
+        } else if (viewOption === "assignee") {
+            // Inicializar "Sem responsável" + um grupo por membro do workspace (grupos vazios aparecem na tela)
+            groups["Sem responsável"] = [];
+            workspaceMembers.forEach(m => {
+                const name = (m.name || "").trim();
+                if (name) groups[name] = [];
+            });
         } else if (viewOption === "project") {
             // Sempre inicializar Inbox no modo projeto
             groups["Inbox"] = [];
