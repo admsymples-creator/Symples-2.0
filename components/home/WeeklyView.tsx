@@ -134,14 +134,15 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
     };
   }, [weekOffset, isSliding, shouldReduceMotion]);
 
-  // Calcular range de datas visíveis para projeção de recorrência
+  // Calcular range de datas visíveis para projeção de recorrência (início/fim do dia para evitar edge cases de timezone)
   const visibleDateRange = useMemo(() => {
     const today = new Date();
-    // Expandir range para cobrir navegação (±30 dias do offset atual)
     const startDate = new Date(today);
     startDate.setDate(today.getDate() + weekOffset - 7);
+    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(today);
     endDate.setDate(today.getDate() + weekOffset + daysToShow + 7);
+    endDate.setHours(23, 59, 59, 999);
     return { startDate, endDate };
   }, [weekOffset, daysToShow]);
 
@@ -150,10 +151,11 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
     const grouped: Record<string, Task[]> = {};
     const processedRecurrenceIds = new Set<string>();
 
-    // Primeiro, adicionar todas as tarefas reais
+    // Primeiro, adicionar todas as tarefas reais (chave por dia local para evitar timezone)
     tasks.forEach((task) => {
       if (!task.due_date) return;
-      const dateKey = formatLocalDateKey(new Date(task.due_date));
+      const d = new Date(task.due_date);
+      const dateKey = formatLocalDateKey(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
       if (!grouped[dateKey]) grouped[dateKey] = [];
       grouped[dateKey].push(task);
 
@@ -183,11 +185,14 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         // Verificar recurrence_end_date
         if (task.recurrence_end_date && nextDate > new Date(task.recurrence_end_date)) break;
         
-        const nextDateKey = formatLocalDateKey(nextDate);
+        const nextDateKey = formatLocalDateKey(new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate()));
         const projectionKey = `${task.id}-${nextDateKey}`;
         
-        // Só adicionar se não foi processada e está no range
-        if (!processedRecurrenceIds.has(projectionKey) && nextDate >= visibleDateRange.startDate) {
+        // Evitar duplicata: não projetar virtual se já existe a tarefa real nesse dia (mesmo id)
+        const alreadyHasRealOnDay = grouped[nextDateKey]?.some((t) => t.id === task.id) ?? false;
+        const inRange = nextDate >= visibleDateRange.startDate && nextDate <= visibleDateRange.endDate;
+
+        if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay) {
           if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
           
           // Criar tarefa virtual (projetada)

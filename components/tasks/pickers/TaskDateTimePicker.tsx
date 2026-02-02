@@ -14,6 +14,8 @@ import { ptBR } from "date-fns/locale";
 interface TaskDateTimePickerProps {
     date: Date | null;
     onSelect: (date: Date | null) => void;
+    /** Quando o popover abre e date é null, usa esta data (ex.: data do card na weekly view) */
+    defaultDateWhenNull?: Date | null;
     trigger?: React.ReactElement;
     align?: "start" | "center" | "end";
     side?: "top" | "bottom" | "left" | "right";
@@ -49,6 +51,7 @@ const getNextWeek = (): Date => {
 export function TaskDateTimePicker({
     date,
     onSelect,
+    defaultDateWhenNull,
     trigger,
     align = "end",
     side = "left",
@@ -182,6 +185,18 @@ export function TaskDateTimePicker({
         setIsOpen(false);
     };
 
+    const handleOpenChange = (open: boolean) => {
+        if (open && !date && defaultDateWhenNull) {
+            const d = new Date(defaultDateWhenNull);
+            d.setHours(9, 0, 0, 0);
+            setSelectedDate(d);
+            setHour(9);
+            setMinute(0);
+            onSelect(d);
+        }
+        setIsOpen(open);
+    };
+
     const handleRecurrenceToggle = (checked: boolean) => {
         setRecurrenceEnabled(checked);
         if (!checked) {
@@ -309,7 +324,7 @@ export function TaskDateTimePicker({
     }
 
     return (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <Popover open={isOpen} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
                 {triggerElement}
             </PopoverTrigger>

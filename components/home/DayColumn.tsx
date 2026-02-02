@@ -250,7 +250,19 @@ export function DayColumn({
       }
       dueDateISO = adjustedDateTime.toISOString();
     } else if (dateObj) {
-      const d = new Date(dateObj);
+      let d = new Date(dateObj);
+      // Se estiver recorrente com dias específicos, usar a primeira ocorrência >= data do card (evita tarefa em "hoje" quando o card não é um dia de recorrência)
+      if ((currentRecurrenceType === "weekly" || currentRecurrenceType === "custom") && Array.isArray(currentRecurrenceDays) && currentRecurrenceDays.length > 0) {
+        const daySet = new Set(currentRecurrenceDays);
+        for (let i = 0; i <= 7; i++) {
+          const candidate = new Date(dateObj);
+          candidate.setDate(candidate.getDate() + i);
+          if (daySet.has(candidate.getDay())) {
+            d = candidate;
+            break;
+          }
+        }
+      }
       // Se estiver recorrente e não escolheu horário, usar padrão 09:00
       if (currentRecurrenceType) {
         d.setHours(9, 0, 0, 0);
@@ -711,6 +723,7 @@ export function DayColumn({
             <TaskDateTimePicker
               date={selectedDateTime}
               onSelect={setSelectedDateTime}
+              defaultDateWhenNull={dateObj ?? undefined}
               recurrenceType={recurrenceType}
               onRecurrenceChange={(type) => {
                 setRecurrenceType(type);
