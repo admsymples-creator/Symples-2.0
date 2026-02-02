@@ -206,7 +206,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const initialTaskIdRef = useRef<string | null>(null);
     const [groupColors, setGroupColors] = useState<Record<string, string>>({});
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
-    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
+    // Backlog (inbox) sempre colapsado por padrão
+    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set(["inbox"]));
 
     const handleToggleGroupCollapse = useCallback((groupId: string) => {
         setCollapsedGroupIds((prev) => {
@@ -215,6 +216,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             else next.add(groupId);
             return next;
         });
+    }, []);
+
+    // Ref do input de "adicionar tarefa" por grupo (para foco no próximo após adicionar)
+    const registerAddInputRef = useCallback((groupId: string, el: HTMLInputElement | null) => {
+        addInputRefs.current[groupId] = el;
     }, []);
 
     // ? CORREÇÃO: Inicializar availableGroups com initialGroups se disponível (evita flicker)
@@ -282,6 +288,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const workspaces = useWorkspaces();
     const localTasksRef = useRef<Task[]>([]);
     const listGroupsRef = useRef<Array<{ id: string; title: string; tasks: Task[]; groupColor?: string }>>([]);
+    const addInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const previousGroupOrderRef = useRef<string[]>([]);
     const urlDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [projectIconName, setProjectIconName] = useState<string | null>(null);
@@ -525,10 +532,22 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             const result = await createTaskGroup(newGroupName.trim(), targetWorkspaceId, newGroupColor);
 
             if (result.success) {
+                const newGroupId = result.data?.id;
                 toast.success("Grupo criado com sucesso!");
                 setNewGroupName("");
                 setNewGroupColor("#e5e7eb");
                 setIsCreateGroupModalOpen(false);
+                // Último grupo criado sempre no topo, logo após o backlog
+                if (newGroupId) {
+                    setGroupOrder((prev) => {
+                        const rest = prev.filter((id) => id !== "inbox" && id !== newGroupId);
+                        const next = ["inbox", newGroupId, ...rest];
+                        if (typeof window !== "undefined") {
+                            localStorage.setItem("taskGroupOrder", JSON.stringify(next));
+                        }
+                        return next;
+                    });
+                }
                 await loadGroups();
                 await reloadTasks();
             } else {
@@ -916,6 +935,15 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         return task;
                     });
                 });
+                // Foco no input do próximo grupo após adicionar tarefa (setTimeout para rodar após QuickTaskAdd)
+                setTimeout(() => {
+                    const groups = listGroupsRef.current;
+                    const idx = groups.findIndex((g) => g.id === groupId);
+                    if (idx >= 0 && idx < groups.length - 1) {
+                        const nextId = groups[idx + 1].id;
+                        addInputRefs.current[nextId]?.focus();
+                    }
+                }, 0);
             } else {
                 // ? 5. Erro: rollback - remover tarefa otimista
                 setLocalTasks(previousTasks);
@@ -3345,6 +3373,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                     tagFilter={tagFilter || undefined}
                                                                     collapsed={collapsedGroupIds.has(group.id)}
                                                                     onToggleCollapse={handleToggleGroupCollapse}
+                                                                    registerAddInputRef={registerAddInputRef}
                                                                 />
                                                             );
                                                         })}
@@ -3415,6 +3444,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                                                                 tagFilter={tagFilter || undefined}
                                                                 collapsed={collapsedGroupIds.has(group.id)}
                                                                 onToggleCollapse={handleToggleGroupCollapse}
+                                                                registerAddInputRef={registerAddInputRef}
                                                             />
                                                         );
                                                     })}

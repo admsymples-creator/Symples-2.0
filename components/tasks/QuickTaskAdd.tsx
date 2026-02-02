@@ -44,6 +44,7 @@ interface QuickTaskAddProps {
     showProjectTag?: boolean; // ✅ Se deve ter padding left para alinhar com tags
     showDragHandle?: boolean; // ✅ Se deve mostrar drag handle (para página de tarefas)
     tagFilter?: string | null; // ✅ Tag do projeto atual (para incluir ao criar tarefa)
+    onInputRef?: (el: HTMLInputElement | null) => void; // ✅ Ref do input (para foco no próximo grupo após adicionar)
 }
 
 export function QuickTaskAdd({
@@ -60,6 +61,7 @@ export function QuickTaskAdd({
     showProjectTag = false,
     showDragHandle = false,
     tagFilter,
+    onInputRef,
 }: QuickTaskAddProps) {
     const [isHydrated, setIsHydrated] = useState(false);
     const [value, setValue] = useState("");
@@ -370,7 +372,10 @@ export function QuickTaskAdd({
                 
                 {/* Input - segunda coluna do grid (ghost) ou flex-1 (default) */}
                 <Input
-                    ref={inputRef}
+                    ref={(el) => {
+                        (inputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                        onInputRef?.(el);
+                    }}
                     autoFocus={autoFocus}
                     value={value}
                     onChange={(e) => setValue(e.target.value)}

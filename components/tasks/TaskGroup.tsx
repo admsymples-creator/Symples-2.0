@@ -60,9 +60,10 @@ interface TaskGroupProps {
     tagFilter?: string | null; // ✅ Tag do projeto atual (para incluir ao criar tarefa)
     collapsed?: boolean;
     onToggleCollapse?: (groupId: string) => void;
+    registerAddInputRef?: (groupId: string, el: HTMLInputElement | null) => void; // ✅ Ref do input para foco no próximo grupo
 }
 
-function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false, tagFilter, collapsed = false, onToggleCollapse }: TaskGroupProps) {
+function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskClick, isDragDisabled = false, onTaskUpdated, onTaskDeleted, onTaskUpdatedOptimistic, onTaskDeletedOptimistic, onTaskDuplicatedOptimistic, onTaskCreatedOptimistic, members, onRenameGroup, onColorChange, onDeleteGroup, onClearGroup, onReorderGroup, canMoveUp = true, canMoveDown = true, canMoveToTop = false, canMoveToBottom = false, showGroupActions = true, onAddTask, showProjectTag = false, tagFilter, collapsed = false, onToggleCollapse, registerAddInputRef }: TaskGroupProps) {
     const [isAdding, setIsAdding] = useState(false);
 
     // Normalizar IDs para string (dnd-kit requer strings)
@@ -206,6 +207,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         variant="ghost"
                                         showDragHandle={true}
                                         tagFilter={tagFilter}
+                                        onInputRef={(el) => registerAddInputRef?.(id, el)}
                                     />
                                 </div>
                             )}
@@ -229,6 +231,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         variant="ghost"
                                         showDragHandle={true}
                                         tagFilter={tagFilter}
+                                        onInputRef={(el) => registerAddInputRef?.(id, el)}
                                     />
                                 </TaskGroupEmpty>
                             ) : (
@@ -242,6 +245,7 @@ function TaskGroupComponent({ id, title, tasks, groupColor, workspaceId, onTaskC
                                         variant="ghost"
                                         showDragHandle={true}
                                         tagFilter={tagFilter}
+                                        onInputRef={(el) => registerAddInputRef?.(id, el)}
                                     />
                                 </div>
                             )
@@ -279,7 +283,8 @@ export const TaskGroup = memo(TaskGroupComponent, (prev, next) => {
         prev.onDeleteGroup !== next.onDeleteGroup ||
         prev.onClearGroup !== next.onClearGroup ||
         prev.showGroupActions !== next.showGroupActions ||
-        prev.collapsed !== next.collapsed;
+        prev.collapsed !== next.collapsed ||
+        prev.registerAddInputRef !== next.registerAddInputRef;
 
     return !shouldRender; // Retorna true se NÃO deve re-renderizar
 });
