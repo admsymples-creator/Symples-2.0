@@ -375,3 +375,39 @@ const [workspaceId, workspaces] = await Promise.all([
 
 **Data**: 2026-01-04
 **Branch**: `fix/loading-ws`
+
+---
+
+## Fase 6: Filtros da página de Tarefas (2026-02-02)
+
+### Problema Identificado
+- Ao trocar "Agrupar por" ou "Ordenar por" na tela de Tarefas, havia atraso perceptível para aplicar/remover os filtros
+- Uso de `useDeferredValue(viewOption/sortBy)` + `startTransition` gerava atualização em dois passos (valor adiado + recálculo), deixando a UI lenta
+
+### Mudanças Implementadas
+
+**Arquivo**: `app/(main)/tasks/tasks-page-client.tsx`
+
+1. **Remoção do atraso duplo**
+   - Removidos `useDeferredValue` para `viewOption` e `sortBy`
+   - Os `useMemo` (`groupedData`, `orderedGroupedData`, `kanbanColumns`, `listGroups`) passaram a usar `viewOption` e `sortBy` diretamente
+   - Handlers `handleViewOptionChange` e `handleSortByChange` atualizam estado de forma síncrona (sem `startTransition`)
+
+2. **Correção de bug em listGroups**
+   - Dentro do `useMemo` de `listGroups`, a variável usada na ordenação é `sort` (derivada de `sortBy`), mas dois `if` usavam `sortBy === "assignee"` e `sortBy === "title"`
+   - Corrigido para `sort === "assignee"` e `sort === "title"` para que a ordenação por responsável e por título funcione corretamente ao mudar o filtro
+
+3. **URL em segundo plano**
+   - Mantido debounce de 300ms para `router.replace` com os parâmetros da URL (`group`, `sort`), para não bloquear a UI e permitir compartilhar o link com os filtros aplicados
+
+### Impacto
+- Resposta imediata ao clicar em "Agrupar por" ou "Ordenar por": dropdown reflete o novo valor e a lista é recalculada no mesmo ciclo de render
+- Um único recálculo pesado por troca de filtro, em vez de dois passos (deferred + commit)
+
+### Arquivos Modificados
+- `app/(main)/tasks/tasks-page-client.tsx` — estado síncrono, uso direto de `viewOption`/`sortBy` nos useMemos, correção da ordenação em `listGroups`
+
+---
+
+**Data**: 2026-02-02
+**Branch**: `fix/general-02-02`

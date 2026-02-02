@@ -42,6 +42,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Melhor feedback visual durante gravação de áudio
 
 ### Fixed
+- **Filtros Agrupar/Ordenar na página de Tarefas (resposta imediata):**
+  - Removidos `useDeferredValue` e `startTransition` que causavam atraso ao trocar "Agrupar por" e "Ordenar por"
+  - Estado (`viewOption`/`sortBy`) atualizado de forma síncrona; `groupedData`, `listGroups` e `kanbanColumns` usam os valores diretos
+  - Corrigido bug em `listGroups`: uso de `sort` em vez de `sortBy` nas comparações "assignee" e "title"
+  - URL continua atualizada em segundo plano (debounce 300ms) para compartilhar link com filtros
 - **Recorrência diária na Home (WeeklyView):**
   - Projeção de ocorrências diárias agora faz fast-forward quando a tarefa base é antiga
   - Corrigido desaparecimento de ocorrências futuras nos cards da semana
