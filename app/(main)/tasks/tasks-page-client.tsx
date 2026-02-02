@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef, memo, startTransition } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -1517,9 +1517,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
     }, [localTasks, searchQuery]);
 
-    // FunÃ§Ã£o de agrupamento dinÃ¢mico
+    // Função de agrupamento dinâmico
     const groupedData = useMemo(() => {
         const groups: Record<string, Task[]> = {};
+        const opt = viewOption;
 
         // Mapeamento de prioridades para portuguÃªs
         const priorityLabels: Record<string, string> = {
@@ -1529,8 +1530,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             "low": "Baixa",
         };
 
-        // ✅ CORREÇÃO: Inicializar grupos vazios se viewOption for "group"
-        if (viewOption === "group") {
+        if (opt === "group") {
             // Sempre inicializar Inbox
             groups["inbox"] = [];
 
@@ -1538,27 +1538,23 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             availableGroups.forEach(group => {
                 groups[group.id] = [];
             });
-        } else if (viewOption === "status") {
-            // Inicializar status padrão
+        } else if (opt === "status") {
             const statusOrder = ["todo", "in_progress", "review", "correction", "blocked", "done", "archived"];
             statusOrder.forEach(status => {
                 const label = STATUS_TO_LABEL[status as keyof typeof STATUS_TO_LABEL];
                 if (label) groups[label] = [];
             });
-        } else if (viewOption === "priority") {
-            // Inicializar todas as prioridades (grupos vazios aparecem na tela) — labels iguais ao priorityLabels
+        } else if (opt === "priority") {
             ["Urgente", "Alta", priorityLabels["medium"], "Baixa"].forEach(label => { groups[label] = []; });
-        } else if (viewOption === "date") {
-            // Inicializar todos os buckets de data (grupos vazios aparecem na tela)
+        } else if (opt === "date") {
             ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"].forEach(label => { groups[label] = []; });
-        } else if (viewOption === "assignee") {
-            // Inicializar "Sem responsável" + um grupo por membro do workspace (grupos vazios aparecem na tela)
+        } else if (opt === "assignee") {
             groups["Sem responsável"] = [];
             workspaceMembers.forEach(m => {
                 const name = (m.name || "").trim();
                 if (name) groups[name] = [];
             });
-        } else if (viewOption === "project") {
+        } else if (opt === "project") {
             // Sempre inicializar Inbox no modo projeto
             groups["Inbox"] = [];
         }
@@ -1566,7 +1562,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         filteredTasks.forEach((task) => {
             let groupKey = "Inbox";
 
-            switch (viewOption) {
+            switch (opt) {
                 case "group":
                     // Usar ID do grupo como chave para permitir ediÃ§Ã£o
                     if (task.group && task.group.id) {
@@ -1733,20 +1729,17 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, [groupedData, viewOption, groupOrder, projectOrder]);
 
     // Converter grupos para formato de colunas (Kanban)
-    // Otimizado: usa referências estáveis e evita recriação quando dados não mudam
     const kanbanColumns = useMemo(() => {
-        const dataToUse = viewOption === "group" || viewOption === "project" ? orderedGroupedData : groupedData;
+        const opt = viewOption;
+        const dataToUse = opt === "group" || opt === "project" ? orderedGroupedData : groupedData;
 
-        // Early return se não há dados
         if (!dataToUse || Object.keys(dataToUse).length === 0) {
             return [];
         }
 
         const columns = Object.entries(dataToUse)
             .filter(([key, tasks]) => {
-                // ? Filtrar grupos deletados: se viewOption === "group" e não for "inbox",
-                // verificar se o grupo ainda existe em availableGroups
-                if (viewOption === "group" && key !== "inbox") {
+                if (opt === "group" && key !== "inbox") {
                     const groupExists = availableGroups.some(g => g.id === key);
                     // Se o grupo não existe mais e não há tarefas, filtrar
                     if (!groupExists && tasks.length === 0) {
@@ -1759,8 +1752,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 let title = key;
                 let color: string | undefined;
 
-                // Recuperar tÃ­tulo real se a chave for um ID (modo group)
-                if (viewOption === "group") {
+                if (opt === "group") {
                     if (key === "inbox") {
                         title = "BACKLOG/INBOX";
                         color = "#64748b"; // Slate 500 para Inbox
@@ -1788,9 +1780,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     }
                 } else if (key === "Inbox") {
                     title = "BACKLOG/INBOX";
-                } else if (viewOption === "date") {
+                } else if (opt === "date") {
                     color = DATE_COLOR_MAP[title] || color;
-                } else if (viewOption === "status") {
+                } else if (opt === "status") {
                     color = STATUS_COLOR_MAP[title] || color;
                 }
 
@@ -1802,7 +1794,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 };
             });
 
-        if (viewOption === "status") {
+        if (opt === "status") {
             const statusOrder = ORDERED_STATUSES.map(s => STATUS_TO_LABEL[s]);
             return columns.sort((a, b) => {
                 const aIndex = statusOrder.indexOf(a.title);
@@ -1814,7 +1806,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        if (viewOption === "priority") {
+        if (opt === "priority") {
             const priorityOrder = ["Urgente", "Alta", "MÃ©dia", "Baixa"];
             return columns.sort((a, b) => {
                 const aIndex = priorityOrder.indexOf(a.title);
@@ -1826,7 +1818,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        if (viewOption === "date") {
+        if (opt === "date") {
             const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return columns.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
@@ -1838,7 +1830,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        if (viewOption === "assignee") {
+        if (opt === "assignee") {
             // Ordenar por nome alfabeticamente, com "Sem responsável" no final
             return columns.sort((a, b) => {
                 if (a.title === "Sem responsável") return 1;
@@ -1850,18 +1842,19 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         return columns;
     }, [groupedData, orderedGroupedData, viewOption, availableGroups, groupColors]);
 
-    // Converter grupos para formato de lista (TaskGroup) com ordenaÃ§Ã£o
+    // Converter grupos para formato de lista (TaskGroup) com ordenação
     const listGroups = useMemo(() => {
-        const dataToUse = viewOption === "group" || viewOption === "project" ? orderedGroupedData : groupedData;
+        const opt = viewOption;
+        const sort = sortBy;
+        const dataToUse = opt === "group" || opt === "project" ? orderedGroupedData : groupedData;
         const groups = Object.entries(dataToUse).map(([key, tasks]) => {
-            // Ordenar tarefas dentro do grupo
             const sortedTasks = [...tasks].sort((a, b) => {
-                if (sortBy === "position") {
+                if (sort === "position") {
                     const posA = a.position ?? 0;
                     const posB = b.position ?? 0;
                     return posA - posB;
                 }
-                if (sortBy === "status") {
+                if (sort === "status") {
                     const statusOrder = ORDERED_STATUSES;
                     const mapStatus = (s: string) => {
                         const index = Object.values(STATUS_TO_LABEL).indexOf(s);
@@ -1874,18 +1867,18 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     const bIndex = mapStatus(b.status);
                     return aIndex - bIndex;
                 }
-                if (sortBy === "priority") {
+                if (sort === "priority") {
                     const priorityOrder = ["urgent", "high", "medium", "low"];
                     const aIndex = priorityOrder.indexOf(a.priority || "medium");
                     const bIndex = priorityOrder.indexOf(b.priority || "medium");
                     return aIndex - bIndex;
                 }
-                if (sortBy === "assignee") {
+                if (sort === "assignee") {
                     const aName = a.assignees?.[0]?.name || "zzzz";
                     const bName = b.assignees?.[0]?.name || "zzzz";
                     return aName.localeCompare(bName);
                 }
-                if (sortBy === "title") {
+                if (sort === "title") {
                     return (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" });
                 }
                 return 0;
@@ -1894,8 +1887,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             let title = key;
             let groupColor = undefined;
 
-            // Recuperar tÃ­tulo e cor real se a chave for um ID (modo group)
-            if (viewOption === "group") {
+            if (opt === "group") {
                 if (key === "inbox") {
                     title = "BACKLOG/INBOX";
                 } else {
@@ -1917,9 +1909,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 }
             } else if (key === "Inbox") {
                 title = "BACKLOG/INBOX";
-            } else if (viewOption === "date") {
+            } else if (opt === "date") {
                 groupColor = DATE_COLOR_MAP[title] || groupColor;
-            } else if (viewOption === "status") {
+            } else if (opt === "status") {
                 groupColor = STATUS_COLOR_MAP[title] || groupColor;
             }
 
@@ -1932,8 +1924,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             };
         });
 
-        // Ordenar grupos conforme o tipo de agrupamento
-        if (viewOption === "status") {
+        if (opt === "status") {
             const statusOrder = ORDERED_STATUSES.map(s => STATUS_TO_LABEL[s]);
             return groups.sort((a, b) => {
                 const aIndex = statusOrder.indexOf(a.title);
@@ -1945,7 +1936,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        if (viewOption === "priority") {
+        if (opt === "priority") {
             const priorityOrder = ["Urgente", "Alta", "MÃ©dia", "Baixa"];
             return groups.sort((a, b) => {
                 const aIndex = priorityOrder.indexOf(a.title);
@@ -1957,7 +1948,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        if (viewOption === "date") {
+        if (opt === "date") {
             const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Semana", "Futuro", "Sem data"];
             return groups.sort((a, b) => {
                 const aIndex = dateOrder.indexOf(a.title);
@@ -1969,8 +1960,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        if (viewOption === "assignee") {
-            // Ordenar por nome alfabeticamente, com "Sem responsável" no final
+        if (opt === "assignee") {
             return groups.sort((a, b) => {
                 if (a.title === "Sem responsável") return 1;
                 if (b.title === "Sem responsável") return -1;
@@ -1978,8 +1968,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             });
         }
 
-        // ? CORREÇÃO: Ordenar grupos baseado em groupOrder quando viewOption === "group"
-        if (viewOption === "group" && groupOrder.length > 0) {
+        if (opt === "group" && groupOrder.length > 0) {
             return groups.sort((a, b) => {
                 const aIndex = groupOrder.indexOf(a.id);
                 const bIndex = groupOrder.indexOf(b.id);
@@ -1989,7 +1978,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 return aIndex - bIndex;
             });
         }
-        if (viewOption === "project" && projectOrder.length > 0) {
+        if (opt === "project" && projectOrder.length > 0) {
             return groups.sort((a, b) => {
                 const aIndex = projectOrder.indexOf(a.id);
                 const bIndex = projectOrder.indexOf(b.id);
@@ -2001,7 +1990,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }
 
         return groups;
-    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder, projectOrder]); // ? Adicionar groupOrder para recalcular quando a ordem mudar
+    }, [groupedData, orderedGroupedData, viewOption, sortBy, groupColors, availableGroups.length, groupOrder, projectOrder]);
 
     // Atualizar ref quando listGroups mudar
     useEffect(() => {
@@ -2091,9 +2080,9 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         });
     }, [searchParams, tagFilter]);
 
-    // Atualização imediata de filtros (estado primeiro), URL em segundo plano para compartilhar link
+    // Atualização imediata de filtros (estado síncrono para resposta rápida), URL em segundo plano
     const handleViewOptionChange = useCallback((value: ViewOption) => {
-        startTransition(() => setViewOption(value));
+        setViewOption(value);
         if (urlDebounceRef.current) clearTimeout(urlDebounceRef.current);
         urlDebounceRef.current = setTimeout(() => {
             const params = new URLSearchParams(searchParams.toString());
@@ -2104,7 +2093,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     }, [pathname, router, searchParams]);
 
     const handleSortByChange = useCallback((value: "status" | "priority" | "assignee" | "title" | "position") => {
-        startTransition(() => setSortBy(value));
+        setSortBy(value);
         if (urlDebounceRef.current) clearTimeout(urlDebounceRef.current);
         urlDebounceRef.current = setTimeout(() => {
             const params = new URLSearchParams(searchParams.toString());
