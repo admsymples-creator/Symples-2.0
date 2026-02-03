@@ -65,7 +65,7 @@ export function TaskDateTimePicker({
     const [isMounted, setIsMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date | null>(date);
-    const [hour, setHour] = useState<number>(date ? date.getHours() : 9);
+    const [hour, setHour] = useState<number>(date ? date.getHours() : 0);
     const [minute, setMinute] = useState<number>(date ? date.getMinutes() : 0);
     const [recurrenceEnabled, setRecurrenceEnabled] = useState<boolean>(initialRecurrenceType !== null && initialRecurrenceType !== undefined);
     const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(initialRecurrenceType || null);
@@ -110,8 +110,8 @@ export function TaskDateTimePicker({
         }
 
         // Preservar hora e minuto ao selecionar nova data
-        // Se não há data selecionada ainda, usar hora padrão (9:00)
-        const currentHour = selectedDate ? hour : 9;
+        // Se não há data selecionada ainda, usar padrão sem horário (00:00)
+        const currentHour = selectedDate ? hour : 0;
         const currentMinute = selectedDate ? minute : 0;
         const dateWithTime = new Date(newDate);
         dateWithTime.setHours(currentHour, currentMinute, 0, 0);
@@ -119,7 +119,7 @@ export function TaskDateTimePicker({
         
         // Atualizar hora/minuto se não havia data antes
         if (!selectedDate) {
-            setHour(9);
+            setHour(0);
             setMinute(0);
         }
         
@@ -173,7 +173,7 @@ export function TaskDateTimePicker({
 
     const handleClear = () => {
         setSelectedDate(null);
-        setHour(9);
+        setHour(0);
         setMinute(0);
         setRecurrenceEnabled(false);
         setRecurrenceType(null);
@@ -188,9 +188,9 @@ export function TaskDateTimePicker({
     const handleOpenChange = (open: boolean) => {
         if (open && !date && defaultDateWhenNull) {
             const d = new Date(defaultDateWhenNull);
-            d.setHours(9, 0, 0, 0);
+            d.setHours(0, 0, 0, 0);
             setSelectedDate(d);
-            setHour(9);
+            setHour(0);
             setMinute(0);
             onSelect(d);
         }

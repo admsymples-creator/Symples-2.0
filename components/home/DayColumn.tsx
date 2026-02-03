@@ -69,7 +69,8 @@ export function DayColumn({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [isVirtualOccurrenceToDelete, setIsVirtualOccurrenceToDelete] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string; uiRemoveId?: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -171,32 +172,44 @@ export function DayColumn({
       .filter(line => line.length > 0);
   };
 
+  // "Sem horário" = meia-noite em UTC ou em local; "com horário" = horário específico no dia
+  const hasSpecificTime = (t: Task) => {
+    if (!t.due_date) return false;
+    const d = new Date(t.due_date);
+    const utcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+    const localMidnight = d.getHours() === 0 && d.getMinutes() === 0;
+    return !utcMidnight && !localMidnight;
+  };
+
   const sortedTasks = useMemo(() => {
     // Mesclar optimisticTasks com createdTasks (priorizando optimistic se duplicado)
-    // createdTasks só existem se NÃO estiverem em optimisticTasks (que é derivado de tasks prop + optimistic actions)
     const optimisticIds = new Set(optimisticTasks.map(t => t.id));
     const uniqueCreatedTasks = createdTasks.filter(t => !optimisticIds.has(t.id));
     const combined = [...optimisticTasks, ...uniqueCreatedTasks];
 
     return combined.sort((a, b) => {
-      // Ordenar sempre por horário da due_date quando existir (cronológico no dia)
+      const aHasTime = hasSpecificTime(a);
+      const bHasTime = hasSpecificTime(b);
+      // Com horário no topo; entre elas, por horário
+      if (aHasTime && !bHasTime) return -1;
+      if (!aHasTime && bHasTime) return 1;
+      if (aHasTime && bHasTime) {
+        const timeA = new Date(a.due_date as string).getTime();
+        const timeB = new Date(b.due_date as string).getTime();
+        return timeA - timeB;
+      }
+      // Sem horário: por due_date (mesmo que seja meia-noite) e depois por created_at
       const aHasDue = !!a.due_date;
       const bHasDue = !!b.due_date;
       if (aHasDue && bHasDue) {
         const timeA = new Date(a.due_date as string).getTime();
         const timeB = new Date(b.due_date as string).getTime();
         if (timeA !== timeB) return timeA - timeB;
-      } else if (aHasDue && !bHasDue) {
-        return -1;
-      } else if (!aHasDue && bHasDue) {
-        return 1;
-      }
-
-      // Fallback: ordem de criação
+      } else if (aHasDue && !bHasDue) return -1;
+      else if (!aHasDue && bHasDue) return 1;
       if (a.created_at && b.created_at) {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       }
-
       return 0;
     });
   }, [optimisticTasks, createdTasks]);
@@ -266,12 +279,8 @@ export function DayColumn({
           }
         }
       }
-      // Se estiver recorrente e não escolheu horário, usar padrão 09:00
-      if (currentRecurrenceType) {
-        d.setHours(9, 0, 0, 0);
-      } else {
-        d.setHours(0, 0, 0, 0);
-      }
+      // Sem horário escolhido: usar meia-noite (sem horário) para recorrente e não recorrente
+      d.setHours(0, 0, 0, 0);
       dueDateISO = d.toISOString();
     }
 
@@ -423,12 +432,21 @@ export function DayColumn({
   };
 
   const handleDelete = (taskId: string) => {
-    // Verificar se é recorrente
     const task = tasks.find(t => t.id === taskId);
-    const isRecurring = !!task?.recurrence_type || !!(task as any)?.recurrence_parent_id;
+    const isVirtual = !!(task as any)?.is_virtual || (typeof taskId === "string" && taskId.includes("-virtual-"));
+    const parentId = (task as any)?.recurrence_parent_id;
 
+    if (isVirtual && parentId) {
+      setTaskToDelete({ id: parentId, title: task?.title || "", uiRemoveId: taskId });
+      setIsVirtualOccurrenceToDelete(true);
+      setShowRecurringModal(true);
+      return;
+    }
+
+    const isRecurring = !!task?.recurrence_type || !!parentId;
     if (isRecurring && task) {
       setTaskToDelete({ id: taskId, title: task.title || "" });
+      setIsVirtualOccurrenceToDelete(false);
       setShowRecurringModal(true);
       return;
     }
@@ -443,8 +461,9 @@ export function DayColumn({
     setIsDeleting(true);
 
     try {
+      const idToRemoveFromUi = taskToDelete.uiRemoveId ?? taskToDelete.id;
       startTransition(() => {
-        addOptimisticTask({ type: 'delete', id: taskToDelete.id });
+        addOptimisticTask({ type: 'delete', id: idToRemoveFromUi });
       });
 
       // Se for "Excluir apenas esta" (Pular) para recorrente
@@ -514,6 +533,7 @@ export function DayColumn({
       setIsDeleting(false);
       setShowDeleteModal(false);
       setShowRecurringModal(false);
+      setIsVirtualOccurrenceToDelete(false);
       setTaskToDelete(null);
     }
   };
@@ -796,6 +816,7 @@ export function DayColumn({
         taskTitle={taskToDelete?.title || "Tarefa"}
         onConfirm={confirmDelete}
         isLoading={isDeleting}
+        hideOnlyThisOption={isVirtualOccurrenceToDelete}
       />
 
       {selectedTaskId && (

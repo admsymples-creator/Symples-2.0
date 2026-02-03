@@ -197,12 +197,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay) {
           if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
           
-          // Ocorrência hoje = interativa; ocorrência no futuro = virtual (prévia, opacidade baixa)
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
-          const nextDayStart = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
-          const isFuture = nextDayStart > todayStart;
-
+          // Todas as projeções são virtuais (somente leitura); evita ações com ID inexistente no banco
           const virtualTask: Task = {
             ...task,
             id: `${task.id}-virtual-${nextDateKey}`,
@@ -210,7 +205,7 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
             recurrence_parent_id: task.id,
           } as Task;
 
-          (virtualTask as any).is_virtual = isFuture;
+          (virtualTask as any).is_virtual = true;
           
           grouped[nextDateKey].push(virtualTask);
           processedRecurrenceIds.add(projectionKey);
@@ -218,6 +213,27 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         
         currentDate = nextDate;
       }
+    });
+
+      // Ordenar tarefas de cada dia: com horário no topo (e entre elas por horário), depois sem horário
+    // "Sem horário" = meia-noite em UTC (backend) ou meia-noite em local (app); senão = com horário
+    const hasSpecificTime = (t: Task) => {
+      if (!t.due_date) return false;
+      const d = new Date(t.due_date);
+      const utcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+      const localMidnight = d.getHours() === 0 && d.getMinutes() === 0;
+      return !utcMidnight && !localMidnight;
+    };
+    const sortKey = (t: Task) => (t.due_date ? new Date(t.due_date).getTime() : 0);
+    Object.keys(grouped).forEach((key) => {
+      grouped[key].sort((a, b) => {
+        const aHas = hasSpecificTime(a);
+        const bHas = hasSpecificTime(b);
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+        if (aHas && bHas) return sortKey(a) - sortKey(b);
+        return sortKey(a) - sortKey(b);
+      });
     });
 
     return grouped;

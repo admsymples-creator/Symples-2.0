@@ -91,6 +91,7 @@ export function TaskRow({
   };
 
   const startEditing = () => {
+    if ((task as any).is_virtual) return;
     setIsEditing(true);
     setEditValue(optimisticTitle);
   };
@@ -230,8 +231,9 @@ export function TaskRow({
   // Data atual da tarefa para o picker
   const currentDueDate = task.due_date ? new Date(task.due_date) : null;
 
-  // Handler para navegar para detalhes da tarefa no workspace
+  // Handler para navegar para detalhes da tarefa no workspace (bloqueado para ocorrências virtuais)
   const handleGoToTaskDetails = () => {
+    if ((task as any).is_virtual) return;
     if (onOpenDetails) {
       onOpenDetails(task.id);
       return;
@@ -430,7 +432,7 @@ export function TaskRow({
           </button>
 
           {/* Ícone de olho: abre a tarefa (modal no planner ou página de tarefas) */}
-          {(onOpenDetails || task.workspace_id) && (
+          {(onOpenDetails || task.workspace_id) && !(task as any).is_virtual && (
             <button
               onClick={() => onOpenDetails ? onOpenDetails(task.id) : handleGoToTaskDetails()}
               className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
@@ -441,7 +443,7 @@ export function TaskRow({
             </button>
           )}
 
-          {isMounted && workspaces.length > 0 && (
+          {isMounted && workspaces.length > 0 && !(task as any).is_virtual && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button

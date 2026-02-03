@@ -19,6 +19,8 @@ interface DeleteRecurringTaskModalProps {
   onConfirm: (deleteAll: boolean) => void;
   isLoading: boolean;
   taskTitle: string;
+  /** Quando true, oculta "Excluir apenas esta" (ex.: ocorrência virtual/projetada) */
+  hideOnlyThisOption?: boolean;
 }
 
 export function DeleteRecurringTaskModal({
@@ -27,6 +29,7 @@ export function DeleteRecurringTaskModal({
   onConfirm,
   isLoading,
   taskTitle,
+  hideOnlyThisOption = false,
 }: DeleteRecurringTaskModalProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -34,25 +37,29 @@ export function DeleteRecurringTaskModal({
         <AlertDialogHeader>
           <AlertDialogTitle>Excluir tarefa recorrente?</AlertDialogTitle>
           <AlertDialogDescription>
-            Você está excluindo uma ocorrência de "{taskTitle}".
+            {hideOnlyThisOption
+              ? `Esta é uma prévia de recorrência. Para remover, exclua a tarefa recorrente "${taskTitle}".`
+              : `Você está excluindo uma ocorrência de "${taskTitle}".`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex flex-col gap-2 py-4">
-          <Button
-            variant="outline"
-            onClick={() => onConfirm(false)}
-            disabled={isLoading}
-            className="justify-start"
-          >
-            Excluir apenas esta (Pular ocorrência)
-          </Button>
+          {!hideOnlyThisOption && (
+            <Button
+              variant="outline"
+              onClick={() => onConfirm(false)}
+              disabled={isLoading}
+              className="justify-start"
+            >
+              Excluir apenas esta (Pular ocorrência)
+            </Button>
+          )}
           <Button
             variant="destructive"
             onClick={() => onConfirm(true)}
             disabled={isLoading}
             className="justify-start"
           >
-            Excluir esta e todas as futuras (Encerrar série)
+            Excluir tarefa recorrente (Encerrar série)
           </Button>
         </div>
         <AlertDialogFooter>
