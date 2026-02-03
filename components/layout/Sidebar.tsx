@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useMemo, useCallback, useEffect, useRef, startTransition } from "react";
 import Link from "next/link";
@@ -20,7 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { SubscriptionData } from "@/lib/types/subscription";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
-import { getWorkspaceTags } from "@/lib/actions/tasks";
+import { getWorkspaceTags } from "@/lib/actions/workspace-tags";
 import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
 import { setProjectIcon, getProjectIcons, renameProjectTag, deleteProjectTag, getProjectTaskCount } from "@/lib/actions/projects";
 import { clearProjectCache } from "@/lib/utils/project-cache";

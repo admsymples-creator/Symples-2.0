@@ -880,7 +880,14 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             if (groupId === "inbox" || groupId === "Inbox") {
                 finalGroupId = null;
             } else {
-                finalGroupId = groupId;
+                // Validar: só enviar group_id se o grupo ainda existir em availableGroups (evita FK violation)
+                const groupExists = availableGroups.some((g) => g.id === groupId);
+                if (!groupExists) {
+                    toast.info("Grupo não encontrado; tarefa adicionada ao Backlog.");
+                    finalGroupId = null;
+                } else {
+                    finalGroupId = groupId;
+                }
             }
             dbStatus = "todo";
             statusLabel = STATUS_TO_LABEL.todo;
@@ -1156,57 +1163,30 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 // Usar funÃ§Ã£o de callback do setState para acessar o valor atual de groupOrder
                 setGroupOrder((currentOrder) => {
                     if (viewOption === "group") {
-                        // Se já existe ordem, apenas adicionar grupos novos ao final (preservar ordem existente)
-                        if (currentOrder.length > 0) {
-                            const groupIds = new Set(groupsData.map((g: any) => g.id));
-                            const existingIds = new Set(currentOrder);
-                            const newGroups = groupsData
-                                .map((g: any) => g.id)
-                                .filter((id: string) => !existingIds.has(id));
-                            if (newGroups.length > 0) {
-                                // Adicionar novos grupos ao final, preservando a ordem existente
-                                const updatedOrder = [...currentOrder, ...newGroups];
-                                // Salvar no localStorage
-                                if (typeof window !== "undefined") {
-                                    localStorage.setItem("taskGroupOrder", JSON.stringify(updatedOrder));
-                                }
-                                return updatedOrder;
-                            }
-                            // Ordem já está completa, não precisa modificar
-                            return currentOrder;
-                        }
-
-                        // Se não existe ordem, tentar carregar do localStorage primeiro
-                        if (typeof window !== "undefined") {
+                        const groupIds = new Set(groupsData.map((g: any) => g.id));
+                        // Tentar ordem salva primeiro quando não há ordem atual (ex.: troca de workspace)
+                        let baseOrder = currentOrder;
+                        if (currentOrder.length === 0 && typeof window !== "undefined") {
                             const savedOrder = localStorage.getItem("taskGroupOrder");
                             if (savedOrder) {
                                 try {
                                     const parsed = JSON.parse(savedOrder);
-                                    // Validar que todos os IDs existem nos grupos carregados
-                                    const groupIds = new Set(groupsData.map((g: any) => g.id));
-                                    const validOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
-                                    // Adicionar grupos novos que não estão na ordem salva
-                                    const newGroups = groupsData
-                                        .map((g: any) => g.id)
-                                        .filter((id: string) => !validOrder.includes(id));
-                                    if (validOrder.length > 0 || newGroups.length > 0) {
-                                        const finalOrder = ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
-                                        // Garantir que está salvo no localStorage
-                                        localStorage.setItem("taskGroupOrder", JSON.stringify(finalOrder));
-                                        return finalOrder;
-                                    }
-                                } catch (e) {
-                                    console.error("Erro ao carregar ordem dos grupos:", e);
+                                    baseOrder = parsed.filter((id: string) => id === "inbox" || groupIds.has(id));
+                                } catch {
+                                    baseOrder = [];
                                 }
                             }
                         }
-                        // Ordem padrÃ£o: inbox primeiro, depois grupos do banco
-                        const defaultOrder = ["inbox", ...groupsData.map((g: any) => g.id)];
-                        // Salvar no localStorage
+                        // Sanitizar: manter só "inbox" e ids que existem em groupsData (evita colunas fantasma / FK violation)
+                        const validOrder = baseOrder.filter((id: string) => id === "inbox" || groupIds.has(id));
+                        const newGroups = groupsData
+                            .map((g: any) => g.id)
+                            .filter((id: string) => !validOrder.includes(id));
+                        const updatedOrder = ["inbox", ...validOrder.filter((id: string) => id !== "inbox"), ...newGroups];
                         if (typeof window !== "undefined") {
-                            localStorage.setItem("taskGroupOrder", JSON.stringify(defaultOrder));
+                            localStorage.setItem("taskGroupOrder", JSON.stringify(updatedOrder));
                         }
-                        return defaultOrder;
+                        return updatedOrder;
                     }
                     return currentOrder;
                 });
@@ -1233,6 +1213,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         if (workspaceOrTabChanged) {
             prevWorkspaceTabRef.current = { workspaceId: effectiveWorkspaceId, tab: activeTab };
             setAvailableGroups([]);
+            setGroupOrder([]); // evita manter ids de grupos do workspace anterior (FK violation)
         }
 
         // Carregar grupos em background (não bloqueia a UI)

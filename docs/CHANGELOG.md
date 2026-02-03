@@ -42,6 +42,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Melhor feedback visual durante gravação de áudio
 
 ### Fixed
+- **Erro ao criar tarefa (FK `tasks_group_id_fkey`):**
+  - Backend: em `createTask`, validação de `group_id` antes do insert; se o grupo não existir em `task_groups` ou não pertencer ao workspace da tarefa, a tarefa é criada com `group_id: null` (inbox).
+  - Backend: no fluxo de recorrência (próxima ocorrência ao marcar como concluída), `group_id` só é repassado se o grupo ainda existir e pertencer ao mesmo workspace.
+  - Frontend (página de Tarefas): ao adicionar tarefa na visão "Grupos", só envia `group_id` se o grupo existir em `availableGroups`; caso contrário envia null e exibe toast "Grupo não encontrado; tarefa adicionada ao Backlog."
+  - Frontend: sanitização de `groupOrder` em `loadGroups` — mantém apenas "inbox" e ids presentes em `groupsData`, removendo grupos deletados ou de outro workspace; ao trocar workspace/aba, `groupOrder` é resetado para evitar ids antigos.
 - **Página de Tarefas – filtros, ordem e grupos:**
   - **Filtro ao voltar da Home:** Restauração do último filtro (localStorage) com `useLayoutEffect`; sync da URL só quando há parâmetros; ao restaurar "Personalizado" também restaura `groupOrder` no mesmo tick.
   - **Indicador de filtro:** Pills de "Agrupar por" e "Ordenar por" em slate (não verde) para evitar sensação de barra piscando.

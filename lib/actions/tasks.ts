@@ -459,7 +459,6 @@ export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
 
   if (!user || !workspaceId) return [];
 
-  // Verificar se usu?rio ? dono ou membro do workspace
   const { data: workspace, error: workspaceError } = await supabase
     .from("workspaces")
     .select("owner_id")
@@ -479,16 +478,13 @@ export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
     if (!membership) return [];
   }
 
-  // OTIMIZAÇÃO: Buscar apenas a coluna tags (não todas as tarefas)
-  // Usar distinct para reduzir dados transferidos
   const { data: tasks, error } = await supabase
     .from("tasks")
     .select("tags")
     .eq("workspace_id", workspaceId)
     .neq("status", "archived")
-    .not("tags", "is", null); // Apenas tarefas com tags
+    .not("tags", "is", null);
 
-  // Extrair tags únicas de tarefas
   const allTags = new Set<string>();
   if (!error && tasks) {
     tasks.forEach((task: any) => {
@@ -502,7 +498,6 @@ export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
     });
   }
 
-  // Buscar tags que têm ícones salvos (projetos criados sem tarefas ainda)
   const { data: projectIcons, error: iconsError } = await (supabase as any)
     .from("project_icons")
     .select("tag_name")
@@ -717,6 +712,27 @@ export async function createTask(data: {
   // Resolver assignee_id: "current" para o ID do usuário atual
   const resolvedAssigneeId = data.assignee_id === "current" ? user.id : data.assignee_id;
 
+  // Validar group_id: evita FK violation se o grupo foi deletado ou não existe
+  let safeGroupId: string | null = null;
+  const rawGroupId = data.group_id && String(data.group_id).trim() ? data.group_id : null;
+  if (rawGroupId) {
+    const { data: groupRow } = await (supabase as any)
+      .from("task_groups")
+      .select("id, workspace_id")
+      .eq("id", rawGroupId)
+      .single();
+    if (groupRow && typeof groupRow === "object" && "id" in groupRow) {
+      const taskWorkspaceId = data.workspace_id || null;
+      if (groupRow.workspace_id === taskWorkspaceId) {
+        safeGroupId = groupRow.id;
+      } else {
+        console.warn("[createTask] group_id não pertence ao workspace da tarefa, usando null");
+      }
+    } else {
+      console.warn("[createTask] group_id não encontrado em task_groups, criando tarefa no inbox");
+    }
+  }
+
   const taskData: any = {
     title: data.title,
     due_date: data.due_date || null,
@@ -734,7 +750,7 @@ export async function createTask(data: {
     recurrence_count: typeof data.recurrence_count === "number" ? data.recurrence_count : null,
     recurrence_days: Array.isArray(data.recurrence_days) && data.recurrence_days.length > 0 ? data.recurrence_days : null,
     // Group and Tags
-    group_id: data.group_id || null,
+    group_id: safeGroupId,
     tags: data.tags || null,
     visible_on_board: visibleOnBoard,
   };
@@ -952,6 +968,20 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
         if (shouldCreate) {
           console.log("[updateTask] Criando próxima ocorrência para:", nextDateISO);
 
+          // Validar group_id: grupo pode ter sido deletado desde que a tarefa foi criada
+          let recurrenceGroupId: string | null = null;
+          const currentGroupId = currentTask.group_id && String(currentTask.group_id).trim() ? currentTask.group_id : null;
+          if (currentGroupId) {
+            const { data: groupRow } = await (supabase as any)
+              .from("task_groups")
+              .select("id, workspace_id")
+              .eq("id", currentGroupId)
+              .single();
+            if (groupRow && typeof groupRow === "object" && "id" in groupRow && groupRow.workspace_id === (currentTask.workspace_id ?? null)) {
+              recurrenceGroupId = groupRow.id;
+            }
+          }
+
           await createTask({
             title: currentTask.title,
             description: currentTask.description || undefined,
@@ -962,7 +992,7 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
             assignee_id: currentTask.assignee_id,
             due_date: nextDateISO,
             origin_context: currentTask.origin_context,
-            group_id: currentTask.group_id,
+            group_id: recurrenceGroupId,
             tags: currentTask.tags || [],
             subtasks: currentTask.subtasks || [],
             recurrence_type: currentTask.recurrence_type,
