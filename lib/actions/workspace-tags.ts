@@ -40,7 +40,7 @@ export async function getWorkspaceTags(workspaceId: string): Promise<string[]> {
 
   const allTags = new Set<string>();
   if (!error && tasks) {
-    tasks.forEach((task: { tags?: string[] }) => {
+    tasks.forEach((task: any) => {
       if (task.tags && Array.isArray(task.tags)) {
         task.tags.forEach((tag: string) => {
           if (tag && tag.trim()) {
