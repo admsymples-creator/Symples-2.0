@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
@@ -89,18 +90,31 @@ import {
 import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { AttachmentCard } from "@/components/tasks/AttachmentCard";
-import { Editor } from "@/components/ui/editor";
 import { LinkifyText } from "@/components/ui/linkify-text";
+
+const Editor = dynamic(
+    () => import("@/components/ui/editor").then((m) => ({ default: m.Editor })),
+    { ssr: false, loading: () => <div className="h-24 animate-pulse rounded bg-gray-100" /> }
+);
 import { linkifyHtml } from "@/lib/utils/linkify-html";
 import { TaskMembersPicker } from "@/components/tasks/pickers/TaskMembersPicker";
 import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
-import { TaskImageLightbox } from "@/components/tasks/TaskImageLightbox";
+import { TaskDetailActivityItem } from "@/components/tasks/TaskDetailActivityItem";
 import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudioModal";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { CreateTransactionModal } from "@/components/finance/CreateTransactionModal";
+
+const TaskImageLightbox = dynamic(
+    () => import("@/components/tasks/TaskImageLightbox").then((m) => ({ default: m.TaskImageLightbox })),
+    { ssr: false }
+);
+
+const CreateTransactionModal = dynamic(
+    () => import("@/components/finance/CreateTransactionModal").then((m) => ({ default: m.CreateTransactionModal })),
+    { ssr: false }
+);
 import { getTransactionsByTask } from "@/lib/actions/finance";
 
 // ------------------------------------------------------------------
@@ -374,6 +388,42 @@ const formatPaymentDate = (value?: string | null) => {
     if (Number.isNaN(date.getTime())) return "Sem vencimento";
     return date.toLocaleDateString("pt-BR");
 };
+
+/** Strip HTML tags to get plain text (module-level for performance) */
+function stripHtmlTags(html: string): string {
+    if (!html) return "";
+    const tmp = document.createElement("DIV");
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || "";
+}
+
+/** Parse date string YYYY-MM-DD to local Date */
+function parseLocalDate(dateString: string): Date {
+    const [year, month, day] = dateString.split("-").map(Number);
+    return new Date(year, month - 1, day);
+}
+
+/** Format date to YYYY-MM-DD (local) */
+function formatLocalDateString(dateString: string): string {
+    const d = new Date(dateString);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+/** Build due_date ISO from date-only string, optionally preserving time from base */
+function buildDueDateISO(dateOnly: string, baseDate?: string | null): string {
+    const [year, month, day] = dateOnly.split("-").map(Number);
+    const result = new Date(year, month - 1, day);
+    if (baseDate) {
+        const base = new Date(baseDate);
+        result.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+    } else {
+        result.setHours(12, 0, 0, 0);
+    }
+    return result.toISOString();
+}
 
 const mapCommentToActivityBase = (
     comment: any,
@@ -1292,12 +1342,8 @@ export function TaskDetailModal({
                 }
             };
 
-            // Carregar dados básicos primeiro, depois estendidos
-            loadBasicData().then(() => {
-                if (active) {
-                    loadExtendedData();
-                }
-            });
+            // Carregar dados básicos e estendidos em paralelo (melhor tempo de abertura)
+            void Promise.all([loadBasicData(), loadExtendedData()]);
         } else if (open && isCreateMode) {
             setTitle("");
             setDescription("");
@@ -1518,248 +1564,41 @@ export function TaskDetailModal({
         }
     }, [activities, currentTaskId, reloadActivities]);
 
-    // Memoizar lista de atividades renderizadas para melhor performance (depois dos handlers)
+    // Lista de atividades: cada item é memoizado para evitar re-render de todos ao digitar em um comentário
+    const handleViewTranscriptionStable = useCallback((activityId: string, audioUrl: string) => {
+        handleViewTranscriptionRef.current?.(activityId, audioUrl);
+    }, []);
+
     const renderedActivities = useMemo(() => {
         return activities.map((act: Activity) => (
-            <div key={act.id} className="flex gap-3 text-sm relative group">
-                <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
-                    <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
-                </div>
-
-                <div className="flex-1 pb-2">
-                    {act.type === "origin" && act.origin && (
-                        <div className="flex items-start gap-2">
-                            <div className={cn(
-                                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                act.origin.source === "whatsapp" ? "bg-green-100" : "bg-blue-100"
-                            )}>
-                                {act.origin.source === "whatsapp" ? (
-                                    <MessageSquare className="w-4 h-4 text-green-600" />
-                                ) : (
-                                    <Monitor className="w-4 h-4 text-blue-600" />
-                                )}
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-gray-700 mb-1">
-                                    <span className="font-medium text-gray-900">Tarefa criada via </span>
-                                    <span className="font-semibold text-gray-900">
-                                        {act.origin.source === "whatsapp" ? "WhatsApp" : "App Web"}
-                                    </span>
-                                </p>
-                                {act.origin.content && (
-                                    <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600">
-                                        "{act.origin.content}"
-                                    </div>
-                                )}
-                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {act.type !== "origin" && (
-                        <>
-                            <p className="text-gray-700">
-                                <span className="font-medium text-gray-900">{act.user}</span>{" "}
-                                {act.type === "created" && "criou a tarefa"}
-                                {act.type === "commented" && "comentou"}
-                                {act.type === "updated" && "atualizou a tarefa"}
-                                {act.type === "file_shared" && "enviou um arquivo"}
-                                {act.type === "audio" && "enviou um áudio"}
-                            </p>
-
-                            {act.type === "audio" && (
-                                <div className="mt-2 space-y-2">
-                                    <div className="max-w-[240px]">
-                                        <AudioMessageBubble
-                                            duration={act.audio?.duration || 0}
-                                            isOwnMessage={act.user === "Você"}
-                                            audioUrl={act.audio?.url}
-                                        />
-                                    </div>
-                                    {act.audio?.url && (
-                                        <div className="space-y-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-xs text-gray-500 hover:text-gray-700"
-                                                onClick={() => handleViewTranscriptionRef.current?.(act.id, act.audio!.url!)}
-                                                disabled={transcribingActivityId === act.id}
-                                            >
-                                                {transcribingActivityId === act.id ? (
-                                                    <>
-                                                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                                        Transcrevendo...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <FileText className="w-3 h-3 mr-1" />
-                                                        {act.audio?.transcription ? "Ver transcrição" : "Gerar transcrição"}
-                                                    </>
-                                                )}
-                                            </Button>
-                                            {act.audio?.transcription && (
-                                                <div className="mt-2 p-3 border rounded-md bg-gray-50">
-                                                    <p className="text-xs text-gray-600 whitespace-pre-wrap">
-                                                        {act.audio.transcription}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {act.message && act.type !== "updated" && (
-                                <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600 relative group/comment">
-                                    {editingCommentId === act.id ? (
-                                        <div className="space-y-2">
-                                            <Textarea
-                                                value={editingCommentText}
-                                                onChange={(e) => setEditingCommentText(e.target.value)}
-                                                className="min-h-[60px] resize-none"
-                                                autoFocus
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter" && e.ctrlKey) {
-                                                        e.preventDefault();
-                                                        handleSaveEditComment();
-                                                    } else if (e.key === "Escape") {
-                                                        handleCancelEditComment();
-                                                    }
-                                                }}
-                                            />
-                                            <div className="flex gap-2 justify-end">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={handleCancelEditComment}
-                                                    disabled={isUpdatingComment}
-                                                >
-                                                    Cancelar
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    onClick={handleSaveEditComment}
-                                                    disabled={isUpdatingComment || !editingCommentText.trim()}
-                                                >
-                                                    {isUpdatingComment ? (
-                                                        <>
-                                                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                                            Salvando...
-                                                        </>
-                                                    ) : (
-                                                        "Salvar"
-                                                    )}
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <p className={cn(
-                                                act.deleted && "italic text-gray-400"
-                                            )}>
-                                                <LinkifyText text={act.message || ""} />
-                                            </p>
-                                            {(act.edited || act.deleted) && (
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    {act.edited && (
-                                                        <span className="text-[10px] text-gray-400">
-                                                            Editado
-                                                        </span>
-                                                    )}
-                                                    {act.deleted && (
-                                                        <span className="text-[10px] text-gray-400">
-                                                            Removido
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {act.isCurrentUser && !act.deleted && act.type === "commented" && (
-                                                <>
-                                                    {/* Gradiente da direita para esquerda no hover */}
-                                                    <div
-                                                        className={cn(
-                                                            "absolute right-0 top-0 bottom-0 w-20 pointer-events-none opacity-0 group-hover/comment:opacity-100 transition-opacity duration-200",
-                                                            "bg-gradient-to-l from-white via-white via-60% to-transparent"
-                                                        )}
-                                                    />
-                                                    <div className="absolute top-2 right-2 opacity-0 group-hover/comment:opacity-100 transition-opacity flex gap-1 z-10">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-6 w-6 text-gray-400 hover:text-gray-600"
-                                                            onClick={() => handleEditComment(act.id, act.message || "")}
-                                                            title="Editar comentário"
-                                                        >
-                                                            <Pencil className="w-3 h-3" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-6 w-6 text-gray-400 hover:text-red-600"
-                                                            onClick={() => handleDeleteComment(act.id)}
-                                                            disabled={isDeletingComment === act.id}
-                                                            title="Excluir comentário"
-                                                        >
-                                                            {isDeletingComment === act.id ? (
-                                                                <Loader2 className="w-3 h-3 animate-spin" />
-                                                            ) : (
-                                                                <Trash2 className="w-3 h-3" />
-                                                            )}
-                                                        </Button>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            )}
-
-                            {act.attachedFiles && act.attachedFiles.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {act.attachedFiles.map((f, idx) => (
-                                        <div key={idx} className="p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                                            {f.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-medium">{f.name}</span>
-                                                <span className="text-[10px] text-gray-400">{f.size}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {act.file && !act.attachedFiles && (
-                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                                    {act.file.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-medium">{act.file.name}</span>
-                                        <span className="text-[10px] text-gray-400">{act.file.size}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {(act.type as Activity["type"]) !== "origin" && (
-                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
+            <TaskDetailActivityItem
+                key={act.id}
+                activity={act}
+                isEditing={editingCommentId === act.id}
+                editingText={editingCommentId === act.id ? editingCommentText : ""}
+                transcribingActivityId={transcribingActivityId}
+                isUpdatingComment={isUpdatingComment}
+                isDeletingComment={isDeletingComment}
+                onViewTranscription={handleViewTranscriptionStable}
+                onEditComment={handleEditComment}
+                onDeleteComment={handleDeleteComment}
+                onSaveEditComment={handleSaveEditComment}
+                onCancelEditComment={handleCancelEditComment}
+                onEditingTextChange={setEditingCommentText}
+            />
         ));
-    }, [activities, transcribingActivityId, editingCommentId, editingCommentText, isUpdatingComment, isDeletingComment, currentUserId, handleSaveEditComment, handleCancelEditComment, handleEditComment, handleDeleteComment]);
+    }, [activities, transcribingActivityId, editingCommentId, editingCommentText, isUpdatingComment, isDeletingComment, handleViewTranscriptionStable, handleSaveEditComment, handleCancelEditComment, handleEditComment, handleDeleteComment]);
 
     // Handlers
-    const handleStatusChange = async (newStatus: string) => {
+    const handleStatusChange = useCallback(async (newStatus: string) => {
         if (status === newStatus) return;
-        const oldStatus = status; // Guardar valor antigo para rollback
+        const oldStatus = status;
         const oldLabel = STATUS_TO_LABEL[status];
         const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
 
-        // ? OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
         setStatus(newStatus as TaskStatus);
 
         if (currentTaskId && !isCreateMode) {
-            // ? Atualizar TaskRowMinify imediatamente via optimistic update
             onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
 
             try {
@@ -1767,19 +1606,16 @@ export function TaskDetailModal({
                 const result = await updateTaskField(currentTaskId, "status", newStatus);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId, { status: newLabel }, { refresh: false });
-                    // Recarregar atividades do banco para garantir que o log foi persistido
                     void reloadActivities(currentTaskId);
                     markSaved(true);
                     toast.success(`Status alterado para ${newLabel}`);
                 } else {
-                    // ? REVERTER se falhar
                     setStatus(oldStatus);
                     onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
                     markSaved(false);
                     toast.error(result.error || "Erro ao alterar status");
                 }
             } catch (error) {
-                // ? REVERTER em caso de exce??o
                 console.error("Erro ao alterar status:", error);
                 setStatus(oldStatus);
                 onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
@@ -1789,9 +1625,9 @@ export function TaskDetailModal({
         } else {
             toast.success(`Status alterado para ${newLabel}`);
         }
-    };
+    }, [status, currentTaskId, isCreateMode, onTaskUpdatedOptimistic, markSaving, invalidateCacheAndNotify, reloadActivities, markSaved]);
 
-    const handleAddSubTask = async () => {
+    const handleAddSubTask = useCallback(async () => {
         if (!newSubTask.trim()) return;
         const newItem: SubTask = {
             id: `st-${Date.now()}`,
@@ -1807,12 +1643,10 @@ export function TaskDetailModal({
 
         if (currentTaskId && !isCreateMode) {
             try {
-                // Salvar valor antigo para o log
                 const oldSubtasks = subTasks;
                 const result = await updateTaskSubtasks(currentTaskId, updatedSubTasks);
                 if (result.success) {
                     invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
-                    // Criar log manual para subtarefas (updateTaskSubtasks não cria log diretamente)
                     await addComment(
                         currentTaskId,
                         `adicionou a sub-tarefa: "${newItem.title}"`,
@@ -1823,22 +1657,18 @@ export function TaskDetailModal({
                         },
                         "log"
                     );
-                    // Recarregar atividades do banco
                     void reloadActivities(currentTaskId);
                     markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
-                    // Reverter se falhar
                     setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
                 toast.error("Erro ao salvar sub-tarefa");
-                // Reverter se falhar
                 setSubTasks(subTasks);
             }
         } else {
-            // Modo create - apenas adicionar localmente
             setActivities(prev => [{
                 id: `act-${Date.now()}`,
                 type: "updated",
@@ -1847,7 +1677,7 @@ export function TaskDetailModal({
                 timestamp: "Agora mesmo"
             }, ...prev]);
         }
-    };
+    }, [newSubTask, subTasks, currentTaskId, isCreateMode, invalidateCacheAndNotify, reloadActivities, markSaved]);
 
     const handleUpdateSubTaskTitle = async (id: string, newTitle: string) => {
         const trimmedTitle = newTitle.trim();
@@ -2446,18 +2276,11 @@ export function TaskDetailModal({
     // Constante para limite de caracteres na descrição
     const MAX_DESCRIPTION_LENGTH = 3000;
 
-    // Função auxiliar para extrair texto puro do HTML (strip tags)
-    const stripHtmlTags = (html: string): string => {
-        if (!html) return "";
-        const tmp = document.createElement("DIV");
-        tmp.innerHTML = html;
-        return tmp.textContent || tmp.innerText || "";
-    };
-
-    // Contar caracteres do texto puro (sem HTML)
-    const getDescriptionCharCount = useMemo(() => {
-        return stripHtmlTags(description).length;
-    }, [description]);
+    // Contar caracteres do texto puro (sem HTML) - stripHtmlTags é helper de módulo
+    const getDescriptionCharCount = useMemo(
+        () => stripHtmlTags(description).length,
+        [description]
+    );
 
     const isDescriptionOverLimit = getDescriptionCharCount > MAX_DESCRIPTION_LENGTH;
 
@@ -2540,26 +2363,22 @@ export function TaskDetailModal({
                 toast.error("Erro ao salvar descrição");
             }
         }
-    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities, stripHtmlTags]);
+    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
 
-    const handleMembersChange = async (memberIds: string[]) => {
+    const handleMembersChange = useCallback(async (memberIds: string[]) => {
         const oldMembers = [...localMembers];
         const oldMemberIds = oldMembers.map(m => m.id);
 
-        // Determinar membros adicionados e removidos
         const added = memberIds.filter(id => !oldMemberIds.includes(id));
         const removed = oldMemberIds.filter(id => !memberIds.includes(id));
 
-        // Construir array de membros atualizado para optimistic UI
         const newMembers = memberIds.map(id => {
             const member = availableUsers.find(u => u.id === id);
             return member ? { id: member.id, name: member.name, avatar: member.avatar } : null;
         }).filter(Boolean) as Array<{ id: string; name: string; avatar?: string }>;
 
-        // Atualizar UI imediatamente
         setLocalMembers(newMembers);
 
-        // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
         if (currentTaskId) {
             onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
         }
@@ -2568,65 +2387,32 @@ export function TaskDetailModal({
             return;
         }
 
-
         try {
-            // Adicionar novos membros
             const addPromises = added.map(userId => addTaskMember(currentTaskId, userId));
-            // Remover membros
             const removePromises = removed.map(userId => removeTaskMember(currentTaskId, userId));
 
             const results = await Promise.all([...addPromises, ...removePromises]);
             const hasError = results.some(r => !r.success);
 
             if (hasError) {
-                // ✅ REVERTER se falhar
                 setLocalMembers(oldMembers);
                 onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
                 toast.error("Erro ao atualizar membros");
             } else {
                 invalidateCacheAndNotify(currentTaskId, { assignees: newMembers }, { refresh: false });
-                // Recarregar apenas atividades (não precisa recarregar dados básicos)
                 void reloadActivities(currentTaskId);
                 const changeCount = added.length + removed.length;
                 toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
             }
         } catch (error) {
-            // ✅ REVERTER em caso de exceção
             console.error("Erro ao atualizar membros:", error);
             setLocalMembers(oldMembers);
             onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
             toast.error("Erro ao atualizar membros");
         }
-    };
+    }, [localMembers, availableUsers, currentTaskId, isCreateMode, onTaskUpdatedOptimistic, invalidateCacheAndNotify, reloadActivities]);
 
-    // Helpers de data no timezone local (evita shifts UTC)
-    const parseLocalDate = (dateString: string): Date => {
-        const [year, month, day] = dateString.split('-').map(Number);
-        return new Date(year, month - 1, day);
-    };
-
-    const formatLocalDateString = (dateString: string): string => {
-        const d = new Date(dateString);
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${year}-${month}-${day}`;
-    };
-
-    const buildDueDateISO = (dateOnly: string, baseDate?: string | null): string => {
-        const [year, month, day] = dateOnly.split("-").map(Number);
-        const result = new Date(year, month - 1, day);
-        if (baseDate) {
-            const base = new Date(baseDate);
-            result.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
-        } else {
-            // meio-dia local reduz risco de shift ao serializar
-            result.setHours(12, 0, 0, 0);
-        }
-        return result.toISOString();
-    };
-
-    const handleDueDateChange = async (date: Date | null) => {
+    const handleDueDateChange = useCallback(async (date: Date | null) => {
         const dateString = date ? formatLocalDateString(date.toISOString()) : "";
         const oldDate = dueDate;
         setDueDate(dateString);
@@ -2681,7 +2467,7 @@ export function TaskDetailModal({
                 }, ...prev]);
             }
         }
-    };
+    }, [currentTaskId, isCreateMode, dueDate, task?.dueDate, (task as any)?.due_date, onTaskUpdatedOptimistic, markSaving, invalidateCacheAndNotify, reloadActivities, markSaved]);
 
     return (
         <>
