@@ -15,7 +15,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  LucideIcon
+  LucideIcon,
+  AtSign
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationWithActor } from "@/lib/actions/notifications";
@@ -101,6 +102,15 @@ function NotificationItemComponent({
   // Memoizar lógica de renderização de ícones
   const iconConfig = useMemo(() => {
     const getIcon = (): { Icon: LucideIcon; color: string; bg: string } => {
+    // Prioridade 0: Menções (@usuario)
+    if ((metadata as any).mention_type === "comment" || (metadata as any).mention_type === "description") {
+      return {
+        Icon: AtSign,
+        color: metadata.color || "text-blue-600",
+        bg: metadata.bg || "bg-blue-50"
+      };
+    }
+
     // Prioridade 1: Anexos (especialmente áudio)
     if (metadata.file_type === 'audio') {
       return {

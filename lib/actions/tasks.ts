@@ -5,6 +5,7 @@ import { cookies, headers } from "next/headers";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import { Database } from "@/types/database.types";
+import { createMentionNotificationsForTaskText } from "@/lib/utils/mentions";
 
 const perfEnabled = process.env.DEBUG_PERF === "1";
 const perfNow = () => Date.now();
@@ -773,6 +774,21 @@ export async function createTask(data: {
   }
 
   console.log("[SERVER-ACTION] Task created successfully:", newTask.id);
+
+  // Notificações de menção na descrição inicial da tarefa
+  try {
+    if (data.description && data.description.trim()) {
+      await createMentionNotificationsForTaskText({
+        taskId: newTask.id,
+        text: data.description,
+        mentionType: "description",
+        authorId: user.id,
+      });
+    }
+  } catch (mentionError) {
+    console.error("[createTask] Erro ao criar notificações de menção na descrição:", mentionError);
+    // Não falhar a criação da tarefa se as notificações falharem
+  }
 
   // Revalidar path relevante
   try {

@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendInviteEmail } from "@/lib/email/send-invite";
+import { validateEmail } from "@/lib/email/validate-email";
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,14 +30,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Validar formato do email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    const validation = validateEmail(email);
+    if (!validation.valid) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Email inválido: ${email}`,
-        },
+        { success: false, error: validation.error ?? "Email inválido" },
         { status: 400 }
       );
     }
@@ -108,14 +105,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validar formato do email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    const validation = validateEmail(email);
+    if (!validation.valid) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Email inválido: ${email}`,
-        },
+        { success: false, error: validation.error ?? "Email inválido" },
         { status: 400 }
       );
     }

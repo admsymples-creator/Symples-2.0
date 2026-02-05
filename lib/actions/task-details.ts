@@ -2,6 +2,7 @@
 
 import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { createMentionNotificationsForTaskText } from "@/lib/utils/mentions";
 
 /**
  * Interface para detalhes completos da tarefa
@@ -484,7 +485,7 @@ export async function addComment(
   // Converter tipo "audio" para "comment" já que o banco não aceita "audio"
   const commentType = type === "audio" ? "comment" : (type || "comment");
   
-  const { error } = await supabase
+  const { data: insertedComment, error } = await supabase
     .from("task_comments")
     .insert({
       task_id: taskId,
@@ -492,11 +493,27 @@ export async function addComment(
       content,
       type: commentType as "comment" | "log" | "file" | "system",
       metadata,
-    });
+    })
+    .select("id")
+    .single();
 
   if (error) {
     console.error("Erro ao adicionar comentário:", error);
     return { success: false, error: error.message };
+  }
+
+  // Criar notificações de menção (se houver @usuario no conteúdo)
+  try {
+    await createMentionNotificationsForTaskText({
+      taskId,
+      text: content,
+      mentionType: "comment",
+      commentId: insertedComment?.id,
+      authorId: user.id,
+    });
+  } catch (mentionError) {
+    console.error("[addComment] Erro ao criar notificações de menção:", mentionError);
+    // Não falhar a criação do comentário se as notificações falharem
   }
 
   revalidatePath(`/tasks`);
@@ -853,6 +870,21 @@ export async function updateTaskField(
     }
   }
 
+  // Notificações de menção quando a descrição da tarefa é atualizada
+  if (field === "description" && typeof value === "string" && value.trim()) {
+    try {
+      await createMentionNotificationsForTaskText({
+        taskId,
+        text: value,
+        mentionType: "description",
+        authorId: user.id,
+      });
+    } catch (mentionError) {
+      console.error("[updateTaskField] Erro ao criar notificações de menção na descrição:", mentionError);
+      // Não falhar a atualização da tarefa se as notificações falharem
+    }
+  }
+
   console.log(`Sucesso ao atualizar ${field}`);
   revalidatePath(`/tasks`);
   revalidatePath(`/home`);
@@ -868,6 +900,11 @@ export async function updateTaskFields(
   fields: Record<string, any>
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerActionClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
   
   // Validar campos permitidos
   const allowedFields = [
@@ -910,6 +947,21 @@ export async function updateTaskFields(
   if (error) {
     console.error("Erro ao atualizar campos da tarefa:", error);
     return { success: false, error: error.message };
+  }
+
+  // Notificações de menção quando a descrição é atualizada em lote
+  if (typeof updateData.description === "string" && updateData.description.trim()) {
+    try {
+      await createMentionNotificationsForTaskText({
+        taskId,
+        text: updateData.description,
+        mentionType: "description",
+        authorId: user.id,
+      });
+    } catch (mentionError) {
+      console.error("[updateTaskFields] Erro ao criar notificações de menção na descrição:", mentionError);
+      // Não falhar a atualização da tarefa se as notificações falharem
+    }
   }
 
   revalidatePath(`/tasks`);

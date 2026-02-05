@@ -1,18 +1,13 @@
 import {
-  Body,
-  Container,
-  Head,
   Heading,
-  Html,
   Link,
-  Preview,
   Section,
   Text,
   Button,
   Hr,
-  Img,
 } from "@react-email/components";
 import * as React from "react";
+import { EmailLayout, BRAND } from "./email-layout";
 
 interface InviteEmailProps {
   workspaceName: string;
@@ -35,111 +30,57 @@ export function InviteEmail({
     viewer: "Visualizador",
   };
 
-  // Extrair URL base do inviteLink para construir URL do logo
-  const baseUrl = inviteLink ? new URL(inviteLink).origin : 'https://symples.com';
-  const logoUrl = `${baseUrl}/logo-black.svg`;
-  const homeUrl = baseUrl;
+  const baseUrl = inviteLink ? new URL(inviteLink).origin : "https://symples.com";
+  const previewText = `Você foi convidado para participar do workspace ${workspaceName}`;
 
   return (
-    <Html>
-      <Head />
-      <Preview>
-        Você foi convidado para participar do workspace {workspaceName}
-      </Preview>
-      <Body style={main}>
-        <Container style={container}>
-          <Section style={logo}>
-            <Link href={homeUrl} style={{ textDecoration: 'none' }}>
-              <Img
-                src={logoUrl}
-                alt="Symples"
-                width="120"
-                height="36"
-                style={logoImage}
-              />
-            </Link>
-          </Section>
-          
-          <Heading style={heading}>
-            Você foi convidado! 🎉
-          </Heading>
-          
-          <Text style={paragraph}>
-            {inviterName ? (
-              <>
-                <strong>{inviterName}</strong> convidou você para participar do workspace{" "}
-                <strong>{workspaceName}</strong>.
-              </>
-            ) : (
-              <>
-                Você foi convidado para participar do workspace{" "}
-                <strong>{workspaceName}</strong>.
-              </>
-            )}
-          </Text>
+    <EmailLayout baseUrl={baseUrl} previewText={previewText}>
+      <Heading style={heading}>
+        Você foi convidado! 🎉
+      </Heading>
 
-          <Text style={paragraph}>
-            Sua função será: <strong>{roleLabels[role] || role}</strong>
-          </Text>
+      <Text style={paragraph}>
+        {inviterName ? (
+          <>
+            <strong>{inviterName}</strong> convidou você para participar do workspace{" "}
+            <strong>{workspaceName}</strong>.
+          </>
+        ) : (
+          <>
+            Você foi convidado para participar do workspace{" "}
+            <strong>{workspaceName}</strong>.
+          </>
+        )}
+      </Text>
 
-          {isNewUser && (
-            <Text style={paragraph}>
-              Como você ainda não tem uma conta no Symples, você precisará criar uma conta para aceitar este convite.
-            </Text>
-          )}
+      <Text style={paragraph}>
+        Sua função será: <strong>{roleLabels[role] || role}</strong>
+      </Text>
 
-          <Section style={buttonContainer}>
-            <Button style={button} href={inviteLink}>
-              {isNewUser ? "Criar Conta e Aceitar" : "Aceitar Convite"}
-            </Button>
-          </Section>
+      {isNewUser && (
+        <Text style={paragraph}>
+          Como você ainda não tem uma conta no Symples, você precisará criar uma conta para aceitar este convite.
+        </Text>
+      )}
 
-          <Hr style={hr} />
+      <Section style={buttonContainer}>
+        <Button style={button} href={inviteLink}>
+          {isNewUser ? "Criar Conta e Aceitar" : "Aceitar Convite"}
+        </Button>
+      </Section>
 
-          <Text style={footer}>
-            Ou copie e cole este link no seu navegador:
-            <br />
-            <Link href={inviteLink} style={link}>
-              {inviteLink}
-            </Link>
-          </Text>
+      <Hr style={hr} />
 
-          <Text style={footer}>
-            Se você não esperava este convite, pode ignorar este email.
-          </Text>
-        </Container>
-      </Body>
-    </Html>
+      <Text style={footer}>
+        Ou copie e cole este link no seu navegador:
+        <br />
+        <Link href={inviteLink} style={link}>
+          {inviteLink}
+        </Link>
+      </Text>
+    </EmailLayout>
   );
 }
-
-// Estilos inline para compatibilidade com clientes de email
-const main = {
-  backgroundColor: "#f6f9fc",
-  fontFamily:
-    '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif',
-};
-
-const container = {
-  backgroundColor: "#ffffff",
-  margin: "0 auto",
-  padding: "40px 20px",
-  marginBottom: "64px",
-  borderRadius: "8px",
-  maxWidth: "600px",
-};
-
-const logo = {
-  textAlign: "center" as const,
-  marginBottom: "32px",
-};
-
-const logoImage = {
-  margin: "0 auto",
-  display: "block",
-  maxWidth: "120px",
-  height: "auto",
-};
 
 const heading = {
   fontSize: "24px",
@@ -164,7 +105,7 @@ const buttonContainer = {
 };
 
 const button = {
-  backgroundColor: "#10b981",
+  backgroundColor: BRAND.primaryColor,
   borderRadius: "6px",
   color: "#ffffff",
   fontSize: "16px",
@@ -193,4 +134,3 @@ const link = {
   textDecoration: "underline",
   wordBreak: "break-all" as const,
 };
-

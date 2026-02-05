@@ -1,8 +1,10 @@
 import { Resend } from "resend";
 import { render } from "@react-email/render";
 import { InviteEmail } from "./templates/invite-email";
+import { logEmailEvent } from "./logger";
+import { validateEmail } from "./validate-email";
+import { sendWithRetry } from "./send-with-retry";
 
-// Inicializar o cliente Resend
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface SendInviteParams {
@@ -11,60 +13,53 @@ interface SendInviteParams {
   inviterName: string | null;
   inviteLink: string;
   role: "admin" | "member" | "viewer";
-  isNewUser?: boolean; // Indica se o usuário precisa criar conta
+  isNewUser?: boolean;
 }
 
 /**
- * Envia um email de convite usando o Resend
- * @param params - Parâmetros do convite
- * @returns Promise com resultado do envio
+ * Envia um email de convite usando o Resend, com validação robusta,
+ * retry com backoff exponencial e logs centralizados.
  */
 export async function sendInviteEmail(params: SendInviteParams) {
   const { to, workspaceName, inviterName, inviteLink, role, isNewUser = false } = params;
 
-  // Validar se a API key está configurada
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    const warning = "⚠️ RESEND_API_KEY não configurada. Email não será enviado.";
-    console.warn(warning);
-    
-    // Em desenvolvimento, apenas loga o link (permite continuar sem email)
+    logEmailEvent("config_missing", {
+      type: "invite",
+      to,
+      error: "RESEND_API_KEY não configurada",
+    });
     if (process.env.NODE_ENV === "development") {
-      console.log("📧 [DEV] Email de convite simulado:");
-      console.log(`   Para: ${to}`);
-      console.log(`   Workspace: ${workspaceName}`);
-      console.log(`   Link: ${inviteLink}`);
-      console.log(`   Role: ${role}`);
-      
-      return { 
-        success: false, 
+      console.log("📧 [DEV] Email de convite simulado:", { to, workspaceName, inviteLink, role });
+      return {
+        success: false,
         id: "dev-simulation",
-        error: "RESEND_API_KEY não configurada"
+        error: "RESEND_API_KEY não configurada",
       };
     }
-    
-    // Em produção/preview, lançar erro para não silenciar o problema
-    const errorMsg = "RESEND_API_KEY não está configurada. Configure a variável de ambiente RESEND_API_KEY no Vercel para enviar convites por email.";
-    console.error("❌", errorMsg);
-    throw new Error(errorMsg);
+    throw new Error(
+      "RESEND_API_KEY não está configurada. Configure a variável de ambiente RESEND_API_KEY no Vercel para enviar convites por email."
+    );
   }
 
-  // Validar formato do email
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(to)) {
-    const errorMsg = `Email inválido: ${to}`;
-    console.error("❌", errorMsg);
-    throw new Error(errorMsg);
+  const validation = validateEmail(to);
+  if (!validation.valid) {
+    logEmailEvent("validation_fail", { type: "invite", to, error: validation.error });
+    throw new Error(validation.error ?? "Email inválido");
   }
+
+  const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const fromName = process.env.RESEND_FROM_NAME || "Symples";
+
+  logEmailEvent("send_start", {
+    type: "invite",
+    to,
+    workspaceName,
+    fromEmail,
+  });
 
   try {
-    console.log("📤 Tentando enviar email de convite:", {
-      to,
-      workspaceName,
-      fromEmail: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
-    });
-
-    // Renderizar o template React para HTML
     const emailHtml = await render(
       InviteEmail({
         workspaceName,
@@ -75,56 +70,55 @@ export async function sendInviteEmail(params: SendInviteParams) {
       })
     );
 
-    // Enviar email via Resend
-    const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-    const fromName = process.env.RESEND_FROM_NAME || "Symples";
-
-    const emailPayload = {
+    const payload = {
       from: `${fromName} <${fromEmail}>`,
       to: [to],
       subject: `Você foi convidado para ${workspaceName}`,
       html: emailHtml,
     };
 
-    console.log("📨 Payload do email (sem HTML):", {
-      from: emailPayload.from,
-      to: emailPayload.to,
-      subject: emailPayload.subject,
-      htmlLength: emailHtml.length,
-    });
+    const result = await sendWithRetry(
+      async () => {
+        const res = await resend.emails.send(payload);
+        if (res.error) {
+          throw new Error(res.error.message ?? JSON.stringify(res.error));
+        }
+        return res;
+      },
+      {
+        maxRetries: 3,
+        initialBackoffMs: 1000,
+        onRetry: (attempt, error) => {
+          logEmailEvent("send_retry", {
+            type: "invite",
+            to,
+            attempt,
+            maxAttempts: 3,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      }
+    );
 
-    const { data, error } = await resend.emails.send(emailPayload);
-
-    if (error) {
-      console.error("❌ Erro ao enviar email via Resend:", {
-        error,
-        message: error.message,
-        name: error.name,
-        to,
-        from: emailPayload.from,
-      });
-      throw new Error(`Falha ao enviar email: ${error.message || JSON.stringify(error)}`);
-    }
-
-    console.log("✅ Email enviado com sucesso:", {
-      emailId: data?.id,
+    logEmailEvent("send_success", {
+      type: "invite",
       to,
+      emailId: result.data?.id,
       workspaceName,
+      htmlLength: emailHtml.length,
     });
 
     return {
       success: true,
-      id: data?.id || "unknown",
+      id: result.data?.id ?? "unknown",
     };
-  } catch (error: any) {
-    const errorMessage = error.message || "Erro desconhecido ao enviar email de convite";
-    console.error("❌ Erro ao processar envio de email:", {
-      message: errorMessage,
-      stack: error.stack,
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logEmailEvent("send_error", {
+      type: "invite",
       to,
-      workspaceName,
+      error: message,
     });
-    throw new Error(errorMessage);
+    throw new Error(message);
   }
 }
-

@@ -905,4 +905,9 @@ export type NotificationMetadata = {
   workspace_id?: string; // ID do workspace relacionado (para filtros robustos)
   invite_id?: string; // ID do convite (para aceitar/recusar via notificacao)
   days_overdue?: number; // Dias de atraso (para tarefas atrasadas)
+  
+  // Menções e contexto de tarefas/comentários
+  mention_type?: "comment" | "description"; // Origem da menção
+  task_id?: string; // ID da tarefa relacionada à menção
+  comment_id?: string; // ID do comentário onde ocorreu a menção
 };
