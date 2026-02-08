@@ -6,6 +6,35 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-02-08 - TaskRow UX e próxima ocorrência real (recorrência)
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### TaskRow (home/weekly) — auditoria de UX
+- **Ações no hover:** ícone único visível = Abrir tarefa (Eye); segundo ícone = Enviar para amanhã (ArrowRight); resto no menu "..." (Mover para Workspace, Atribuir ao Projeto, Alterar data e hora, Excluir).
+- **Edição:** título editável com **um clique** (antes double-click); sem item "Editar título" no menu.
+- **Mover para Workspace:** renomeado de "Enviar para quadro"; submenu com lista de workspaces (CornerUpRight).
+- **Atribuir ao Projeto:** novo submenu com lista de projetos (tags do workspace); atualização **otimista** (`onTagsUpdateOptimistic`) para feedback imediato.
+- **Ícones:** Enviar para amanhã = seta direita; Enviar para quadro = seta curva (CornerUpRight); ícones da barra em preto (`text-gray-900`).
+- **Gradiente no hover:** fundo em gradiente suave (`from-gray-100 via-gray-100/95`) para esconder indicadores atrás dos ícones; largura ~88px; sem corte seco.
+- **Enviar para amanhã** disponível para qualquer tarefa no planner (não só pessoais) e também como ícone visível ao lado de Abrir tarefa.
+
+#### Recorrência — próxima ocorrência real sem marcar como concluída
+- **getTasks:** ao buscar tarefas com `dueDateStart`/`dueDateEnd`, chama `ensureNextRecurrenceOccurrences`: para cada tarefa recorrente (não concluída, sem `recurrence_parent_id`), calcula a próxima data de recorrência; se estiver no intervalo e ainda não existir ocorrência real nesse dia, **cria a próxima ocorrência** no banco com `recurrence_parent_id`.
+- A próxima ocorrência passa a aparecer como **tarefa real** (não virtual), mesmo que a atual não tenha sido marcada como concluída.
+- **createTask:** suporta `recurrence_parent_id`; **updateTask** (ao marcar como done) preenche `recurrence_parent_id` na nova ocorrência.
+- **WeeklyView:** não projeta virtual se já existir no dia tarefa real com `recurrence_parent_id === task.id`.
+
+### 2. O que está sendo trabalhado no momento
+
+- Nada pendente desta leva.
+
+### 3. Próximos passos imediatos
+
+- Validar em preview: TaskRow (hover, submenus, atribuir projeto) e recorrência (próxima ocorrência real ao carregar a semana).
+
+---
+
 ## 2026-02-05 - TaskDetailModal: performance (~1s) e correções críticas
 
 ### 1. Melhorias, bugs e features implementadas em preview

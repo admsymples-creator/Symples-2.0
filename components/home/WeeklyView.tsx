@@ -13,10 +13,14 @@ type Task = Database["public"]["Tables"]["tasks"]["Row"];
 interface WeeklyViewProps {
   tasks: Task[];
   workspaces: { id: string; name: string }[];
+  /** Tags (projetos) do workspace para "Atribuir ao Projeto" */
+  projectTags?: string[];
   highlightInput?: boolean;
   onTaskUpdate?: () => void | Promise<void>;
   /** Atualização otimista de data: (taskId, dueDate) para a UI refletir na hora */
   onTaskUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
+  /** Atualização otimista de tags (projeto) */
+  onTagsUpdateOptimistic?: (taskId: string, tags: string[]) => void;
   currentWorkspaceId?: string | null;
   isPersonal?: boolean;
   originContext?: string;
@@ -61,7 +65,7 @@ function getNextRecurrenceDate(
   return next;
 }
 
-export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUpdate, onTaskUpdateOptimistic, currentWorkspaceId, isPersonal = true, originContext }: WeeklyViewProps) {
+export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput = false, onTaskUpdate, onTaskUpdateOptimistic, onTagsUpdateOptimistic, currentWorkspaceId, isPersonal = true, originContext }: WeeklyViewProps) {
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
   const daysToShow: number = 5;
   const initialWeekOffset = -Math.floor(daysToShow / 2);
@@ -190,8 +194,10 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
         const nextDateKey = formatLocalDateKey(new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate()));
         const projectionKey = `${task.id}-${nextDateKey}`;
         
-        // Evitar duplicata: não projetar virtual se já existe a tarefa real nesse dia (mesmo id)
-        const alreadyHasRealOnDay = grouped[nextDateKey]?.some((t) => t.id === task.id) ?? false;
+        // Evitar duplicata: não projetar virtual se já existe a tarefa real nesse dia (mesmo id ou filho da série)
+        const alreadyHasRealOnDay = grouped[nextDateKey]?.some(
+          (t) => t.id === task.id || (t as any).recurrence_parent_id === task.id
+        ) ?? false;
         const inRange = nextDate >= visibleDateRange.startDate && nextDate <= visibleDateRange.endDate;
 
         if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay) {
@@ -349,9 +355,11 @@ export function WeeklyView({ tasks, workspaces, highlightInput = false, onTaskUp
                       tasks={day.tasks}
                       isToday={day.isToday}
                       workspaces={workspaces}
+                      projectTags={projectTags}
                       highlightInput={highlightInput && day.isToday}
                       onTaskUpdate={onTaskUpdate}
                       onTaskUpdateOptimistic={onTaskUpdateOptimistic}
+                      onTagsUpdateOptimistic={onTagsUpdateOptimistic}
                       currentWorkspaceId={currentWorkspaceId}
                       isPersonalContext={isPersonal}
                       originContext={originContext}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Edit2, Trash2, Building2, ArrowRight, CornerUpRight, Eye, Clock, Calendar as CalendarIcon, RefreshCw } from "lucide-react";
+import { Trash2, ArrowRight, CornerUpRight, Eye, Calendar as CalendarIcon, RefreshCw, MoreHorizontal, Folder } from "lucide-react";
 import { TaskDateTimePicker } from "@/components/tasks/pickers/TaskDateTimePicker";
 import { updateTask } from "@/lib/actions/tasks";
 import { useRouter } from "next/navigation";
@@ -12,8 +12,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -28,6 +30,8 @@ type Task = Database["public"]["Tables"]["tasks"]["Row"];
 interface TaskRowProps {
   task: Task;
   workspaces?: { id: string; name: string; slug?: string | null }[];
+  /** Tags (projetos) do workspace para o submenu "Atribuir ao Projeto" */
+  projectTags?: string[];
   onToggle?: (id: string, checked: boolean) => void;
   onEdit?: (id: string, newTitle: string) => Promise<void>;
   onDelete?: (id: string) => void;
@@ -35,18 +39,22 @@ interface TaskRowProps {
   onDateUpdate?: () => void;
   /** Atualização otimista: chamado antes do servidor para a UI refletir na hora */
   onDateUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
+  /** Atualização otimista das tags (projeto): UI atualiza na hora */
+  onTagsUpdateOptimistic?: (taskId: string, tags: string[]) => void;
   onOpenDetails?: (id: string) => void;
 }
 
 export function TaskRow({
   task,
   workspaces = [],
+  projectTags = [],
   onToggle,
   onEdit,
   onDelete,
   onMoveToWorkspace,
   onDateUpdate,
   onDateUpdateOptimistic,
+  onTagsUpdateOptimistic,
   onOpenDetails,
 }: TaskRowProps) {
   const router = useRouter();
@@ -57,6 +65,7 @@ export function TaskRow({
   // Estado local para evitar flash de conteúdo antigo enquanto o pai atualiza
   const [optimisticTitle, setOptimisticTitle] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
+  const datePickerTriggerRef = useRef<HTMLButtonElement>(null);
 
   // Garantir que renderiza apenas no cliente para evitar problemas de hidratação
   useEffect(() => {
@@ -181,15 +190,6 @@ export function TaskRow({
     const localHours = date.getHours();
     const localMinutes = date.getMinutes();
 
-    // Log para debugar tarefas virtuais/recorrentes
-    if ((task as any).is_virtual || (task as any).recurrence_type) {
-      console.log(`[TaskRow] Debug Time: ${task.title} (${task.id})`, {
-        due_date: task.due_date,
-        local: `${localHours}:${localMinutes}`,
-        hasSpecificTime: (localHours !== 0 || localMinutes !== 0)
-      });
-    }
-
     // Tem hora específica se NÃO for meia-noite (local)
     // Se data foi salva como 00:00 local, assumimos que é apenas data
     return (localHours !== 0 || localMinutes !== 0);
@@ -230,6 +230,36 @@ export function TaskRow({
 
   // Data atual da tarefa para o picker
   const currentDueDate = task.due_date ? new Date(task.due_date) : null;
+
+  // Enviar para amanhã: mantém horário se tiver, senão meia-noite
+  const handleSendToTomorrow = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (hasSpecificTime && task.due_date) {
+      const current = new Date(task.due_date);
+      tomorrow.setHours(current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds());
+    } else {
+      tomorrow.setHours(0, 0, 0, 0);
+    }
+    const newDueDate = tomorrow.toISOString();
+    onDateUpdateOptimistic?.(task.id, newDueDate);
+    handleDateUpdate(tomorrow);
+  };
+
+  // Atribuir tarefa a um projeto (atualiza tags) — otimista: UI atualiza na hora
+  const handleAssignToProject = async (projectName: string) => {
+    const currentTags = (task as any).tags && Array.isArray((task as any).tags) ? (task as any).tags : [];
+    const newTags = currentTags[0] === projectName ? currentTags : [projectName, ...currentTags.filter((t: string) => t !== projectName)];
+    onTagsUpdateOptimistic?.(task.id, newTags);
+    try {
+      const result = await updateTask({ id: task.id, tags: newTags });
+      if (result.success) onDateUpdate?.();
+      else onTagsUpdateOptimistic?.(task.id, currentTags); // reverte em caso de erro
+    } catch (e) {
+      console.error("Erro ao atribuir ao projeto:", e);
+      onTagsUpdateOptimistic?.(task.id, currentTags);
+    }
+  };
 
   // Handler para navegar para detalhes da tarefa no workspace (bloqueado para ocorrências virtuais)
   const handleGoToTaskDetails = () => {
@@ -298,9 +328,12 @@ export function TaskRow({
               <Tooltip delayDuration={500}>
                 <TooltipTrigger asChild>
                   <p
-                    onDoubleClick={startEditing}
+                    onClick={startEditing}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startEditing(); } }}
                     className={cn(
-                      "text-xs flex-1 truncate leading-snug select-none cursor-default",
+                      "text-xs flex-1 truncate leading-snug select-none cursor-text",
                       isChecked
                         ? "line-through text-gray-500"
                         : "text-gray-700"
@@ -385,26 +418,142 @@ export function TaskRow({
         )}
       </div>
 
-      {/* Ações Direita (Flutuante com Gradiente e Animação) */}
+      {/* Ações Direita: ícone Editar visível + resto no menu */}
       {!isEditing && !isVirtual && (
         <div
           className={cn(
-            "absolute right-0 top-0 bottom-0 pl-12 pr-1 flex items-center gap-0.5",
-            "opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0",
-            "transition-all duration-200 ease-in-out",
-            // Gradiente mais intenso e largo
-            "bg-gradient-to-l from-gray-50 via-gray-50 via-60% to-transparent"
+            "absolute right-0 top-0 bottom-0 pl-[88px] pr-1 flex items-center gap-0.5",
+            "opacity-0 group-hover:opacity-100 transition-opacity duration-200",
+            "bg-gradient-to-l from-gray-100 via-gray-100/95 to-transparent"
           )}
         >
-          <button
-            onClick={startEditing}
-            className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
-            aria-label="Editar"
-          >
-            <Edit2 className="w-3 h-3" />
-          </button>
+          {/* Abrir tarefa — abre detalhes (modal ou página) */}
+          {(onOpenDetails || task.workspace_id) && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetails ? onOpenDetails(task.id) : handleGoToTaskDetails()}
+                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                    aria-label={`Abrir tarefa: ${optimisticTitle}`}
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Abrir tarefa</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
 
-          {/* Botão de Calendário para editar data/hora (apenas tarefas pessoais) */}
+          {/* Enviar para amanhã — ao lado de Abrir tarefa (uso frequente) */}
+          {onDateUpdateOptimistic && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={handleSendToTomorrow}
+                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                    aria-label={`Enviar para amanhã: ${optimisticTitle}`}
+                  >
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Enviar para amanhã</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
+          {/* Menu: Mover p/ Workspace, Atribuir ao Projeto, Data, Excluir */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                aria-label="Mais ações"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {(isMounted && workspaces.length > 0) || (isMounted && projectTags.length > 0 && task.workspace_id) ? (
+                <>
+                  <DropdownMenuSeparator />
+                  {isMounted && workspaces.length > 0 && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer">
+                        <CornerUpRight className="w-3 h-3 mr-2 text-gray-500" />
+                        <span>Mover para Workspace</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-48">
+                        {workspaces.map(ws => {
+                          const alreadyOnBoard = task.workspace_id === ws.id && isOnBoard;
+                          return (
+                            <DropdownMenuItem
+                              key={ws.id}
+                              onClick={() => onMoveToWorkspace?.(task.id, ws.id)}
+                              className="cursor-pointer"
+                              disabled={alreadyOnBoard}
+                            >
+                              <CornerUpRight className="w-3 h-3 mr-2 text-gray-400" />
+                              <span className="truncate">{ws.name}</span>
+                              {alreadyOnBoard && <ArrowRight className="w-3 h-3 ml-auto" />}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  {isMounted && projectTags.length > 0 && task.workspace_id && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer">
+                        <Folder className="w-3 h-3 mr-2 text-gray-500" />
+                        <span>Atribuir ao Projeto</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-48">
+                        {projectTags.map(tag => {
+                          const currentTags = (task as any).tags && Array.isArray((task as any).tags) ? (task as any).tags : [];
+                          const isActive = currentTags.includes(tag);
+                          return (
+                            <DropdownMenuItem
+                              key={tag}
+                              onClick={() => handleAssignToProject(tag)}
+                              className="cursor-pointer"
+                            >
+                              <Folder className="w-3 h-3 mr-2 text-gray-400" />
+                              <span className="truncate">{tag}</span>
+                              {isActive && <ArrowRight className="w-3 h-3 ml-auto" />}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                </>
+              ) : null}
+              {isPersonal && isMounted && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => setTimeout(() => datePickerTriggerRef.current?.click(), 100)}
+                >
+                  <CalendarIcon className="w-3 h-3 mr-2 text-gray-500" />
+                  Alterar data e hora
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onDelete?.(task.id)}
+                className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+              >
+                <Trash2 className="w-3 h-3 mr-2" />
+                Excluir tarefa
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Picker de data (trigger oculto; abre ao clicar em "Alterar data e hora" no menu) */}
           {isPersonal && isMounted && (
             <TaskDateTimePicker
               date={currentDueDate}
@@ -413,69 +562,14 @@ export function TaskRow({
               side="top"
               trigger={
                 <button
+                  ref={datePickerTriggerRef}
                   type="button"
-                  className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
-                  aria-label="Editar data e hora"
-                >
-                  <CalendarIcon className="w-3 h-3" />
-                </button>
+                  className="sr-only"
+                  aria-hidden
+                  tabIndex={-1}
+                />
               }
             />
-          )}
-
-          <button
-            onClick={() => onDelete?.(task.id)}
-            className="p-1 rounded hover:bg-red-50 transition-colors text-gray-400 hover:text-red-600"
-            aria-label="Excluir"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
-
-          {/* Ícone de olho: abre a tarefa (modal no planner ou página de tarefas) */}
-          {(onOpenDetails || task.workspace_id) && !(task as any).is_virtual && (
-            <button
-              onClick={() => onOpenDetails ? onOpenDetails(task.id) : handleGoToTaskDetails()}
-              className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
-              aria-label="Abrir tarefa"
-              title="Abrir tarefa"
-            >
-              <Eye className="w-3 h-3" />
-            </button>
-          )}
-
-          {isMounted && workspaces.length > 0 && !(task as any).is_virtual && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
-                  aria-label="Enviar para quadro de tarefas"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <CornerUpRight className="w-3 h-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Enviar para quadro de tarefas</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {workspaces.map(ws => {
-                  // Desabilitar apenas se já está no workspace E já está no quadro
-                  const alreadyOnBoard = task.workspace_id === ws.id && isOnBoard;
-                  return (
-                    <DropdownMenuItem
-                      key={ws.id}
-                      onClick={() => onMoveToWorkspace?.(task.id, ws.id)}
-                      className="cursor-pointer"
-                      disabled={alreadyOnBoard}
-                    >
-                      <Building2 className="w-3 h-3 mr-2 text-gray-400" />
-                      <span className="truncate">{ws.name}</span>
-                      {alreadyOnBoard && <ArrowRight className="w-3 h-3 ml-auto" />}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
           )}
         </div>
       )}

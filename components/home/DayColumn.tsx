@@ -33,10 +33,14 @@ interface DayColumnProps {
   isToday?: boolean;
 
   workspaces?: { id: string; name: string }[];
+  /** Tags (projetos) do workspace para "Atribuir ao Projeto" no TaskRow */
+  projectTags?: string[];
   highlightInput?: boolean;
   onTaskUpdate?: () => void | Promise<void>;
   /** Atualização otimista de data: (taskId, dueDate) para a UI refletir na hora */
   onTaskUpdateOptimistic?: (taskId: string, dueDate: string | null) => void;
+  /** Atualização otimista de tags (projeto) */
+  onTagsUpdateOptimistic?: (taskId: string, tags: string[]) => void;
   currentWorkspaceId?: string | null;
   isPersonalContext?: boolean;
   originContext?: string;
@@ -49,9 +53,11 @@ export function DayColumn({
   tasks,
   isToday,
   workspaces = [],
+  projectTags = [],
   highlightInput = false,
   onTaskUpdate,
   onTaskUpdateOptimistic,
+  onTagsUpdateOptimistic,
   currentWorkspaceId,
   isPersonalContext = true,
   originContext,
@@ -652,6 +658,7 @@ export function DayColumn({
                   key={task.id}
                   task={task}
                   workspaces={workspaces}
+                  projectTags={projectTags}
                   onToggle={handleToggle}
                   onDelete={handleDelete}
                   onEdit={handleEdit}
@@ -665,6 +672,7 @@ export function DayColumn({
                     }
                   }}
                   onDateUpdateOptimistic={onTaskUpdateOptimistic}
+                  onTagsUpdateOptimistic={onTagsUpdateOptimistic}
                   onOpenDetails={handleOpenDetails}
                 />
               ))}

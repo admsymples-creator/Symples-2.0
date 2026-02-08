@@ -37,6 +37,114 @@ const writeCache = <T,>(cache: Map<string, CacheEntry<T>>, key: string, value: T
   cache.set(key, { value, expiresAt: Date.now() + IN_MEMORY_TTL_MS });
 };
 
+/** Formata data para chave dia (YYYY-MM-DD) para comparação */
+function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Calcula a próxima data de recorrência (lado servidor, espelha WeeklyView) */
+function getNextRecurrenceDateServer(
+  currentDate: Date,
+  recurrenceType: string,
+  interval: number = 1,
+  recurrenceDays?: number[] | null
+): Date {
+  const next = new Date(currentDate);
+  if ((recurrenceType === "weekly" || recurrenceType === "custom") && recurrenceDays && recurrenceDays.length > 0) {
+    const daySet = new Set(recurrenceDays);
+    for (let i = 1; i <= 14; i++) {
+      const candidate = new Date(currentDate);
+      candidate.setDate(currentDate.getDate() + i);
+      if (daySet.has(candidate.getDay())) {
+        return candidate;
+      }
+    }
+  }
+  switch (recurrenceType) {
+    case "daily":
+      next.setDate(next.getDate() + interval);
+      break;
+    case "weekly":
+      next.setDate(next.getDate() + 7 * interval);
+      break;
+    case "monthly":
+      next.setMonth(next.getMonth() + interval);
+      break;
+    case "custom":
+      next.setDate(next.getDate() + interval);
+      break;
+  }
+  return next;
+}
+
+/**
+ * Garante que a próxima ocorrência de cada tarefa recorrente exista como tarefa real no banco
+ * (mesmo que a atual não tenha sido marcada como concluída). Retorna os IDs das tarefas criadas.
+ */
+async function ensureNextRecurrenceOccurrences(
+  data: any[],
+  dueDateStart: string,
+  dueDateEnd: string
+): Promise<string[]> {
+  const start = new Date(dueDateStart);
+  const end = new Date(dueDateEnd);
+  const newIds: string[] = [];
+
+  for (const task of data) {
+    if (!task.recurrence_type || task.status === "done" || task.recurrence_parent_id) continue;
+    if (!task.due_date) continue;
+
+    const currentDate = new Date(task.due_date);
+    const nextDate = getNextRecurrenceDateServer(
+      currentDate,
+      task.recurrence_type,
+      task.recurrence_interval ?? 1,
+      task.recurrence_days ?? null
+    );
+
+    if (task.recurrence_end_date && nextDate > new Date(task.recurrence_end_date)) continue;
+    if (nextDate < start || nextDate > end) continue;
+
+    const nextDateKey = toDateKey(nextDate);
+    const alreadyExists = data.some(
+      (t: any) =>
+        (t.id === task.id || t.recurrence_parent_id === task.id) &&
+        t.due_date &&
+        toDateKey(new Date(t.due_date)) === nextDateKey
+    );
+    if (alreadyExists) continue;
+
+    const result = await createTask({
+      title: task.title,
+      description: task.description ?? undefined,
+      workspace_id: task.workspace_id ?? undefined,
+      is_personal: task.is_personal ?? undefined,
+      status: "todo",
+      priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
+      assignee_id: task.assignee_id ?? "current",
+      due_date: nextDate.toISOString(),
+      origin_context: task.origin_context ?? undefined,
+      group_id: task.group_id ?? undefined,
+      tags: Array.isArray(task.tags) ? task.tags : undefined,
+      subtasks: task.subtasks ?? undefined,
+      recurrence_type: task.recurrence_type,
+      recurrence_interval: task.recurrence_interval ?? 1,
+      recurrence_end_date: task.recurrence_end_date ?? undefined,
+      recurrence_days: Array.isArray(task.recurrence_days) ? task.recurrence_days : undefined,
+      recurrence_parent_id: task.id,
+    });
+
+    if (result.success && result.data && (result.data as any).id) {
+      newIds.push((result.data as any).id);
+    }
+  }
+
+  return newIds;
+}
+
 // Re-exporting types
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
@@ -342,6 +450,34 @@ export async function getTasks(filters?: {
     return [];
   }
 
+  // Garantir próxima ocorrência real de tarefas recorrentes (mesmo sem marcar a atual como concluída)
+  if (filters?.dueDateStart && filters?.dueDateEnd) {
+    try {
+      const newIds = await ensureNextRecurrenceOccurrences(
+        data as any[],
+        filters.dueDateStart,
+        filters.dueDateEnd
+      );
+      if (newIds.length > 0) {
+        const { data: newTasksData } = await supabase
+          .from("tasks")
+          .select(`
+            *,
+            assignee:assignee_id (full_name, email, avatar_url),
+            creator:created_by (full_name),
+            group:group_id (id, name, color, workspace_id),
+            task_members (user:user_id (id, full_name, email, avatar_url))
+          `)
+          .in("id", newIds);
+        if (newTasksData && newTasksData.length > 0) {
+          data = [...(data as any[]), ...newTasksData];
+        }
+      }
+    } catch (ensureErr) {
+      console.error("[getTasks] ensureNextRecurrenceOccurrences:", ensureErr);
+    }
+  }
+
   // ✅ Filtro 2: Buscar grupos válidos do workspace (backend)
   // Isso garante que só retornamos tarefas de grupos que existem e pertencem ao workspace
   // IMPORTANTE: Quando assigneeId === "current" (aba "Minhas"), não filtrar por workspace
@@ -624,6 +760,7 @@ export async function createTask(data: {
   recurrence_end_date?: string | null;
   recurrence_count?: number | null;
   recurrence_days?: number[] | null;
+  recurrence_parent_id?: string | null;
   group_id?: string | null;
   tags?: string[];
   position?: number;
@@ -750,6 +887,7 @@ export async function createTask(data: {
     recurrence_end_date: data.recurrence_end_date || null,
     recurrence_count: typeof data.recurrence_count === "number" ? data.recurrence_count : null,
     recurrence_days: Array.isArray(data.recurrence_days) && data.recurrence_days.length > 0 ? data.recurrence_days : null,
+    recurrence_parent_id: data.recurrence_parent_id ?? null,
     // Group and Tags
     group_id: safeGroupId,
     tags: data.tags || null,
@@ -1015,7 +1153,8 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
             recurrence_interval: currentTask.recurrence_interval,
             recurrence_end_date: currentTask.recurrence_end_date,
             recurrence_days: (currentTask as any).recurrence_days || null,
-            recurrence_count: nextCount
+            recurrence_count: nextCount,
+            recurrence_parent_id: currentTask.id,
           });
         }
       }

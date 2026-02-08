@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { WeeklyView } from "@/components/home/WeeklyView";
-import { getTasks } from "@/lib/actions/tasks";
+import { getTasks, getWorkspaceTags } from "@/lib/actions/tasks";
 import { Database } from "@/types/database.types";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
@@ -43,10 +43,19 @@ export function HomeWeeklyViewClient({
   isPersonal,
 }: HomeWeeklyViewClientProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [projectTags, setProjectTags] = useState<string[]>([]);
 
   useEffect(() => {
     setTasks(initialTasks);
   }, [initialTasks]);
+
+  useEffect(() => {
+    if (!isPersonal && workspaceId) {
+      getWorkspaceTags(workspaceId).then(setProjectTags).catch(() => setProjectTags([]));
+    } else {
+      setProjectTags([]);
+    }
+  }, [workspaceId, isPersonal]);
 
   const handleTaskUpdate = useCallback(async () => {
     const range = getTaskFetchRange();
@@ -65,15 +74,23 @@ export function HomeWeeklyViewClient({
     );
   }, []);
 
+  const handleTagsUpdateOptimistic = useCallback((taskId: string, tags: string[]) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, tags } : t))
+    );
+  }, []);
+
   return (
     <WeeklyView
       tasks={tasks}
       workspaces={workspaces}
+      projectTags={projectTags}
       currentWorkspaceId={workspaceId}
       isPersonal={isPersonal}
       originContext="weekly_view"
       onTaskUpdate={handleTaskUpdate}
       onTaskUpdateOptimistic={handleTaskUpdateOptimistic}
+      onTagsUpdateOptimistic={handleTagsUpdateOptimistic}
     />
   );
 }
