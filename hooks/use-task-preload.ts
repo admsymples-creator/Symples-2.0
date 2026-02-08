@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { getTaskBasicDetails } from "@/lib/actions/task-details";
+import { getFullModalData } from "@/lib/actions/task-details";
 import { useTaskCache } from "./use-task-cache";
 
 /**
- * Hook para pré-carregar dados de tarefas no hover
- * Usa debounce para evitar muitas requisições
+ * Hook para pré-carregar dados completos de tarefas no hover
+ * Usa debounce de 150ms para carregar todos os dados antes do click
  */
 export function useTaskPreload() {
   const taskCache = useTaskCache();
@@ -14,8 +14,8 @@ export function useTaskPreload() {
   const preloadingTaskIdRef = useRef<string | null>(null);
 
   /**
-   * Pré-carrega dados básicos de uma tarefa
-   * Usa debounce de 300ms para evitar muitas requisições
+   * Pré-carrega dados completos de uma tarefa (basic + extended + members + tags)
+   * Usa debounce de 150ms para evitar muitas requisições
    */
   const preloadTask = useCallback((taskId: string, workspaceId?: string | null) => {
     // Limpar timeout anterior se existir
@@ -28,22 +28,36 @@ export function useTaskPreload() {
       return;
     }
 
-    // Verificar se já está no cache
-    if (taskCache.hasBasicData(taskId)) {
-      return; // Já está no cache, não precisa pré-carregar
+    // Verificar se já está no cache (basic + extended = modal abre instantâneo)
+    if (taskCache.hasBasicData(taskId) && taskCache.hasExtendedData(taskId)) {
+      return; // Dados completos já no cache
     }
 
-    // Debounce de 300ms
+    // Debounce de 150ms (usuário leva ~200-400ms entre hover e click)
     preloadTimeoutRef.current = setTimeout(async () => {
       try {
         preloadingTaskIdRef.current = taskId;
         
-        // Buscar dados básicos
-        const basicDetails = await getTaskBasicDetails(taskId);
+        // Buscar TODOS os dados do modal em uma única chamada
+        const result = await getFullModalData(taskId, workspaceId || null, 50);
         
-        if (basicDetails) {
-          // Armazenar no cache
-          taskCache.setBasicData(taskId, basicDetails);
+        if (result.basic) {
+          // Armazenar dados básicos no cache
+          taskCache.setBasicData(taskId, result.basic);
+        }
+        if (result.extended) {
+          // Armazenar dados estendidos no cache
+          taskCache.setExtendedData(taskId, result.extended);
+        }
+        // Armazenar members e tags por workspace
+        const wsId = result.basic?.workspace_id;
+        if (wsId) {
+          if (result.members.length > 0) {
+            taskCache.setWorkspaceMembers(wsId, result.members);
+          }
+          if (result.availableTags.length > 0) {
+            taskCache.setWorkspaceTags(wsId, result.availableTags);
+          }
         }
       } catch (error) {
         console.error("Erro ao pré-carregar tarefa:", error);
@@ -51,7 +65,7 @@ export function useTaskPreload() {
       } finally {
         preloadingTaskIdRef.current = null;
       }
-    }, 300);
+    }, 150);
   }, [taskCache]);
 
   /**

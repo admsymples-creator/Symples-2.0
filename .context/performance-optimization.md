@@ -457,3 +457,58 @@ const [workspaceId, workspaces] = await Promise.all([
 
 **Data**: 2026-02-02
 **Branch**: `fix/general-02-02`
+
+---
+
+## Fase 8: TaskDetailModal — 3s → ~1s e correções críticas (2026-02-05)
+
+### Objetivo
+Reduzir tempo de abertura do modal de detalhes da tarefa de ~3s para <1s e garantir sincronização e optimistic updates consistentes.
+
+### Otimizações de performance
+
+#### 1. getSession() em vez de getUser() (server + browser)
+- **Arquivo**: `lib/actions/task-details.ts` — `getFullModalData` usa `getSession()` (leitura local do JWT) em vez de `getUser()` (HTTP ao Supabase Auth). Economia ~400ms por abertura.
+- **Arquivo**: `components/tasks/TaskDetailModal.tsx` — useEffect de usuário atual usa `getSession()` no browser, evitando chamada HTTP concorrente (~300ms).
+
+#### 2. Profile do usuário no Promise.all
+- **Arquivo**: `lib/actions/task-details.ts` — Query do profile do usuário logado incluída como 7ª query no `Promise.all` inicial. Elimina fallback sequencial (~300ms).
+
+#### 3. Prefetch completo no hover
+- **Arquivo**: `hooks/use-task-preload.ts` — Prefetch chama `getFullModalData` (basic + extended + members + tags) em vez de só `getTaskBasicDetails`. Debounce reduzido para 150ms. Ao clicar após hover, modal abre do cache.
+- **Arquivo**: `hooks/use-task-cache.ts` — Cache de members e tags por workspace (TTL 5min): `getWorkspaceMembers`, `setWorkspaceMembers`, `getWorkspaceTags`, `setWorkspaceTags`.
+
+#### 4. Uso do cache de workspace no modal
+- **Arquivo**: `components/tasks/TaskDetailModal.tsx` — No cache hit, members/tags vêm do cache de workspace quando disponível; fallback para `getFullModalData(..., 1)`. Após fetch do servidor, members/tags são cacheados por workspace.
+
+### Correções críticas (auditoria)
+
+#### 1. handleTagsChange
+- Rollback em falha: captura `oldTags` do state `tags` antes de atualizar; em `.catch` chama `setTagsAndRef(oldTags)` e `onTaskUpdatedOptimistic(..., { tags: oldTags })`.
+- Tratamento de erro: `toast.error("Erro ao salvar tags")`.
+- Cache: no `.then` de sucesso chama `invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false })`.
+- Dependência: `tags` e `invalidateCacheAndNotify` no array de dependências do `useCallback`.
+
+#### 2. Comentários (edit/delete)
+- **handleSaveEditComment** e **handleDeleteComment**: após sucesso, chamam `invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false })` antes de `reloadActivities`, garantindo que o cache da task seja invalidado e reabertura do modal não mostre comentário antigo/removido.
+- `invalidateCacheAndNotify` adicionado às dependências dos dois `useCallback`.
+
+#### 3. Description auto-save
+- Rollback em falha: quando `!result.success` ou no `catch`, refetch com `getFullModalData(currentTaskId, workspaceId ?? null, 1)` e `setDescription(rollback.basic?.description ?? "")` para alinhar UI ao estado do servidor.
+- `workspaceId` adicionado às dependências do useEffect do auto-save.
+
+### Arquivos modificados
+- `lib/actions/task-details.ts` — getSession, profile no Promise.all
+- `components/tasks/TaskDetailModal.tsx` — getSession browser, cache workspace, handleTagsChange, comment cache, description rollback
+- `hooks/use-task-cache.ts` — cache members/tags por workspace
+- `hooks/use-task-preload.ts` — prefetch com getFullModalData, debounce 150ms
+
+### Resultado esperado
+- Com hover: modal abre do cache (~0ms).
+- Sem hover: ~900ms (rede + getSession local + queries em paralelo).
+- Tags, comentários e descrição com rollback e cache consistentes.
+
+---
+
+**Data**: 2026-02-05
+**Branch**: `fix/detailtask`

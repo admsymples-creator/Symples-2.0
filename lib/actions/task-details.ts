@@ -256,6 +256,311 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
 }
 
 /**
+ * Busca básico + estendido em uma única round-trip (menos latência ao abrir o modal).
+ * Um único auth + cliente; queries básica, anexos e comentários em paralelo.
+ */
+export async function getTaskDetailsForModal(
+  taskId: string,
+  commentsLimit: number = 50
+): Promise<{ basic: TaskBasicDetails | null; extended: TaskExtendedDetails | null }> {
+  const result = await getFullModalData(taskId, null, commentsLimit);
+  return { basic: result.basic, extended: result.extended };
+}
+
+/**
+ * Resultado completo para abrir o modal: task + attachments + comments + members + tags.
+ * **Uma única server action** = 1 auth + todas as queries em paralelo.
+ */
+export interface FullModalData {
+  basic: TaskBasicDetails | null;
+  extended: TaskExtendedDetails | null;
+  members: Array<{ id: string; name: string; avatar?: string }>;
+  availableTags: string[];
+}
+
+export async function getFullModalData(
+  taskId: string,
+  workspaceIdHint: string | null,
+  commentsLimit: number = 50,
+): Promise<FullModalData> {
+  const empty: FullModalData = { basic: null, extended: null, members: [], availableTags: [] };
+
+  const supabase = await createServerActionClient();
+  // getSession() lê o JWT do cookie localmente (~0ms) em vez de HTTP call (~400ms)
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
+  if (!user) return empty;
+
+  // ── 1. TODAS as queries em um único Promise.all ─────────────────────────
+  //    task, attachments, comments, members, tags(tasks), project_icons, userProfile
+  //    Tags e members usam workspaceIdHint do cliente (evita 2ª rodada sequencial)
+  const [
+    taskResult,
+    attachmentsResult,
+    commentsResult,
+    membersResult,
+    tagTasksResult,
+    projectIconsResult,
+    userProfileResult,
+  ] = await Promise.all([
+    // 1. Task com relações
+    supabase
+      .from("tasks")
+      .select(`
+        id,
+        title,
+        description,
+        status,
+        priority,
+        due_date,
+        assignee_id,
+        workspace_id,
+        created_by,
+        created_at,
+        updated_at,
+        origin_context,
+        subtasks,
+        assignee:profiles!tasks_assignee_id_fkey (
+          id,
+          full_name,
+          email,
+          avatar_url
+        ),
+        creator:profiles!tasks_created_by_fkey (
+          id,
+          full_name,
+          email
+        ),
+        workspace:workspaces!tasks_workspace_id_fkey (
+          id,
+          name
+        ),
+        task_members (
+          user:user_id (
+            id,
+            full_name,
+            email,
+            avatar_url
+          )
+        )
+      `)
+      .eq("id", taskId)
+      .single(),
+
+    // 2. Attachments
+    supabase
+      .from("task_attachments")
+      .select("id, file_url, file_name, file_type, file_size, uploader_id, created_at")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: false }),
+
+    // 3. Comments
+    supabase
+      .from("task_comments")
+      .select(`
+        id,
+        content,
+        type,
+        metadata,
+        created_at,
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
+      `)
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true })
+      .range(0, commentsLimit - 1),
+
+    // 4. Members (usa hint do cliente; se não tiver, resolve depois)
+    workspaceIdHint
+      ? supabase
+          .from("workspace_members")
+          .select("user:user_id(id, full_name, email, avatar_url)")
+          .eq("workspace_id", workspaceIdHint)
+      : Promise.resolve({ data: null, error: null }),
+
+    // 5. Tags: tasks com tags do workspace
+    workspaceIdHint
+      ? supabase
+          .from("tasks")
+          .select("tags")
+          .eq("workspace_id", workspaceIdHint)
+          .neq("status", "archived")
+          .not("tags", "is", null)
+      : Promise.resolve({ data: null, error: null }),
+
+    // 6. Project icons (tags adicionais)
+    workspaceIdHint
+      ? (supabase as any)
+          .from("project_icons")
+          .select("tag_name")
+          .eq("workspace_id", workspaceIdHint)
+      : Promise.resolve({ data: null, error: null }),
+
+    // 7. Profile do usuário logado (para garantir que está na lista de members)
+    supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_url")
+      .eq("id", user.id)
+      .single(),
+  ]);
+
+  const { data: task, error: taskError } = taskResult;
+  if (taskError || !task) {
+    console.error("Erro ao buscar tarefa (modal):", taskError);
+    return empty;
+  }
+
+  const { data: attachments, error: attachmentsError } = attachmentsResult;
+  const { data: comments, error: commentsError } = commentsResult;
+  if (attachmentsError) console.error("Erro ao buscar anexos:", attachmentsError);
+  if (commentsError) console.error("Erro ao buscar comentários:", commentsError);
+
+  // ── 2. Se workspaceIdHint não foi fornecido mas task tem workspace_id, buscar members + tags agora
+  const resolvedWorkspaceId = task.workspace_id || workspaceIdHint;
+  let membersData = membersResult?.data ?? null;
+
+  if (resolvedWorkspaceId && !workspaceIdHint) {
+    // Fallback: hint não veio, mas task tem workspace_id — buscar em paralelo
+    const [membersFallback, tagsFallback, iconsFallback] = await Promise.all([
+      supabase
+        .from("workspace_members")
+        .select("user:user_id(id, full_name, email, avatar_url)")
+        .eq("workspace_id", resolvedWorkspaceId),
+      supabase
+        .from("tasks")
+        .select("tags")
+        .eq("workspace_id", resolvedWorkspaceId)
+        .neq("status", "archived")
+        .not("tags", "is", null),
+      (supabase as any)
+        .from("project_icons")
+        .select("tag_name")
+        .eq("workspace_id", resolvedWorkspaceId),
+    ]);
+    membersData = membersFallback.data;
+    // Remontar tags abaixo usando fallback data
+    (tagTasksResult as any).data = tagsFallback.data;
+    (tagTasksResult as any).error = tagsFallback.error;
+    (projectIconsResult as any).data = iconsFallback.data;
+    (projectIconsResult as any).error = iconsFallback.error;
+  }
+
+  // ── 3. Extrair tags únicas ──────────────────────────────────────────────
+  const allTags = new Set<string>();
+  if (!tagTasksResult.error && tagTasksResult.data) {
+    (tagTasksResult.data as any[]).forEach((t: any) => {
+      if (t.tags && Array.isArray(t.tags)) {
+        t.tags.forEach((tag: string) => {
+          if (tag && tag.trim()) allTags.add(tag.trim());
+        });
+      }
+    });
+  }
+  if (!projectIconsResult.error && projectIconsResult.data) {
+    (projectIconsResult.data as any[]).forEach((icon: any) => {
+      if (icon.tag_name && icon.tag_name.trim()) allTags.add(icon.tag_name.trim());
+    });
+  }
+  const tagsData = Array.from(allTags).sort();
+
+  // ── 4. Mapear membros ───────────────────────────────────────────────────
+  const members: Array<{ id: string; name: string; avatar?: string }> = [];
+  if (membersData && Array.isArray(membersData)) {
+    membersData.forEach((m: any) => {
+      const u = Array.isArray(m.user) ? m.user[0] : m.user;
+      if (u) {
+        members.push({
+          id: u.id,
+          name: u.full_name || u.email || "Sem nome",
+          avatar: u.avatar_url || undefined,
+        });
+      }
+    });
+  }
+  // Garantir que o usuário logado esteja na lista (usando resultado já obtido em paralelo)
+  if (!members.some(m => m.id === user.id)) {
+    const profile = userProfileResult?.data;
+    if (profile) {
+      members.push({
+        id: profile.id,
+        name: profile.full_name || profile.email || "Sem nome",
+        avatar: profile.avatar_url || undefined,
+      });
+    }
+  }
+
+  // ── 5. Montar basic + extended ──────────────────────────────────────────
+  let tags: string[] = [];
+  if ((task as any).tags && Array.isArray((task as any).tags)) {
+    tags = (task as any).tags;
+  } else if (task.origin_context && typeof task.origin_context === "object" && "tags" in task.origin_context) {
+    const contextTags = (task.origin_context as any).tags;
+    if (Array.isArray(contextTags)) tags = contextTags;
+  }
+
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: (task.assignee as any).full_name || (task.assignee as any).email || "Usuário",
+      avatar: (task.assignee as any).avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+  if (task.task_members && Array.isArray(task.task_members)) {
+    task.task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
+  const basic: TaskBasicDetails = {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    status: (task.status as "todo" | "in_progress" | "done" | "archived") || "todo",
+    priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
+    due_date: task.due_date,
+    assignee_id: task.assignee_id,
+    workspace_id: task.workspace_id,
+    created_by: task.created_by || user.id,
+    created_at: task.created_at || new Date().toISOString(),
+    updated_at: task.updated_at || new Date().toISOString(),
+    origin_context: task.origin_context,
+    tags,
+    assignee: task.assignee as TaskBasicDetails["assignee"],
+    creator: task.creator as TaskBasicDetails["creator"],
+    workspace: task.workspace as TaskBasicDetails["workspace"],
+    assignees,
+  };
+
+  const extended: TaskExtendedDetails = {
+    attachments: (attachments || []).map((att: any) => ({
+      ...att,
+      created_at: att.created_at || new Date().toISOString(),
+    })),
+    comments: (comments || []).map((c: any) => ({
+      ...c,
+      created_at: c.created_at || new Date().toISOString(),
+    })),
+    subtasks: (task as any)?.subtasks || [],
+  };
+
+  return { basic, extended, members, availableTags: tagsData };
+}
+
+/**
  * Busca dados estendidos da tarefa (anexos, comentários, subtarefas)
  * Com paginação de comentários para otimização
  */

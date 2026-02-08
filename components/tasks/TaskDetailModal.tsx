@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
@@ -8,9 +7,9 @@ import { useFileUpload } from "@/hooks/use-file-upload";
 import { useTaskCache } from "@/hooks/use-task-cache";
 import { saveAttachment, deleteAttachment } from "@/lib/actions/attachments";
 import {
-    getTaskDetails,
-    getTaskBasicDetails,
     getTaskExtendedDetails,
+    getTaskDetailsForModal,
+    getFullModalData,
     addComment,
     updateComment,
     deleteComment,
@@ -22,7 +21,7 @@ import {
     updateAudioTranscription,
     generateTaskShareLink
 } from "@/lib/actions/task-details";
-import { getWorkspaceMembers, createTask, getWorkspaceTags } from "@/lib/actions/tasks";
+import { getWorkspaceMembers, createTask } from "@/lib/actions/tasks";
 import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
 import {
@@ -90,31 +89,22 @@ import {
 import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { AttachmentCard } from "@/components/tasks/AttachmentCard";
+import { Editor } from "@/components/ui/editor";
 import { LinkifyText } from "@/components/ui/linkify-text";
-
-const Editor = dynamic(
-    () => import("@/components/ui/editor").then((m) => ({ default: m.Editor })),
-    { ssr: false, loading: () => <div className="h-24 animate-pulse rounded bg-gray-100" /> }
-);
 import { linkifyHtml } from "@/lib/utils/linkify-html";
 import { TaskMembersPicker } from "@/components/tasks/pickers/TaskMembersPicker";
 import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
 import { TaskDetailActivityItem } from "@/components/tasks/TaskDetailActivityItem";
+import { TaskDetailHeader } from "@/components/tasks/TaskDetailHeader";
+import { TaskDetailSkeleton } from "@/components/tasks/TaskDetailSkeleton";
+import { TaskDetailProperties } from "@/components/tasks/TaskDetailProperties";
+import { TaskImageLightbox } from "@/components/tasks/TaskImageLightbox";
 import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudioModal";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { toast } from "sonner";
 import { createBrowserClient } from "@/lib/supabase/client";
-
-const TaskImageLightbox = dynamic(
-    () => import("@/components/tasks/TaskImageLightbox").then((m) => ({ default: m.TaskImageLightbox })),
-    { ssr: false }
-);
-
-const CreateTransactionModal = dynamic(
-    () => import("@/components/finance/CreateTransactionModal").then((m) => ({ default: m.CreateTransactionModal })),
-    { ssr: false }
-);
+import { CreateTransactionModal } from "@/components/finance/CreateTransactionModal";
 import { getTransactionsByTask } from "@/lib/actions/finance";
 
 // ------------------------------------------------------------------
@@ -389,12 +379,10 @@ const formatPaymentDate = (value?: string | null) => {
     return date.toLocaleDateString("pt-BR");
 };
 
-/** Strip HTML tags to get plain text (module-level for performance) */
+/** Strip HTML tags to get plain text (regex, sem DOM - melhor performance) */
 function stripHtmlTags(html: string): string {
     if (!html) return "";
-    const tmp = document.createElement("DIV");
-    tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || "";
+    return html.replace(/<[^>]*>/g, "");
 }
 
 /** Parse date string YYYY-MM-DD to local Date */
@@ -526,6 +514,7 @@ export function TaskDetailModal({
     const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const saveStateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const titleSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const descriptionSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const [payments, setPayments] = useState<TaskPayment[]>([]);
     const [paymentsLoading, setPaymentsLoading] = useState(false);
@@ -547,10 +536,11 @@ export function TaskDetailModal({
     // Estado de "pronto" - só fica true quando os dados básicos do backend foram carregados
     const [isDataReady, setIsDataReady] = useState(false);
     // Usuário atual para padronizar exibição de comentários
+    // getSession() lê o JWT do cookie localmente (~0ms) em vez de HTTP call (~300ms)
     useEffect(() => {
         const supabase = createBrowserClient();
-        supabase.auth.getUser().then(({ data }) => {
-            const user = data.user;
+        supabase.auth.getSession().then(({ data }) => {
+            const user = data.session?.user;
             if (user) {
                 setCurrentUserId(user.id);
                 const name =
@@ -562,23 +552,8 @@ export function TaskDetailModal({
         });
     }, []);
 
-    // Buscar tags disponíveis do workspace
-    useEffect(() => {
-        if (open && workspaceId) {
-            const loadTags = async () => {
-                try {
-                    const tags = await getWorkspaceTags(workspaceId);
-                    setAvailableTags(tags);
-                } catch (error) {
-                    console.error("Erro ao carregar tags do workspace:", error);
-                    setAvailableTags([]);
-                }
-            };
-            loadTags();
-        } else {
-            setAvailableTags([]);
-        }
-    }, [open, workspaceId]);
+    // Tags são carregadas junto com o modal via getFullModalData (sem useEffect separado)
+    // Para modo create, tags vem do initialTags ou ficam vazias até workspaceId ser definido
 
     useEffect(() => {
         if (!open || !isCreateMode) return;
@@ -676,9 +651,12 @@ export function TaskDetailModal({
         setPaymentsLoaded(false);
     }, [open, currentTaskId, isCreateMode]);
 
+    // Pagamentos só após o modal estar visível (não bloqueia abertura)
+    const PAYMENTS_DEFER_MS = 1000;
     useEffect(() => {
         if (!open || !currentTaskId || !workspaceId || isCreateMode) return;
-        loadPayments();
+        const t = setTimeout(() => loadPayments(), PAYMENTS_DEFER_MS);
+        return () => clearTimeout(t);
     }, [open, currentTaskId, workspaceId, isCreateMode, loadPayments]);
 
     const mapCommentToActivity = useCallback(
@@ -713,6 +691,9 @@ export function TaskDetailModal({
             }
             if (titleSaveTimeoutRef.current) {
                 clearTimeout(titleSaveTimeoutRef.current);
+            }
+            if (descriptionSaveTimeoutRef.current) {
+                clearTimeout(descriptionSaveTimeoutRef.current);
             }
         };
     }, []);
@@ -979,66 +960,43 @@ export function TaskDetailModal({
                     }
                 } else if (currentTaskId) {
                     // Tarefa já foi criada
-                    toast.success("Tarefa salva com sucesso!");
                 }
-            } else if (currentTaskId) {
-                // Modo edit: salvar alterações pendentes
-                const updates: any = {};
-                let hasUpdates = false;
-
-                // Verificar se há alterações pendentes
-                if (title.trim() && title !== task?.title) {
-                    updates.title = title.trim();
-                    hasUpdates = true;
-                }
-                if (description !== task?.description) {
-                    updates.description = description;
-                    hasUpdates = true;
-                }
-                if (status !== task?.status) {
-                    updates.status = status;
-                    hasUpdates = true;
-                }
-                const baseDueDate = task?.dueDate || (task as any)?.due_date || null;
-                const currentDateOnly = baseDueDate ? formatLocalDateString(baseDueDate) : "";
-                if (dueDate !== currentDateOnly) {
-                    updates.due_date = dueDate ? buildDueDateISO(dueDate, baseDueDate) : null;
-                    hasUpdates = true;
-                }
-
-                // Verificar alterações em assignees
-                // Como o task não tem assignee.id, vamos verificar se há mudança baseado no nome
-                // Se houver membros selecionados e não havia assignee antes, ou vice-versa, há mudança
-                const hasCurrentAssignee = localMembers.length > 0;
-                const hadTaskAssignee = !!task?.assignee;
-                if (hasCurrentAssignee !== hadTaskAssignee) {
-                    updates.assignee_id = localMembers[0]?.id || null;
-                    hasUpdates = true;
-                } else if (hasCurrentAssignee && hadTaskAssignee) {
-                    // Ambos têm assignee, mas pode ter mudado - vamos salvar para garantir
-                    // (não podemos comparar IDs porque task.assignee não tem id)
-                    updates.assignee_id = localMembers[0]?.id || null;
-                    hasUpdates = true;
-                }
-
-                // Salvar alterações se houver
-                if (hasUpdates) {
-                    try {
-                        await updateTaskFields(currentTaskId, updates);
-                        onTaskUpdated?.();
-                    } catch (error) {
-                        console.error("Erro ao salvar tarefa:", error);
-                        toast.error("Erro ao salvar tarefa");
-                        return; // Não fechar modal se houver erro
-                    }
-                }
-
-                // Sempre mostrar toast de confirmação
-                toast.success("Tarefa salva com sucesso!");
             }
+            // Modo edit: não salvar ao fechar; tudo já é salvo automaticamente
         }
         onOpenChange(newOpen);
-    }, [open, isCreateMode, currentTaskId, title, description, status, dueDate, task, localMembers, subTasks, onTaskCreated, onTaskUpdated, onOpenChange]);
+    }, [open, isCreateMode, currentTaskId, title, description, status, dueDate, task, workspaceId, tagsRef, localMembers, subTasks, onTaskCreated, onTaskUpdated, onOpenChange]);
+
+    const onOpenShare = useCallback(() => setIsShareModalOpen(true), []);
+    const onToggleMaximize = useCallback(() => setIsMaximized((prev) => !prev), []);
+    const onCloseModal = useCallback(() => handleClose(false), [handleClose]);
+
+    const handleTagsChange = useCallback(
+        (newTags: string[]) => {
+            const oldTags = Array.isArray(tags) ? [...tags] : [];
+            setTagsAndRef(newTags);
+            if (currentTaskId) {
+                onTaskUpdatedOptimistic?.(currentTaskId, { tags: newTags });
+            }
+            if (currentTaskId && !isCreateMode) {
+                markSaving();
+                updateTaskTags(currentTaskId, newTags)
+                    .then(() => {
+                        markSaved(true);
+                        invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                        notifyHomeTasksUpdated();
+                    })
+                    .catch((error) => {
+                        markSaved(false);
+                        console.error("Erro ao salvar tags:", error);
+                        toast.error("Erro ao salvar tags");
+                        setTagsAndRef(oldTags);
+                        onTaskUpdatedOptimistic?.(currentTaskId, { tags: oldTags });
+                    });
+            }
+        },
+        [currentTaskId, isCreateMode, tags, setTagsAndRef, onTaskUpdatedOptimistic, markSaving, markSaved, notifyHomeTasksUpdated, invalidateCacheAndNotify]
+    );
 
     // Limpar estados quando task.id mudar ou modal fechar
     // Este useEffect deve rodar ANTES de qualquer renderização do formulário
@@ -1105,245 +1063,163 @@ export function TaskDetailModal({
             setCommentsOffset(0);
             setHasMoreComments(false);
 
-            const loadBasicData = async () => {
+            const loadTaskData = async () => {
                 try {
-                    // Verificar cache primeiro
                     const cachedBasic = taskCache.getBasicData(task.id);
+                    const cachedExtended = taskCache.getExtendedData(task.id);
 
-                    if (cachedBasic) {
-                        // Dados do cache - atualizar imediatamente
+                    if (cachedBasic && cachedExtended) {
                         if (!active) return;
-
                         setCurrentTaskId(cachedBasic.id);
                         setTitle(cachedBasic.title || "");
                         setDescription(cachedBasic.description || "");
                         setStatus(cachedBasic.status || "todo");
                         setDueDate(cachedBasic.due_date ? formatLocalDateString(cachedBasic.due_date) : "");
                         setWorkspaceId(cachedBasic.workspace_id || null);
-
-                        // Usar assignees do cache (já inclui task_members)
                         if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
-                            setLocalMembers((cachedBasic as any).assignees.map((a: any) => ({
-                                id: a.id,
-                                name: a.name,
-                                avatar: a.avatar,
-                            })));
+                            setLocalMembers((cachedBasic as any).assignees.map((a: any) => ({ id: a.id, name: a.name, avatar: a.avatar })));
                         } else if (cachedBasic.assignee) {
-                            // Fallback para assignee antigo (compatibilidade)
                             setLocalMembers([{
                                 id: cachedBasic.assignee.id,
                                 name: cachedBasic.assignee.full_name || cachedBasic.assignee.email || "Sem nome",
                                 avatar: cachedBasic.assignee.avatar_url || undefined,
                             }]);
-                        } else {
-                            setLocalMembers([]);
-                        }
-
-                        // Carregar tags de origin_context ou do campo tags direto
+                        } else setLocalMembers([]);
                         if (cachedBasic.origin_context?.tags && Array.isArray(cachedBasic.origin_context.tags)) {
                             setTagsAndRef(cachedBasic.origin_context.tags);
                         } else if ((cachedBasic as any).tags && Array.isArray((cachedBasic as any).tags)) {
                             setTagsAndRef((cachedBasic as any).tags);
                         }
-
+                        const mappedAttachments: FileAttachment[] = cachedExtended.attachments.map((att) => ({
+                            id: att.id,
+                            name: att.file_name,
+                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
+                            size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                            url: att.file_url,
+                        }));
+                        setAttachments(mappedAttachments);
+                        setActivities(cachedExtended.comments.map(mapCommentToActivity));
+                        setHasMoreComments(cachedExtended.comments.length >= COMMENTS_PAGE_SIZE);
+                        setCommentsOffset(0);
+                        if (cachedExtended.subtasks && Array.isArray(cachedExtended.subtasks)) {
+                            setSubTasks(cachedExtended.subtasks);
+                        }
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
-
-                        // Carregar membros em background (não está no cache)
-                        const membersWorkspaceId = cachedBasic.workspace_id || task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null;
-                        getWorkspaceMembers(membersWorkspaceId).then(members => {
+                        setIsLoadingAttachments(false);
+                        setIsLoadingComments(false);
+                        // Members/tags: usar cache de workspace se disponível, senão buscar
+                        const wsHint = cachedBasic.workspace_id || task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null;
+                        if (wsHint) {
+                            const cachedMembers = taskCache.getWorkspaceMembers(wsHint);
+                            const cachedTags = taskCache.getWorkspaceTags(wsHint);
+                            if (cachedMembers && cachedTags) {
+                                if (active) {
+                                    setAvailableUsers(cachedMembers);
+                                    setAvailableTags(cachedTags);
+                                }
+                                return;
+                            }
+                        }
+                        // Fallback: buscar members/tags do servidor (leve, commentsLimit=1)
+                        getFullModalData(task.id, wsHint, 1).then(result => {
                             if (active) {
-                                setAvailableUsers(
-                                    members.map((m: any) => ({
-                                        id: m.id,
-                                        name: m.full_name || m.email || "Sem nome",
-                                        avatar: m.avatar_url || undefined,
-                                    }))
-                                );
+                                setAvailableUsers(result.members);
+                                setAvailableTags(result.availableTags);
+                                // Cachear para próximas aberturas
+                                const ws = result.basic?.workspace_id || wsHint;
+                                if (ws) {
+                                    taskCache.setWorkspaceMembers(ws, result.members);
+                                    taskCache.setWorkspaceTags(ws, result.availableTags);
+                                }
                             }
                         });
-
-                        return; // Dados do cache, não precisa buscar do backend
+                        return;
                     }
 
-                    // FASE 1: Carregar dados básicos do backend (rápido)
-                    const [basicDetails, members] = await Promise.all([
-                        getTaskBasicDetails(task.id),
-                        getWorkspaceMembers(task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null)
-                    ]);
+                    setIsLoadingAttachments(true);
+                    setIsLoadingComments(true);
+
+                    // Uma única server action: 1 auth, todas as queries em paralelo
+                    const wsHint = task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null;
+                    const result = await getFullModalData(task.id, wsHint, COMMENTS_PAGE_SIZE);
 
                     if (!active) return;
+                    if (result.basic?.id !== task.id) return;
 
-                    if (basicDetails && active) {
-                        // Verificar se ainda é a mesma tarefa antes de atualizar
-                        if (basicDetails.id !== task.id) {
-                            return;
-                        }
+                    const { basic: basicDetails, extended: extendedDetails, members, availableTags: serverTags } = result;
 
-                        // Armazenar no cache
+                    if (basicDetails) {
                         taskCache.setBasicData(task.id, basicDetails);
-
-                        // Atualizar dados básicos imediatamente
                         setCurrentTaskId(basicDetails.id);
                         setTitle(basicDetails.title || "");
                         setDescription(basicDetails.description || "");
                         setStatus(basicDetails.status || "todo");
                         setDueDate(basicDetails.due_date ? formatLocalDateString(basicDetails.due_date) : "");
                         setWorkspaceId(basicDetails.workspace_id || null);
-
-                        // Usar assignees dos detalhes (já inclui task_members)
                         if ((basicDetails as any).assignees && Array.isArray((basicDetails as any).assignees)) {
-                            setLocalMembers((basicDetails as any).assignees.map((a: any) => ({
-                                id: a.id,
-                                name: a.name,
-                                avatar: a.avatar,
-                            })));
+                            setLocalMembers((basicDetails as any).assignees.map((a: any) => ({ id: a.id, name: a.name, avatar: a.avatar })));
                         } else if (basicDetails.assignee) {
-                            // Fallback para assignee antigo (compatibilidade)
                             setLocalMembers([{
                                 id: basicDetails.assignee.id,
                                 name: basicDetails.assignee.full_name || basicDetails.assignee.email || "Sem nome",
                                 avatar: basicDetails.assignee.avatar_url || undefined,
                             }]);
-                        } else {
-                            setLocalMembers([]);
-                        }
-
-                        // Carregar tags de origin_context ou do campo tags direto
+                        } else setLocalMembers([]);
                         if (basicDetails.origin_context?.tags && Array.isArray(basicDetails.origin_context.tags)) {
                             setTagsAndRef(basicDetails.origin_context.tags);
                         } else if ((basicDetails as any).tags && Array.isArray((basicDetails as any).tags)) {
                             setTagsAndRef((basicDetails as any).tags);
                         }
-
-                        setAvailableUsers(
-                            members.map((m: any) => ({
-                                id: m.id,
-                                name: m.full_name || m.email || "Sem nome",
-                                avatar: m.avatar_url || undefined,
-                            }))
-                        );
-
-                        // Marcar dados básicos como prontos - formulário pode ser mostrado agora
+                        setAvailableUsers(members);
+                        setAvailableTags(serverTags);
+                        // Cachear members/tags por workspace para próximas aberturas
+                        const ws = basicDetails.workspace_id;
+                        if (ws) {
+                            taskCache.setWorkspaceMembers(ws, members);
+                            taskCache.setWorkspaceTags(ws, serverTags);
+                        }
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
                     }
-                } catch (error) {
-                    if (active) {
-                        console.error("Erro ao carregar dados básicos da tarefa:", error);
-                        toast.error("Erro ao carregar detalhes da tarefa");
-                        setIsLoadingDetails(false);
-                        setIsDataReady(false);
-                    }
-                }
-            };
-
-            const loadExtendedData = async () => {
-                try {
-                    // Verificar cache primeiro
-                    const cachedExtended = taskCache.getExtendedData(task.id);
-
-                    if (cachedExtended) {
-                        // Dados do cache - atualizar imediatamente
-                        if (!active) return;
-
-                        // Verificar se ainda é a mesma tarefa (mas não bloquear se currentTaskId ainda não foi definido)
-                        if (currentTaskId !== null && currentTaskId !== task.id) {
-                            return;
-                        }
-
-                        // Atualizar anexos
-                        const mappedAttachments: FileAttachment[] = cachedExtended.attachments.map((att) => ({
-                            id: att.id,
-                            name: att.file_name,
-                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
-                            size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
-                            url: att.file_url,
-                        }));
-                        setAttachments(mappedAttachments);
-                        setIsLoadingAttachments(false);
-
-                        // Atualizar comentários
-                        const mappedActivities: Activity[] = cachedExtended.comments.map(mapCommentToActivity);
-                        setActivities(mappedActivities);
-                        setIsLoadingComments(false);
-
-                        // Verificar se há mais comentários para carregar
-                        setHasMoreComments(cachedExtended.comments.length >= COMMENTS_PAGE_SIZE);
-                        setCommentsOffset(0); // Resetar offset quando usar cache
-
-                        // Atualizar subtarefas
-                        if (cachedExtended.subtasks && Array.isArray(cachedExtended.subtasks)) {
-                            setSubTasks(cachedExtended.subtasks);
-                        }
-
-                        return; // Dados do cache, não precisa buscar do backend
-                    }
-
-                    // FASE 2: Carregar dados estendidos do backend (anexos, comentários, subtarefas)
-                    setIsLoadingAttachments(true);
-                    setIsLoadingComments(true);
-
-                    const extendedDetails = await getTaskExtendedDetails(task.id, COMMENTS_PAGE_SIZE, 0);
-
-                    if (!active) return;
 
                     if (extendedDetails) {
-                        // Verificar se ainda é a mesma tarefa (mas não bloquear se currentTaskId ainda não foi definido)
-                        // Se currentTaskId ainda não foi definido, significa que estamos carregando pela primeira vez
-                        if (currentTaskId !== null && currentTaskId !== task.id) {
-                            setIsLoadingAttachments(false);
-                            setIsLoadingComments(false);
-                            return;
-                        }
-
-                        // Armazenar no cache
                         taskCache.setExtendedData(task.id, extendedDetails);
-
-                        // Atualizar anexos
                         const mappedAttachments: FileAttachment[] = (extendedDetails.attachments || []).map((att) => ({
                             id: att.id,
                             name: att.file_name,
-                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
+                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
                             size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                             url: att.file_url,
                         }));
                         setAttachments(mappedAttachments);
-                        setIsLoadingAttachments(false);
-
-                        // Atualizar comentários
-                        const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
-                        setActivities(mappedActivities);
-                        setIsLoadingComments(false);
-
-                        // Verificar se há mais comentários para carregar
+                        setActivities((extendedDetails.comments || []).map(mapCommentToActivity));
                         setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
-                        setCommentsOffset(0); // Resetar offset quando carregar dados iniciais
-
-                        // Atualizar subtarefas
+                        setCommentsOffset(0);
                         if (extendedDetails.subtasks && Array.isArray(extendedDetails.subtasks)) {
                             setSubTasks(extendedDetails.subtasks);
                         }
                     } else {
-                        // Se extendedDetails é null/undefined, não há dados para carregar
                         setAttachments([]);
                         setActivities([]);
-                        setIsLoadingAttachments(false);
-                        setIsLoadingComments(false);
                         setHasMoreComments(false);
                         setCommentsOffset(0);
                     }
+                    setIsLoadingAttachments(false);
+                    setIsLoadingComments(false);
                 } catch (error) {
                     if (active) {
-                        console.error("Erro ao carregar dados estendidos da tarefa:", error);
+                        console.error("Erro ao carregar detalhes da tarefa:", error);
+                        toast.error("Erro ao carregar detalhes da tarefa");
+                        setIsLoadingDetails(false);
+                        setIsDataReady(false);
                         setIsLoadingAttachments(false);
                         setIsLoadingComments(false);
                     }
                 }
             };
 
-            // Carregar dados básicos e estendidos em paralelo (melhor tempo de abertura)
-            void Promise.all([loadBasicData(), loadExtendedData()]);
+            void loadTaskData();
         } else if (open && isCreateMode) {
             setTitle("");
             setDescription("");
@@ -1476,8 +1352,9 @@ export function TaskDetailModal({
                 ));
                 toast.error(result.error || "Erro ao editar comentário");
             } else {
-                // Recarregar atividades para garantir sincronização
+                // Sincronizar cache e recarregar atividades
                 if (currentTaskId) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                     void reloadActivities(currentTaskId);
                     markSaved(true);
                 }
@@ -1497,7 +1374,7 @@ export function TaskDetailModal({
             setEditingCommentId(null);
             setEditingCommentText("");
         }
-    }, [editingCommentId, editingCommentText, activities, currentTaskId, reloadActivities]);
+    }, [editingCommentId, editingCommentText, activities, currentTaskId, reloadActivities, invalidateCacheAndNotify]);
 
     const handleCancelEditComment = useCallback(() => {
         setEditingCommentId(null);
@@ -1538,8 +1415,9 @@ export function TaskDetailModal({
                 ));
                 toast.error(result.error || "Erro ao excluir comentário");
             } else {
-                // Recarregar atividades para garantir sincronização
+                // Sincronizar cache e recarregar atividades
                 if (currentTaskId) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                     void reloadActivities(currentTaskId);
                     markSaved(true);
                 }
@@ -1550,11 +1428,11 @@ export function TaskDetailModal({
             setActivities(prev => prev.map(act =>
                 act.id === activityId
                     ? {
-                        ...act,
-                        message: previousActivity.message,
-                        deleted: previousActivity.deleted,
-                        deletedAt: previousActivity.deletedAt
-                    }
+                            ...act,
+                            message: previousActivity.message,
+                            deleted: previousActivity.deleted,
+                            deletedAt: previousActivity.deletedAt
+                        }
                     : act
             ));
             console.error("Erro ao excluir comentário:", error);
@@ -1562,7 +1440,7 @@ export function TaskDetailModal({
         } finally {
             setIsDeletingComment(null);
         }
-    }, [activities, currentTaskId, reloadActivities]);
+    }, [activities, currentTaskId, reloadActivities, invalidateCacheAndNotify]);
 
     // Lista de atividades: cada item é memoizado para evitar re-render de todos ao digitar em um comentário
     const handleViewTranscriptionStable = useCallback((activityId: string, audioUrl: string) => {
@@ -1957,7 +1835,7 @@ export function TaskDetailModal({
                     return;
                 }
 
-                // Buscar comentários reais e substituir estado em uma única atualização (sem gap)
+                // Buscar comentários e anexos em uma única chamada (evita getTaskDetails pesado)
                 const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, 0);
                 if (extendedDetails) {
                     const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
@@ -1965,6 +1843,14 @@ export function TaskDetailModal({
                     setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
                     setCommentsOffset(0);
                     optimisticIdRef.current = null;
+                    const mappedAttachments: FileAttachment[] = (extendedDetails.attachments || []).map((att) => ({
+                        id: att.id,
+                        name: att.file_name,
+                        type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
+                        size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                        url: att.file_url,
+                    }));
+                    setAttachments(mappedAttachments);
                 } else {
                     // fallback: remover otimista se não conseguir recarregar
                     const optimisticIdToRemove = optimisticIdRef.current;
@@ -1972,19 +1858,6 @@ export function TaskDetailModal({
                         setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
                         optimisticIdRef.current = null;
                     }
-                }
-
-                // Atualizar anexos também
-                const taskDetails = await getTaskDetails(currentTaskId);
-                if (taskDetails) {
-                    const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
-                        id: att.id,
-                        name: att.file_name,
-                        type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
-                        size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
-                        url: att.file_url,
-                    }));
-                    setAttachments(mappedAttachments);
                 }
 
                 // Só limpar input se sucesso (toast já foi mostrado otimista)
@@ -2124,19 +1997,18 @@ export function TaskDetailModal({
             }
         }
 
-        // Recarregar atividades e anexos finais
+        // Recarregar anexos (getTaskExtendedDetails é mais leve que getTaskDetails)
         if (currentTaskId) {
             void reloadActivities(currentTaskId);
-            const taskDetails = await getTaskDetails(currentTaskId);
-            if (taskDetails) {
-                const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
+            const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, 0);
+            if (extendedDetails?.attachments) {
+                const mappedAttachments: FileAttachment[] = extendedDetails.attachments.map((att) => ({
                     id: att.id,
                     name: att.file_name,
-                    type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other"),
+                    type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
                     size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                     url: att.file_url,
                 }));
-                // Atualizar final garante consistência
                 setAttachments(mappedAttachments);
             }
         }
@@ -2365,6 +2237,57 @@ export function TaskDetailModal({
         }
     }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
 
+    // Auto-save da descrição (debounce 800ms) enquanto o usuário edita
+    const DESCRIPTION_SAVE_DELAY_MS = 800;
+    useEffect(() => {
+        if (!currentTaskId || isCreateMode || !isEditingDescription) {
+            if (descriptionSaveTimeoutRef.current) {
+                clearTimeout(descriptionSaveTimeoutRef.current);
+                descriptionSaveTimeoutRef.current = null;
+            }
+            return;
+        }
+        if (descriptionSaveTimeoutRef.current) {
+            clearTimeout(descriptionSaveTimeoutRef.current);
+        }
+        descriptionSaveTimeoutRef.current = setTimeout(async () => {
+            descriptionSaveTimeoutRef.current = null;
+            const normalized =
+                stripHtmlTags(description).trim().length === 0 ? "" : description;
+            try {
+                markSaving();
+                const result = await updateTaskField(currentTaskId, "description", normalized, { skipLog: true });
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    markSaved(true);
+                } else {
+                    markSaved(false);
+                    toast.error(result.error || "Erro ao salvar descrição");
+                    // Rollback: restaurar descrição do servidor
+                    const rollback = await getFullModalData(currentTaskId, workspaceId ?? null, 1);
+                    if (rollback?.basic != null) {
+                        setDescription(rollback.basic.description ?? "");
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao salvar descrição:", error);
+                markSaved(false);
+                toast.error("Erro ao salvar descrição");
+                // Rollback: restaurar descrição do servidor
+                getFullModalData(currentTaskId, workspaceId ?? null, 1).then((rollback) => {
+                    if (rollback?.basic != null) {
+                        setDescription(rollback.basic.description ?? "");
+                    }
+                });
+            }
+        }, DESCRIPTION_SAVE_DELAY_MS);
+        return () => {
+            if (descriptionSaveTimeoutRef.current) {
+                clearTimeout(descriptionSaveTimeoutRef.current);
+            }
+        };
+    }, [description, isEditingDescription, currentTaskId, isCreateMode, workspaceId, invalidateCacheAndNotify, markSaving, markSaved]);
+
     const handleMembersChange = useCallback(async (memberIds: string[]) => {
         const oldMembers = [...localMembers];
         const oldMemberIds = oldMembers.map(m => m.id);
@@ -2486,68 +2409,15 @@ export function TaskDetailModal({
                             {isCreateMode ? "Criar Nova Tarefa" : `Detalhes da Tarefa: ${task?.title || ""}`}
                         </DialogTitle>
 
-                        {/* Header */}
-                        <div className="px-6 py-4 border-b border-gray-100 shrink-0 bg-white">
-                            <div className="flex items-center justify-between">
-                                {!isCreateMode && task?.breadcrumbs && (
-                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        {task.breadcrumbs.map((crumb, i) => (
-                                            <div key={i} className="flex items-center gap-2">
-                                                <span>{crumb}</span>
-                                                {i < task.breadcrumbs.length - 1 && <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                {isCreateMode && (
-                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <span>Nova Tarefa</span>
-                                    </div>
-                                )}
-
-                                <div className="flex items-center gap-2 ml-auto">
-                                    {!isCreateMode && saveState !== "idle" && (
-                                        <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-2">
-                                            {saveState === "saving" && <Loader2 className="w-3 h-3 animate-spin" />}
-                                            {saveState === "saved" && <Check className="w-3 h-3 text-green-600" />}
-                                            {saveState === "error" && <AlertTriangle className="w-3 h-3 text-red-600" />}
-                                            <span>
-                                                {saveState === "saving" && "Salvando..."}
-                                                {saveState === "saved" && "Edições salvas"}
-                                                {saveState === "error" && "Erro ao salvar"}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {!isCreateMode && (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8"
-                                            onClick={() => setIsShareModalOpen(true)}
-                                            title="Compartilhar tarefa"
-                                        >
-                                            <Share2 className="h-4 w-4" />
-                                        </Button>
-                                    )}
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={() => setIsMaximized(!isMaximized)}
-                                    >
-                                        {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={() => handleClose(false)}
-                                    >
-                                        <X className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
+                        <TaskDetailHeader
+                            breadcrumbs={task?.breadcrumbs}
+                            isCreateMode={isCreateMode}
+                            saveState={saveState}
+                            isMaximized={isMaximized}
+                            onShare={onOpenShare}
+                            onMaximize={onToggleMaximize}
+                            onClose={onCloseModal}
+                        />
 
                         {/* Main Grid */}
                         <div className="flex-1 grid md:grid-cols-[1.5fr_1fr] overflow-hidden bg-white">
@@ -2555,48 +2425,7 @@ export function TaskDetailModal({
                             {/* LEFT COLUMN: Editor */}
                             <div className="border-r border-gray-100 p-6 overflow-y-auto custom-scrollbar flex flex-col">
                                 {shouldShowSkeleton ? (
-                                    // Skeleton Loading
-                                    <div className="space-y-6 animate-pulse">
-                                        {/* Title Skeleton */}
-                                        <div className="h-12 bg-gray-200 rounded w-3/4" />
-
-                                        {/* Properties Skeleton */}
-                                        <div className="grid grid-cols-3 gap-6">
-                                            <div className="space-y-2">
-                                                <div className="h-3 bg-gray-200 rounded w-16" />
-                                                <div className="h-8 bg-gray-200 rounded w-24" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="h-3 bg-gray-200 rounded w-20" />
-                                                <div className="h-8 bg-gray-200 rounded w-32" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="h-3 bg-gray-200 rounded w-16" />
-                                                <div className="h-8 bg-gray-200 rounded w-28" />
-                                            </div>
-                                        </div>
-
-                                        {/* Description Skeleton */}
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-24" />
-                                            <div className="h-32 bg-gray-100 rounded" />
-                                        </div>
-
-                                        {/* Attachments Skeleton */}
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-20" />
-                                            <div className="h-32 bg-gray-100 rounded border-2 border-dashed border-gray-200" />
-                                        </div>
-
-                                        {/* Subtasks Skeleton */}
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-24" />
-                                            <div className="space-y-2">
-                                                <div className="h-10 bg-gray-100 rounded" />
-                                                <div className="h-10 bg-gray-100 rounded" />
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <TaskDetailSkeleton />
                                 ) : (
                                     <>
                                         {/* Title */}
@@ -2622,146 +2451,19 @@ export function TaskDetailModal({
                                             )}
                                         </div>
 
-                                        {/* Properties */}
-                                        <div className="grid grid-cols-4 gap-4 mb-8 items-start">
-                                            {/* Status */}
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Status</label>
-                                                <Popover>
-                                                    <PopoverTrigger asChild>
-                                                        <button className="flex items-center gap-2 text-sm hover:bg-gray-100 p-1.5 -ml-1.5 rounded transition-colors w-fit">
-                                                            <Badge
-                                                                variant="secondary"
-                                                                className={cn("pointer-events-none font-normal px-2 py-0.5", TASK_CONFIG[status]?.lightColor)}
-                                                            >
-                                                                {mapStatusToLabel(status)}
-                                                            </Badge>
-                                                            <ChevronDown className="h-3 w-3 text-gray-400" />
-                                                        </button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent className="w-48 p-1" align="start">
-                                                        <div className="flex flex-col gap-0.5">
-                                                            {ORDERED_STATUSES.map((s) => (
-                                                                <button
-                                                                    key={s}
-                                                                    className={cn(
-                                                                        "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
-                                                                        status === s && "bg-gray-50 font-medium"
-                                                                    )}
-                                                                    onClick={() => handleStatusChange(s)}
-                                                                >
-                                                                    <span>{STATUS_TO_LABEL[s]}</span>
-                                                                    {status === s && <Check className="h-3 w-3 text-green-600" />}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </PopoverContent>
-                                                </Popover>
-                                            </div>
-
-                                            {/* Projeto */}
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Projeto</label>
-                                                <Popover>
-                                                    <PopoverTrigger asChild>
-                                                        <button className="flex items-center gap-2 text-sm hover:bg-gray-100 p-1.5 -ml-1.5 rounded transition-colors w-fit">
-                                                            <Badge
-                                                                variant="outline"
-                                                                className="pointer-events-none font-normal px-2 py-0.5 text-gray-600"
-                                                            >
-                                                                {tags.length > 0 ? tags[0] : "Sem projeto"}
-                                                            </Badge>
-                                                            <ChevronDown className="h-3 w-3 text-gray-400" />
-                                                        </button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent className="w-48 p-1" align="start">
-                                                        <div className="flex flex-col gap-0.5 max-h-60 overflow-y-auto">
-                                                            <button
-                                                                className={cn(
-                                                                    "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
-                                                                    tags.length === 0 && "bg-gray-50 font-medium"
-                                                                )}
-                                                                onClick={() => {
-                                                                    setTagsAndRef([]);
-                                                                    if (currentTaskId) {
-                                                                        onTaskUpdatedOptimistic?.(currentTaskId, { tags: [] });
-                                                                    }
-                                                                    if (currentTaskId && !isCreateMode) {
-                                                                        markSaving();
-                                                                        updateTaskTags(currentTaskId, [])
-                                                                            .then(() => markSaved(true))
-                                                                            .catch((error) => {
-                                                                                markSaved(false);
-                                                                                console.error("Erro ao salvar tags:", error);
-                                                                            });
-                                                                        notifyHomeTasksUpdated();
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <span className="text-gray-400">Sem projeto</span>
-                                                                {tags.length === 0 && <Check className="h-3 w-3 text-green-600" />}
-                                                            </button>
-                                                            {availableTags.map((tag) => {
-                                                                const isSelected = tags.includes(tag);
-                                                                return (
-                                                                    <button
-                                                                        key={tag}
-                                                                        className={cn(
-                                                                            "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
-                                                                            isSelected && "bg-gray-50 font-medium"
-                                                                        )}
-                                                                        onClick={() => {
-                                                                            // Permitir apenas uma tag por vez (projeto único)
-                                                                            const newTags = isSelected ? [] : [tag];
-                                                                            setTagsAndRef(newTags);
-                                                                            if (currentTaskId) {
-                                                                                onTaskUpdatedOptimistic?.(currentTaskId, { tags: newTags });
-                                                                            }
-                                                                            if (currentTaskId && !isCreateMode) {
-                                                                                markSaving();
-                                                                                updateTaskTags(currentTaskId, newTags)
-                                                                                    .then(() => markSaved(true))
-                                                                                    .catch((error) => {
-                                                                                        markSaved(false);
-                                                                                        console.error("Erro ao salvar tags:", error);
-                                                                                    });
-                                                                                notifyHomeTasksUpdated();
-                                                                            }
-                                                                        }}
-                                                                    >
-                                                                        <span>{tag}</span>
-                                                                        {isSelected && <Check className="h-3 w-3 text-green-600" />}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </PopoverContent>
-                                                </Popover>
-                                            </div>
-
-                                            {/* Assignee */}
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
-                                                <TaskMembersPicker
-                                                    memberIds={localMembers.map(m => m.id)}
-                                                    onChange={handleMembersChange}
-                                                    members={availableUsers}
-                                                    workspaceId={workspaceId || undefined}
-                                                />
-                                            </div>
-
-                                            {/* Due Date */}
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
-                                                <TaskDatePicker
-                                                    date={dueDate ? parseLocalDate(dueDate) : null}
-                                                    onSelect={handleDueDateChange}
-                                                    align="start"
-                                                    isCompleted={status === TASK_STATUS.DONE}
-                                                />
-                                            </div>
-                                        </div>
-
+                                        <TaskDetailProperties
+                                            status={status}
+                                            onStatusChange={handleStatusChange}
+                                            tags={tags}
+                                            availableTags={availableTags}
+                                            onTagsChange={handleTagsChange}
+                                            localMembers={localMembers}
+                                            onMembersChange={handleMembersChange}
+                                            availableUsers={availableUsers}
+                                            workspaceId={workspaceId}
+                                            dueDate={dueDate ? parseLocalDate(dueDate) : null}
+                                            onDueDateChange={handleDueDateChange}
+                                        />
 
                                         {/* Description */}
                                         <div className="mb-8">

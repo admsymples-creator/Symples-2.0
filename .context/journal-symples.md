@@ -6,6 +6,32 @@ melhorias/bugs/features entregues, trabalho em andamento e próximos passos imed
 
 ---
 
+## 2026-02-05 - TaskDetailModal: performance (~1s) e correções críticas
+
+### 1. Melhorias, bugs e features implementadas em preview
+
+#### Performance do TaskDetailModal (3s → ~1s)
+- **getSession() em vez de getUser()** no server action e no browser: elimina HTTP calls ao Supabase Auth (~400ms + ~300ms).
+- **Profile do usuário** incluído no `Promise.all` inicial em `getFullModalData` (sem fallback sequencial).
+- **Prefetch completo no hover**: `use-task-preload` chama `getFullModalData` e cacheia basic + extended + members/tags por workspace; debounce 150ms. Modal abre do cache ao clicar após hover.
+- **Cache de workspace** em `use-task-cache`: members e tags por workspace (TTL 5min). Modal usa esse cache no cache hit e popula após fetch.
+
+#### Correções críticas (auditoria)
+- **handleTagsChange**: rollback em falha (`oldTags`), `toast.error`, `invalidateCacheAndNotify` no sucesso.
+- **handleSaveEditComment / handleDeleteComment**: `invalidateCacheAndNotify` após sucesso para manter cache alinhado.
+- **Description auto-save**: em falha, refetch com `getFullModalData` e `setDescription(rollback.basic?.description)` para restaurar estado do servidor.
+
+### 2. O que está sendo trabalhado no momento
+
+- Nada pendente desta leva.
+
+### 3. Próximos passos imediatos
+
+- Validar em produção o tempo de abertura do modal (com e sem hover).
+- Opcional: tratar problemas médios da auditoria (handleClose em falha de criação, reloadActivities redundantes).
+
+---
+
 ## 2026-01-11 11:07 - Search global com autocomplete real
 
 ### 1. Melhorias, bugs e features implementadas em preview
