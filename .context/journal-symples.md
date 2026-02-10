@@ -2350,3 +2350,6 @@ Aplicado estilo  clean consistente em todas as tabelas do sistema, seguindo o de
 - Ajustado `getTasks()` no contexto pessoal para incluir pais recorrentes fora do range e permitir gerar ocorrencias no intervalo visivel.
 - Documentacao tecnica consolidada em:
   - `docs/CORRECAO_TAREFAS_PESSOAIS_RECORRENTES_INBOX_WEEKLYVIEW.md`
+- Ajuste de UX temporario:
+  - WeeklyView do workspace profissional passou a exibir tambem recorrentes pessoais do usuario,
+    para evitar sensacao de "sumiu", sem reintroduzir essas tarefas no quadro/inbox.

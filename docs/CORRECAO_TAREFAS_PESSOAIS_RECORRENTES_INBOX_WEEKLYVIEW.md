@@ -48,6 +48,24 @@ Arquivo: `lib/actions/tasks.ts`
 - Recorrentes pessoais voltam a aparecer no WeeklyView/Home.
 - Novas ocorrencias da serie continuam sendo geradas dentro da janela exibida.
 
+## Ajuste de UX (workspace profissional)
+
+Decisao temporaria para reduzir confusao operacional:
+
+- No `WeeklyView` do workspace profissional, exibir tambem tarefas pessoais recorrentes
+  do usuario (somente para visualizacao semanal).
+- A separacao do quadro continua preservada:
+  - tarefas pessoais recorrentes nao devem voltar para Inbox do board por essa regra.
+
+Implementacao:
+
+- `app/(main)/[workspaceSlug]/home/page.tsx`
+  - busca adicional de tarefas pessoais no mesmo range quando `isPersonal = false`.
+- `components/home/HomeWeeklyViewClient.tsx`
+  - merge controlado de tarefas do workspace com tarefas pessoais recorrentes;
+  - deduplicacao por `id`;
+  - mesmo comportamento aplicado no refetch.
+
 ## Validacao sugerida
 
 1. Criar tarefa pessoal recorrente no WeeklyView.

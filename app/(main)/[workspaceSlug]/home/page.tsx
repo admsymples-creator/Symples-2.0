@@ -61,14 +61,24 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
 
   // 4. Buscar dados críticos primeiro (tarefas e notificações) para exibição imediata
   const criticalDataStartTime = Date.now();
-  const [initialTasks] = await Promise.all([
-    // Buscar tarefas iniciais no servidor
+  const [initialTasks, initialPersonalRecurringTasks] = await Promise.all([
+    // Tarefas base do contexto atual (cards + WeeklyView)
     getTasks({
       workspaceId: isPersonal ? null : workspaceId,
       assigneeId: "current",
       dueDateStart: taskFetchStart.toISOString(),
       dueDateEnd: taskFetchEnd.toISOString(),
     }),
+    // No workspace profissional, incluir recorrentes pessoais no WeeklyView
+    // para reduzir confusão de "sumiu da semana".
+    !isPersonal
+      ? getTasks({
+          workspaceId: null,
+          assigneeId: "current",
+          dueDateStart: taskFetchStart.toISOString(),
+          dueDateEnd: taskFetchEnd.toISOString(),
+        })
+      : Promise.resolve([]),
   ]);
   // Performance logs removed for production
 
@@ -127,6 +137,7 @@ export default async function WorkspaceHomePage({ params }: PageProps) {
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <HomeWeeklyViewClient
                 initialTasks={initialTasks}
+                initialPersonalRecurringTasks={initialPersonalRecurringTasks}
                 workspaces={workspaces.map(({ id, name }) => ({ id, name }))}
                 workspaceId={workspaceId}
                 isPersonal={isPersonal}

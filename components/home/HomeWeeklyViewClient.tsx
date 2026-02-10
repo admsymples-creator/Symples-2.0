@@ -31,6 +31,7 @@ function getTaskFetchRange(): { start: string; end: string } {
 
 interface HomeWeeklyViewClientProps {
   initialTasks: Task[];
+  initialPersonalRecurringTasks?: Task[];
   workspaces: { id: string; name: string }[];
   workspaceId: string;
   isPersonal: boolean;
@@ -38,16 +39,39 @@ interface HomeWeeklyViewClientProps {
 
 export function HomeWeeklyViewClient({
   initialTasks,
+  initialPersonalRecurringTasks = [],
   workspaces,
   workspaceId,
   isPersonal,
 }: HomeWeeklyViewClientProps) {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const mergeWeeklyTasks = useCallback((workspaceTasks: Task[], personalTasks: Task[]) => {
+    if (isPersonal) return workspaceTasks;
+
+    const personalRecurring = personalTasks.filter(
+      (task) =>
+        task.is_personal === true &&
+        (task.recurrence_type !== null || task.recurrence_parent_id !== null)
+    );
+
+    const merged = [...workspaceTasks];
+    const existingIds = new Set(workspaceTasks.map((task) => task.id));
+    personalRecurring.forEach((task) => {
+      if (!existingIds.has(task.id)) {
+        merged.push(task);
+      }
+    });
+
+    return merged;
+  }, [isPersonal]);
+
+  const [tasks, setTasks] = useState<Task[]>(() =>
+    mergeWeeklyTasks(initialTasks, initialPersonalRecurringTasks)
+  );
   const [projectTags, setProjectTags] = useState<string[]>([]);
 
   useEffect(() => {
-    setTasks(initialTasks);
-  }, [initialTasks]);
+    setTasks(mergeWeeklyTasks(initialTasks, initialPersonalRecurringTasks));
+  }, [initialTasks, initialPersonalRecurringTasks, mergeWeeklyTasks]);
 
   useEffect(() => {
     if (!isPersonal && workspaceId) {
@@ -59,14 +83,34 @@ export function HomeWeeklyViewClient({
 
   const handleTaskUpdate = useCallback(async () => {
     const range = getTaskFetchRange();
-    const fetched = await getTasks({
-      workspaceId: isPersonal ? null : workspaceId,
-      assigneeId: "current",
-      dueDateStart: range.start,
-      dueDateEnd: range.end,
-    });
-    setTasks(fetched || []);
-  }, [workspaceId, isPersonal]);
+    if (isPersonal) {
+      const fetched = await getTasks({
+        workspaceId: null,
+        assigneeId: "current",
+        dueDateStart: range.start,
+        dueDateEnd: range.end,
+      });
+      setTasks(fetched || []);
+      return;
+    }
+
+    const [workspaceTasks, personalTasks] = await Promise.all([
+      getTasks({
+        workspaceId,
+        assigneeId: "current",
+        dueDateStart: range.start,
+        dueDateEnd: range.end,
+      }),
+      getTasks({
+        workspaceId: null,
+        assigneeId: "current",
+        dueDateStart: range.start,
+        dueDateEnd: range.end,
+      }),
+    ]);
+
+    setTasks(mergeWeeklyTasks(workspaceTasks || [], personalTasks || []));
+  }, [workspaceId, isPersonal, mergeWeeklyTasks]);
 
   const handleTaskUpdateOptimistic = useCallback((taskId: string, dueDate: string | null) => {
     setTasks((prev) =>
