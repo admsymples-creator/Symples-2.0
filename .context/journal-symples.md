@@ -2332,3 +2332,21 @@ Aplicado estilo  clean consistente em todas as tabelas do sistema, seguindo o de
   <table className=w-full text-sm text-left>...</table>
 </Card>
 `
+
+---
+
+## 2026-02-10
+
+### Correcao: tarefas pessoais recorrentes no Inbox e WeeklyView
+
+- Identificado que tarefas pessoais (principalmente recorrentes) podiam ser promovidas indevidamente para o quadro ao atualizar responsavel.
+- Ajustado `lib/actions/tasks.ts` para:
+  - promover para quadro apenas quando houver troca real de responsavel para outra pessoa;
+  - bloquear promocao automatica para tarefas pessoais recorrentes.
+- Aplicadas migrations de saneamento retroativo:
+  - `20260210121000_revert_accidental_personal_tasks_from_board.sql`
+  - `20260210123500_fix_recurring_personal_tasks_stuck_in_workspace_inbox.sql`
+  - `20260210125500_restore_assignee_for_personal_recurring_tasks_weeklyview.sql`
+- Ajustado `getTasks()` no contexto pessoal para incluir pais recorrentes fora do range e permitir gerar ocorrencias no intervalo visivel.
+- Documentacao tecnica consolidada em:
+  - `docs/CORRECAO_TAREFAS_PESSOAIS_RECORRENTES_INBOX_WEEKLYVIEW.md`

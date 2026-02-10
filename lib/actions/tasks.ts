@@ -453,6 +453,41 @@ export async function getTasks(filters?: {
   // Garantir próxima ocorrência real de tarefas recorrentes (mesmo sem marcar a atual como concluída)
   if (filters?.dueDateStart && filters?.dueDateEnd) {
     try {
+      // Weekly/Planner pessoal: incluir tarefas-pai recorrentes mesmo fora do range atual.
+      // Sem isso, séries antigas podem sumir da visão semanal por não haver "âncora" no intervalo.
+      if (filters.workspaceId === null && filters.assigneeId === "current") {
+        let recurringParentsQuery = supabase
+          .from("tasks")
+          .select(`
+            *,
+            assignee:assignee_id (full_name, email, avatar_url),
+            creator:created_by (full_name),
+            group:group_id (id, name, color, workspace_id),
+            task_members (user:user_id (id, full_name, email, avatar_url))
+          `)
+          .is("workspace_id", null)
+          .eq("created_by", user.id)
+          .eq("is_personal", true)
+          .eq("assignee_id", user.id)
+          .not("recurrence_type", "is", null)
+          .is("recurrence_parent_id", null)
+          .neq("status", "archived")
+          .neq("status", "done");
+
+        if (filters.tag) {
+          recurringParentsQuery = recurringParentsQuery.contains("tags", [filters.tag]);
+        }
+
+        const { data: recurringParents } = await recurringParentsQuery;
+        if (recurringParents && recurringParents.length > 0) {
+          const existingIds = new Set((data || []).map((t: any) => t.id));
+          const missingParents = recurringParents.filter((t: any) => !existingIds.has(t.id));
+          if (missingParents.length > 0) {
+            data = [...(data as any[] || []), ...missingParents];
+          }
+        }
+      }
+
       const newIds = await ensureNextRecurrenceOccurrences(
         data as any[],
         filters.dueDateStart,
@@ -952,25 +987,36 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
 
   console.log("[updateTask] Atualizando tarefa:", { id, updates });
 
-  // Ao adicionar responsável (assignee não-nulo), tarefa vai para o quadro
+  // Regra de promoção para quadro:
+  // somente quando o responsável muda para OUTRA pessoa (não o usuário atual).
   if (updates.assignee_id !== undefined && updates.assignee_id !== null) {
-    updates.visible_on_board = true;
     const { data: currentTask } = await supabase
       .from("tasks")
-      .select("workspace_id")
+      .select("workspace_id, assignee_id, is_personal, recurrence_type, recurrence_parent_id")
       .eq("id", id)
       .single();
-    if (currentTask && currentTask.workspace_id === null) {
-      let activeWorkspaceId: string | null = null;
-      try {
-        const cookieStore = await cookies();
-        activeWorkspaceId = cookieStore.get("active_workspace_id")?.value ?? null;
-      } catch {
-        activeWorkspaceId = null;
-      }
-      if (activeWorkspaceId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const hasAssigneeChanged = !!currentTask && currentTask.assignee_id !== updates.assignee_id;
+    const assignedToAnotherUser = !!user && updates.assignee_id !== user.id;
+    const isPersonalRecurringTask = !!currentTask &&
+      currentTask.workspace_id === null &&
+      currentTask.is_personal === true &&
+      (currentTask.recurrence_type !== null || currentTask.recurrence_parent_id !== null);
+    const shouldPromoteToBoard = hasAssigneeChanged && assignedToAnotherUser && !isPersonalRecurringTask;
+
+    if (shouldPromoteToBoard) {
+      updates.visible_on_board = true;
+
+      if (currentTask.workspace_id === null) {
+        let activeWorkspaceId: string | null = null;
+        try {
+          const cookieStore = await cookies();
+          activeWorkspaceId = cookieStore.get("active_workspace_id")?.value ?? null;
+        } catch {
+          activeWorkspaceId = null;
+        }
+        if (activeWorkspaceId && user) {
           const { data: workspace } = await supabase
             .from("workspaces")
             .select("owner_id")
