@@ -763,6 +763,11 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         isPending?: boolean; // ? Marca se está sendo criada (para mostrar skeleton)
     }) => {
         const resolvedPosition = typeof taskData.position === "number" ? taskData.position : undefined;
+        // Normalizar inbox: "inbox"/"Inbox" = sem grupo, para coincidir com groupedData/getTaskGroupKey (group view usa "inbox")
+        const effectiveGroupId =
+            taskData.groupId && taskData.groupId !== "inbox" && taskData.groupId !== "Inbox"
+                ? taskData.groupId
+                : null;
         const newTask: Task = {
             id: taskData.id,
             title: taskData.title,
@@ -775,10 +780,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             tags: taskData.tags || [],
             hasUpdates: false,
             workspaceId: taskData.workspaceId || null,
-            group: taskData.groupId ? {
-                id: taskData.groupId,
-                name: availableGroups.find(g => g.id === taskData.groupId)?.name || "Grupo",
-                color: availableGroups.find(g => g.id === taskData.groupId)?.color || undefined
+            group: effectiveGroupId ? {
+                id: effectiveGroupId,
+                name: availableGroups.find(g => g.id === effectiveGroupId)?.name || "Grupo",
+                color: availableGroups.find(g => g.id === effectiveGroupId)?.color || undefined
             } : undefined,
             hasComments: false,
             commentCount: 0,
@@ -794,8 +799,8 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             if (sortBy === "position") {
                 // Quando ordenado por position: calcular última posição e adicionar no final
                 // Filtrar tarefas do mesmo grupo se viewOption === "group"
-                const tasksInSameGroup = viewOption === "group" && taskData.groupId
-                    ? prev.filter(t => (t.group?.id || null) === taskData.groupId)
+                const tasksInSameGroup = viewOption === "group" && effectiveGroupId
+                    ? prev.filter(t => (t.group?.id || null) === effectiveGroupId)
                     : prev;
 
                 const maxPosition = tasksInSameGroup.length > 0
@@ -892,13 +897,26 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
             dbStatus = "todo";
             statusLabel = STATUS_TO_LABEL.todo;
         } else if (viewOption === "assignee") {
-            // Encontrar o membro pelo nome para obter o ID
+            // Evitar herdar assignee selecionado previamente no QuickAdd.
+            // Na visão por responsável, o dono da coluna define o responsável.
+            assigneeId = null;
+
+            // Resolver por ID da coluna (preferencial) e por nome (fallback seguro).
             if (groupId === "Sem responsável") {
                 assigneeId = null;
             } else {
-                const member = workspaceMembers.find(m => m.name === groupId);
-                if (member) {
-                    assigneeId = member.id;
+                const groupKey = String(groupId).trim();
+                const byId = workspaceMembers.find((m) => m.id === groupKey);
+
+                if (byId) {
+                    assigneeId = byId.id;
+                } else {
+                    const byName = workspaceMembers.filter((m) => (m.name || "").trim() === groupKey);
+                    if (byName.length === 1) {
+                        assigneeId = byName[0].id;
+                    } else if (byName.length > 1) {
+                        toast.error("Não foi possível identificar o responsável da coluna. Selecione manualmente.");
+                    }
                 }
             }
             dbStatus = "todo";
@@ -966,15 +984,6 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                         return task;
                     });
                 });
-                // Foco no input do próximo grupo após adicionar tarefa (setTimeout para rodar após QuickTaskAdd)
-                setTimeout(() => {
-                    const groups = listGroupsRef.current;
-                    const idx = groups.findIndex((g) => g.id === groupId);
-                    if (idx >= 0 && idx < groups.length - 1) {
-                        const nextId = groups[idx + 1].id;
-                        addInputRefs.current[nextId]?.focus();
-                    }
-                }, 0);
             } else {
                 // ? 5. Erro: rollback - remover tarefa otimista
                 setLocalTasks(previousTasks);

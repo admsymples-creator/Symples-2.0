@@ -196,6 +196,14 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
   const tasksByDay = useMemo(() => {
     const grouped: Record<string, Task[]> = {};
     const processedRecurrenceIds = new Set<string>();
+    type SeriesInfo = {
+      parentId: string;
+      baseTask: Task;
+      earliestDue: Date;
+      latestDue: Date;
+      hasNonDone: boolean;
+    };
+    const seriesMap = new Map<string, SeriesInfo>();
 
     // Primeiro, adicionar todas as tarefas reais (chave por dia local para evitar timezone)
     tasks.forEach((task) => {
@@ -206,60 +214,104 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
       grouped[dateKey].push(task);
 
       // Marcar tarefas recorrentes como processadas na sua data original
-      if (task.recurrence_type) {
-        processedRecurrenceIds.add(`${task.id}-${dateKey}`);
+      const taskAny = task as any;
+      if (task.recurrence_type || taskAny.recurrence_parent_id) {
+        const parentId = taskAny.recurrence_parent_id || task.id;
+        processedRecurrenceIds.add(`${parentId}-${dateKey}`);
+
+        // Construir mapa da série recorrente (pais + filhos) para projeções futuras/passadas
+        const taskDateNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const isNonDone = task.status !== "done";
+        const existing = seriesMap.get(parentId);
+
+        if (!existing) {
+          seriesMap.set(parentId, {
+            parentId,
+            baseTask: task,
+            earliestDue: taskDateNorm,
+            latestDue: taskDateNorm,
+            hasNonDone: isNonDone,
+          });
+        } else {
+          if (taskDateNorm < existing.earliestDue) existing.earliestDue = taskDateNorm;
+          if (taskDateNorm > existing.latestDue) existing.latestDue = taskDateNorm;
+          if (isNonDone) existing.hasNonDone = true;
+
+          // Preferimos uma baseTask que tenha recurrence_type definido e, se possível, não concluída
+          const existingAny = existing.baseTask as any;
+          const existingHasRecurrence = !!existing.baseTask.recurrence_type;
+          const candidateHasRecurrence = !!task.recurrence_type;
+
+          if (
+            candidateHasRecurrence &&
+            (!existingHasRecurrence ||
+              existing.baseTask.status === "done" && task.status !== "done")
+          ) {
+            existing.baseTask = task;
+          } else {
+            // Garantir que ao menos tenhamos uma baseTask com recurrence_type se algum filho tiver
+            if (!existingHasRecurrence && candidateHasRecurrence) {
+              existing.baseTask = task;
+            }
+          }
+
+          seriesMap.set(parentId, existing);
+        }
       }
     });
 
     // Projetar tarefas recorrentes para dias futuros dentro do range visível
-    tasks.forEach((task) => {
-      // Só tasks raiz projetam virtuais; filhas (recurrence_parent_id) não geram projeções próprias
-      if (!task.recurrence_type || !task.due_date || task.status === "done") return;
-      if ((task as any).recurrence_parent_id) return;
-      
-      const taskAny = task as any;
-      const recurrenceDays = Array.isArray(taskAny.recurrence_days) ? taskAny.recurrence_days : null;
-      const interval = task.recurrence_interval || 1;
-      
-      let currentDate = new Date(task.due_date);
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    seriesMap.forEach((series) => {
+      const base = series.baseTask;
+      // Precisamos de configuração de recorrência e pelo menos uma ocorrência não concluída na série
+      if (!base.recurrence_type || !base.due_date || !series.hasNonDone) return;
+
+      const baseAny = base as any;
+      const recurrenceDays = Array.isArray(baseAny.recurrence_days) ? baseAny.recurrence_days : null;
+      const interval = base.recurrence_interval || 1;
+
+      let currentDate = new Date(series.latestDue);
       const maxProjections = 30; // Limitar projeções para performance
-      
+
       for (let i = 0; i < maxProjections; i++) {
-        const nextDate = getNextRecurrenceDate(currentDate, task.recurrence_type, interval, recurrenceDays);
-        
+        const nextDate = getNextRecurrenceDate(currentDate, base.recurrence_type, interval, recurrenceDays);
+
         // Parar se ultrapassar o range visível
         if (nextDate > visibleDateRange.endDate) break;
-        
+
         // Verificar recurrence_end_date
-        if (task.recurrence_end_date && nextDate > new Date(task.recurrence_end_date)) break;
-        
+        if (base.recurrence_end_date && nextDate > new Date(base.recurrence_end_date)) break;
+
         const nextDateKey = formatLocalDateKey(new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate()));
-        const projectionKey = `${task.id}-${nextDateKey}`;
-        
-        // Evitar duplicata: não projetar virtual se já existe a tarefa real nesse dia (mesmo id ou filho da série)
-        const alreadyHasRealOnDay = grouped[nextDateKey]?.some(
-          (t) => t.id === task.id || (t as any).recurrence_parent_id === task.id
-        ) ?? false;
+        const projectionKey = `${series.parentId}-${nextDateKey}`;
+
+        // Evitar duplicata: não projetar virtual se já existe a tarefa real nesse dia (qualquer pai/filho da série)
+        const alreadyHasRealOnDay = grouped[nextDateKey]?.some((t) => {
+          const tAny = t as any;
+          const tParentId = tAny.recurrence_parent_id || t.id;
+          return tParentId === series.parentId;
+        }) ?? false;
+
         const inRange = nextDate >= visibleDateRange.startDate && nextDate <= visibleDateRange.endDate;
-        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
 
         if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay && nextDate >= todayStart) {
           if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
-          
+
           // Todas as projeções são virtuais (somente leitura); evita ações com ID inexistente no banco
           const virtualTask: Task = {
-            ...task,
-            id: `${task.id}-virtual-${nextDateKey}`,
+            ...base,
+            id: `${series.parentId}-virtual-${nextDateKey}`,
             due_date: nextDate.toISOString(),
-            recurrence_parent_id: task.id,
+            recurrence_parent_id: series.parentId,
           } as Task;
 
           (virtualTask as any).is_virtual = true;
-          
+
           grouped[nextDateKey].push(virtualTask);
           processedRecurrenceIds.add(projectionKey);
         }
-        
+
         currentDate = nextDate;
       }
     });
@@ -273,33 +325,41 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
     }
 
     if (visiblePastDays.length > 0) {
-      tasks.forEach((task) => {
-        if (!task.recurrence_type || !task.due_date || task.status === "done") return;
-        if ((task as any).recurrence_parent_id) return;
+      seriesMap.forEach((series) => {
+        const base = series.baseTask;
+        if (!base.recurrence_type || !base.due_date || !series.hasNonDone) return;
 
-        const taskAny = task as any;
-        const recurrenceDays = Array.isArray(taskAny.recurrence_days) ? taskAny.recurrence_days : null;
-        const interval = task.recurrence_interval || 1;
-        const dueNorm = new Date(task.due_date); dueNorm.setHours(0, 0, 0, 0);
-        const endNorm = task.recurrence_end_date
-          ? (() => { const d = new Date(task.recurrence_end_date); d.setHours(0, 0, 0, 0); return d; })()
+        const baseAny = base as any;
+        const recurrenceDays = Array.isArray(baseAny.recurrence_days) ? baseAny.recurrence_days : null;
+        const interval = base.recurrence_interval || 1;
+
+        // Usar a primeira ocorrência conhecida na série como âncora de recorrência
+        const dueNorm = new Date(series.earliestDue);
+        dueNorm.setHours(0, 0, 0, 0);
+
+        const endNorm = base.recurrence_end_date
+          ? (() => { const d = new Date(base.recurrence_end_date); d.setHours(0, 0, 0, 0); return d; })()
           : null;
 
         for (const { dateKey, dateObj } of visiblePastDays) {
-          const projectionKey = `${task.id}-${dateKey}`;
+          const projectionKey = `${series.parentId}-${dateKey}`;
           if (processedRecurrenceIds.has(projectionKey)) continue;
-          const hasReal = grouped[dateKey]?.some(
-            (t) => t.id === task.id || (t as any).recurrence_parent_id === task.id
-          ) ?? false;
+
+          const hasReal = grouped[dateKey]?.some((t) => {
+            const tAny = t as any;
+            const tParentId = tAny.recurrence_parent_id || t.id;
+            return tParentId === series.parentId;
+          }) ?? false;
           if (hasReal) continue;
-          if (!shouldHaveOccurrenceOn(dueNorm, task.recurrence_type, interval, recurrenceDays, endNorm, dateObj)) continue;
+
+          if (!shouldHaveOccurrenceOn(dueNorm, base.recurrence_type, interval, recurrenceDays, endNorm, dateObj)) continue;
 
           if (!grouped[dateKey]) grouped[dateKey] = [];
           const missedTask: Task = {
-            ...task,
-            id: `${task.id}-missed-${dateKey}`,
+            ...base,
+            id: `${series.parentId}-missed-${dateKey}`,
             due_date: dateObj.toISOString(),
-            recurrence_parent_id: task.id,
+            recurrence_parent_id: series.parentId,
           } as Task;
           (missedTask as any).is_missed_virtual = true;
           grouped[dateKey].push(missedTask);

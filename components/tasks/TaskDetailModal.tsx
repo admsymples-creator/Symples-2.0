@@ -719,6 +719,7 @@ export function TaskDetailModal({
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
     const isCreatingRef = useRef(false);
     const hasSubmittedCreateRef = useRef(false);
+const hasExplicitCreateAssigneeSelectionRef = useRef(false);
     const [uploadingAttachments, setUploadingAttachments] = useState<Array<{
         id: string;
         name: string;
@@ -928,6 +929,7 @@ export function TaskDetailModal({
                             ? (task.workspaceId ?? null)
                             : (workspaceId ?? null);
 
+                        const shouldPersistCreateAssignee = hasExplicitCreateAssigneeSelectionRef.current;
                         const result = await createTask({
                             title: title.trim(),
                             description: description || "",
@@ -936,7 +938,7 @@ export function TaskDetailModal({
                             workspace_id: createWorkspaceId,
                             is_personal: createWorkspaceId === null,
                             origin_context: task?.originContext || undefined,
-                            assignee_id: localMembers[0]?.id || null,
+                            assignee_id: shouldPersistCreateAssignee ? (localMembers[0]?.id || null) : null,
                             tags: tagsRef.current.length > 0 ? tagsRef.current : undefined,
                             subtasks: subTasks.map(st => ({
                                 title: st.title,
@@ -957,6 +959,7 @@ export function TaskDetailModal({
                     } finally {
                         isCreatingRef.current = false;
                         hasSubmittedCreateRef.current = false;
+                        hasExplicitCreateAssigneeSelectionRef.current = false;
                     }
                 } else if (currentTaskId) {
                     // Tarefa já foi criada
@@ -1019,6 +1022,7 @@ export function TaskDetailModal({
             setIsDataReady(false);
             isCreatingRef.current = false;
             hasSubmittedCreateRef.current = false;
+            hasExplicitCreateAssigneeSelectionRef.current = false;
             return;
         }
 
@@ -1047,6 +1051,7 @@ export function TaskDetailModal({
         } else if (open && isCreateMode) {
             // Modo create - não precisa de loading
             setIsLoadingDetails(false);
+            hasExplicitCreateAssigneeSelectionRef.current = false;
             // Preencher tags iniciais se fornecido (criação consciente de contexto)
             if (initialTags && initialTags.length > 0) {
                 setTagsAndRef(initialTags);
@@ -2289,6 +2294,9 @@ export function TaskDetailModal({
     }, [description, isEditingDescription, currentTaskId, isCreateMode, workspaceId, invalidateCacheAndNotify, markSaving, markSaved]);
 
     const handleMembersChange = useCallback(async (memberIds: string[]) => {
+        if (isCreateMode) {
+            hasExplicitCreateAssigneeSelectionRef.current = true;
+        }
         const oldMembers = [...localMembers];
         const oldMemberIds = oldMembers.map(m => m.id);
 
@@ -2475,7 +2483,8 @@ export function TaskDetailModal({
                                                     <Editor
                                                         value={description}
                                                         onChange={setDescription}
-                                                        placeholder="Adicione uma descrição..."
+                                                        placeholder="Adicione uma descrição... (use @ para mencionar)"
+                                                        workspaceId={workspaceId ?? activeWorkspaceId ?? null}
                                                     />
                                                     <div className="flex items-center justify-between mt-2 p-2">
                                                         <div className="flex flex-col">
