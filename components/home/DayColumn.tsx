@@ -600,7 +600,7 @@ export function DayColumn({
   return (
     <div
       className={cn(
-        "group/column flex flex-col h-full min-h-[420px] max-h-[67vh] rounded-2xl transition-all duration-300",
+        "group/column relative flex flex-col h-full min-h-[420px] max-h-[67vh] rounded-2xl transition-all duration-300",
         isToday
           ? "bg-gradient-to-b from-gray-50/80 to-white border border-gray-300 shadow-md"
           : "bg-surface border border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
@@ -689,19 +689,21 @@ export function DayColumn({
           </div>
         )}
 
-        {isOverflowing && !isAtBottom && (
-          <>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white via-white/70 to-transparent" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] font-medium text-gray-400">
-              Mais tarefas abaixo
-            </div>
-          </>
-        )}
       </div>
+
+      {/* Indicador de overflow: fora do scroll para ficar fixo na base visível do card */}
+      {isOverflowing && !isAtBottom && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[56px] z-10">
+          <div className="h-10 bg-gradient-to-t from-white via-white/70 to-transparent" />
+          <div className="text-center text-[11px] font-medium text-gray-400 bg-white/80 pb-0.5">
+            Mais tarefas abaixo
+          </div>
+        </div>
+      )}
 
       {/* --- FOOTER / INPUT AREA --- */}
       <div className="flex-none px-3 pb-3 pt-2 relative">
-        <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+        <div className="absolute -top-4 left-0 right-0 h-4 bg-gradient-to-t from-white to-transparent pointer-events-none" />
 
         <form ref={formRef} onSubmit={handleQuickAddSubmit} className="relative z-10">
 
