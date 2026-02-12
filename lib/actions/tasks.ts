@@ -89,56 +89,80 @@ async function ensureNextRecurrenceOccurrences(
   dueDateStart: string,
   dueDateEnd: string
 ): Promise<string[]> {
-  const start = new Date(dueDateStart);
   const end = new Date(dueDateEnd);
   const newIds: string[] = [];
+
+  // Materializar apenas ocorrências de hoje — dias passados e futuros ficam como estão
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
   for (const task of data) {
     if (!task.recurrence_type || task.status === "done" || task.recurrence_parent_id) continue;
     if (!task.due_date) continue;
 
-    const currentDate = new Date(task.due_date);
-    const nextDate = getNextRecurrenceDateServer(
-      currentDate,
-      task.recurrence_type,
-      task.recurrence_interval ?? 1,
-      task.recurrence_days ?? null
+    // Partir do último filho existente (ou do próprio pai), para não desperdiçar iterações em datas antigas
+    const seriesOccurrences = (data as any[]).filter(
+      (t: any) => (t.recurrence_parent_id === task.id || t.id === task.id) && t.due_date
     );
-
-    if (task.recurrence_end_date && nextDate > new Date(task.recurrence_end_date)) continue;
-    if (nextDate < start || nextDate > end) continue;
-
-    const nextDateKey = toDateKey(nextDate);
-    const alreadyExists = data.some(
-      (t: any) =>
-        (t.id === task.id || t.recurrence_parent_id === task.id) &&
-        t.due_date &&
-        toDateKey(new Date(t.due_date)) === nextDateKey
+    const latest = seriesOccurrences.reduce((acc: any, t: any) =>
+      !acc || new Date(t.due_date) > new Date(acc.due_date) ? t : acc, null
     );
-    if (alreadyExists) continue;
+    let currentDate = latest ? new Date(latest.due_date) : new Date(task.due_date);
+    const MAX_CATCHUP = 30; // segurança: no máximo 30 iterações por série
 
-    const result = await createTask({
-      title: task.title,
-      description: task.description ?? undefined,
-      workspace_id: task.workspace_id ?? undefined,
-      is_personal: task.is_personal ?? undefined,
-      status: "todo",
-      priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
-      assignee_id: task.assignee_id ?? "current",
-      due_date: nextDate.toISOString(),
-      origin_context: task.origin_context ?? undefined,
-      group_id: task.group_id ?? undefined,
-      tags: Array.isArray(task.tags) ? task.tags : undefined,
-      subtasks: task.subtasks ?? undefined,
-      recurrence_type: task.recurrence_type,
-      recurrence_interval: task.recurrence_interval ?? 1,
-      recurrence_end_date: task.recurrence_end_date ?? undefined,
-      recurrence_days: Array.isArray(task.recurrence_days) ? task.recurrence_days : undefined,
-      recurrence_parent_id: task.id,
-    });
+    for (let i = 0; i < MAX_CATCHUP; i++) {
+      const nextDate = getNextRecurrenceDateServer(
+        currentDate,
+        task.recurrence_type,
+        task.recurrence_interval ?? 1,
+        task.recurrence_days ?? null
+      );
 
-    if (result.success && result.data && (result.data as any).id) {
-      newIds.push((result.data as any).id);
+      if (task.recurrence_end_date && nextDate > new Date(task.recurrence_end_date)) break;
+      if (nextDate > end) break;
+
+      // Datas passadas (antes de hoje): avança o cursor sem criar nada
+      if (nextDate < todayStart) { currentDate = nextDate; continue; }
+
+      // Datas futuras (depois de hoje): para — virão como virtuais no frontend
+      if (nextDate > todayEnd) break;
+
+      // Hoje: verifica se já existe e cria se necessário
+      const nextDateKey = toDateKey(nextDate);
+      const alreadyExists = data.some(
+        (t: any) =>
+          (t.id === task.id || t.recurrence_parent_id === task.id) &&
+          t.due_date &&
+          toDateKey(new Date(t.due_date)) === nextDateKey
+      );
+
+      if (!alreadyExists) {
+        const result = await createTask({
+          title: task.title,
+          description: task.description ?? undefined,
+          workspace_id: task.workspace_id ?? undefined,
+          is_personal: task.is_personal ?? undefined,
+          status: "todo",
+          priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
+          assignee_id: task.assignee_id ?? "current",
+          due_date: nextDate.toISOString(),
+          origin_context: task.origin_context ?? undefined,
+          group_id: task.group_id ?? undefined,
+          tags: Array.isArray(task.tags) ? task.tags : undefined,
+          subtasks: task.subtasks ?? undefined,
+          recurrence_type: task.recurrence_type,
+          recurrence_interval: task.recurrence_interval ?? 1,
+          recurrence_end_date: task.recurrence_end_date ?? undefined,
+          recurrence_days: Array.isArray(task.recurrence_days) ? task.recurrence_days : undefined,
+          recurrence_parent_id: task.id,
+        });
+
+        if (result.success && result.data && (result.data as any).id) {
+          newIds.push((result.data as any).id);
+        }
+      }
+
+      currentDate = nextDate;
     }
   }
 

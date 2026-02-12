@@ -85,14 +85,7 @@ export function TaskRow({
   }, [isEditing]);
 
   const handleToggle = (checked: boolean) => {
-    if ((task as any).is_virtual) {
-      // toast imported via hook usually or generic toast
-      // Assuming generic toast is unavailable directly here without import, ignoring for now or using alert
-      // Better: just return or use console log, as TaskRow doesn't seem to import toast in the visible snippet provided earlier
-      // Checking imports... standard shadcn toast usually used.
-      // Let's just return for now to prevent error.
-      return;
-    }
+    if ((task as any).is_virtual || (task as any).is_missed_virtual) return;
     setIsChecked(checked);
     if (onToggle) {
       onToggle(task.id, checked);
@@ -100,7 +93,7 @@ export function TaskRow({
   };
 
   const startEditing = () => {
-    if ((task as any).is_virtual) return;
+    if ((task as any).is_virtual || (task as any).is_missed_virtual) return;
     setIsEditing(true);
     setEditValue(optimisticTitle);
   };
@@ -231,19 +224,20 @@ export function TaskRow({
   // Data atual da tarefa para o picker
   const currentDueDate = task.due_date ? new Date(task.due_date) : null;
 
-  // Enviar para amanhã: mantém horário se tiver, senão meia-noite
-  const handleSendToTomorrow = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+  // Enviar para próximo dia: dia seguinte à data atual da tarefa (não necessariamente amanhã)
+  const handleSendToNextDay = () => {
+    const base = task.due_date ? new Date(task.due_date) : new Date();
+    const nextDay = new Date(base);
+    nextDay.setDate(base.getDate() + 1);
     if (hasSpecificTime && task.due_date) {
       const current = new Date(task.due_date);
-      tomorrow.setHours(current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds());
+      nextDay.setHours(current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds());
     } else {
-      tomorrow.setHours(0, 0, 0, 0);
+      nextDay.setHours(0, 0, 0, 0);
     }
-    const newDueDate = tomorrow.toISOString();
+    const newDueDate = nextDay.toISOString();
     onDateUpdateOptimistic?.(task.id, newDueDate);
-    handleDateUpdate(tomorrow);
+    handleDateUpdate(nextDay);
   };
 
   // Atribuir tarefa a um projeto (atualiza tags) — otimista: UI atualiza na hora
@@ -263,7 +257,7 @@ export function TaskRow({
 
   // Handler para navegar para detalhes da tarefa no workspace (bloqueado para ocorrências virtuais)
   const handleGoToTaskDetails = () => {
-    if ((task as any).is_virtual) return;
+    if ((task as any).is_virtual || (task as any).is_missed_virtual) return;
     if (onOpenDetails) {
       onOpenDetails(task.id);
       return;
@@ -280,30 +274,33 @@ export function TaskRow({
     router.push(url);
   };
 
-  // Verificar se é tarefa virtual (projeção futura)
+  // Verificar se é tarefa virtual (projeção futura) ou falha passada
   const isVirtual = (task as any).is_virtual;
+  const isMissedVirtual = (task as any).is_missed_virtual;
 
   return (
     <div
+      data-testid="task-row"
+      data-recurrence={task.recurrence_type || (task as any).recurrence_parent_id ? "true" : undefined}
       className={cn(
         "relative w-full flex items-center justify-between py-0.5 min-h-7 border-b border-gray-50 last:border-0 transition-colors group",
-        isVirtual ? "opacity-50 bg-gray-50/50 hover:bg-gray-50 cursor-default" : "hover:bg-gray-50"
+        isVirtual        ? "opacity-50 bg-gray-50/50 hover:bg-gray-50 cursor-default" :
+        isMissedVirtual  ? "bg-amber-50/50 hover:bg-amber-50/70 cursor-default" :
+                           "hover:bg-gray-50"
       )}
     >
-      {/* Barra esquerda: preta = no quadro de tarefas; cor do workspace = não no quadro */}
-      {!isPersonal && (
-        <div
-          className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
-          style={{ backgroundColor: isOnBoard ? "#000" : workspaceColor }}
-          title={isOnBoard ? "No quadro de tarefas" : undefined}
-        />
-      )}
+      {/* Barra esquerda: sempre presente para alinhamento consistente */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
+        style={{ backgroundColor: isMissedVirtual ? "#F59E0B" : isPersonal ? "#93C5FD" : (isOnBoard ? "#000" : workspaceColor) }}
+        title={isMissedVirtual ? "Não concluída neste dia" : (!isPersonal && isOnBoard ? "No quadro de tarefas" : undefined)}
+      />
 
       {/* Conteúdo Esquerda */}
       <div
         className={cn(
           "flex items-center flex-1 min-w-0 pr-2",
-          !isPersonal ? "pl-4" : "pl-2"
+          "pl-4"
         )}
       >
         <Checkbox
@@ -313,15 +310,17 @@ export function TaskRow({
         />
 
         {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={saveEdit}
-            onKeyDown={handleKeyDown}
-            className="text-xs ml-3 flex-1 bg-white border border-green-500 rounded-sm px-1.5 py-0.5 outline-none text-gray-900 shadow-sm h-6"
-          />
+          <div className="flex items-center gap-2 ml-3 flex-1 min-w-0">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={saveEdit}
+              onKeyDown={handleKeyDown}
+              className="text-xs flex-1 min-w-0 bg-transparent border-b border-green-500 px-0 py-0 outline-none ring-0 focus:ring-0 appearance-none text-gray-900 leading-snug"
+            />
+          </div>
         ) : (
           <div className="flex items-center gap-2 ml-3 flex-1 min-w-0">
             <TooltipProvider>
@@ -419,11 +418,12 @@ export function TaskRow({
       </div>
 
       {/* Ações Direita: ícone Editar visível + resto no menu */}
-      {!isEditing && !isVirtual && (
+      {!isEditing && !isVirtual && !isMissedVirtual && (
         <div
           className={cn(
             "absolute right-0 top-0 bottom-0 pl-[88px] pr-1 flex items-center gap-0.5",
             "opacity-0 group-hover:opacity-100 transition-opacity duration-200",
+            "pointer-events-none",
             "bg-gradient-to-l from-gray-100 via-gray-100/95 to-transparent"
           )}
         >
@@ -435,7 +435,7 @@ export function TaskRow({
                   <button
                     type="button"
                     onClick={() => onOpenDetails ? onOpenDetails(task.id) : handleGoToTaskDetails()}
-                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1 pointer-events-auto"
                     aria-label={`Abrir tarefa: ${optimisticTitle}`}
                   >
                     <Eye className="w-3 h-3" />
@@ -446,21 +446,21 @@ export function TaskRow({
             </TooltipProvider>
           )}
 
-          {/* Enviar para amanhã — ao lado de Abrir tarefa (uso frequente) */}
+          {/* Enviar para próximo dia — ao lado de Abrir tarefa (uso frequente) */}
           {onDateUpdateOptimistic && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={handleSendToTomorrow}
-                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
-                    aria-label={`Enviar para amanhã: ${optimisticTitle}`}
+                    onClick={handleSendToNextDay}
+                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1 pointer-events-auto"
+                    aria-label={`Enviar para próximo dia: ${optimisticTitle}`}
                   >
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top">Enviar para amanhã</TooltipContent>
+                <TooltipContent side="top">Enviar para próximo dia</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
@@ -470,7 +470,7 @@ export function TaskRow({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1 pointer-events-auto"
                 aria-label="Mais ações"
                 onClick={(e) => e.stopPropagation()}
               >

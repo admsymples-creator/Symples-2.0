@@ -27,6 +27,46 @@ interface WeeklyViewProps {
 }
 
 // Função auxiliar para calcular próxima data de recorrência
+/** Verifica se uma recorrência deveria ter uma ocorrência na data-alvo */
+function shouldHaveOccurrenceOn(
+  dueDateObj: Date,          // due_date da task raiz, normalizado para meia-noite local
+  recurrenceType: string,
+  interval: number,
+  recurrenceDays: number[] | null,
+  recurrenceEndDate: Date | null,
+  targetDate: Date           // dia a verificar, normalizado para meia-noite local
+): boolean {
+  if (targetDate < dueDateObj) return false;
+  if (recurrenceEndDate && targetDate > recurrenceEndDate) return false;
+
+  // weekly/custom com dias específicos: qualquer dia da semana que esteja na lista
+  if ((recurrenceType === "weekly" || recurrenceType === "custom") && recurrenceDays && recurrenceDays.length > 0) {
+    return recurrenceDays.includes(targetDate.getDay());
+  }
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysDiff = Math.round((targetDate.getTime() - dueDateObj.getTime()) / msPerDay);
+
+  switch (recurrenceType) {
+    case "daily":
+      return daysDiff % interval === 0;
+    case "weekly":
+      return targetDate.getDay() === dueDateObj.getDay()
+        && Math.round(daysDiff / 7) % interval === 0;
+    case "monthly": {
+      if (targetDate.getDate() !== dueDateObj.getDate()) return false;
+      const monthsDiff =
+        (targetDate.getFullYear() - dueDateObj.getFullYear()) * 12
+        + (targetDate.getMonth() - dueDateObj.getMonth());
+      return monthsDiff % interval === 0;
+    }
+    case "custom":
+      return daysDiff % interval === 0;
+    default:
+      return false;
+  }
+}
+
 function getNextRecurrenceDate(
   currentDate: Date,
   recurrenceType: string,
@@ -173,7 +213,9 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
 
     // Projetar tarefas recorrentes para dias futuros dentro do range visível
     tasks.forEach((task) => {
+      // Só tasks raiz projetam virtuais; filhas (recurrence_parent_id) não geram projeções próprias
       if (!task.recurrence_type || !task.due_date || task.status === "done") return;
+      if ((task as any).recurrence_parent_id) return;
       
       const taskAny = task as any;
       const recurrenceDays = Array.isArray(taskAny.recurrence_days) ? taskAny.recurrence_days : null;
@@ -199,8 +241,9 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
           (t) => t.id === task.id || (t as any).recurrence_parent_id === task.id
         ) ?? false;
         const inRange = nextDate >= visibleDateRange.startDate && nextDate <= visibleDateRange.endDate;
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
 
-        if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay) {
+        if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay && nextDate >= todayStart) {
           if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
           
           // Todas as projeções são virtuais (somente leitura); evita ações com ID inexistente no banco
@@ -220,6 +263,50 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
         currentDate = nextDate;
       }
     });
+
+    // Projetar "falhas" de recorrência para dias passados VISÍVEIS (não concluídas, não materializadas)
+    const nowMidnight = new Date(); nowMidnight.setHours(0, 0, 0, 0);
+    const visiblePastDays: { dateKey: string; dateObj: Date }[] = [];
+    for (let offset = weekOffset; offset <= weekOffset + (daysToShow - 1); offset++) {
+      const d = new Date(); d.setDate(d.getDate() + offset); d.setHours(0, 0, 0, 0);
+      if (d < nowMidnight) visiblePastDays.push({ dateKey: formatLocalDateKey(d), dateObj: d });
+    }
+
+    if (visiblePastDays.length > 0) {
+      tasks.forEach((task) => {
+        if (!task.recurrence_type || !task.due_date || task.status === "done") return;
+        if ((task as any).recurrence_parent_id) return;
+
+        const taskAny = task as any;
+        const recurrenceDays = Array.isArray(taskAny.recurrence_days) ? taskAny.recurrence_days : null;
+        const interval = task.recurrence_interval || 1;
+        const dueNorm = new Date(task.due_date); dueNorm.setHours(0, 0, 0, 0);
+        const endNorm = task.recurrence_end_date
+          ? (() => { const d = new Date(task.recurrence_end_date); d.setHours(0, 0, 0, 0); return d; })()
+          : null;
+
+        for (const { dateKey, dateObj } of visiblePastDays) {
+          const projectionKey = `${task.id}-${dateKey}`;
+          if (processedRecurrenceIds.has(projectionKey)) continue;
+          const hasReal = grouped[dateKey]?.some(
+            (t) => t.id === task.id || (t as any).recurrence_parent_id === task.id
+          ) ?? false;
+          if (hasReal) continue;
+          if (!shouldHaveOccurrenceOn(dueNorm, task.recurrence_type, interval, recurrenceDays, endNorm, dateObj)) continue;
+
+          if (!grouped[dateKey]) grouped[dateKey] = [];
+          const missedTask: Task = {
+            ...task,
+            id: `${task.id}-missed-${dateKey}`,
+            due_date: dateObj.toISOString(),
+            recurrence_parent_id: task.id,
+          } as Task;
+          (missedTask as any).is_missed_virtual = true;
+          grouped[dateKey].push(missedTask);
+          processedRecurrenceIds.add(projectionKey);
+        }
+      });
+    }
 
       // Ordenar tarefas de cada dia: com horário no topo (e entre elas por horário), depois sem horário
     // "Sem horário" = meia-noite em UTC (backend) ou meia-noite em local (app); senão = com horário
@@ -243,7 +330,7 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
     });
 
     return grouped;
-  }, [tasks, formatLocalDateKey, visibleDateRange]);
+  }, [tasks, formatLocalDateKey, visibleDateRange, weekOffset, daysToShow]);
 
   const monthStats = useMemo(() => {
     const now = new Date();
@@ -346,6 +433,8 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
                   <div
                     key={day.id}
                     data-day-column
+                    data-today={day.isToday ? "true" : undefined}
+                    data-date={day.id}
                     className="w-full shrink-0 md:w-[calc((100%-2rem)/3)] lg:w-[calc((100%-4rem)/5)]"
                   >
                     <DayColumn
