@@ -51,6 +51,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
   const [displayLimit, setDisplayLimit] = useState(10);
   const [refreshToken, setRefreshToken] = useState(0);
   const lastRefreshTsRef = useRef<number>(0);
+  const silentRefreshRef = useRef(false);
   const [workspaceTags, setWorkspaceTags] = useState<string[]>([]);
   const shouldReduceMotion = useReducedMotion();
   const { activeWorkspaceId, isLoaded } = useWorkspace();
@@ -154,6 +155,8 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
       if (!currentWorkspace) return;
 
       const isCompletedTab = statusFilter === "completed";
+      const silent = silentRefreshRef.current;
+      if (silent) silentRefreshRef.current = false;
 
       // CENÁRIO 1: Abas "Próximas" ou "Atrasadas" (Usam cache de ativos)
       if (!isCompletedTab) {
@@ -163,7 +166,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
           return;
         }
 
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
           const fetchParams = {
             workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
@@ -193,7 +196,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
           return;
         }
 
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
           const fetchParams = {
             workspaceId: currentWorkspace.isPersonal ? undefined : currentWorkspace.id,
@@ -299,8 +302,7 @@ export function HomeTasksSection({ period, initialTasks, initialWorkspaceId, ini
       lastRefreshTsRef.current = ts;
       setActiveTasksCache(null);
       setCompletedTasksCache(null);
-      setTasks([]);
-      setLoading(true);
+      silentRefreshRef.current = true;
       setRefreshToken((value) => value + 1);
     };
 

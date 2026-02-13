@@ -33,8 +33,7 @@ import { KanbanConfirmationCard } from "./KanbanConfirmationCard";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { HelpDialog } from "./HelpDialog";
 import { useWorkspace } from "@/components/providers/SidebarProvider";
-import { getWorkspaceMembers, getTasks } from "@/lib/actions/tasks";
-import { createTask } from "@/lib/actions/tasks";
+import { getWorkspaceMembers, getTasks, createTask } from "@/lib/actions/tasks";
 import type { Workspace } from "@/lib/actions/user";
 import { invalidateTasksCache } from "@/hooks/use-tasks";
 import { 

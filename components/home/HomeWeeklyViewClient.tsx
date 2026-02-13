@@ -112,6 +112,14 @@ export function HomeWeeklyViewClient({
     setTasks(mergeWeeklyTasks(workspaceTasks || [], personalTasks || []));
   }, [workspaceId, isPersonal, mergeWeeklyTasks]);
 
+  // Ao criar/atualizar tarefa a partir do card "Meu trabalho" ou de outro ponto, refetch para a weekly mostrar dados atualizados (sem depender de revalidatePath da home)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => { handleTaskUpdate(); };
+    window.addEventListener("home-tasks-updated", handler);
+    return () => window.removeEventListener("home-tasks-updated", handler);
+  }, [handleTaskUpdate]);
+
   const handleTaskUpdateOptimistic = useCallback((taskId: string, dueDate: string | null) => {
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, due_date: dueDate } : t))

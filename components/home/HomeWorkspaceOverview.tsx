@@ -104,12 +104,15 @@ export function HomeWorkspaceOverview({
         return;
       }
 
-      // Verificar cache primeiro
+      // Verificar cache primeiro (evitar setState se dados iguais = menos piscar ao concluir tarefa no Weekly)
       const cached = getCachedProjects(activeWorkspaceId);
       if (cached && hasLoadedOnceRef.current) {
-        // Usar dados do cache se já carregou uma vez
-        setProjectStats(cached.stats);
-        setProjectIcons(cached.icons);
+        setProjectStats((prev) => (prev.length === cached.stats.length && prev.every((p, i) => p.tag === cached.stats[i]?.tag)) ? prev : cached.stats);
+        setProjectIcons((prev) => {
+          if (prev.size !== cached.icons.size) return cached.icons;
+          for (const [k, v] of prev) if (cached.icons.get(k) !== v) return cached.icons;
+          return prev;
+        });
         return;
       }
 
@@ -155,7 +158,9 @@ export function HomeWorkspaceOverview({
     };
 
     loadProjectStats();
-  }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd, initialProjectStats, initialIsPersonal, workspaces, isSwitchingWorkspace]);
+    // workspaces omitido de propósito: o efeito não usa workspaces diretamente (só isPersonal).
+    // Evita reexecução e setState quando o contexto re-renderiza e passa nova referência.
+  }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd, initialProjectStats, initialIsPersonal, isSwitchingWorkspace]);
 
   // Resetar flag quando workspace muda
   useEffect(() => {

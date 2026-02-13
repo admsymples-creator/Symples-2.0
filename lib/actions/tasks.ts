@@ -512,6 +512,39 @@ export async function getTasks(filters?: {
         }
       }
 
+      // Workspace: incluir tarefas-pai recorrentes mesmo fora do range atual.
+      // Mesma regra do pessoal: séries ativas devem aparecer (virtuais + laranja) independente do due_date do pai.
+      if (typeof filters.workspaceId === "string" && filters.assigneeId === "current") {
+        let recurringParentsWsQuery = supabase
+          .from("tasks")
+          .select(`
+            *,
+            assignee:assignee_id (full_name, email, avatar_url),
+            creator:created_by (full_name),
+            group:group_id (id, name, color, workspace_id),
+            task_members (user:user_id (id, full_name, email, avatar_url))
+          `)
+          .eq("workspace_id", filters.workspaceId)
+          .eq("assignee_id", user.id)
+          .not("recurrence_type", "is", null)
+          .is("recurrence_parent_id", null)
+          .neq("status", "archived")
+          .neq("status", "done");
+
+        if (filters.tag) {
+          recurringParentsWsQuery = recurringParentsWsQuery.contains("tags", [filters.tag]);
+        }
+
+        const { data: recurringParentsWs } = await recurringParentsWsQuery;
+        if (recurringParentsWs && recurringParentsWs.length > 0) {
+          const existingIds = new Set((data || []).map((t: any) => t.id));
+          const missingParents = recurringParentsWs.filter((t: any) => !existingIds.has(t.id));
+          if (missingParents.length > 0) {
+            data = [...(data as any[] || []), ...missingParents];
+          }
+        }
+      }
+
       const newIds = await ensureNextRecurrenceOccurrences(
         data as any[],
         filters.dueDateStart,
@@ -987,10 +1020,9 @@ export async function createTask(data: {
     // Não falhar a criação da tarefa se as notificações falharem
   }
 
-  // Revalidar path relevante
+  // Revalidar path relevante (home omitido: na home a UI atualiza via evento home-tasks-updated + refetch no cliente, evita re-render pesado da página)
   try {
     revalidatePath("/");
-    revalidatePath("/(main)/home", "page");
     revalidatePath("/(main)/planner", "page");
     if (data.workspace_id) {
       revalidatePath(`/${data.workspace_id}`);
@@ -1235,7 +1267,6 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
   }
 
   revalidatePath("/tasks");
-  revalidatePath("/home");
   return { success: true, data: null };
 }
 
@@ -1629,7 +1660,6 @@ export async function deleteTask(id: string, deleteAll: boolean = false) {
       }
 
       revalidatePath("/tasks");
-      revalidatePath("/home");
       return { success: true };
     }
   }
@@ -1646,7 +1676,6 @@ export async function deleteTask(id: string, deleteAll: boolean = false) {
   }
 
   revalidatePath("/tasks");
-  revalidatePath("/home");
   return { success: true };
 }
 
@@ -1721,7 +1750,6 @@ export async function duplicateTask(taskId: string) {
   }
 
   revalidatePath("/tasks");
-  revalidatePath("/home");
   return { success: true, data: newTask };
 }
 
