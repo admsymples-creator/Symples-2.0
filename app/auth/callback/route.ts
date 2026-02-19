@@ -30,34 +30,45 @@ export async function GET(request: Request) {
     console.log('[Auth Callback] Usando invite token da URL:', inviteToken.substring(0, 8) + '...');
   }
 
+  const supabase = await createServerClient()
+  let user: { id: string } | null = null
+
   if (code) {
-    const supabase = await createServerClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-
     if (!error) {
-      // 1. Pegar o usuario logado
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user: u } } = await supabase.auth.getUser()
+      user = u ?? null
+    } else {
+      console.error('[Auth Callback] Erro na troca do codigo OAuth:', error.message, error)
+      // Redirecionar com a mensagem para exibir na tela de login
+      const errorMsg = encodeURIComponent(error.message || 'oauth_exchange_failed')
+      return NextResponse.redirect(`${origin}/login?error=oauth&message=${errorMsg}`)
+    }
+  } else {
+    // Login com senha: sessão já está nos cookies, só precisamos ler o user
+    const { data: { user: u } } = await supabase.auth.getUser()
+    user = u ?? null
+  }
 
-      if (user) {
-        const trialDaysParam = searchParams.get('trial_days');
-        const trialPlanParam = searchParams.get('trial_plan');
-        const trialDaysValue = trialDaysParam ? Number(trialDaysParam) : null;
-        const trialPlanValue = trialPlanParam && ['pro', 'business'].includes(trialPlanParam) ? trialPlanParam : null;
-        if ((trialDaysValue && [15, 30, 60].includes(trialDaysValue)) || trialPlanValue) {
-          const { error: trialUpdateError } = await supabase.auth.updateUser({
-            data: {
-              ...(trialDaysValue && [15, 30, 60].includes(trialDaysValue) ? { trial_days: String(trialDaysValue) } : {}),
-              ...(trialPlanValue ? { trial_plan: trialPlanValue } : {}),
-            },
-          });
-          if (trialUpdateError) {
-            console.error('[Auth Callback] Erro ao salvar trial_days/trial_plan:', trialUpdateError);
-          }
-        }
-        // TASK 3: Se houver token de convite (da URL ou cookie), ACEITAR IMEDIATAMENTE
-        if (inviteToken) {
+  if (user) {
+    // 1. Usuário logado (OAuth com code ou sessão já em cookie no login com senha)
+    const trialDaysParam = searchParams.get('trial_days');
+    const trialPlanParam = searchParams.get('trial_plan');
+    const trialDaysValue = trialDaysParam ? Number(trialDaysParam) : null;
+    const trialPlanValue = trialPlanParam && ['pro', 'business'].includes(trialPlanParam) ? trialPlanParam : null;
+    if ((trialDaysValue && [15, 30, 60].includes(trialDaysValue)) || trialPlanValue) {
+      const { error: trialUpdateError } = await supabase.auth.updateUser({
+        data: {
+          ...(trialDaysValue && [15, 30, 60].includes(trialDaysValue) ? { trial_days: String(trialDaysValue) } : {}),
+          ...(trialPlanValue ? { trial_plan: trialPlanValue } : {}),
+        },
+      });
+      if (trialUpdateError) {
+        console.error('[Auth Callback] Erro ao salvar trial_days/trial_plan:', trialUpdateError);
+      }
+    }
+    // TASK 3: Se houver token de convite (da URL ou cookie), ACEITAR IMEDIATAMENTE
+    if (inviteToken) {
           try {
             console.log('[Auth Callback] Validando convite:', inviteToken.substring(0, 8) + '...');
             
@@ -227,15 +238,11 @@ export async function GET(request: Request) {
           }
         }
 
-        // 4. Decidir destino (sem parametro invite_accepted em login tradicional)
-        if (workspaces.length > 0) {
-          return NextResponse.redirect(`${origin}/home`)
-        } else {
-          return NextResponse.redirect(`${origin}/onboarding`)
-        }
-      }
+    // 4. Decidir destino (sem parametro invite_accepted em login tradicional)
+    if (workspaces.length > 0) {
+      return NextResponse.redirect(`${origin}/home`)
     } else {
-      console.error('Erro na troca do codigo:', error)
+      return NextResponse.redirect(`${origin}/onboarding`)
     }
   }
 

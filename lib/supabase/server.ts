@@ -2,11 +2,9 @@ import { createServerClient as createSSRServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from '@/types/database.types'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-// Cliente para uso em Server Components e Server Actions
-export async function createServerClient() {
+export function getSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseKey) {
     const error = new Error('Variáveis de ambiente do Supabase não configuradas')
     console.error('[Supabase] Erro de configuração:', {
@@ -17,6 +15,17 @@ export async function createServerClient() {
     })
     throw error
   }
+  const isSupabaseUrl = supabaseUrl.startsWith('https://') && supabaseUrl.includes('.supabase.co')
+  if (!isSupabaseUrl) {
+    console.error('[Supabase] NEXT_PUBLIC_SUPABASE_URL deve ser a URL do projeto (ex: https://xxx.supabase.co). Recebido:', supabaseUrl?.slice(0, 80))
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL deve ser a URL do projeto Supabase (ex: https://xxx.supabase.co)')
+  }
+  return { supabaseUrl, supabaseKey }
+}
+
+// Cliente para uso em Server Components e Server Actions
+export async function createServerClient() {
+  const { supabaseUrl, supabaseKey } = getSupabaseConfig()
 
   try {
     const cookieStore = await cookies()
@@ -61,9 +70,7 @@ export async function createServerActionClient() {
 
 // Cliente para uso no Middleware (com cookies do request/response)
 export function createMiddlewareClient(request: Request, response: Response) {
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Variáveis de ambiente do Supabase não configuradas')
-  }
+  const { supabaseUrl, supabaseKey } = getSupabaseConfig()
 
   return createSSRServerClient<Database>(supabaseUrl, supabaseKey, {
     cookies: {

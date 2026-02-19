@@ -15,6 +15,16 @@ function isValidEmail(email: string): boolean {
 }
 
 /**
+ * URL base do app para redirects de auth (callback, OAuth, etc).
+ * Em produção na Vercel usa VERCEL_URL se NEXT_PUBLIC_SITE_URL não estiver definida.
+ */
+function getBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
+  return 'http://localhost:3000'
+}
+
+/**
  * Faz login com email e senha
  * @param formData - FormData contendo 'email', 'password' e opcionalmente 'inviteToken'
  * @returns Objeto com success e message
@@ -49,7 +59,7 @@ export async function loginWithPassword(formData: FormData) {
     }
 
     const supabase = await createServerClient()
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl()
     let redirectTo = `${baseUrl}/auth/callback`
     if (inviteToken) {
       redirectTo += `?invite=${inviteToken}`
@@ -128,7 +138,7 @@ export async function loginWithEmail(formData: FormData) {
 
     // Configurar URL de redirecionamento dinamicamente
     // Captura a URL base usando NEXT_PUBLIC_SITE_URL ou fallback para localhost
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl()
     let emailRedirectTo = `${baseUrl}/auth/callback`
     const redirectParams = new URLSearchParams()
     if (inviteToken) {
@@ -185,7 +195,7 @@ export async function signInWithEmail(email: string) {
     const supabase = await createServerClient()
 
     // Obter a URL base do ambiente
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl()
     const redirectTo = `${baseUrl}/auth/callback`
 
     const { error } = await supabase.auth.signInWithOtp({
@@ -259,7 +269,7 @@ export async function signupWithPassword(formData: FormData) {
     }
 
     const supabase = await createServerClient()
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl()
     
     let emailRedirectTo = `${baseUrl}/auth/callback`
     const redirectParams = new URLSearchParams()
@@ -364,7 +374,7 @@ export async function resetPassword(formData: FormData) {
     }
 
     const supabase = await createServerClient()
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl()
     const redirectTo = `${baseUrl}/auth/callback?type=recovery`
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -418,7 +428,7 @@ export async function signupWithEmail(formData: FormData) {
     }
 
     const supabase = await createServerClient();
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const baseUrl = getBaseUrl();
     
     // ✅ CORREÇÃO 3: Magic Link Stripping - Persistência Híbrida
     // Tentamos incluir na URL primeiro (melhor para OAuth e quando funciona)
@@ -468,7 +478,7 @@ export async function signInWithGoogle(inviteToken?: string, trialDays?: number,
     const supabase = await createServerClient()
 
     // Obter a URL base do ambiente
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl()
     let redirectTo = `${baseUrl}/auth/callback`
     const redirectParams = new URLSearchParams()
     if (inviteToken) {

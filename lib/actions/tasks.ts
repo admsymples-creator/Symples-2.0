@@ -137,25 +137,28 @@ async function ensureNextRecurrenceOccurrences(
       );
 
       if (!alreadyExists) {
-        const result = await createTask({
-          title: task.title,
-          description: task.description ?? undefined,
-          workspace_id: task.workspace_id ?? undefined,
-          is_personal: task.is_personal ?? undefined,
-          status: "todo",
-          priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
-          assignee_id: task.assignee_id ?? "current",
-          due_date: nextDate.toISOString(),
-          origin_context: task.origin_context ?? undefined,
-          group_id: task.group_id ?? undefined,
-          tags: Array.isArray(task.tags) ? task.tags : undefined,
-          subtasks: task.subtasks ?? undefined,
-          recurrence_type: task.recurrence_type,
-          recurrence_interval: task.recurrence_interval ?? 1,
-          recurrence_end_date: task.recurrence_end_date ?? undefined,
-          recurrence_days: Array.isArray(task.recurrence_days) ? task.recurrence_days : undefined,
-          recurrence_parent_id: task.id,
-        });
+        const result = await createTask(
+          {
+            title: task.title,
+            description: task.description ?? undefined,
+            workspace_id: task.workspace_id ?? undefined,
+            is_personal: task.is_personal ?? undefined,
+            status: "todo",
+            priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
+            assignee_id: task.assignee_id ?? "current",
+            due_date: nextDate.toISOString(),
+            origin_context: task.origin_context ?? undefined,
+            group_id: task.group_id ?? undefined,
+            tags: Array.isArray(task.tags) ? task.tags : undefined,
+            subtasks: task.subtasks ?? undefined,
+            recurrence_type: task.recurrence_type,
+            recurrence_interval: task.recurrence_interval ?? 1,
+            recurrence_end_date: task.recurrence_end_date ?? undefined,
+            recurrence_days: Array.isArray(task.recurrence_days) ? task.recurrence_days : undefined,
+            recurrence_parent_id: task.id,
+          },
+          { skipRevalidate: true }
+        );
 
         if (result.success && result.data && (result.data as any).id) {
           newIds.push((result.data as any).id);
@@ -838,29 +841,37 @@ export async function getTaskById(id: string) {
 /**
  * Cria uma nova tarefa
  */
-export async function createTask(data: {
-  title: string;
-  due_date?: string | null;
-  workspace_id?: string | null;
-  status?: string;
-  priority?: string;
-  is_personal?: boolean | null;
-  description?: string;
-  assignee_id?: string | null;
-  recurrence_type?: string;
-  recurrence_interval?: number | null;
-  recurrence_end_date?: string | null;
-  recurrence_count?: number | null;
-  recurrence_days?: number[] | null;
-  recurrence_parent_id?: string | null;
-  group_id?: string | null;
-  tags?: string[];
-  position?: number;
-  origin_context?: any;
-  subtasks?: any;
-}) {
+export async function createTask(
+  data: {
+    title: string;
+    due_date?: string | null;
+    workspace_id?: string | null;
+    status?: string;
+    priority?: string;
+    is_personal?: boolean | null;
+    description?: string;
+    assignee_id?: string | null;
+    recurrence_type?: string;
+    recurrence_interval?: number | null;
+    recurrence_end_date?: string | null;
+    recurrence_count?: number | null;
+    recurrence_days?: number[] | null;
+    recurrence_parent_id?: string | null;
+    group_id?: string | null;
+    tags?: string[];
+    position?: number;
+    origin_context?: any;
+    subtasks?: any;
+  },
+  options?: {
+    /** Quando true, não chama revalidatePath (útil em caminhos de leitura como getTasks/ensureNextRecurrenceOccurrences) */
+    skipRevalidate?: boolean;
+  }
+) {
   const supabase = await createServerActionClient();
   console.log("[SERVER-ACTION] createTask called with:", JSON.stringify(data));
+
+  const skipRevalidate = options?.skipRevalidate === true;
 
   const {
     data: { user },
@@ -1021,14 +1032,17 @@ export async function createTask(data: {
   }
 
   // Revalidar path relevante (home omitido: na home a UI atualiza via evento home-tasks-updated + refetch no cliente, evita re-render pesado da página)
-  try {
-    revalidatePath("/");
-    revalidatePath("/(main)/planner", "page");
-    if (data.workspace_id) {
-      revalidatePath(`/${data.workspace_id}`);
+  // Importante: não chamar durante render de páginas (ex.: getTasks na home) — por isso o flag skipRevalidate.
+  if (!skipRevalidate) {
+    try {
+      revalidatePath("/");
+      revalidatePath("/(main)/planner", "page");
+      if (data.workspace_id) {
+        revalidatePath(`/${data.workspace_id}`);
+      }
+    } catch (e) {
+      console.error("[SERVER-ACTION] Revalidate error (non-fatal):", e);
     }
-  } catch (e) {
-    console.error("[SERVER-ACTION] Revalidate error (non-fatal):", e);
   }
 
   return { success: true, data: newTask };
@@ -1224,6 +1238,8 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
         if (shouldCreate) {
           console.log("[updateTask] Criando próxima ocorrência para:", nextDateISO);
 
+          const parentId = (currentTask as any).recurrence_parent_id || currentTask.id;
+
           // Validar group_id: grupo pode ter sido deletado desde que a tarefa foi criada
           let recurrenceGroupId: string | null = null;
           const currentGroupId = currentTask.group_id && String(currentTask.group_id).trim() ? currentTask.group_id : null;
@@ -1256,7 +1272,7 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
             recurrence_end_date: currentTask.recurrence_end_date,
             recurrence_days: (currentTask as any).recurrence_days || null,
             recurrence_count: nextCount,
-            recurrence_parent_id: currentTask.id,
+            recurrence_parent_id: parentId,
           });
         }
       }

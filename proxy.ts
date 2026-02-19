@@ -1,9 +1,7 @@
-﻿import { createServerClient } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { Database } from '@/types/database.types'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { getSupabaseConfig } from '@/lib/supabase/server'
 
 export async function proxy(request: NextRequest) {
   const startTime = Date.now()
@@ -13,6 +11,7 @@ export async function proxy(request: NextRequest) {
     },
   })
 
+  const { supabaseUrl, supabaseKey } = getSupabaseConfig()
   const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {

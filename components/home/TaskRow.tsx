@@ -210,7 +210,8 @@ export function TaskRow({
       });
 
       if (result.success) {
-        onDateUpdate?.();
+        // Atrasa o refetch para o servidor persistir; evita a tarefa "voltar" ao dia anterior antes de ir ao novo
+        setTimeout(() => onDateUpdate?.(), 300);
       } else {
         console.error("Erro ao atualizar data:", result.error);
         onDateUpdate?.();
@@ -223,22 +224,6 @@ export function TaskRow({
 
   // Data atual da tarefa para o picker
   const currentDueDate = task.due_date ? new Date(task.due_date) : null;
-
-  // Enviar para próximo dia: dia seguinte à data atual da tarefa (não necessariamente amanhã)
-  const handleSendToNextDay = () => {
-    const base = task.due_date ? new Date(task.due_date) : new Date();
-    const nextDay = new Date(base);
-    nextDay.setDate(base.getDate() + 1);
-    if (hasSpecificTime && task.due_date) {
-      const current = new Date(task.due_date);
-      nextDay.setHours(current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds());
-    } else {
-      nextDay.setHours(0, 0, 0, 0);
-    }
-    const newDueDate = nextDay.toISOString();
-    onDateUpdateOptimistic?.(task.id, newDueDate);
-    handleDateUpdate(nextDay);
-  };
 
   // Atribuir tarefa a um projeto (atualiza tags) — otimista: UI atualiza na hora
   const handleAssignToProject = async (projectName: string) => {
@@ -446,21 +431,32 @@ export function TaskRow({
             </TooltipProvider>
           )}
 
-          {/* Enviar para próximo dia — ao lado de Abrir tarefa (uso frequente) */}
-          {onDateUpdateOptimistic && (
+          {/* Date picker — alterar data (trigger visível com ícone de calendário) */}
+          {onDateUpdateOptimistic && isMounted && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={handleSendToNextDay}
-                    className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1 pointer-events-auto"
-                    aria-label={`Enviar para próximo dia: ${optimisticTitle}`}
-                  >
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
+                  <div className="pointer-events-auto">
+                    <TaskDateTimePicker
+                      date={currentDueDate}
+                      onSelect={handleDateUpdate}
+                      align="end"
+                      side="top"
+                      trigger={
+                        <button
+                          ref={datePickerTriggerRef}
+                          type="button"
+                          className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                          aria-label="Alterar data"
+                          title="Alterar data"
+                        >
+                          <CalendarIcon className="w-3 h-3" />
+                        </button>
+                      }
+                    />
+                  </div>
                 </TooltipTrigger>
-                <TooltipContent side="top">Enviar para próximo dia</TooltipContent>
+                <TooltipContent side="top">Alterar data</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
@@ -552,25 +548,6 @@ export function TaskRow({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Picker de data (trigger oculto; abre ao clicar em "Alterar data e hora" no menu) */}
-          {isPersonal && isMounted && (
-            <TaskDateTimePicker
-              date={currentDueDate}
-              onSelect={handleDateUpdate}
-              align="end"
-              side="top"
-              trigger={
-                <button
-                  ref={datePickerTriggerRef}
-                  type="button"
-                  className="sr-only"
-                  aria-hidden
-                  tabIndex={-1}
-                />
-              }
-            />
-          )}
         </div>
       )}
     </div>

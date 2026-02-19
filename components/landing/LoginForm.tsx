@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -11,6 +11,11 @@ import { loginWithPassword, loginWithEmail, signInWithGoogle, resetPassword } fr
 import { Loader2, Mail, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 type LoginMode = 'password' | 'magic-link' | 'forgot-password';
+
+const ERROR_MESSAGES: Record<string, string> = {
+  auth_callback_error: "Falha ao concluir o login. Tente novamente.",
+  oauth: "Falha ao autenticar com Google. Verifique se a URL de redirecionamento está configurada no Supabase.",
+};
 
 export function LoginForm() {
     const searchParams = useSearchParams();
@@ -24,6 +29,16 @@ export function LoginForm() {
     const [isSuccess, setIsSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+    // Exibir erro quando voltar do callback (OAuth ou senha)
+    useEffect(() => {
+        const err = searchParams.get('error');
+        const msg = searchParams.get('message');
+        if (err) {
+            const text = msg ? decodeURIComponent(msg) : (ERROR_MESSAGES[err] ?? "Ocorreu um erro ao fazer login.");
+            setError(text);
+        }
+    }, [searchParams]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
