@@ -74,7 +74,7 @@ function getNextRecurrenceDate(
   recurrenceDays?: number[] | null
 ): Date {
   const next = new Date(currentDate);
-  
+
   if ((recurrenceType === "weekly" || recurrenceType === "custom") && recurrenceDays && recurrenceDays.length > 0) {
     // Para recorrência semanal com dias específicos
     const daySet = new Set(recurrenceDays);
@@ -86,7 +86,7 @@ function getNextRecurrenceDate(
       }
     }
   }
-  
+
   switch (recurrenceType) {
     case "daily":
       next.setDate(next.getDate() + interval);
@@ -101,7 +101,7 @@ function getNextRecurrenceDate(
       next.setDate(next.getDate() + interval);
       break;
   }
-  
+
   return next;
 }
 
@@ -139,19 +139,19 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
 
   const slideTrack = (direction: -1 | 1) => {
     if (isSliding) return;
-    
+
     if (shouldReduceMotion) {
       setWeekOffset((prev) => prev + direction);
       return;
     }
 
     if (!stepRef.current) measureStep();
-    
+
     // CORREÇÃO: Primeiro, desativamos a animação para "pular" a posição
     setIsSliding(true);
     // O trackOffset pula para onde a nova coluna VAI estar
     setTrackOffset(-direction * stepRef.current);
-    
+
     // Atualizamos os dados
     setWeekOffset((prev) => prev + direction);
   };
@@ -295,7 +295,7 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
 
         const inRange = nextDate >= visibleDateRange.startDate && nextDate <= visibleDateRange.endDate;
 
-        if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay && nextDate >= todayStart) {
+        if (!processedRecurrenceIds.has(projectionKey) && inRange && !alreadyHasRealOnDay && nextDate > todayStart) {
           if (!grouped[nextDateKey]) grouped[nextDateKey] = [];
 
           // Todas as projeções são virtuais (somente leitura); evita ações com ID inexistente no banco
@@ -368,7 +368,7 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
       });
     }
 
-      // Ordenar tarefas de cada dia: com horário no topo (e entre elas por horário), depois sem horário
+    // Ordenar tarefas de cada dia: com horário no topo (e entre elas por horário), depois sem horário
     // "Sem horário" = meia-noite em UTC (backend) ou meia-noite em local (app); senão = com horário
     const hasSpecificTime = (t: Task) => {
       if (!t.due_date) return false;
@@ -450,7 +450,7 @@ export function WeeklyView({ tasks, workspaces, projectTags = [], highlightInput
             <TabsTrigger value="month">Meu mês</TabsTrigger>
           </TabsList>
         </Tabs>
-        
+
         {viewMode === "week" && (
           <div className="flex gap-2">
             <button onClick={handlePrevDay} className="p-2 border rounded-md hover:bg-gray-50 transition-colors">
