@@ -94,7 +94,7 @@ async function ensureNextRecurrenceOccurrences(
 
   // Materializar apenas ocorrências de hoje — dias passados e futuros ficam como estão
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
+  const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
   for (const task of data) {
     if (!task.recurrence_type || task.status === "done" || task.recurrence_parent_id) continue;
@@ -399,8 +399,8 @@ export async function getTasks(filters?: {
   let { data, error } = await query;
   logPerf("getTasks:query", queryStart, { workspaceId: filters?.workspaceId ?? null });
 
-  // Se estamos na aba "Minhas" e há tarefas em task_members, buscar também essas tarefas
-  if (filters?.assigneeId === "current" && isMinhasTab) {
+  // Se a busca for pelas tarefas do usuário atual e há tarefas em task_members, buscar também essas tarefas
+  if (filters?.assigneeId === "current") {
     const membersQueryStart = perfNow();
     const { data: taskMemberTasks } = await supabase
       .from("task_members")
@@ -886,24 +886,9 @@ export async function createTask(
     data.workspace_id = null;
   }
 
-  let plannerPersonalCookie: string | undefined;
-  try {
-    const cookieStore = await cookies();
-    plannerPersonalCookie = cookieStore.get("planner_personal")?.value;
-  } catch {
-    plannerPersonalCookie = undefined;
-  }
-
-  let referer = "";
-  try {
-    const headerStore = await headers();
-    referer = headerStore.get("referer") || "";
-  } catch {
-    referer = "";
-  }
-
-  const isPlannerRequest = plannerPersonalCookie === "1" || referer.includes("/planner") || data.origin_context === "planner";
+  const isPlannerRequest = data.origin_context === "planner";
   const isWeeklyViewOnly = data.origin_context === "weekly_view";
+
   if (isPlannerRequest) {
     data.workspace_id = null;
     data.is_personal = true;
@@ -1095,11 +1080,11 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
           const isOwner = workspace?.owner_id === user.id;
           const { data: member } = !isOwner
             ? await supabase
-                .from("workspace_members")
-                .select("user_id")
-                .eq("workspace_id", activeWorkspaceId)
-                .eq("user_id", user.id)
-                .single()
+              .from("workspace_members")
+              .select("user_id")
+              .eq("workspace_id", activeWorkspaceId)
+              .eq("user_id", user.id)
+              .single()
             : { data: { user_id: user.id } };
           if (isOwner || member) {
             updates.workspace_id = activeWorkspaceId;
