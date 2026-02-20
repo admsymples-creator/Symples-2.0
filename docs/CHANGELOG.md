@@ -138,6 +138,10 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Coluna de Responsável usa largura `auto` para se ajustar ao conteúdo (múltiplos avatares)
   - Indicadores Focus, Urgente e Comentários aparecem no hover dentro da coluna do título
 
+- **Feedback Visual com Sonner (Toast)**:
+  - Adicionado Toast confirmando criação de tarefa via `QuickTaskAdd` com botão de ação "Abrir".
+  - Barra de progresso customizada (CSS animado no `globals.css`) integrada aos Toasts com timer linear de 4s (simulando UI premium fluida), que pausa ao passar o mouse.
+
 - **TaskGroup - Indicador de Cor**:
   - Círculo colorido ao lado do título do grupo (via TaskSectionHeader)
   - Suporte para cores nomeadas (red, blue, green, etc.) e hex (#ffffff)
@@ -146,6 +150,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
   - Todas as atualizações (data, status, responsável, focus, urgente) usam optimistic UI
   - Atualização instantânea da UI antes da chamada ao servidor
   - Rollback automático em caso de erro
+ 
+- **Optimistic UI em QuickTaskAdd (HomeTasksSection)**:
+  - Criação rápida unificada; a UI injeta instantaneamente a nova tarefa na visualização enquanto processa o payload no background de forma não obstrutiva.
 
 ### Changed
 - **DayColumn (Recorrência):**
@@ -153,8 +160,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 - **TaskRowMinify**: Altura reduzida de `h-14` (56px) para `h-11` (44px) para interface mais compacta
 - **TaskGroup**: Espaçamento entre grupos aumentado de `gap-4` para `gap-6`
 - **TaskGroup**: Margin-top adicionado nos títulos dos grupos (`mt-4`)
+- **Aba "Próximas" (HomeTasksSection)**: Renomeada de "Abertas" de volta para "Próximas" seguindo padrão UX (Asana), agora excluindo rigidamente as tarefas atrasadas (que ficam apenas na aba "Atrasadas").
 
 ### Fixed
+- **Atribuições em Workspaces Profissionais**: 
+  - Correção severa no `getTasks` onde a query restringia a busca de sub-relações de `task_members` via designações diretas a workspaces, fazendo tarefas recém-criadas e atribuídas a si próprio desaparecerem misteriosamente até estarem na aba geral (Minhas).
 - **Correção de filtro na lista de membros**: Garantido que o usuário logado sempre aparece na lista de membros ao selecionar responsável de tarefa
 - **Comentários em TaskDetailModal**: Removida duplicação momentânea entre comentário otimista e dado real; paginação de histórico aumentada para 50 itens com botão "Carregar mais".
   - Corrigido `getWorkspaceMembers` para incluir o usuário atual mesmo que não esteja em `workspace_members`
