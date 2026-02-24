@@ -4,6 +4,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 import { getPlanLimits } from "@/lib/utils/subscription-helpers";
+import type { AdminTableParams, PaginatedResult, AdminUserRow, AdminWorkspaceRow, AdminAuditLogRow } from "@/types/admin";
 
 // Email hardcoded ou via ENV para segurança imediata
 const ADMIN_EMAILS_ENV = (process.env.ADMIN_EMAILS || "").split(",").filter(Boolean);
@@ -130,7 +131,8 @@ export async function getAdminUsers(search?: string) {
         .select('user_id, role, workspace_id')
         .in('user_id', userIds);
 
-    const workspacesByOwner = new Map<string, Array<any>>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workspacesByOwner = new Map<string, Array<Record<string, any>>>();
     (workspaces || []).forEach((ws) => {
         if (!ws?.owner_id) return;
         const list = workspacesByOwner.get(ws.owner_id) || [];
@@ -138,7 +140,8 @@ export async function getAdminUsers(search?: string) {
         workspacesByOwner.set(ws.owner_id, list);
     });
 
-    const membershipsByUser = new Map<string, Array<any>>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const membershipsByUser = new Map<string, Array<Record<string, any>>>();
     (memberships || []).forEach((member) => {
         if (!member?.user_id) return;
         const list = membershipsByUser.get(member.user_id) || [];
@@ -146,7 +149,8 @@ export async function getAdminUsers(search?: string) {
         membershipsByUser.set(member.user_id, list);
     });
 
-    const pickPrimaryWorkspace = (list: Array<any>) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pickPrimaryWorkspace = (list: Array<Record<string, any>>) => {
         if (!list || list.length === 0) return null;
         const personal = list.find((ws) => {
             const name = (ws.name || "").trim().toLowerCase();
@@ -382,8 +386,498 @@ export async function updateUserPlan(
         }
 
         return { success: true };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
         console.error("[updateUserPlan] Erro inesperado:", error);
         return { success: false, error: error?.message || "Erro inesperado ao atualizar plano." };
     }
+}
+
+// ---------------------------------------------------------------------------
+// Paginated server actions
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pickPrimaryWorkspace = (list: Array<Record<string, any>>) => {
+    if (!list || list.length === 0) return null;
+    const personal = list.find((ws) => {
+        const name = (ws.name || "").trim().toLowerCase();
+        const slug = (ws.slug || "").trim().toLowerCase();
+        return name === "pessoal" || slug.startsWith("pessoal-");
+    });
+    if (personal) return personal;
+    return [...list].sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return aTime - bTime;
+    })[0];
+};
+
+export async function getAdminUsersPaginated(params: AdminTableParams = {}): Promise<PaginatedResult<AdminUserRow>> {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.min(50, Math.max(1, params.pageSize || 20));
+    const sort = params.sort || "created_at";
+    const ascending = params.order === "asc";
+    const offset = (page - 1) * pageSize;
+
+    let query = adminDb.from("profiles").select("*", { count: "exact" });
+
+    if (params.q) {
+        query = query.or(`full_name.ilike.%${params.q}%,email.ilike.%${params.q}%`);
+    }
+
+    const allowedSortFields = ["created_at", "full_name", "email"];
+    const sortField = allowedSortFields.includes(sort) ? sort : "created_at";
+
+    const { data, error, count } = await query
+        .order(sortField, { ascending })
+        .range(offset, offset + pageSize - 1);
+
+    if (error) throw new Error(error.message);
+
+    const total = count || 0;
+    const profiles = data || [];
+
+    if (profiles.length === 0) {
+        return { data: [], total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    }
+
+    // Enrich with workspace data (same logic as getAdminUsers)
+    const userIds = profiles.map((u) => u.id).filter(Boolean);
+
+    const [
+        { data: workspaces },
+        { data: memberships },
+    ] = await Promise.all([
+        adminDb.from("workspaces")
+            .select("id, name, slug, owner_id, plan, subscription_status, trial_ends_at, member_limit, created_at")
+            .in("owner_id", userIds),
+        adminDb.from("workspace_members")
+            .select("user_id, role, workspace_id")
+            .in("user_id", userIds),
+    ]);
+
+    const workspaceIds = (workspaces || []).map((ws) => ws.id).filter(Boolean);
+    const { data: workspaceMembers } = workspaceIds.length > 0
+        ? await adminDb.from("workspace_members").select("workspace_id").in("workspace_id", workspaceIds)
+        : { data: [] as Array<{ workspace_id: string }> };
+
+    const memberCountByWorkspace = new Map<string, number>();
+    (workspaceMembers || []).forEach((m) => {
+        if (!m?.workspace_id) return;
+        memberCountByWorkspace.set(m.workspace_id, (memberCountByWorkspace.get(m.workspace_id) || 0) + 1);
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workspacesByOwner = new Map<string, Array<Record<string, any>>>();
+    (workspaces || []).forEach((ws) => {
+        if (!ws?.owner_id) return;
+        const list = workspacesByOwner.get(ws.owner_id) || [];
+        list.push(ws);
+        workspacesByOwner.set(ws.owner_id, list);
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const membershipsByUser = new Map<string, Array<Record<string, any>>>();
+    (memberships || []).forEach((m) => {
+        if (!m?.user_id) return;
+        const list = membershipsByUser.get(m.user_id) || [];
+        list.push(m);
+        membershipsByUser.set(m.user_id, list);
+    });
+
+    let enriched: AdminUserRow[] = profiles.map((user) => {
+        const owned = workspacesByOwner.get(user.id) || [];
+        const primaryWorkspace = pickPrimaryWorkspace(owned);
+        const userMemberships = membershipsByUser.get(user.id) || [];
+        const primaryMembership = primaryWorkspace
+            ? userMemberships.find((m) => m.workspace_id === primaryWorkspace.id)
+            : userMemberships[0];
+        return {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            avatar_url: user.avatar_url,
+            whatsapp: user.whatsapp,
+            created_at: user.created_at,
+            account_plan: user.account_plan,
+            primaryWorkspace: primaryWorkspace ? {
+                id: primaryWorkspace.id,
+                name: primaryWorkspace.name,
+                slug: primaryWorkspace.slug,
+                plan: primaryWorkspace.plan,
+                subscription_status: primaryWorkspace.subscription_status,
+                trial_ends_at: primaryWorkspace.trial_ends_at,
+                member_limit: primaryWorkspace.member_limit,
+            } : null,
+            primaryMembership: primaryMembership ? {
+                role: primaryMembership.role,
+                workspace_id: primaryMembership.workspace_id,
+            } : null,
+            primaryWorkspaceMemberCount: primaryWorkspace
+                ? memberCountByWorkspace.get(primaryWorkspace.id) || 0
+                : 0,
+        };
+    });
+
+    // Client-side filters for plan/status (applied after enrichment)
+    if (params.plan) {
+        enriched = enriched.filter((u) => {
+            const effectivePlan = u.account_plan || u.primaryWorkspace?.plan;
+            return effectivePlan === params.plan;
+        });
+    }
+    if (params.status) {
+        enriched = enriched.filter((u) => {
+            return u.primaryWorkspace?.subscription_status === params.status;
+        });
+    }
+
+    return {
+        data: enriched,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+    };
+}
+
+export async function getAdminWorkspacesPaginated(params: AdminTableParams = {}): Promise<PaginatedResult<AdminWorkspaceRow>> {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.min(50, Math.max(1, params.pageSize || 20));
+    const sort = params.sort || "created_at";
+    const ascending = params.order === "asc";
+    const offset = (page - 1) * pageSize;
+
+    let query = adminDb.from("workspaces").select(`
+        *,
+        owner:profiles!owner_id(full_name, email),
+        members:workspace_members(count)
+    `, { count: "exact" });
+
+    if (params.q) {
+        query = query.ilike("name", `%${params.q}%`);
+    }
+
+    if (params.plan) {
+        query = query.eq("plan", params.plan as "starter" | "pro" | "business" | "agency");
+    }
+
+    const allowedSortFields = ["created_at", "name", "plan"];
+    const sortField = allowedSortFields.includes(sort) ? sort : "created_at";
+
+    const { data, error, count } = await query
+        .order(sortField, { ascending })
+        .range(offset, offset + pageSize - 1);
+
+    if (error) throw new Error(error.message);
+
+    return {
+        data: (data || []) as unknown as AdminWorkspaceRow[],
+        total: count || 0,
+        page,
+        pageSize,
+        totalPages: Math.ceil((count || 0) / pageSize),
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard chart data actions
+// ---------------------------------------------------------------------------
+
+export async function getNewUsersTimeSeries(days: number = 30) {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await adminDb
+        .from("profiles")
+        .select("created_at")
+        .gte("created_at", since)
+        .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    const countsByDay = new Map<string, number>();
+    // Pre-fill all days
+    for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const key = d.toISOString().split("T")[0];
+        countsByDay.set(key, 0);
+    }
+
+    (data || []).forEach((row) => {
+        if (!row.created_at) return;
+        const key = new Date(row.created_at).toISOString().split("T")[0];
+        countsByDay.set(key, (countsByDay.get(key) || 0) + 1);
+    });
+
+    return Array.from(countsByDay.entries()).map(([date, count]) => ({
+        date,
+        users: count,
+    }));
+}
+
+export async function getPlanDistribution() {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { data, error } = await adminDb
+        .from("workspaces")
+        .select("plan");
+
+    if (error) throw new Error(error.message);
+
+    const counts: Record<string, number> = { starter: 0, pro: 0, business: 0, agency: 0 };
+    (data || []).forEach((ws) => {
+        const plan = ws.plan || "starter";
+        counts[plan] = (counts[plan] || 0) + 1;
+    });
+
+    const planLabels: Record<string, string> = {
+        starter: "Pessoal",
+        pro: "Pro",
+        business: "Business",
+        agency: "Agency",
+    };
+
+    return Object.entries(counts).map(([plan, count]) => ({
+        plan: planLabels[plan] || plan,
+        value: count,
+    }));
+}
+
+export async function getTrialStats() {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { data, error } = await adminDb
+        .from("workspaces")
+        .select("subscription_status, trial_ends_at");
+
+    if (error) throw new Error(error.message);
+
+    const now = new Date();
+    let active = 0;
+    let expired = 0;
+    let converted = 0;
+    let other = 0;
+
+    (data || []).forEach((ws) => {
+        const status = ws.subscription_status;
+        if (status === "trialing") {
+            const endsAt = ws.trial_ends_at ? new Date(ws.trial_ends_at) : null;
+            if (endsAt && endsAt < now) {
+                expired++;
+            } else {
+                active++;
+            }
+        } else if (status === "active") {
+            converted++;
+        } else {
+            other++;
+        }
+    });
+
+    return [
+        { status: "Trial Ativo", value: active },
+        { status: "Trial Expirado", value: expired },
+        { status: "Convertido", value: converted },
+        { status: "Outro", value: other },
+    ];
+}
+
+// ---------------------------------------------------------------------------
+// Audit log actions
+// ---------------------------------------------------------------------------
+
+export async function getAdminAuditLogs(params: AdminTableParams = {}): Promise<PaginatedResult<AdminAuditLogRow>> {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.min(50, Math.max(1, params.pageSize || 20));
+    const offset = (page - 1) * pageSize;
+
+    let query = adminDb.from("audit_logs").select(`
+        id,
+        action,
+        user_id,
+        details,
+        created_at
+    `, { count: "exact" });
+
+    if (params.q) {
+        query = query.ilike("action", `%${params.q}%`);
+    }
+
+    const { data, error, count } = await query
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (error) throw new Error(error.message);
+
+    // Enrich with admin profiles
+    const logs = data || [];
+    const adminIds = [...new Set(logs.map((l) => l.user_id).filter(Boolean))] as string[];
+
+    const profileMap = new Map<string, { full_name: string | null; email: string }>();
+    if (adminIds.length > 0) {
+        const { data: profiles } = await adminDb
+            .from("profiles")
+            .select("id, full_name, email")
+            .in("id", adminIds);
+        (profiles || []).forEach((p) => {
+            profileMap.set(p.id, { full_name: p.full_name, email: p.email || "" });
+        });
+    }
+
+    const enriched: AdminAuditLogRow[] = logs.map((log) => ({
+        id: log.id,
+        action: log.action,
+        user_id: log.user_id,
+        details: log.details as Record<string, unknown> | null,
+        created_at: log.created_at,
+        admin_profile: log.user_id ? profileMap.get(log.user_id) || null : null,
+    }));
+
+    return {
+        data: enriched,
+        total: count || 0,
+        page,
+        pageSize,
+        totalPages: Math.ceil((count || 0) / pageSize),
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Workspace detail actions
+// ---------------------------------------------------------------------------
+
+export async function getAdminWorkspaceDetail(workspaceId: string) {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { data: workspace, error } = await adminDb
+        .from("workspaces")
+        .select(`
+            *,
+            owner:profiles!owner_id(id, full_name, email, avatar_url)
+        `)
+        .eq("id", workspaceId)
+        .single();
+
+    if (error) throw new Error(error.message);
+
+    const { data: members } = await adminDb
+        .from("workspace_members")
+        .select(`
+            user_id,
+            role,
+            joined_at,
+            profile:profiles!user_id(id, full_name, email, avatar_url)
+        `)
+        .eq("workspace_id", workspaceId)
+        .order("joined_at", { ascending: true });
+
+    return {
+        workspace,
+        members: members || [],
+    };
+}
+
+export async function updateWorkspaceSubscription(
+    workspaceId: string,
+    updates: {
+        plan?: "starter" | "pro" | "business" | "agency"
+        subscription_status?: "trialing" | "active" | "past_due" | "canceled"
+        trial_ends_at?: string | null
+        member_limit?: number
+    }
+) {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { error } = await adminDb
+        .from("workspaces")
+        .update(updates)
+        .eq("id", workspaceId);
+
+    if (error) throw new Error(error.message);
+    return { success: true };
+}
+
+export async function removeWorkspaceMember(workspaceId: string, userId: string) {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { error } = await adminDb
+        .from("workspace_members")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId);
+
+    if (error) throw new Error(error.message);
+    return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Bulk actions
+// ---------------------------------------------------------------------------
+
+export async function bulkUpdateWorkspacePlan(
+    workspaceIds: string[],
+    plan: "starter" | "pro" | "business" | "agency"
+) {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const memberLimit = getPlanLimits(plan, null);
+    const { error } = await adminDb
+        .from("workspaces")
+        .update({ plan, member_limit: memberLimit })
+        .in("id", workspaceIds);
+
+    if (error) throw new Error(error.message);
+    return { success: true, count: workspaceIds.length };
+}
+
+// ---------------------------------------------------------------------------
+// Export actions (no pagination limit)
+// ---------------------------------------------------------------------------
+
+export async function exportAdminUsers() {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { data, error } = await adminDb
+        .from("profiles")
+        .select("id, full_name, email, whatsapp, created_at, account_plan")
+        .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+}
+
+export async function exportAdminWorkspaces() {
+    await checkAdminAccess();
+    const adminDb = await createServiceRoleClient();
+
+    const { data, error } = await adminDb
+        .from("workspaces")
+        .select(`
+            id, name, slug, plan, subscription_status, trial_ends_at, member_limit, created_at,
+            owner:profiles!owner_id(full_name, email),
+            members:workspace_members(count)
+        `)
+        .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
 }
