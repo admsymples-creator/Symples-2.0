@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { TaskWithDetails, createTask, updateTask, updateTaskPosition } from "@/lib/actions/tasks";
 import { mapStatusToLabel, LABEL_TO_STATUS } from "@/lib/config/tasks";
@@ -21,11 +21,15 @@ import {
     DndContext,
     DragOverlay,
     closestCenter,
+    rectIntersection,
     KeyboardSensor,
     PointerSensor,
+    TouchSensor,
     useSensor,
     useSensors,
+    MeasuringStrategy,
 } from "@dnd-kit/core";
+import type { CollisionDetection } from "@dnd-kit/core";
 import {
     sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
@@ -52,6 +56,7 @@ interface Task {
     tags?: string[];
     hasUpdates?: boolean;
     workspaceId?: string | null;
+    position?: number;
 }
 
 const DATE_ORDER = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"] as const;
@@ -126,6 +131,27 @@ const getDueDateForBucket = (bucket: string): string | null => {
     }
 };
 
+/** Calcula posição fracionária para inserção entre items, evitando recalcular todas as posições */
+function calculateFractionalPosition(tasks: Task[], newIndex: number): number {
+    if (tasks.length === 0) return 1000;
+    if (newIndex === 0) {
+        const firstPos = tasks[0]?.position ?? 1000;
+        return firstPos / 2;
+    }
+    if (newIndex >= tasks.length) {
+        const lastPos = tasks[tasks.length - 1]?.position ?? tasks.length * 1000;
+        return lastPos + 1000;
+    }
+    const prevPos = tasks[newIndex - 1]?.position ?? (newIndex) * 1000;
+    const nextPos = tasks[newIndex]?.position ?? (newIndex + 1) * 1000;
+    const midpoint = (prevPos + nextPos) / 2;
+    // Rebalance guard: se gap < 1, use fallback incremental
+    if (Math.abs(nextPos - prevPos) < 1) {
+        return prevPos + 0.5;
+    }
+    return midpoint;
+}
+
 export function TasksView({ initialTasks, workspaceId, members, tagFilter }: TasksViewProps) {
     // ✅ MINIFY v2: initialTasks só é usado para inicializar o estado local
     const [localTasks, setLocalTasks] = useState<Task[]>(() =>
@@ -145,16 +171,32 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
     const [isSyncing, setIsSyncing] = useState(false);
 
     // Sensores para drag and drop
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
+    const pointerSensor = useSensor(PointerSensor, {
+        activationConstraint: { distance: 5 },
+    });
+    const touchSensor = useSensor(TouchSensor, {
+        activationConstraint: { delay: 200, tolerance: 5 },
+    });
+    const keyboardSensor = useSensor(KeyboardSensor, {
+        coordinateGetter: sortableKeyboardCoordinates,
+    });
+    const sensors = useSensors(pointerSensor, touchSensor, keyboardSensor);
+
+    // Collision detection customizado: closestCenter para tasks, rectIntersection para colunas
+    const customCollisionDetection: CollisionDetection = useCallback((args) => {
+        // Primeiro tentar closestCenter (melhor para cards)
+        const closestCenterCollisions = closestCenter(args);
+        if (closestCenterCollisions.length > 0) return closestCenterCollisions;
+        // Fallback para rectIntersection (melhor para colunas vazias)
+        return rectIntersection(args);
+    }, []);
+
+    // Measuring config para melhor precisão de colisões
+    const measuringConfig = useMemo(() => ({
+        droppable: {
+            strategy: MeasuringStrategy.Always,
+        },
+    }), []);
 
     // ✅ OTIMIZAÇÃO: Função memoizada para evitar recriação
     const mapTaskFromDB = useCallback((task: TaskWithDetails): Task => {
@@ -187,6 +229,7 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
             tags,
             hasUpdates: false,
             workspaceId: task.workspace_id || null,
+            position: task.position ?? undefined,
         };
     }, []);
 
@@ -417,8 +460,12 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
                 });
                 setIsSyncing(true);
 
-                // ✅ 3. Calcular nova posição (usando índice + 1 como posição)
-                const newPosition = (newIndex + 1) * 1000;
+                // ✅ 3. Calcular nova posição fracionária (só atualiza 1 row)
+                const reorderedForCalc = arrayMove([...sourceTasks], oldIndex, newIndex);
+                const newPosition = calculateFractionalPosition(
+                    reorderedForCalc.filter((t) => t.id !== task.id),
+                    newIndex
+                );
 
                 // ✅ 4. Backend em background com rollback
                 updateTaskPosition({
@@ -970,7 +1017,8 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
             <div className="flex-1 overflow-auto p-6">
                 <DndContext
                     sensors={sensors}
-                    collisionDetection={closestCenter}
+                    collisionDetection={customCollisionDetection}
+                    measuring={measuringConfig}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     onDragCancel={handleDragCancel}
@@ -1011,10 +1059,29 @@ export function TasksView({ initialTasks, workspaceId, members, tagFilter }: Tas
                         />
                     )}
 
-                    <DragOverlay>
+                    <DragOverlay
+                        dropAnimation={{
+                            duration: 200,
+                            easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+                        }}
+                    >
                         {activeTask ? (
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-4 opacity-90 pointer-events-none cursor-grabbing">
-                                <p className="text-sm font-medium">{activeTask.title}</p>
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-3 pointer-events-none cursor-grabbing w-[280px] ring-2 ring-gray-900/5">
+                                <div className="flex items-center gap-2 mb-1">
+                                    {activeTask.priority && (
+                                        <span className={cn(
+                                            "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                            activeTask.priority === "urgent" && "bg-red-100 text-red-700",
+                                            activeTask.priority === "high" && "bg-orange-100 text-orange-700",
+                                            activeTask.priority === "medium" && "bg-yellow-100 text-yellow-700",
+                                            activeTask.priority === "low" && "bg-gray-100 text-gray-600",
+                                        )}>
+                                            {activeTask.priority}
+                                        </span>
+                                    )}
+                                    <span className="text-[10px] text-gray-400">{activeTask.status}</span>
+                                </div>
+                                <p className="text-sm font-medium text-gray-800 line-clamp-2">{activeTask.title}</p>
                             </div>
                         ) : null}
                     </DragOverlay>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState, useRef, useEffect, useMemo, memo } from "react";
+import React, { useCallback, useState, useMemo, memo } from "react";
 import { 
   GitPullRequest, 
   MessageSquare, 
@@ -196,9 +196,8 @@ function KanbanCardComponent({
   const dragStyle = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
     transition: isDragging ? 'none' : transition,
-    opacity: disabled ? 0.75 : 1,
-    willChange: 'transform' as const,
-  }), [transform, transition, isDragging, disabled]);
+    willChange: isDragging ? 'transform' as const : undefined,
+  }), [transform, transition, isDragging]);
 
   // Actions - Optimistic UI (memoizar callbacks)
   const handleDateUpdate = useCallback(async (date: Date | undefined) => {
@@ -309,67 +308,11 @@ function KanbanCardComponent({
     }
   }, [id, dueDate, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  // Ref para rastrear se houve movimento antes do clique
-  const hasMovedRef = useRef(false);
-  const clickStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-
-  // Handler de mouse down para detectar início do clique/drag
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Não capturar se for em elementos interativos
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('[role="button"]') || target.closest('[data-inline-edit]')) {
-      return;
-    }
-    
-    clickStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      time: Date.now(),
-    };
-    hasMovedRef.current = false;
-  }, []);
-
-  // Handler de mouse move para detectar movimento
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (clickStartRef.current && !hasMovedRef.current) {
-        const deltaX = Math.abs(e.clientX - clickStartRef.current.x);
-        const deltaY = Math.abs(e.clientY - clickStartRef.current.y);
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        
-        // Se moveu mais de 3px, considera como movimento (menor que distance do sensor)
-        if (distance > 3) {
-          hasMovedRef.current = true;
-        }
-      }
-    };
-
-    const handleMouseUp = () => {
-      clickStartRef.current = null;
-    };
-
-    // Sempre adicionar listeners (não depender de clickStartRef.current)
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  // Resetar quando drag termina
-  useEffect(() => {
-    if (!isDragging) {
-      clickStartRef.current = null;
-      hasMovedRef.current = false;
-    }
-  }, [isDragging]);
-
   // Handler de clique no card (abre detalhes)
+  // O dnd-kit com activationConstraint.distance > 0 já distingue click vs drag nativamente.
+  // Se o mouse mover > 5px, ativa o drag e o click NÃO dispara.
   const handleClick = useCallback(() => {
-    // Não executar click se estiver arrastando ou se houve movimento
-    if (!isDragging && !hasMovedRef.current) {
+    if (!isDragging) {
       onClick?.();
     }
   }, [onClick, isDragging]);
@@ -406,14 +349,13 @@ function KanbanCardComponent({
       className={cn(
         "group rounded-xl p-2.5 border w-full relative touch-none select-none hover:border-[#050815] hover:ring-[2px] hover:ring-inset hover:ring-[#050815]",
         "flex flex-col",
-        !isDragging && "transition-all duration-200",
-        disabled ? "opacity-75 cursor-default" : isDragging ? "cursor-grabbing" : "cursor-pointer",
+        !isDragging && "motion-safe:transition-all motion-safe:duration-200",
+        disabled ? "opacity-75 cursor-default" : isDragging ? "cursor-grabbing" : "cursor-grab",
         isDragging
-          ? "bg-gray-100 border-dashed border-gray-300 shadow-none [&_*]:opacity-0"
+          ? "opacity-40 bg-gray-50 border-dashed border-gray-300 shadow-none"
           : "bg-white border-gray-200"
       )}
       onClick={handleClick}
-      onMouseDown={handleMouseDown}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={cancelPreload}
     >
