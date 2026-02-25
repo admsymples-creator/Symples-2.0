@@ -24,6 +24,8 @@ export type Workspace = Pick<Database["public"]["Tables"]["workspaces"]["Row"], 
   created_at?: string | null;
   member_limit?: number | null;
   member_count?: number | null;
+  subscription_status?: string | null;
+  trial_ends_at?: string | null;
 };
 
 type CacheEntry<T> = { value: T; expiresAt: number };
@@ -121,7 +123,9 @@ export async function getUserWorkspaces(options?: { forceRefresh?: boolean }) {
         slug,
         logo_url,
         created_at,
-        member_limit
+        member_limit,
+        subscription_status,
+        trial_ends_at
       )
     `)
     .eq("user_id", user.id);
@@ -151,15 +155,25 @@ export async function getUserWorkspaces(options?: { forceRefresh?: boolean }) {
     .filter((ws): ws is any => ws !== null && typeof ws === "object") as Workspace[] || [];
 
   const sortedWorkspaces = [...workspaces].sort((a, b) => {
+    // Prioridade 1: Workspaces com subscription ativa primeiro,
+    // workspaces com trial expirado por último
+    const now = new Date();
+    const aExpired = a.subscription_status === "trialing" && a.trial_ends_at && new Date(a.trial_ends_at) < now;
+    const bExpired = b.subscription_status === "trialing" && b.trial_ends_at && new Date(b.trial_ends_at) < now;
+    if (aExpired !== bExpired) {
+      return aExpired ? 1 : -1;
+    }
+
+    // Prioridade 2: Pessoal primeiro (entre workspaces de mesmo status)
     const aPersonal = isPersonalWorkspace(a, workspaces);
     const bPersonal = isPersonalWorkspace(b, workspaces);
-    if (aPersonal != bPersonal) {
+    if (aPersonal !== bPersonal) {
       return aPersonal ? -1 : 1;
     }
 
     const aCreatedAt = a.created_at ? new Date(a.created_at).getTime() : 0;
     const bCreatedAt = b.created_at ? new Date(b.created_at).getTime() : 0;
-    if (aCreatedAt != bCreatedAt) {
+    if (aCreatedAt !== bCreatedAt) {
       return aCreatedAt - bCreatedAt;
     }
 
