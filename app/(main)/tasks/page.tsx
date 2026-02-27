@@ -5,8 +5,8 @@ import { getUserWorkspaces } from "@/lib/actions/user";
 /**
  * Redireciona /tasks para /[workspaceSlug]/tasks baseado no workspace ativo
  */
-export default async function TasksPage({ searchParams }: { searchParams: Promise<{ search?: string }> }) {
-  const { search } = await searchParams;
+export default async function TasksPage({ searchParams }: { searchParams: Promise<{ search?: string; taskId?: string; task?: string }> }) {
+  const { search, taskId, task } = await searchParams;
   const cookieStore = await cookies();
   const activeWorkspaceIdCookie = cookieStore.get("active_workspace_id");
   const workspaces = await getUserWorkspaces();
@@ -26,9 +26,14 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     }
   }
 
-  // Redirecionar para a rota com workspace slug
+  // Redirecionar para a rota com workspace slug, preservando params
   const workspaceSlug = activeWorkspace.slug || activeWorkspace.id;
-  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  const params = new URLSearchParams();
+  if (search) params.set("search", encodeURIComponent(search));
+  // Suportar tanto ?taskId= (correto) quanto ?task= (legado dos triggers antigos)
+  const effectiveTaskId = taskId || task;
+  if (effectiveTaskId) params.set("taskId", effectiveTaskId);
+  const query = params.toString() ? `?${params.toString()}` : "";
   redirect(`/${workspaceSlug}/tasks${query}`);
 }
 

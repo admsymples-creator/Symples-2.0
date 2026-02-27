@@ -2,6 +2,21 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
+## [2026-02-28] - Correção: Crash ao Clicar em Notificações
+
+### Fixed
+- **Crash ao clicar em notificações**: todos os triggers geravam `action_url` com `?task=UUID`, mas o `tasks-page-client.tsx` lê `searchParams.get("taskId")` — o clique na notificação não abria a tarefa e, em alguns casos, causava exceção client-side
+- **`/tasks/page.tsx`**: página de redirect agora aceita tanto `?taskId=` (correto) quanto `?task=` (legado) e repassa para `/{workspaceSlug}/tasks?taskId=UUID`
+- **Triggers corrigidos** (`notify_task_comment`, `notify_task_attachment`, `notify_task_assignment`, `check_overdue_tasks`): todas as funções agora geram `action_url` com `?taskId=`
+- **Notificações históricas**: UPDATE em produção substituindo `?task=` por `?taskId=` em todos os registros existentes
+
+### Technical
+- Migration `20260228000004_fix_notification_action_url_param.sql` aplicada em DEV e PROD
+- `notify_task_assignment()` também passou a incluir `workspace_id` no metadata (estava ausente)
+- `notify_task_attachment()` também passou a incluir `workspace_id` no metadata (estava ausente)
+
+---
+
 ## [2026-02-28] - Correção de Bug de Data em Tarefas (Mês Seguinte)
 
 ### Fixed
