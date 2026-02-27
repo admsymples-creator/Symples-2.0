@@ -5,6 +5,11 @@ import { getUserWorkspaces, ensurePersonalWorkspace } from "@/lib/actions/user";
 import { revalidatePath } from "next/cache";
 import { cookies } from 'next/headers';
 
+function isMobile(request: Request): boolean {
+  const ua = request.headers.get('user-agent') ?? '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const { searchParams, origin } = requestUrl;
@@ -105,7 +110,8 @@ export async function GET(request: Request) {
               }
               
               if (workspaces.length > 0) {
-                return NextResponse.redirect(`${origin}/home`);
+                const homeOrAssistant = isMobile(request) ? '/assistant' : '/home';
+                return NextResponse.redirect(`${origin}${homeOrAssistant}`);
               } else {
                 return NextResponse.redirect(`${origin}/onboarding`);
               }
@@ -240,7 +246,8 @@ export async function GET(request: Request) {
 
     // 4. Decidir destino (sem parametro invite_accepted em login tradicional)
     if (workspaces.length > 0) {
-      return NextResponse.redirect(`${origin}/home`)
+      const homeOrAssistant = isMobile(request) ? '/assistant' : '/home';
+      return NextResponse.redirect(`${origin}${homeOrAssistant}`)
     } else {
       return NextResponse.redirect(`${origin}/onboarding`)
     }
