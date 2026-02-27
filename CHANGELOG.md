@@ -2,6 +2,14 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
+## [2026-02-28] - Correção de Bug de Data em Tarefas (Mês Seguinte)
+
+### Fixed
+- **`setMonth` overflow em recorrências mensais**: substituído `setMonth()` nativo por `addMonths()` do `date-fns` em 4 arquivos (`tasks.ts`, `WeeklyView.tsx`, `DayColumn.tsx`, `planner-calendar.tsx`). O `setMonth` causava overflow silencioso — ex: 31/jan + 1 mês resultava em 3/mar em vez de 28/fev
+- **`TaskDateTimePicker` salvava data ao abrir o popover**: removido `onSelect()` do `handleOpenChange` — o picker agora apenas pré-seleciona a data localmente; a data só é persistida quando o usuário clica em "Agendar". Isso evitava que o calendário resetasse para o mês atual ao navegar para março
+
+---
+
 ## [2026-02-28] - Auditoria: Correção de Bugs no Sistema de Notificações
 
 ### Fixed
