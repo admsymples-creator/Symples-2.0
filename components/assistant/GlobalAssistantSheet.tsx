@@ -36,15 +36,17 @@ import { useWorkspace } from "@/components/providers/SidebarProvider";
 import { getWorkspaceMembers, getTasks, createTask } from "@/lib/actions/tasks";
 import type { Workspace } from "@/lib/actions/user";
 import { invalidateTasksCache } from "@/hooks/use-tasks";
-import { 
-  loadAssistantMessages, 
-  saveAssistantMessage, 
+import {
+  loadAssistantMessages,
+  saveAssistantMessage,
   saveAssistantMessages,
-  type AssistantMessage as DBAssistantMessage 
+  updateAssistantMessage,
+  type AssistantMessage as DBAssistantMessage
 } from "@/lib/actions/assistant";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { getGreeting } from "@/lib/utils/greeting";
+import { sanitizeHistory } from "@/lib/utils/sanitize-history";
 
 // Tipagem preparada para Generative UI
 interface Message {
@@ -69,6 +71,7 @@ interface Message {
       priority?: "low" | "medium" | "high" | "urgent";
       status?: "todo" | "in_progress" | "done";
       workspaceId?: string;
+      confirmedStatus?: "success" | "cancelled";
     };
   }; // Dados para componentes generativos
 }
@@ -588,19 +591,8 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
 
     // 3. Chamar API real da OpenAI
     try {
-      // Preparar histórico de mensagens (apenas últimas mensagens relevantes, ignorando thinking e dividers)
-      const relevantHistory = messages
-        .filter(msg => 
-          msg.role !== "system" && 
-          !msg.isThinking && 
-          !msg.isContextDivider &&
-          msg.content
-        )
-        .slice(-10) // Últimas 10 mensagens
-        .map(msg => ({
-          role: msg.role,
-          content: msg.content,
-        }));
+      // Preparar histórico sanitizado (inclui a mensagem do usuário já adicionada)
+      const relevantHistory = sanitizeHistory([...messages, userMessage]);
 
       // Detectar se precisa buscar tarefas (resumo, pauta, semana, atrasado, etc.)
       const lowerContent = content.toLowerCase();
@@ -860,18 +852,7 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
 
     // Processar imagem com IA
     try {
-      const relevantHistory = messages
-        .filter(msg => 
-          msg.role !== "system" && 
-          !msg.isThinking && 
-          !msg.isContextDivider &&
-          msg.content
-        )
-        .slice(-10)
-        .map(msg => ({
-          role: msg.role,
-          content: msg.content,
-        }));
+      const relevantHistory = sanitizeHistory(messages);
 
       const response = await fetch("/api/ai/chat", {
         method: "POST",
@@ -1080,19 +1061,8 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
 
           // Processar transcrição com IA real
           try {
-            // Preparar histórico de mensagens
-            const relevantHistory = messages
-              .filter(msg => 
-                msg.role !== "system" && 
-                !msg.isThinking && 
-                !msg.isContextDivider &&
-                msg.content
-              )
-              .slice(-10)
-              .map(msg => ({
-                role: msg.role,
-                content: msg.content,
-              }));
+            // Preparar histórico sanitizado
+            const relevantHistory = sanitizeHistory(messages);
 
             // Se atingiu o limite de 2 minutos, mostrar resposta especial com meme
             if (isMaxDuration) {
@@ -1470,23 +1440,26 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
           });
         }
         
-        // Remover card de confirmação e adicionar mensagem de sucesso
+        // Atualizar card para estado de sucesso (mantém visível no histórico)
         startTransition(() => {
-          setMessages((prev) => {
-            const withoutCard = prev.filter((msg) => 
-              !(msg.type === "component" && msg.componentData?.type === "task_confirmation")
-            );
-            
-            const successMessage: Message = {
-              id: Date.now().toString(),
-              role: "assistant",
-              content: `✅ Tarefa "${taskData.title}" criada com sucesso!`,
-              type: "text",
-              timestamp: new Date(),
-            };
-            
-            return [...withoutCard, successMessage];
-          });
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.type === "component" && msg.componentData?.type === "task_confirmation") {
+                const updatedComponentData = {
+                  ...msg.componentData,
+                  data: { ...msg.componentData.data, confirmedStatus: "success" as const },
+                };
+                if (msg.id.startsWith("db-")) {
+                  const dbId = msg.id.replace("db-", "");
+                  updateAssistantMessage(dbId, { component_data: updatedComponentData as Record<string, unknown> }).catch(
+                    (err) => console.error("Erro ao atualizar card no banco:", err)
+                  );
+                }
+                return { ...msg, componentData: updatedComponentData };
+              }
+              return msg;
+            })
+          );
         });
       } else {
         throw new Error(result.error || "Erro ao criar tarefa");
@@ -1500,12 +1473,23 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
   };
 
   const handleCancelTask = () => {
-    // Remover card de confirmação
     setMessages((prev) =>
-      prev.filter(
-        (msg) =>
-          !(msg.type === "component" && msg.componentData?.type === "task_confirmation")
-      )
+      prev.map((msg) => {
+        if (msg.type === "component" && msg.componentData?.type === "task_confirmation") {
+          const updatedComponentData = {
+            ...msg.componentData,
+            data: { ...msg.componentData.data, confirmedStatus: "cancelled" as const },
+          };
+          if (msg.id.startsWith("db-")) {
+            const dbId = msg.id.replace("db-", "");
+            updateAssistantMessage(dbId, { component_data: updatedComponentData as Record<string, unknown> }).catch(
+              (err) => console.error("Erro ao atualizar card no banco:", err)
+            );
+          }
+          return { ...msg, componentData: updatedComponentData };
+        }
+        return msg;
+      })
     );
   };
 

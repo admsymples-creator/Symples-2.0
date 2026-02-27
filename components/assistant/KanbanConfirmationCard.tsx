@@ -43,6 +43,7 @@ interface KanbanConfirmationCardProps {
     priority?: "low" | "medium" | "high" | "urgent";
     status?: "todo" | "in_progress" | "done";
     workspaceId?: string;
+    confirmedStatus?: "success" | "cancelled";
   };
   members?: Array<{ id: string; name: string; avatar?: string }>;
   workspaces?: Array<{ id: string; name: string; slug?: string; logo_url?: string | null }>;
@@ -91,7 +92,9 @@ export function KanbanConfirmationCard({
   const [isAssigneeOpen, setIsAssigneeOpen] = React.useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = React.useState(false);
   const [isStatusOpen, setIsStatusOpen] = React.useState(false);
-  const [status, setStatus] = React.useState<"idle" | "loading" | "success" | "cancelled">("idle");
+  const [status, setStatus] = React.useState<"idle" | "loading" | "success" | "cancelled">(
+    initialData.confirmedStatus || "idle"
+  );
 
   const titleInputRef = React.useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = React.useRef<HTMLTextAreaElement>(null);

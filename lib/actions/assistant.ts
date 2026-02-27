@@ -222,6 +222,43 @@ export async function deleteAssistantMessage(
 }
 
 /**
+ * Atualiza campos de uma mensagem do assistente (ex: component_data após confirmação)
+ */
+export async function updateAssistantMessage(
+  messageId: string,
+  updates: { component_data?: unknown }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServerActionClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, error: "Usuário não autenticado" };
+    }
+
+    const { error } = await supabase
+      .from("assistant_messages")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update(updates as any)
+      .eq("id", messageId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Erro ao atualizar mensagem:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Erro ao atualizar mensagem:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro desconhecido",
+    };
+  }
+}
+
+/**
  * Limpa todas as mensagens de um workspace (ou mensagens pessoais)
  */
 export async function clearAssistantMessages(

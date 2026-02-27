@@ -22,13 +22,6 @@ export function PlannerContent({ tasks, workspaces, workspaceId, isPersonal = fa
   const workspaceIdForCalendar = isPersonalMode ? null : workspaceId;
   const calendarReloadRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    document.cookie = "planner_personal=1; path=/";
-    return () => {
-      document.cookie = "planner_personal=; Max-Age=0; path=/";
-    };
-  }, []);
-
   // Handler para quando tarefa é criada/atualizada na WeeklyView — refetch no cliente (mesma query do servidor)
   // Não usar router.refresh() aqui: o servidor pode devolver cache e o efeito setTasks(initialTasks) sobrescreve a lista
   const handleWeeklyViewUpdate = async () => {

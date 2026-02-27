@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback, useRef, useTransition } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { toast } from "sonner";
 import { 
-  loadAssistantMessages, 
+  loadAssistantMessages,
   saveAssistantMessage,
-  type AssistantMessage as DBAssistantMessage 
+  type AssistantMessage as DBAssistantMessage
 } from "@/lib/actions/assistant";
+import { sanitizeHistory as sanitizeHistoryUtil } from "@/lib/utils/sanitize-history";
 import { createTask, getTasks, getWorkspaceMembers } from "@/lib/actions/tasks";
 import { getUserWorkspaces, type Workspace } from "@/lib/actions/user";
 import { invalidateTasksCache } from "@/hooks/use-tasks";
@@ -158,51 +159,8 @@ export function useAssistantChat(workspaceId: string | null) {
     getUserWorkspaces().then(w => setWorkspaces(w || []));
   }, [workspaceId]);
 
-  // Função auxiliar para sanitizar histórico antes de enviar à API
-  const sanitizeHistory = (allMessages: Message[]): Array<{ role: string; content: string }> => {
-    // 1. Encontrar o índice do último divisor de contexto
-    let contextCutoffIndex = -1;
-    for (let i = allMessages.length - 1; i >= 0; i--) {
-      if (allMessages[i].isContextDivider === true) {
-        contextCutoffIndex = i;
-        break;
-      }
-    }
-
-    // 2. Filtrar mensagens após o divisor (ou todas se não houver divisor)
-    const messagesAfterDivider = contextCutoffIndex >= 0
-      ? allMessages.slice(contextCutoffIndex + 1)
-      : allMessages;
-
-    // 3. Aplicar filtros e transformações
-    const sanitized = messagesAfterDivider
-      .filter((msg) => {
-        // Remover mensagens de thinking e system (exceto injeções manuais)
-        if (msg.isThinking === true) return false;
-        if (msg.role === "system" && !msg.isContextDivider) return false;
-        return true;
-      })
-      .map((msg) => {
-        // Injetar contexto visual quando content está vazio mas componentData existe
-        if (!msg.content && msg.componentData) {
-          const componentType = msg.componentData.type || "unknown";
-          const componentData = msg.componentData.data || {};
-          return {
-            role: msg.role,
-            content: `[Sistema: Exibi um componente do tipo ${componentType} com os dados: ${JSON.stringify(componentData)}]`,
-          };
-        }
-        // Caso padrão: retornar role e content
-        return {
-          role: msg.role,
-          content: msg.content || "",
-        };
-      })
-      .filter((msg) => msg.content.trim().length > 0) // Remover mensagens vazias
-      .slice(-15); // Windowing: últimas 15 mensagens
-
-    return sanitized;
-  };
+  // Wrapper local para compatibilidade de tipos com o utilitário compartilhado
+  const sanitizeHistory = (allMessages: Message[]) => sanitizeHistoryUtil(allMessages);
 
   // 2. AÇÕES DO CHAT
   const sendMessage = async (text: string) => {
@@ -239,8 +197,8 @@ export function useAssistantChat(workspaceId: string | null) {
         type: "text"
       });
 
-      // Sanitizar histórico antes de enviar
-      const sanitizedHistory = sanitizeHistory(messages);
+      // Sanitizar histórico antes de enviar (incluindo a mensagem do usuário recém-adicionada)
+      const sanitizedHistory = sanitizeHistory([...messages, userMsg]);
 
       const response = await fetch("/api/ai/chat", {
         method: "POST",
@@ -471,103 +429,18 @@ export function useAssistantChat(workspaceId: string | null) {
     });
     
     try {
-      // Transcrever áudio
-      const formData = new FormData();
-      // Converter Blob para File com o tipo MIME correto
+      // Determinar extensão do arquivo baseada no MIME type
       // A OpenAI Whisper aceita: mp3, mp4, mpeg, mpga, m4a, wav, webm
       let fileExtension = 'webm';
       if (mimeType.includes('mp4')) {
         fileExtension = 'mp4';
       } else if (mimeType.includes('ogg')) {
         fileExtension = 'ogg';
-      } else if (mimeType.includes('webm')) {
-        fileExtension = 'webm';
       }
-      
+
       const audioFile = new File([audioBlob], `audio.${fileExtension}`, { type: mimeType });
-      formData.append("audio", audioFile);
-      
-      console.log("Enviando áudio para transcrição:", {
-        size: audioBlob.size,
-        type: mimeType,
-        chunks: audioChunksRef.current.length,
-        fileExtension,
-      });
-      
-      const transcribeResponse = await fetch("/api/audio/transcribe", {
-        method: "POST",
-        body: formData,
-      });
-      
-      if (!transcribeResponse.ok) {
-        let errorMessage = "Erro ao transcrever áudio";
-        let errorDetails: any = null;
-        try {
-          const errorData = await transcribeResponse.json();
-          errorMessage = errorData.error || errorData.details?.error || errorMessage;
-          errorDetails = errorData.details || errorData;
-          console.error("Erro na transcrição:", {
-            status: transcribeResponse.status,
-            statusText: transcribeResponse.statusText,
-            error: errorData,
-          });
-        } catch (e) {
-          console.error("Erro ao parsear resposta de erro:", e);
-          const text = await transcribeResponse.text().catch(() => "");
-          console.error("Resposta de erro (texto):", text);
-        }
-        throw new Error(`${errorMessage}${errorDetails ? `: ${JSON.stringify(errorDetails)}` : ""}`);
-      }
-      
-      const transcribeData = await transcribeResponse.json();
-      const transcribedText = transcribeData.transcription || "";
-      
-      if (!transcribedText.trim()) {
-        throw new Error("Transcrição vazia");
-      }
-      
-      // Atualizar mensagem de áudio com transcrição
-      startTransition(() => {
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === audioMessageId
-              ? { ...msg, audioTranscription: transcribedText }
-              : msg
-          )
-        );
-      });
-      
-      // Salvar mensagem de áudio no banco (sem URL, pois é blob temporário)
-      // A URL do blob será mantida apenas no estado local
-      if (workspaceId) {
-        queueMicrotask(() => {
-          saveAssistantMessage({
-            workspace_id: workspaceId,
-            role: "user",
-            content: "Mensagem de áudio",
-            type: "audio",
-            audio_url: null, // Não salvar URL de blob temporário
-            audio_duration: duration,
-            audio_transcription: transcribedText,
-          }).then((result) => {
-            if (result.success && result.messageId) {
-              startTransition(() => {
-                setMessages(prev =>
-                  prev.map(msg =>
-                    msg.id === audioMessageId
-                      ? { ...msg, id: `db-${result.messageId}` }
-                      : msg
-                  )
-                );
-              });
-            }
-          }).catch((error) => {
-            console.error("Erro ao salvar mensagem de áudio:", error);
-          });
-        });
-      }
-      
-      // Processar transcrição e IA em rota unificada
+
+      // Processar áudio (transcrição + resposta IA) em rota unificada
       const contextPayload = {
         history: sanitizeHistory(messages),
         workspaceMembers,
@@ -585,15 +458,51 @@ export function useAssistantChat(workspaceId: string | null) {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(errorText || "Falha na rota unificada de áudio");
+        throw new Error(errorText || "Falha na rota de processamento de áudio");
       }
 
       const data = await response.json();
+      const transcribedText = data.transcription || "";
+
+      if (!transcribedText.trim()) {
+        throw new Error("Transcrição vazia");
+      }
+
+      // Salvar mensagem de áudio no banco com duração (sem URL de blob temporário)
+      if (workspaceId) {
+        queueMicrotask(() => {
+          saveAssistantMessage({
+            workspace_id: workspaceId,
+            role: "user",
+            content: "Mensagem de áudio",
+            type: "audio",
+            audio_url: null,
+            audio_duration: duration,
+            audio_transcription: transcribedText,
+          }).then((result) => {
+            if (result.success && result.messageId) {
+              startTransition(() => {
+                setMessages(prev =>
+                  prev.map(msg => {
+                    if (msg.id === audioMessageId) {
+                      URL.revokeObjectURL(audioUrl);
+                      return { ...msg, id: `db-${result.messageId}` };
+                    }
+                    return msg;
+                  })
+                );
+              });
+            }
+          }).catch((error) => {
+            console.error("Erro ao salvar mensagem de áudio:", error);
+          });
+        });
+      }
 
       const userTextMessage: Message = {
         id: `user-text-${Date.now()}`,
         role: "user",
-        content: data.transcription || transcribedText,
+        content: transcribedText,
         type: "text",
         timestamp: new Date(),
       };
@@ -611,7 +520,7 @@ export function useAssistantChat(workspaceId: string | null) {
         setMessages(prev => {
           const withTranscription = prev.map(msg =>
             msg.id === audioMessageId
-              ? { ...msg, audioTranscription: data.transcription || transcribedText }
+              ? { ...msg, audioTranscription: transcribedText }
               : msg
           );
           const clean = withTranscription.filter(m => m.id !== thinkingId);
@@ -691,6 +600,7 @@ export function useAssistantChat(workspaceId: string | null) {
     priority?: "low" | "medium" | "high" | "urgent";
     status?: "todo" | "in_progress" | "done";
     workspaceId?: string | null;
+    tags?: string[];
   }) => {
     try {
       setIsLoading(true);
@@ -705,6 +615,7 @@ export function useAssistantChat(workspaceId: string | null) {
         priority: data.priority || "medium",
         assignee_id: data.assigneeId,
         due_date: data.dueDate,
+        tags: data.tags,
       });
 
       if (res.success) {

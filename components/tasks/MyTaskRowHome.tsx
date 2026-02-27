@@ -37,7 +37,6 @@ import { TaskMembersPicker } from "./pickers/TaskMembersPicker";
 import { AvatarGroup } from "./Avatar";
 import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { buildProjectTags } from "@/lib/utils/project-tags";
-
 // --- Tipos ---
 interface TaskAssignee {
   name: string;
@@ -101,11 +100,15 @@ const getCurrentUserSingleton = () => {
 
       if (!profile) return null;
 
-      return {
+      const userData = {
         id: profile.id,
         name: profile.full_name || profile.email || "Usuario",
         avatar: profile.avatar_url || undefined,
       };
+
+      // Cache resolved data to avoid promise microtask ticks on subsequent calls
+      (userFetchPromise as any).resolvedData = userData;
+      return userData;
     })();
   }
   return userFetchPromise;
@@ -145,16 +148,16 @@ const isNextSunday = (dateString?: string): boolean => {
   const date = new Date(dateString);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const dayOfWeek = today.getDay();
   const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
   const nextSunday = new Date(today);
   nextSunday.setDate(today.getDate() + daysUntilSunday);
   nextSunday.setHours(0, 0, 0, 0);
-  
+
   const taskDate = new Date(date);
   taskDate.setHours(0, 0, 0, 0);
-  
+
   return taskDate.getTime() === nextSunday.getTime();
 };
 
@@ -169,24 +172,24 @@ const getNextSunday = (): Date => {
 };
 
 // --- Componente Principal ---
-function MyTaskRowHomeComponent({ 
-  task, 
-  disabled = false, 
-  groupColor, 
-  onClick, 
-  onTaskUpdated, 
-  onTaskDeleted, 
-  onTaskUpdatedOptimistic, 
-  onTaskDeletedOptimistic, 
-  onTaskDuplicatedOptimistic, 
-  members, 
-  showWorkspaceBadge = false, 
-  workspaceName, 
+function MyTaskRowHomeComponent({
+  task,
+  disabled = false,
+  groupColor,
+  onClick,
+  onTaskUpdated,
+  onTaskDeleted,
+  onTaskUpdatedOptimistic,
+  onTaskDeletedOptimistic,
+  onTaskDuplicatedOptimistic,
+  members,
+  showWorkspaceBadge = false,
+  workspaceName,
   showProjectTag = false,
   projectTags,
   allowInlineTitleEdit = true
 }: MyTaskRowHomeProps) {
-  
+
   // Estados UI
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
@@ -199,9 +202,20 @@ function MyTaskRowHomeComponent({
   useEffect(() => {
     setIsMounted(true);
     let isActive = true;
-    getCurrentUserSingleton().then((user) => {
+
+    // Request is deduped globally so this does not waterfall, but saves renders if user is already fetched
+    const fetchUser = async () => {
+      const user = await getCurrentUserSingleton();
       if (isActive) setCurrentUser(user);
-    });
+    };
+
+    if (userFetchPromise && "then" in userFetchPromise && (userFetchPromise as any).resolvedData) {
+      // If we add a hacky cache we can skip tick
+      setCurrentUser((userFetchPromise as any).resolvedData);
+    } else {
+      fetchUser();
+    }
+
     return () => { isActive = false; };
   }, []);
 
@@ -236,13 +250,13 @@ function MyTaskRowHomeComponent({
     return (hasCurrentUser || !currentUser) ? members : [currentUser, ...members];
   }, [members, currentUser]);
 
-  const currentMemberIds = useMemo(() => 
-    task.assignees?.map((a) => a.id).filter(Boolean) || [], 
-  [task.assignees]);
+  const currentMemberIds = useMemo(() =>
+    task.assignees?.map((a) => a.id).filter(Boolean) || [],
+    [task.assignees]);
 
   // Estilos e Classes
   const gridColumnsClass = "grid-cols-[24px_1fr_auto_90px_130px_40px]";
-  
+
   // Lógica de Data
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
   const isToday = task.dueDate && isTodayFunc(task.dueDate);
@@ -261,7 +275,7 @@ function MyTaskRowHomeComponent({
     };
     return colorMap[colorName] || null;
   };
-  
+
   const groupColorClass = getGroupColorClass(groupColor);
   const isHexColor = groupColor?.startsWith("#");
 
@@ -286,18 +300,18 @@ function MyTaskRowHomeComponent({
   };
 
   // --- Handlers ---
-  
+
   const handleDateUpdate = async (date: Date | undefined) => {
     setIsDateOpen(false);
     const previousDueDate = task.dueDate;
     onTaskUpdatedOptimistic?.(task.id, { dueDate: date ? date.toISOString() : undefined });
 
     try {
-      const result = await updateTask({ 
-        id: String(task.id), 
-        due_date: date ? date.toISOString() : null 
+      const result = await updateTask({
+        id: String(task.id),
+        due_date: date ? date.toISOString() : null
       });
-      
+
       if (!result.success) {
         onTaskUpdatedOptimistic?.(task.id, { dueDate: previousDueDate });
         toast.error("Erro ao atualizar data");
@@ -319,7 +333,7 @@ function MyTaskRowHomeComponent({
     try {
       const dbStatus = mapLabelToStatus(newStatus);
       const result = await updateTask({ id: String(task.id), status: dbStatus });
-      
+
       if (!result.success) {
         onTaskUpdatedOptimistic?.(task.id, { status: previousStatus });
         toast.error("Erro ao atualizar status");
@@ -361,15 +375,15 @@ function MyTaskRowHomeComponent({
   const handleMembersChange = async (memberIds: string[]) => {
     const previousAssignees = task.assignees || [];
     const previousMemberIds = previousAssignees.map((a) => a.id).filter(Boolean);
-    
+
     const added = memberIds.filter(id => !previousMemberIds.includes(id));
     const removed = previousMemberIds.filter(id => !memberIds.includes(id));
 
-    const updatedAssignees = memberIds && members 
+    const updatedAssignees = memberIds && members
       ? memberIds.map(id => {
-          const member = members.find(m => m.id === id);
-          return member ? { name: member.name, avatar: member.avatar, id: member.id } : null;
-        }).filter(Boolean) as TaskAssignee[]
+        const member = members.find(m => m.id === id);
+        return member ? { name: member.name, avatar: member.avatar, id: member.id } : null;
+      }).filter(Boolean) as TaskAssignee[]
       : [];
 
     onTaskUpdatedOptimistic?.(task.id, { assignees: updatedAssignees });
@@ -379,7 +393,7 @@ function MyTaskRowHomeComponent({
       const removePromises = removed.map(userId => removeTaskMember(String(task.id), userId));
 
       const results = await Promise.all([...addPromises, ...removePromises]);
-      
+
       if (results.some(r => !r.success)) {
         onTaskUpdatedOptimistic?.(task.id, { assignees: previousAssignees });
         toast.error("Erro ao atualizar membros");
@@ -395,11 +409,11 @@ function MyTaskRowHomeComponent({
   const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    
+
     const previousDueDate = task.dueDate;
     let updateData: any = {};
     let optimisticUpdates: Partial<{ dueDate?: string; priority?: string }> = {};
-    
+
     if (type === 'focus') {
       const nextSunday = getNextSunday();
       updateData = { due_date: nextSunday.toISOString() };
@@ -410,12 +424,12 @@ function MyTaskRowHomeComponent({
       updateData = { priority: "urgent", due_date: today.toISOString() };
       optimisticUpdates = { dueDate: today.toISOString(), priority: "urgent" };
     }
-    
+
     onTaskUpdatedOptimistic?.(task.id, optimisticUpdates);
 
     try {
       const result = await updateTask({ id: String(task.id), ...updateData });
-      
+
       if (!result.success) {
         onTaskUpdatedOptimistic?.(task.id, { dueDate: previousDueDate });
         toast.error(result.error || "Erro ao atualizar");
@@ -432,18 +446,18 @@ function MyTaskRowHomeComponent({
   const handleToggleComplete = async (checked: boolean) => {
     const previousStatus = task.status || "Não iniciado";
     const previousDbStatus = mapLabelToStatus(previousStatus);
-    
+
     const newStatus = checked ? TASK_STATUS.DONE : (previousDbStatus === TASK_STATUS.DONE ? TASK_STATUS.TODO : previousDbStatus);
     const newStatusLabel = TASK_CONFIG[newStatus]?.label || (checked ? "Concluido" : previousStatus);
-    
+
     onTaskUpdatedOptimistic?.(task.id, { status: newStatusLabel });
-    
+
     try {
       const result = await updateTask({
         id: String(task.id),
         status: newStatus,
       });
-      
+
       if (result.success) {
         onTaskUpdated?.();
       } else {
@@ -499,16 +513,16 @@ function MyTaskRowHomeComponent({
       onClick={(e) => {
         const target = e.target as HTMLElement;
         const isInteractive = target.closest('[data-inline-edit="true"]') ||
-                             target.closest('button') || 
-                             target.closest('[role="checkbox"]');
-        
+          target.closest('button') ||
+          target.closest('[role="checkbox"]');
+
         if (!isInteractive && onClick) {
           onClick(task.id);
         }
       }}
     >
       {/* Barra Lateral */}
-      <div 
+      <div
         className={cn(
           "absolute left-0 top-0 bottom-0 w-1 rounded-r-md",
           groupColorClass || isHexColor ? (groupColorClass || "") : "bg-gray-200"
@@ -517,13 +531,13 @@ function MyTaskRowHomeComponent({
       />
 
       {/* Checkbox */}
-      <div 
+      <div
         onClick={stopProp}
         onPointerDown={stopProp}
         className="flex items-center justify-center"
       >
-        <Checkbox 
-          checked={isCompleted} 
+        <Checkbox
+          checked={isCompleted}
           onCheckedChange={handleToggleComplete}
           className="border-gray-200 hover:border-gray-300 transition-colors data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
         />
@@ -533,7 +547,7 @@ function MyTaskRowHomeComponent({
       <div className="flex items-center min-w-0 gap-2 pr-2 overflow-hidden">
         <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
           {task.isPending && <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />}
-          
+
           {(task.recurrence_type || task.recurrence_parent_id) && (
             <TooltipProvider>
               <Tooltip>
@@ -546,7 +560,7 @@ function MyTaskRowHomeComponent({
               </Tooltip>
             </TooltipProvider>
           )}
-          
+
           <div className="flex-1 min-w-0 overflow-hidden">
             {canInlineEditTitle ? (
               <InlineTextEdit
@@ -573,7 +587,7 @@ function MyTaskRowHomeComponent({
               </span>
             )}
           </div>
-          
+
           {showProjectTag ? (
             isMounted ? (
               <Popover open={isProjectOpen} onOpenChange={setIsProjectOpen}>
@@ -644,11 +658,11 @@ function MyTaskRowHomeComponent({
             </Badge>
           ) : null}
         </div>
-        
+
         {/* Ícone Comentários */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {(task.commentCount || task.commentsCount || 0) > 0 && (
-            <div 
+            <div
               className="flex items-center gap-1 text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
               onClick={(e) => { e.stopPropagation(); onClick?.(task.id); }}
             >
@@ -660,7 +674,7 @@ function MyTaskRowHomeComponent({
       </div>
 
       {/* Membros */}
-      <div 
+      <div
         className="flex items-center justify-center"
         onClick={stopProp}
         onPointerDown={stopProp}
@@ -685,14 +699,14 @@ function MyTaskRowHomeComponent({
             }
           />
         ) : (
-           <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
-             <User size={12} />
-           </div>
+          <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center bg-white text-gray-300">
+            <User size={12} />
+          </div>
         )}
       </div>
 
       {/* Data */}
-      <div 
+      <div
         className="flex items-center justify-center gap-1 cursor-pointer hover:bg-gray-50 rounded px-1 transition-colors"
         onClick={stopProp}
         onPointerDown={stopProp}
@@ -744,8 +758,8 @@ function MyTaskRowHomeComponent({
                 {task.dueDate ? (
                   <span className={cn("text-xs font-medium whitespace-nowrap",
                     task.completed ? "text-gray-400" :
-                    isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                    isToday ? "text-green-600" : "text-gray-500"
+                      isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" :
+                        isToday ? "text-green-600" : "text-gray-500"
                   )}>
                     {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                   </span>
@@ -764,9 +778,9 @@ function MyTaskRowHomeComponent({
                 initialFocus
               />
               <div className="p-2 border-t">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="w-full text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                   onClick={() => handleDateUpdate(undefined)}
                 >
@@ -781,8 +795,8 @@ function MyTaskRowHomeComponent({
             {task.dueDate ? (
               <span className={cn("text-xs font-medium whitespace-nowrap",
                 task.completed ? "text-gray-400" :
-                isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
-                isToday ? "text-green-600" : "text-gray-500"
+                  isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" :
+                    isToday ? "text-green-600" : "text-gray-500"
               )}>
                 {new Date(task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
               </span>
@@ -887,8 +901,11 @@ export const MyTaskRowHome = memo(
       (prev.task.commentCount || 0) === (next.task.commentCount || 0) &&
       (prev.task.commentsCount || 0) === (next.task.commentsCount || 0) &&
       JSON.stringify(prev.task.assignees) === JSON.stringify(next.task.assignees) &&
+      JSON.stringify(prev.task.tags) === JSON.stringify(next.task.tags) &&
       prev.groupColor === next.groupColor &&
       prev.members === next.members &&
+      prev.projectTags === next.projectTags &&
+      prev.showProjectTag === next.showProjectTag &&
       prev.disabled === next.disabled &&
       prev.onClick === next.onClick &&
       prev.onTaskUpdated === next.onTaskUpdated &&

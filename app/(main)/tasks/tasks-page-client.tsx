@@ -151,7 +151,7 @@ function getLastFilterFromStorage(): { group: ViewOption; sort: string } | null 
         const p = JSON.parse(s);
         if (!p || typeof p.group !== "string" || typeof p.sort !== "string") return null;
         const validGroups: ViewOption[] = ["group", "status", "priority", "date", "assignee", "project"];
-        const validSorts = ["status", "priority", "assignee", "title", "position"];
+        const validSorts = ["status", "date", "assignee", "title", "position"];
         if (!validGroups.includes(p.group) || !validSorts.includes(p.sort)) return null;
         return { group: p.group, sort: p.sort };
     } catch {
@@ -181,7 +181,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
     // Ler da URL (localStorage só no cliente para evitar hydration mismatch)
     const groupParam = searchParams.get("group");
-    const sortParam = (searchParams.get("sort") as "status" | "priority" | "assignee" | "title" | "position") || "position";
+    const sortParam = (searchParams.get("sort") as "status" | "date" | "assignee" | "title" | "position") || "position";
 
     // Ler tag da URL para filtro de projeto (decodificar se presente)
     const tagParam = searchParams.get("tag");
@@ -194,7 +194,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
     const activeTab = "todas" as const;
     const [viewMode, setViewMode] = useState<ViewMode>("list");
     const [viewOption, setViewOption] = useState<ViewOption>(initialViewOption);
-    const [sortBy, setSortBy] = useState<"status" | "priority" | "assignee" | "title" | "position">(sortParam);
+    const [sortBy, setSortBy] = useState<"status" | "date" | "assignee" | "title" | "position">(sortParam);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -1940,11 +1940,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     const bIndex = mapStatus(b.status);
                     return aIndex - bIndex;
                 }
-                if (sort === "priority") {
-                    const priorityOrder = ["urgent", "high", "medium", "low"];
-                    const aIndex = priorityOrder.indexOf(a.priority || "medium");
-                    const bIndex = priorityOrder.indexOf(b.priority || "medium");
-                    return aIndex - bIndex;
+                if (sort === "date") {
+                    const dateA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+                    const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+                    return dateA - dateB;
                 }
                 if (sort === "assignee") {
                     const aName = a.assignees?.[0]?.name || "zzzz";
@@ -2157,7 +2156,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         const last = getLastFilterFromStorage();
         if (!last) return;
         if (groupParam == null) setViewOption(last.group);
-        if (sortParamFromUrl == null) setSortBy(last.sort as "status" | "priority" | "assignee" | "title" | "position");
+        if (sortParamFromUrl == null) setSortBy(last.sort as "status" | "date" | "assignee" | "title" | "position");
         // Ao restaurar "Personalizado", restaurar ordem dos grupos no mesmo tick (evita flicker)
         if (last.group === "group" && availableGroups.length > 0 && typeof window !== "undefined") {
             try {
@@ -2221,7 +2220,7 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
         }, 300);
     }, [pathname, router, searchParams]);
 
-    const handleSortByChange = useCallback((value: "status" | "priority" | "assignee" | "title" | "position") => {
+    const handleSortByChange = useCallback((value: "status" | "date" | "assignee" | "title" | "position") => {
         setSortBy(value);
         if (urlDebounceRef.current) clearTimeout(urlDebounceRef.current);
         urlDebounceRef.current = setTimeout(() => {
@@ -2274,11 +2273,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                 };
                 return mapStatus(a.status) - mapStatus(b.status);
             }
-            if (sortBy === "priority") {
-                const priorityOrder = ["urgent", "high", "medium", "low"];
-                const aIndex = priorityOrder.indexOf(a.priority || "medium");
-                const bIndex = priorityOrder.indexOf(b.priority || "medium");
-                return aIndex - bIndex;
+            if (sortBy === "date") {
+                const dateA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+                const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+                return dateA - dateB;
             }
             if (sortBy === "assignee") {
                 const aName = a.assignees?.[0]?.name || "zzzz";
@@ -2346,11 +2344,10 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
                     };
                     return mapStatus(a.status) - mapStatus(b.status);
                 }
-                if (sortBy === "priority") {
-                    const priorityOrder = ["urgent", "high", "medium", "low"];
-                    const aIndex = priorityOrder.indexOf(a.priority || "medium");
-                    const bIndex = priorityOrder.indexOf(b.priority || "medium");
-                    return aIndex - bIndex;
+                if (sortBy === "date") {
+                    const dateA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+                    const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+                    return dateA - dateB;
                 }
                 if (sortBy === "assignee") {
                     const aName = a.assignees?.[0]?.name || "zzzz";
@@ -2985,13 +2982,13 @@ export default function TasksPage({ initialTasks, initialGroups, workspaceId: pr
 
         const persistPromise = Promise.all([
             updateTaskPosition({
-            taskId: activeIdStr,
-            newPosition: calculatedPosition,
-            status: isSameGroup ? undefined : updateData.status,
-            priority: isSameGroup ? undefined : updateData.priority,
-            group_id: finalGroupId,
-            assignee_id: isSameGroup ? undefined : updateData.assignee_id,
-            workspace_id: movingFinal?.workspaceId ?? null,
+                taskId: activeIdStr,
+                newPosition: calculatedPosition,
+                status: isSameGroup ? undefined : updateData.status,
+                priority: isSameGroup ? undefined : updateData.priority,
+                group_id: finalGroupId,
+                assignee_id: isSameGroup ? undefined : updateData.assignee_id,
+                workspace_id: movingFinal?.workspaceId ?? null,
             }),
             tagUpdatePromise,
         ]);

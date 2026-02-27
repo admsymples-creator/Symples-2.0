@@ -19,11 +19,54 @@ type ProcessResponse = {
   componentData: any | null;
 };
 
+// Ferramenta de criação de tarefa (mesma definição do /api/ai/chat)
+const CREATE_TASK_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "create_task",
+    description:
+      "Criar uma tarefa quando o usuário pedir EXPLICITAMENTE criar, adicionar ou registrar uma tarefa. NÃO usar para: consultas, resumos, listagens, análises, perguntas ou dúvidas.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Título curto da tarefa (máx 100 chars)",
+        },
+        description: {
+          type: "string",
+          description: "Descrição completa da tarefa com todos os detalhes",
+        },
+        dueDate: {
+          type: "string",
+          description:
+            "Data no formato ISO 8601 com hora T12:00:00 (ex: 2024-01-15T12:00:00) ou null se não especificada",
+        },
+        assigneeId: {
+          type: "string",
+          description: "UUID do membro responsável ou null se não especificado",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "Prioridade da tarefa",
+        },
+      },
+      required: ["title"],
+    },
+  },
+};
+
 const buildSystemPrompt = (workspaceMembers: any[], now: Date) => {
-  const dateStr = now.toISOString().split("T")[0];
+  const dateStr = now.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
   const membersList =
     workspaceMembers && Array.isArray(workspaceMembers) && workspaceMembers.length > 0
-      ? `\nMembros disponíveis (id - nome - email):\n${workspaceMembers
+      ? `\nMembros do workspace (id | nome | email):\n${workspaceMembers
           .map(
             (m) =>
               `- ${m.id} | ${m.name || m.full_name || "Sem nome"} | ${m.email || "sem email"}`
@@ -31,35 +74,13 @@ const buildSystemPrompt = (workspaceMembers: any[], now: Date) => {
           .join("\n")}`
       : "";
 
-  return `Você é o Assistente Symples. Converta transcrições de áudio em respostas úteis e, quando fizer sentido, extraia dados de tarefas.
+  return `Você é o Assistente Symples para gestão de tarefas da empresa.
+Responda sempre em português brasileiro. Seja conciso e profissional.
 
-Regras:
-- Responda em português brasileiro, tom profissional e conciso.
-- Quando detectar intenção de tarefa, sempre devolva um objeto JSON estruturado.
-- Se não houver intenção clara de tarefa, devolva apenas uma resposta de texto amigável.
+Use a ferramenta create_task APENAS quando o usuário pedir EXPLICITAMENTE criar, adicionar ou registrar uma tarefa.
+NÃO use create_task para: perguntas, resumos, listagens, análises ou dúvidas.
 
-Formato de saída (sempre JSON):
-{
-  "message": "resposta de texto para o usuário",
-  "task": {
-    "title": "título curto",
-    "description": "descrição completa",
-    "descriptionFull": "sinônimo aceitável de descrição completa",
-    "descriptionShort": "resumo curto",
-    "dueDate": "YYYY-MM-DDTHH:mm:ss em ISO 8601 ou null",
-    "assigneeId": "uuid do membro ou null",
-    "priority": "low|medium|high|urgent",
-    "status": "todo|in_progress|done"
-  } | null
-}
-
-Regra crítica para datas:
-- Ao extrair datas para o campo dueDate, use o formato ISO 8601. IMPORTANTE: Se o usuário não especificar um horário, defina a hora sempre como T12:00:00 (Meio-dia) para evitar conflitos de fuso horário. Exemplo: "2023-10-25T12:00:00".
-
-Contexto atual:
-- Data de hoje: ${dateStr}
-${membersList}
-`;
+Para datas relativas, use a data atual: ${dateStr} (UTC-3, Brasília).${membersList}`;
 };
 
 const parseContext = (contextRaw: FormDataEntryValue | null) => {
@@ -91,6 +112,14 @@ export async function POST(request: NextRequest) {
 
     if (!(audioFile instanceof File)) {
       return NextResponse.json({ error: "Arquivo de áudio não fornecido" }, { status: 400 });
+    }
+
+    const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB (limite da Whisper API)
+    if (audioFile.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: "Arquivo de áudio muito grande. O limite é 25 MB." },
+        { status: 400 }
+      );
     }
 
     const supabase = await createServerActionClient();
@@ -159,40 +188,47 @@ export async function POST(request: NextRequest) {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
-      response_format: { type: "json_object" },
       messages: messagesForModel,
+      tools: [CREATE_TASK_TOOL],
+      tool_choice: "auto",
     });
 
-    const rawContent = completion.choices[0]?.message?.content || "";
-
+    const choice = completion.choices[0];
     let aiMessage = "Não consegui gerar uma resposta no momento.";
-    let task: TaskExtraction | null = null;
+    let componentData: ProcessResponse["componentData"] = null;
 
-    try {
-      const parsed = JSON.parse(rawContent);
-      aiMessage = ensureString(parsed.message) || aiMessage;
-      task = parsed.task || null;
-    } catch (parseError) {
-      console.warn("Falha ao parsear JSON da IA, usando texto bruto.", parseError);
-      aiMessage = rawContent || aiMessage;
-      task = null;
+    if (choice.finish_reason === "tool_calls") {
+      // A IA decidiu criar uma tarefa via function calling
+      const toolCall = choice.message.tool_calls?.[0];
+      let taskArgs: TaskExtraction = {};
+      try {
+        taskArgs = JSON.parse(toolCall?.function?.arguments ?? "{}");
+      } catch {
+        // fallback vazio
+      }
+
+      aiMessage =
+        ensureString(choice.message.content) ||
+        "Preparei a tarefa para você. Confirme os detalhes abaixo:";
+
+      componentData = {
+        type: "task_confirmation",
+        data: {
+          title: taskArgs.title || "Nova tarefa",
+          description: taskArgs.description || taskArgs.descriptionFull || transcription,
+          dueDate: taskArgs.dueDate || null,
+          assigneeId: taskArgs.assigneeId || null,
+          priority: taskArgs.priority || "medium",
+          status: taskArgs.status || "todo",
+          workspaceId: workspaceId || undefined,
+        },
+      };
+    } else {
+      // Resposta de chat normal
+      aiMessage =
+        ensureString(choice.message?.content) ||
+        "Não consegui gerar uma resposta no momento.";
     }
-
-    // Montar componentData para o front se houver task
-    const componentData = task
-      ? {
-          type: "task_confirmation",
-          data: {
-            title: task.title || "Nova tarefa",
-            description: task.description || task.descriptionFull || transcription,
-            dueDate: task.dueDate || null,
-            assigneeId: task.assigneeId || null,
-            priority: task.priority || "medium",
-            status: task.status || "todo",
-            workspaceId: workspaceId || undefined,
-          },
-        }
-      : null;
 
     // Step C: Persistência (silenciosa em caso de falha)
     const insertMessage = async (payload: Record<string, any>) => {

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export type SortOption = "status" | "priority" | "assignee" | "title" | "position";
+export type SortOption = "status" | "date" | "assignee" | "title" | "position";
 
 interface SortMenuProps {
     className?: string;
@@ -28,7 +28,7 @@ interface SortMenuProps {
 const sortOptions: { value: SortOption; label: string }[] = [
     { value: "position", label: "Nada aplicado" },
     { value: "status", label: "Status" },
-    { value: "priority", label: "Prioridade" },
+    { value: "date", label: "Data" },
     { value: "assignee", label: "Responsável" },
     { value: "title", label: "Título (A-Z)" },
 ];
@@ -118,7 +118,7 @@ export function SortMenu({ className, sortBy: controlledSort, onSortChange, onPe
                         <ArrowUpDown className={cn("w-4 h-4", hasActiveSort ? "text-slate-600" : "text-gray-500")} />
                     </Button>
                 </DropdownMenuTrigger>
-                
+
                 <DropdownMenuContent
                     align="end"
                     className="w-56 p-0 flex flex-col max-h-[400px]"
@@ -127,7 +127,7 @@ export function SortMenu({ className, sortBy: controlledSort, onSortChange, onPe
                     <DropdownMenuLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                         ORDENAR POR
                     </DropdownMenuLabel>
-                    
+
                     <DropdownMenuSeparator />
 
                     <div className="flex-1 overflow-y-auto min-h-0">
@@ -136,8 +136,8 @@ export function SortMenu({ className, sortBy: controlledSort, onSortChange, onPe
                                O 'value' controla qual bolinha está preenchida
                                O 'onValueChange' atualiza apenas o estado local (sem aplicar)
                             */}
-                            <DropdownMenuRadioGroup 
-                                value={currentSort} 
+                            <DropdownMenuRadioGroup
+                                value={currentSort}
                                 onValueChange={(val) => handleSortChange(val as SortOption)}
                             >
                                 {sortOptions.map((option) => (
