@@ -3,6 +3,7 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { createNotification } from "@/lib/actions/notifications";
 import { NotificationCategory, NotificationMetadata } from "@/types/database.types";
+import { stripHtmlTags } from "@/lib/utils/strip-html";
 
 const MENTION_REGEX = /@([a-zA-Z0-9._-]{3,})/g;
 
@@ -168,11 +169,12 @@ export async function createMentionNotificationsForTaskText(params: {
       ? `${actorName} mencionou você em um comentário`
       : `${actorName} mencionou você na descrição de "${task.title}"`;
 
+  const plainText = typeof text === "string" ? stripHtmlTags(text) : "";
   const trimmedContent =
-    typeof text === "string" && text.length > 0
-      ? text.length > 200
-        ? `${text.slice(0, 197)}...`
-        : text
+    plainText.length > 0
+      ? plainText.length > 200
+        ? `${plainText.slice(0, 197)}...`
+        : plainText
       : null;
 
   const metadataBase: NotificationMetadata = {

@@ -2,6 +2,7 @@
 
 import React, { memo, useMemo } from "react";
 import Link from "next/link";
+import { stripHtmlTags } from "@/lib/utils/strip-html";
 import { 
   Mic, 
   Image, 
@@ -91,6 +92,13 @@ function NotificationItemComponent({
     !notification.action_url.startsWith("/invite")
   );
   
+  const cleanContent = useMemo(() => {
+    if (!notification.content) return null;
+    const text = stripHtmlTags(notification.content);
+    if (!text) return null;
+    return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+  }, [notification.content]);
+
   // Memoizar cálculo de timeAgo para evitar recálculos desnecessários
   const timeAgo = useMemo(() => {
     return formatDistanceToNow(new Date(notification.created_at), {
@@ -276,9 +284,9 @@ function NotificationItemComponent({
           {notification.title}
         </p>
         
-        {notification.content && (
-          <p className="text-sm text-gray-600 leading-snug">
-            {notification.content}
+        {cleanContent && (
+          <p className="text-sm text-gray-600 leading-snug line-clamp-2">
+            {cleanContent}
           </p>
         )}
 
