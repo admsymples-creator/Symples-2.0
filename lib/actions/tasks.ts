@@ -6,6 +6,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import { Database } from "@/types/database.types";
 import { createMentionNotificationsForTaskText } from "@/lib/utils/mentions";
+import { addMonths } from "date-fns";
 
 const perfEnabled = process.env.DEBUG_PERF === "1";
 const perfNow = () => Date.now();
@@ -52,7 +53,7 @@ function getNextRecurrenceDateServer(
   interval: number = 1,
   recurrenceDays?: number[] | null
 ): Date {
-  const next = new Date(currentDate);
+  let next = new Date(currentDate);
   if ((recurrenceType === "weekly" || recurrenceType === "custom") && recurrenceDays && recurrenceDays.length > 0) {
     const daySet = new Set(recurrenceDays);
     for (let i = 1; i <= 14; i++) {
@@ -71,7 +72,7 @@ function getNextRecurrenceDateServer(
       next.setDate(next.getDate() + 7 * interval);
       break;
     case "monthly":
-      next.setMonth(next.getMonth() + interval);
+      next = addMonths(next, interval);
       break;
     case "custom":
       next.setDate(next.getDate() + interval);

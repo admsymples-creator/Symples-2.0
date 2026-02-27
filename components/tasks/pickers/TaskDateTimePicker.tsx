@@ -189,10 +189,10 @@ export function TaskDateTimePicker({
         if (open && !date && defaultDateWhenNull) {
             const d = new Date(defaultDateWhenNull);
             d.setHours(0, 0, 0, 0);
+            // Apenas pré-selecionar localmente — não salvar no pai até o usuário confirmar
             setSelectedDate(d);
             setHour(0);
             setMinute(0);
-            onSelect(d);
         }
         setIsOpen(open);
     };

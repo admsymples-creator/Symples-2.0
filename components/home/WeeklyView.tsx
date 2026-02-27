@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { addMonths } from "date-fns";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { DayColumn } from "@/components/home/DayColumn";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -73,7 +74,7 @@ function getNextRecurrenceDate(
   interval: number = 1,
   recurrenceDays?: number[] | null
 ): Date {
-  const next = new Date(currentDate);
+  let next = new Date(currentDate);
 
   if ((recurrenceType === "weekly" || recurrenceType === "custom") && recurrenceDays && recurrenceDays.length > 0) {
     // Para recorrência semanal com dias específicos
@@ -95,7 +96,7 @@ function getNextRecurrenceDate(
       next.setDate(next.getDate() + 7 * interval);
       break;
     case "monthly":
-      next.setMonth(next.getMonth() + interval);
+      next = addMonths(next, interval);
       break;
     case "custom":
       next.setDate(next.getDate() + interval);

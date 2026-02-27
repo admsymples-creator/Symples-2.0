@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, startTransition } from "react";
 import { usePathname } from "next/navigation";
-import { format } from "date-fns";
+import { format, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -238,7 +238,7 @@ export function PlannerCalendar({ workspaceId: propWorkspaceId, hideHeader = fal
 
             if (type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
             else if (type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
-            else if (type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
+            else if (type === 'monthly') nextDate = addMonths(nextDate, interval);
             else if (type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
 
             if (nextDate > limitDate) break;

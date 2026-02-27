@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useOptimistic, startTransition } from "react";
+import { addMonths } from "date-fns";
 import dynamic from "next/dynamic";
 import { FolderOpen, Calendar as CalendarIcon, Repeat, Send } from "lucide-react";
 import { TaskRow } from "@/components/home/TaskRow";
@@ -500,7 +501,7 @@ export function DayColumn({
             }
           } else if (task.recurrence_type === 'daily') nextDate.setDate(nextDate.getDate() + interval);
           else if (task.recurrence_type === 'weekly') nextDate.setDate(nextDate.getDate() + (7 * interval));
-          else if (task.recurrence_type === 'monthly') nextDate.setMonth(nextDate.getMonth() + interval);
+          else if (task.recurrence_type === 'monthly') nextDate = addMonths(nextDate, interval);
           else if (task.recurrence_type === 'custom') nextDate.setDate(nextDate.getDate() + interval);
 
           // Atualizar data para pular ocorrência atual
