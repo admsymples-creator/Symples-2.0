@@ -233,7 +233,6 @@ export async function markAsRead(notificationId: string): Promise<{ success: boo
     return { success: false, error: error.message };
   }
 
-  revalidatePath("/");
   return { success: true };
 }
 
@@ -259,7 +258,6 @@ export async function markAllAsRead(): Promise<{ success: boolean; error?: strin
     return { success: false, error: error.message };
   }
 
-  revalidatePath("/");
   return { success: true };
 }
 

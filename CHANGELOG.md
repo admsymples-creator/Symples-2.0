@@ -2,6 +2,26 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
+## [2026-02-28] - Auditoria: Correção de Bugs no Sistema de Notificações
+
+### Fixed
+- **[CRÍTICO] Realtime sem filtro de recipient**: canal Supabase Realtime agora filtra por `recipient_id=eq.{user.id}` — usuários não recebem mais notificações de outros usuários. Guard defensivo adicional no payload (`notifications-popover.tsx`)
+- **[CRÍTICO] Fallback silencioso para mock data**: erro no carregamento de notificações agora exibe estado vazio + `toast.error(...)` em vez de 11 notificações falsas (`notifications-popover.tsx`)
+- **[ALTO] Trigger de atribuição usa usuário errado**: adicionada coluna `updated_by` na tabela `tasks`; server action `updateTask` popula o campo; trigger usa `COALESCE(updated_by, created_by)` para identificar corretamente quem fez a atribuição
+- **[ALTO] `check_overdue_tasks()` nunca agendada**: cron job registrado via `pg_cron` para executar diariamente às 9h (`cron.schedule`)
+- **[ALTO] Sem índice em `metadata->>'workspace_id'`**: criado índice GIN `jsonb_path_ops` na tabela `notifications` para acelerar filtros por workspace
+- **[MÉDIO] `revalidatePath("/")` muito amplo**: removido de `markAsRead` e `markAllAsRead` — UI já usa estado otimista, invalidação de cache total era desnecessária (`lib/actions/notifications.ts`)
+- **[MÉDIO] Notificações de convite permanecem após ação**: `handleAcceptInvite` e `handleDeclineInvite` agora removem a notificação do state local após aceitar/recusar (`notifications-popover.tsx`)
+- **[MÉDIO] `HomeInboxSection` não atualiza ao trocar workspace**: substituído early-return por `useRef` — `initialNotifications` é aplicado apenas na montagem; trocas de workspace disparam novo fetch (`HomeInboxSection.tsx`)
+- **[MÉDIO] Detecção de tipo de arquivo usa text matching frágil**: trigger `notify_task_comment` reescrito para usar `NEW.metadata->>'file_type'` (campo estruturado) em vez de `NEW.metadata::text LIKE '%audio%'`. Também corrigida ausência de `workspace_id` no metadata das notificações de comentário
+- **[MÉDIO] `triggering_user` undefined vs null**: Realtime handler garante `userData ?? null` e branch `else { triggering_user = null }` explícito
+
+### Technical
+- 4 migrations aplicadas em DEV e PROD: `updated_by` em `tasks`, índice GIN, cron job, trigger de comentário reescrito
+- `notify_task_assignment()` e `notify_task_comment()` recriados via `CREATE OR REPLACE FUNCTION`
+
+---
+
 ## [2026-02-27] - Assistente IA + Restrição Mobile
 
 ### Added

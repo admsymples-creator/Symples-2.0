@@ -1042,6 +1042,12 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
 
   console.log("[updateTask] Atualizando tarefa:", { id, updates });
 
+  // Buscar usuário atual para registrar quem fez o update (usado pelo trigger de notificação)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    (updates as any).updated_by = user.id;
+  }
+
   // Regra de promoção para quadro:
   // somente quando o responsável muda para OUTRA pessoa (não o usuário atual).
   if (updates.assignee_id !== undefined && updates.assignee_id !== null) {
@@ -1050,8 +1056,6 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
       .select("workspace_id, assignee_id, is_personal, recurrence_type, recurrence_parent_id")
       .eq("id", id)
       .single();
-
-    const { data: { user } } = await supabase.auth.getUser();
     const hasAssigneeChanged = !!currentTask && currentTask.assignee_id !== updates.assignee_id;
     const assignedToAnotherUser = !!user && updates.assignee_id !== user.id;
     const isPersonalRecurringTask = !!currentTask &&

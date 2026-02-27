@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NotificationItem } from "@/components/notifications/notification-item";
 import { getNotifications, markAsRead, NotificationWithActor } from "@/lib/actions/notifications";
 import { Loader2, Inbox, ChevronDown } from "lucide-react";
@@ -16,27 +16,31 @@ export function HomeInboxSection({ initialNotifications }: HomeInboxSectionProps
   const [loading, setLoading] = useState(!initialNotifications); // Não mostrar loading se já temos dados iniciais
   const [displayLimit, setDisplayLimit] = useState(5);
   const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const initializedRef = useRef(false);
 
-  // Buscar notificações - OTIMIZADO: só fazer fetch se não tiver dados iniciais
-  // IMPORTANTE: Este useEffect deve sempre ser chamado (não condicional)
+  // Buscar notificações quando workspace muda.
+  // Na montagem inicial, usa initialNotifications (se fornecido) sem fazer fetch.
+  // Em re-renders por troca de workspace, busca do servidor.
   useEffect(() => {
     const loadNotifications = async () => {
-      if (!isLoaded) return; // Aguardar workspace carregar
-      
-      // Se temos dados iniciais, não fazer fetch na primeira renderização
-      if (initialNotifications !== undefined) {
-        return; // Usar dados iniciais
+      if (!isLoaded) return;
+
+      // Primeira montagem: se temos dados iniciais, usar sem fazer fetch
+      if (!initializedRef.current && initialNotifications !== undefined) {
+        initializedRef.current = true;
+        setNotifications(initialNotifications);
+        setLoading(false);
+        return;
       }
-      
+      initializedRef.current = true;
+
       setLoading(true);
       try {
-        // OTIMIZAÇÃO: Filtrar por workspace no backend e reduzir limit
-        // Não precisa mais buscar 100 e filtrar no frontend
-        const fetchedNotifications = await getNotifications({ 
-          limit: 30, // Reduzido de 100 para 30 (suficiente para exibição inicial)
-          workspaceId: activeWorkspaceId || null, // Filtrar no backend
+        const fetchedNotifications = await getNotifications({
+          limit: 30,
+          workspaceId: activeWorkspaceId || null,
         });
-        
+
         setNotifications(fetchedNotifications || []);
       } catch (error) {
         console.error("Erro ao carregar notificações:", error);
@@ -48,7 +52,7 @@ export function HomeInboxSection({ initialNotifications }: HomeInboxSectionProps
 
     loadNotifications();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId, isLoaded]); // Removido initialNotifications das dependências para evitar loops
+  }, [activeWorkspaceId, isLoaded]);
 
   const displayedNotifications = notifications.slice(0, displayLimit);
   const hasMore = notifications.length > displayLimit;

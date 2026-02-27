@@ -297,10 +297,12 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
       }
     } catch (error) {
       console.error("Error loading notifications:", error);
-      // Em caso de erro, usar dados mock como fallback
-      const mockData = getMockNotifications();
-      setNotifications(mockData);
-      setUnreadCount(mockData.filter(n => !n.read_at).length);
+      setNotifications([]);
+      setUnreadCount(0);
+      toast.error("Erro ao carregar notificações", {
+        description: "Tente novamente mais tarde.",
+        duration: 4000,
+      });
     } finally {
       setLoading(false);
     }
@@ -313,51 +315,57 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
 
   // Configurar Realtime (apenas se não estiver usando mock)
   useEffect(() => {
-    if (useMockData) return; // Não configurar Realtime com dados mock
-    
+    if (useMockData) return;
+
     const supabase = createBrowserClient();
-    
-    const channel = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-        },
-        async (payload) => {
-          // Adicionar nova notificação ao topo
-          // Precisamos buscar os dados completos com relacionamento
-          const newNotification = payload.new as any;
-          
-          // Buscar dados do usuário que disparou a notificação se existir
-          if (newNotification.triggering_user_id) {
-            const { data: userData } = await supabase
-              .from('profiles')
-              .select('full_name, avatar_url')
-              .eq('id', newNotification.triggering_user_id)
-              .single();
-            
-            newNotification.triggering_user = userData;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const setupRealtimeChannel = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      channel = supabase
+        .channel(`notifications:${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `recipient_id=eq.${user.id}`,
+          },
+          async (payload) => {
+            const newNotification = payload.new as any;
+
+            // Guard defensivo: ignorar notificações de outros usuários
+            if (newNotification.recipient_id !== user.id) return;
+
+            if (newNotification.triggering_user_id) {
+              const { data: userData } = await supabase
+                .from('profiles')
+                .select('full_name, avatar_url')
+                .eq('id', newNotification.triggering_user_id)
+                .single();
+              newNotification.triggering_user = userData ?? null;
+            } else {
+              newNotification.triggering_user = null;
+            }
+
+            setNotifications((prev) => [newNotification as NotificationWithActor, ...prev]);
+            setUnreadCount((prev) => prev + 1);
+            toast.info(newNotification.title, {
+              description: newNotification.content || undefined,
+              duration: 3000,
+            });
           }
-          
-          setNotifications((prev) => [newNotification as NotificationWithActor, ...prev]);
-          
-          // Atualizar contador
-          setUnreadCount((prev) => prev + 1);
-          
-          // Mostrar toast discreto
-          toast.info(newNotification.title, {
-            description: newNotification.content || undefined,
-            duration: 3000,
-          });
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    };
+
+    setupRealtimeChannel();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [useMockData]);
 
@@ -404,6 +412,8 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
 
       await handleMarkAsRead(notificationId);
       toast.success("Convite aceito");
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
       setIsOpen(false);
 
       if (result.success) {
@@ -445,6 +455,7 @@ export function NotificationsPopover({ userRole, useMockData = false }: Notifica
 
       await handleMarkAsRead(notificationId);
       toast.success("Convite recusado");
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
     } catch (error: any) {
       console.error("Erro ao recusar convite:", error);
       toast.error("Erro ao recusar convite", {
