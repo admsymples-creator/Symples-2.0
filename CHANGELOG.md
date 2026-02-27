@@ -2,6 +2,31 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
+## [2026-02-27] - Assistente IA + Restrição Mobile
+
+### Added
+- **Restrição mobile**: usuários em dispositivos móveis são redirecionados exclusivamente para `/assistant`. Rotas do dashboard (`/home`, `/{slug}/tasks`, `/kanban`, etc.) não são acessíveis via mobile
+- **`proxy.ts`**: detecção de `User-Agent` mobile integrada ao proxy existente do Next.js 16 — sem arquivo `middleware.ts` separado
+- **`lib/utils/sanitize-history.ts`**: utilitário compartilhado para sanitizar histórico de mensagens antes de enviar à API da IA
+
+### Changed
+- **`/api/ai/chat`**: reescrito com OpenAI function calling (`create_task` tool) — elimina heurísticas de palavras-chave e segunda chamada GPT para extração
+- **`/api/audio/process`**: mesma abordagem de function calling para mensagens de áudio — consistência com o endpoint de texto
+- **`app/auth/callback`**: login mobile redireciona para `/assistant` em vez de `/home`; fluxos de onboarding e convite válido inalterados
+- **`lib/actions/assistant.ts`**: adicionado `updateAssistantMessage()` para persistir atualizações de `component_data` (ex: `confirmedStatus`)
+
+### Fixed
+- **Card de confirmação**: ao confirmar ou cancelar uma tarefa, o `KanbanConfirmationCard` agora atualiza `confirmedStatus` no estado local e no banco — o card permanece visível em modo readonly em vez de desaparecer
+- **Stale closure no hook**: `sendMessage` usa `[...messages, userMsg]` para incluir a mensagem otimista no histórico
+- **Dupla transcrição Whisper**: removida do hook `use-assistant-chat.ts` — usa apenas `/api/audio/process`
+- **Info disclosure**: campo `details: errorData` removido das respostas de erro do chat
+
+### Technical
+- `GlobalAssistantSheet` e `use-assistant-chat.ts` unificados no uso de `sanitizeHistory()` com limite de 15 mensagens
+- System prompt enriquecido com data atual (UTC-3/Brasília), membros do workspace e resumo de tarefas ativas
+
+---
+
 ## [2026-02-25] - Drag and Drop Kanban
 
 ### Changed
