@@ -3,6 +3,19 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { Database } from '@/types/database.types'
 import { getSupabaseConfig } from '@/lib/supabase/server'
 
+const MOBILE_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+
+const MOBILE_ALLOWED_PREFIXES = [
+  '/assistant',
+  '/login',
+  '/signup',
+  '/onboarding',
+  '/invite/',
+  '/auth/',
+  '/api/',
+  '/_next/',
+];
+
 export async function proxy(request: NextRequest) {
   const startTime = Date.now()
   let response = NextResponse.next({
@@ -34,6 +47,17 @@ export async function proxy(request: NextRequest) {
   const authMs = Date.now() - authStart
 
   const { pathname } = request.nextUrl
+
+  // Redirecionar mobile para /assistant em rotas não permitidas
+  const ua = request.headers.get('user-agent') ?? '';
+  if (MOBILE_REGEX.test(ua)) {
+    const mobileAllowed =
+      pathname === '/' ||
+      MOBILE_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p));
+    if (!mobileAllowed) {
+      return NextResponse.redirect(new URL('/assistant', request.url));
+    }
+  }
 
   // ✅ TASK 1: Hardened Cookie Logic - Configurações explícitas para produção
   if (pathname.startsWith('/invite/')) {
