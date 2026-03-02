@@ -341,13 +341,11 @@ export function DayColumn({
           origin_context: originContext,
           recurrence_type: currentRecurrenceType || undefined,
           recurrence_days: Array.isArray(currentRecurrenceDays) && currentRecurrenceDays.length > 0 ? currentRecurrenceDays : undefined,
-          assignee_id: "current", // Atribuir ao usuário atual para aparecer na query filtrada
         };
         return createTask(payload);
       });
 
       const results = await Promise.all(createPromises);
-      console.log("[DayColumn] createTask results:", results);
 
       const failedCount = results.filter((r) => !r.success).length;
       const successCount = results.filter((r) => r.success).length;

@@ -1049,53 +1049,72 @@ export async function updateTask(params: Partial<TaskUpdate> & { id: string }) {
     (updates as any).updated_by = user.id;
   }
 
-  // Regra de promoção para quadro:
-  // somente quando o responsável muda para OUTRA pessoa (não o usuário atual).
-  if (updates.assignee_id !== undefined && updates.assignee_id !== null) {
+  // Buscar estado atual da task para lógica de promoção
+  const needsCurrentTask =
+    (updates.assignee_id !== undefined && updates.assignee_id !== null) ||
+    (updates.tags !== undefined && Array.isArray(updates.tags) && updates.tags.length > 0);
+
+  if (needsCurrentTask) {
     const { data: currentTask } = await supabase
       .from("tasks")
-      .select("workspace_id, assignee_id, is_personal, recurrence_type, recurrence_parent_id")
+      .select("workspace_id, assignee_id, is_personal, recurrence_type, recurrence_parent_id, visible_on_board, tags")
       .eq("id", id)
       .single();
-    const hasAssigneeChanged = !!currentTask && currentTask.assignee_id !== updates.assignee_id;
-    const assignedToAnotherUser = !!user && updates.assignee_id !== user.id;
+
     const isPersonalRecurringTask = !!currentTask &&
       currentTask.workspace_id === null &&
       currentTask.is_personal === true &&
       (currentTask.recurrence_type !== null || currentTask.recurrence_parent_id !== null);
-    const shouldPromoteToBoard = hasAssigneeChanged && assignedToAnotherUser && !isPersonalRecurringTask;
 
-    if (shouldPromoteToBoard) {
-      updates.visible_on_board = true;
+    // Regra 1: Atribuir a OUTRO usuário → promover + mover pessoal→workspace
+    if (updates.assignee_id !== undefined && updates.assignee_id !== null && currentTask) {
+      const hasAssigneeChanged = currentTask.assignee_id !== updates.assignee_id;
+      const assignedToAnotherUser = !!user && updates.assignee_id !== user.id;
+      const shouldMoveToWorkspace = hasAssigneeChanged && assignedToAnotherUser && !isPersonalRecurringTask;
 
-      if (currentTask.workspace_id === null) {
-        let activeWorkspaceId: string | null = null;
-        try {
-          const cookieStore = await cookies();
-          activeWorkspaceId = cookieStore.get("active_workspace_id")?.value ?? null;
-        } catch {
-          activeWorkspaceId = null;
-        }
-        if (activeWorkspaceId && user) {
-          const { data: workspace } = await supabase
-            .from("workspaces")
-            .select("owner_id")
-            .eq("id", activeWorkspaceId)
-            .single();
-          const isOwner = workspace?.owner_id === user.id;
-          const { data: member } = !isOwner
-            ? await supabase
-              .from("workspace_members")
-              .select("user_id")
-              .eq("workspace_id", activeWorkspaceId)
-              .eq("user_id", user.id)
-              .single()
-            : { data: { user_id: user.id } };
-          if (isOwner || member) {
-            updates.workspace_id = activeWorkspaceId;
-            updates.is_personal = false;
+      if (shouldMoveToWorkspace) {
+        updates.visible_on_board = true;
+
+        if (currentTask.workspace_id === null) {
+          let activeWorkspaceId: string | null = null;
+          try {
+            const cookieStore = await cookies();
+            activeWorkspaceId = cookieStore.get("active_workspace_id")?.value ?? null;
+          } catch {
+            activeWorkspaceId = null;
+          }
+          if (activeWorkspaceId && user) {
+            const { data: workspace } = await supabase
+              .from("workspaces")
+              .select("owner_id")
+              .eq("id", activeWorkspaceId)
+              .single();
+            const isOwner = workspace?.owner_id === user.id;
+            const { data: member } = !isOwner
+              ? await supabase
+                .from("workspace_members")
+                .select("user_id")
+                .eq("workspace_id", activeWorkspaceId)
+                .eq("user_id", user.id)
+                .single()
+              : { data: { user_id: user.id } };
+            if (isOwner || member) {
+              updates.workspace_id = activeWorkspaceId;
+              updates.is_personal = false;
+            }
           }
         }
+      }
+    }
+
+    // Regra 2: Promover ao board se task está fora do board E recebe assignee ou tags
+    const isCurrentlyOffBoard = currentTask?.visible_on_board === false;
+    if (isCurrentlyOffBoard && !isPersonalRecurringTask) {
+      const isGettingAssignee = updates.assignee_id !== undefined && updates.assignee_id !== null;
+      const isGettingTags = updates.tags !== undefined && Array.isArray(updates.tags) && updates.tags.length > 0;
+
+      if (isGettingAssignee || isGettingTags) {
+        updates.visible_on_board = true;
       }
     }
   }
