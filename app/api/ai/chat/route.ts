@@ -163,9 +163,12 @@ Para datas relativas, use a data atual: ${dateStr} (UTC-3, Brasília).${membersL
     });
 
     if (!response.ok) {
-      await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Erro na API OpenAI:', response.status, errorData);
+      const errorMessage =
+        errorData?.error?.message || 'Erro ao processar mensagem com a IA';
       return NextResponse.json(
-        { error: 'Erro ao processar mensagem' },
+        { error: errorMessage },
         { status: response.status }
       );
     }

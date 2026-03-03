@@ -645,7 +645,8 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
       });
 
       if (!response.ok) {
-        throw new Error("Erro ao processar mensagem");
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody?.error || "Erro ao processar mensagem");
       }
 
       const data = await response.json();
@@ -785,23 +786,24 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
       
       setIsLoading(false);
     } catch (error) {
-      console.error("Erro ao chamar API de chat:", error);
-      
+      const errMsg = error instanceof Error ? error.message : "Erro desconhecido";
+      console.error("Erro ao chamar API de chat:", errMsg);
+
       // Em caso de erro, remover thinking e mostrar mensagem de erro
       setMessages((prev) => {
         const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
         const errorMessage: Message = {
           id: `error-${Date.now()}`,
           role: "assistant",
-          content: "Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.",
+          content: `Desculpe, ocorreu um erro: ${errMsg}`,
           type: "text",
           timestamp: new Date(),
         };
         return [...withoutThinking, errorMessage];
       });
-      
+
       setIsLoading(false);
-      toast.error("Erro ao processar mensagem. Tente novamente.");
+      toast.error(errMsg);
     }
   };
 
@@ -867,13 +869,14 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
       });
 
       if (!response.ok) {
-        throw new Error("Erro ao processar mensagem");
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody?.error || "Erro ao processar mensagem");
       }
 
       const data = await response.json();
 
       let assistantMessage: Message | null = null;
-      
+
       setMessages((prev) => {
         const withoutThinking = prev.filter((msg) => msg.id !== thinkingMessageId);
         assistantMessage = {
@@ -1160,7 +1163,8 @@ export function GlobalAssistantSheet({ user, workspaces: initialWorkspaces }: Gl
               });
 
               if (!response.ok) {
-                throw new Error("Erro ao processar mensagem");
+                const errorBody = await response.json().catch(() => ({}));
+                throw new Error(errorBody?.error || "Erro ao processar mensagem");
               }
 
               const data = await response.json();
