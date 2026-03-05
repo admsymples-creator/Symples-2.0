@@ -1,0 +1,130 @@
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+import { Database } from '@/types/database.types'
+import { getSupabaseConfig } from '@/lib/supabase/server'
+
+const MOBILE_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+
+const MOBILE_ALLOWED_PREFIXES = [
+  '/assistant',
+  '/login',
+  '/signup',
+  '/onboarding',
+  '/invite/',
+  '/auth/',
+  '/api/',
+  '/_next/',
+];
+
+export async function proxy(request: NextRequest) {
+  const startTime = Date.now()
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
+  const { supabaseUrl, supabaseKey } = getSupabaseConfig()
+  const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          request.cookies.set(name, value)
+          response.cookies.set(name, value, options)
+        })
+      },
+    },
+  })
+
+  const authStart = Date.now()
+  // Atualizar sessão (refresh token se necessário)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const authMs = Date.now() - authStart
+
+  const { pathname } = request.nextUrl
+
+  // Redirecionar mobile para /assistant em rotas não permitidas
+  const ua = request.headers.get('user-agent') ?? '';
+  if (MOBILE_REGEX.test(ua)) {
+    const mobileAllowed =
+      pathname === '/' ||
+      MOBILE_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p));
+    if (!mobileAllowed) {
+      return NextResponse.redirect(new URL('/assistant', request.url));
+    }
+  }
+
+  // ✅ TASK 1: Hardened Cookie Logic - Configurações explícitas para produção
+  if (pathname.startsWith('/invite/')) {
+    const tokenMatch = pathname.match(/^\/invite\/([^/]+)/);
+    const inviteToken = tokenMatch?.[1];
+
+    if (inviteToken) {
+      // ✅ HARDENED: Configurações explícitas e robustas
+      const isProduction = process.env.NODE_ENV === 'production';
+
+      response.cookies.set('pending_invite', inviteToken, {
+        httpOnly: true, // Apenas server precisa ler esse cookie
+        secure: isProduction, // ✅ HTTPS only em produção (REQUERIDO)
+        sameSite: 'lax', // ✅ CRÍTICO: Permite cookie ser lido após OAuth redirect
+        maxAge: 3600, // 1 hora
+        path: '/', // Disponível em todas as rotas
+      });
+
+      console.log('🍪 [Proxy] Cookie pending_invite criado:', {
+        token: inviteToken.substring(0, 8) + '...',
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+      });
+    }
+  }
+
+  // Rotas públicas (acessíveis sem autenticação)
+  const publicRoutes = ['/login', '/onboarding']
+  const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
+
+  // Rotas protegidas (dentro de (main))
+  const protectedRoutes = ['/home', '/tasks', '/finance', '/team', '/settings', '/billing', '/planner', '/admin']
+  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
+
+  // Se tentar acessar rota protegida sem sessão -> Redirect para /login
+  if (isProtectedRoute && !user) {
+    const redirectUrl = new URL('/login', request.url)
+    redirectUrl.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // Se estiver autenticado e tentar acessar /login
+  // Redirecionar para /home (exceto se estiver vindo do callback)
+  if (user && pathname === '/login') {
+    // Verificar se não é um callback do auth
+    if (!pathname.includes('/auth/callback')) {
+      return NextResponse.redirect(new URL('/home', request.url))
+    }
+  }
+
+  const totalMs = Date.now() - startTime
+  response.headers.set("Server-Timing", "mw;dur=" + totalMs + ", mw_auth;dur=" + authMs)
+  response.headers.set("X-Middleware-Time", String(totalMs))
+  // Retornar response com cookies atualizados
+  return response
+}
+
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
+}

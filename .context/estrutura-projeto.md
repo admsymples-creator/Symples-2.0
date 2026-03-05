@@ -11,8 +11,10 @@ symples-v2/
 │   ├── 📁 (auth)/
 │   │   ├── 📁 login/
 │   │   │   └── page.tsx
-│   │   └── 📁 onboarding/
-│   │       └── page.tsx
+│   │   ├── 📁 onboarding/
+│   │   │   └── page.tsx
+│   │   └── 📁 signup/
+│   │       └── page.tsx (✅ Página de cadastro com suporte a token de convite)
 │   │
 │   ├── 📁 (main)/
 │   │   ├── 📁 [workspaceSlug]/
@@ -67,6 +69,9 @@ symples-v2/
 │   │   │   └── 📁 transcribe/
 │   │   │       └── route.ts
 │   │   │
+│   │   ├── 📁 test-email/
+│   │   │   └── route.ts (✅ API de teste para envio de emails)
+│   │   │
 │   │   └── 📁 webhooks/
 │   │       └── 📁 n8n/
 │   │           └── route.ts
@@ -97,14 +102,28 @@ symples-v2/
 │
 ├── 📁 components/
 │   ├── 📁 assistant/
-│   │   └── AIOrb.tsx
+│   │   ├── AIOrb.tsx (✅ Orb animado com ícone Symples)
+│   │   ├── AIOrbVariants.tsx (✅ 5 variações visuais do orb)
+│   │   ├── GlobalAssistantSheet.tsx (✅ Chat global acessível via FAB)
+│   │   ├── KanbanConfirmationCard.tsx (✅ Card de confirmação estilo Kanban)
+│   │   ├── TaskConfirmationCard.tsx (✅ Card de confirmação alternativo)
+│   │   └── ThinkingIndicator.tsx (✅ Indicador de "pensando" com orb e frases rotativas)
 │   │
 │   ├── 📁 debug/
 │   │   └── minify-workspace-sync.tsx
 │   │
 │   ├── 📁 finance/
-│   │   ├── CreateTransactionModal.tsx
-│   │   └── FinanceClientComponents.tsx
+│   │   ├── BudgetModal.tsx (✅ Modal para criar/editar orçamentos por categoria)
+│   │   ├── CreateTransactionModal.tsx (✅ Modal para criar transações com data e vencimento)
+│   │   ├── EditTransactionModal.tsx (✅ Modal para editar transações)
+│   │   ├── FinanceClientComponents.tsx (✅ Componentes client: NewTransactionButton, MonthSelector)
+│   │   ├── FinanceTransactionsList.tsx (✅ Componente client para listar transações com ações)
+│   │   ├── GoalModal.tsx (✅ Modal para criar/editar metas financeiras)
+│   │   ├── PlanningBudgetCard.tsx (✅ Card de orçamento por categoria com barras de progresso)
+│   │   ├── PlanningCashFlowCard.tsx (✅ Card de previsão de fluxo de caixa)
+│   │   ├── PlanningGoalsCard.tsx (✅ Card de metas financeiras com progresso)
+│   │   ├── PlanningProjectionsCard.tsx (✅ Card de projeções futuras)
+│   │   └── TransactionActionsMenu.tsx (✅ Menu de ações: editar/deletar transações)
 │   │
 │   ├── 📁 home/
 │   │   ├── DayColumn.tsx
@@ -115,7 +134,14 @@ symples-v2/
 │   │
 │   ├── 📁 landing/
 │   │   ├── LoginForm.tsx
-│   │   └── OnboardingWizard.tsx
+│   │   ├── OnboardingWizard.tsx
+│   │   └── SignupForm.tsx (✅ Formulário de cadastro com suporte a convite)
+│   │
+│   ├── 📁 landing-page/
+│   │   ├── BentoGrid.tsx (✅ Grid Bento com casos de uso)
+│   │   ├── FeatureTabs.tsx (✅ Abas interativas Input/Processamento/Gestão)
+│   │   ├── HeroSection.tsx (✅ Hero com animações flutuantes)
+│   │   └── PricingFAQ.tsx (✅ Preços e FAQ)
 │   │
 │   ├── 📁 layout/
 │   │   ├── AppShell.tsx
@@ -177,15 +203,24 @@ symples-v2/
 │   │   ├── inline-text-edit.tsx
 │   │   ├── input.tsx
 │   │   ├── label.tsx
+│   │   ├── loading-overlay.tsx (✅ Overlay de carregamento global com transição suave)
 │   │   ├── popover.tsx
 │   │   ├── scroll-area.tsx
 │   │   ├── select.tsx
+│   │   ├── sheet.tsx (✅ Componente Sheet do shadcn/ui para Global Assistant)
 │   │   ├── separator.tsx
 │   │   ├── slider.tsx
 │   │   ├── StatePage.tsx
 │   │   ├── tabs.tsx
 │   │   ├── textarea.tsx
 │   │   └── tooltip.tsx
+│   │
+│   ├── 📁 ui-mocks/
+│   │   ├── MockAIAssistant.tsx (✅ Interface de IA com gráficos)
+│   │   ├── MockChatInterface.tsx (✅ Interface WhatsApp com áudio)
+│   │   ├── MockComparison.tsx (✅ Tabela comparativa glassmorphism)
+│   │   ├── MockKanbanCard.tsx (✅ Card de tarefa compacto)
+│   │   └── MockMobileFrame.tsx (✅ Container smartphone mobile-first)
 │   │
 │   └── components.json
 │
@@ -202,19 +237,28 @@ symples-v2/
 │   ├── use-task-preload.ts
 │   └── use-tasks.ts
 │
+├── 📁 scripts/
+│   ├── test-email.js (✅ Script de teste para envio de emails via Resend)
+│   └── test-email.ts
+│
 ├── 📁 lib/
 │   ├── 📁 actions/
 │   │   ├── attachments.ts
-│   │   ├── auth.ts
+│   │   ├── auth.ts (✅ Atualizado: suporte a token de convite no signup)
 │   │   ├── dashboard.ts
-│   │   ├── finance.ts
-│   │   ├── members.ts
+│   │   ├── finance.ts (✅ Completo: transações, orçamentos, metas, projeções, fluxo de caixa)
+│   │   ├── members.ts (✅ Sistema completo: convites, permissões, gestão de membros)
 │   │   ├── onboarding.ts
 │   │   ├── task-details.ts
 │   │   ├── task-groups.ts
 │   │   ├── tasks.ts (✅ Centralizado: contém todas as Server Actions de tarefas)
 │   │   ├── user.ts
 │   │   └── workspace-settings.ts
+│   │
+│   ├── 📁 email/
+│   │   ├── send-invite.ts (✅ Abstração para envio de emails via Resend)
+│   │   └── 📁 templates/
+│   │       └── invite-email.tsx (✅ Template React para emails de convite)
 │   │
 │   ├── 📁 config/
 │   │   └── tasks.ts
@@ -229,6 +273,8 @@ symples-v2/
 │   └── utils.ts
 │
 ├── 📁 public/
+│   ├── audiode2minutos.png (✅ Meme para resposta de áudio de 2 minutos)
+│   ├── white-icon-symples.svg (✅ Ícone branco do Symples usado no AIOrb)
 │   ├── file.svg
 │   ├── globe.svg
 │   ├── logo-black.svg
@@ -252,6 +298,8 @@ symples-v2/
 │   │   ├── 20240320108000_rls_policies.sql
 │   │   ├── 20240321_fix_rls.sql
 │   │   ├── 20241129_create_invites.sql
+│   │   ├── 20241201_allow_public_invite_read.sql (✅ RLS: leitura pública de convites pendentes)
+│   │   ├── 20241201_allow_users_accept_invites.sql (✅ RLS: permitir aceite de convites)
 │   │   ├── 20250101_create_move_task_rpc.sql (✅ RPC para atualização de posição)
 │   │   ├── 20250101_create_move_tasks_bulk_rpc.sql (✅ RPC para bulk update)
 │   │   ├── 20251129162918_add_task_details_columns.sql
@@ -447,6 +495,48 @@ Documentação técnica do projeto
 - ✅ **Removido**: `next.config.mjs` (duplicata)
 - ✅ **Mantido**: `next.config.ts` como único arquivo de configuração do Next.js
 
+## ✅ Sistema de Convites e Gestão de Membros (v2.5)
+
+### 1. Estrutura de Email
+- **`lib/email/send-invite.ts`**: Abstração para envio de emails via Resend
+  - Validação de API key e formato de email
+  - Renderização de templates React para HTML
+  - Tratamento de erros e logging detalhado
+  - Suporte para desenvolvimento (simulação) e produção
+- **`lib/email/templates/invite-email.tsx`**: Template React para emails de convite
+  - Design elegante e responsivo
+  - Suporte a diferentes roles (admin, member, viewer)
+  - Diferenciação entre novos usuários e usuários existentes
+  - Link direto para aceite de convite
+
+### 2. Fluxo de Convites
+- **Convite de Membro (`lib/actions/members.ts`)**:
+  - Cenário A: Usuário já existe → Adiciona diretamente ao workspace
+  - Cenário B: Usuário novo → Cria convite pendente e envia email
+  - Validações: email, workspaceId, permissões (apenas owner/admin)
+  - Tratamento de convites duplicados com mensagens claras
+- **Aceite de Convite (`/invite/[token]`)**:
+  - Página pública para visualização de convites
+  - Suporte para usuários não autenticados
+  - Fluxo de signup/login com token de convite
+  - Aceite automático após autenticação
+
+### 3. Políticas RLS
+- **Leitura Pública**: `20241201_allow_public_invite_read.sql`
+  - Permite leitura de convites pendentes pelo ID (UUID seguro)
+  - Necessário para página de aceite funcionar sem autenticação
+- **Aceite de Convites**: `20241201_allow_users_accept_invites.sql`
+  - Permite que usuários aceitem convites inserindo-se em workspace_members
+  - Validação de convite válido (pendente, não expirado, email correto)
+
+### 4. UI de Gestão
+- **Página `/settings` (Aba Membros)**:
+  - Lista de membros com avatar, nome, email, role e status
+  - Lista de convites pendentes com badges de status
+  - Modal de convite com seleção de role
+  - Ações: Remover, Alterar Role, Cancelar, Reenviar
+  - Contador de convites pendentes no cabeçalho
+
 ## 📝 Notas
 
 - O projeto utiliza Next.js 14+ com App Router
@@ -454,8 +544,35 @@ Documentação técnica do projeto
 - Tailwind CSS para estilização
 - Supabase como backend (banco de dados e autenticação)
 - shadcn/ui para componentes de UI
+- Resend para emails transacionais
 - ✅ **Clean Architecture**: Estrutura padronizada e limpa após refatoração
+- ✅ **Sistema de Convites**: Implementação completa de RBAC e gestão de membros
 
 ---
 
-*Última atualização: Após refatoração estrutural (Clean Architecture)*
+## ✅ Otimizações de Performance em Produção (2026-01-02)
+
+### 1. Configurações de Cache
+- **Páginas Home e Planner**: `export const dynamic = 'force-dynamic'` e `export const revalidate = 0`
+- Força renderização dinâmica para evitar cache que causava lentidão em produção
+- Resolve problema onde build local era rápida mas produção continuava lenta
+
+### 2. Sistema de Logs de Performance
+- Logs detalhados em todas as funções críticas (`getTasks`, `getNotifications`)
+- Logs de tempo de renderização nas páginas (home, planner)
+- Monitoramento de tamanho de dados serializados
+- Facilita identificação de gargalos em produção
+
+### 3. Correção de getNotifications
+- **Problema**: JOIN inválido entre `notifications.triggering_user_id` (auth.users) e `profiles`
+- **Solução**: Busca separada de profiles em batch query
+- **Impacto**: Resolve erro 500 ao buscar notificações
+
+### 4. Correção de Hooks do React
+- Garantido que todos os hooks são sempre chamados na mesma ordem
+- Removido dependências problemáticas de useEffect para evitar loops
+- Resolve erro "Rendered more hooks than during the previous render"
+
+---
+
+*Última atualização: Otimizações de performance em produção (Janeiro 2026)*

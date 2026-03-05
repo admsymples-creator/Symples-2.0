@@ -1,0 +1,384 @@
+"use client";
+
+import React, { memo, useMemo } from "react";
+import Link from "next/link";
+import { stripHtmlTags } from "@/lib/utils/strip-html";
+import { 
+  Mic, 
+  Image, 
+  FileText, 
+  Files, 
+  ShieldAlert, 
+  PartyPopper, 
+  UserMinus, 
+  UserPlus, 
+  MessageSquare, 
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  LucideIcon,
+  AtSign
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { NotificationWithActor } from "@/lib/actions/notifications";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+
+interface NotificationItemProps {
+  notification: NotificationWithActor;
+  onMarkAsRead: (id: string) => void;
+  onAcceptInvite?: (inviteId: string, notificationId: string) => void;
+  onDeclineInvite?: (inviteId: string, notificationId: string) => void;
+  inviteActionState?: Record<string, "accept" | "decline" | undefined>;
+}
+
+// Mapeamento de ícones Lucide
+const iconMap: Record<string, LucideIcon> = {
+  Mic,
+  Image,
+  FileText,
+  Files,
+  ShieldAlert,
+  PartyPopper,
+  UserMinus,
+  UserPlus,
+  MessageSquare,
+  CheckCircle2,
+  AlertCircle,
+};
+
+function NotificationItemComponent({
+  notification,
+  onMarkAsRead,
+  onAcceptInvite,
+  onDeclineInvite,
+  inviteActionState,
+}: NotificationItemProps) {
+  const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+  const isRead = !!notification.read_at;
+  const metadata = notification.metadata || {};
+
+  const inviteId = useMemo(() => {
+    if (typeof (metadata as any).invite_id === "string") {
+      return (metadata as any).invite_id as string;
+    }
+
+    if (typeof notification.resource_id === "string" && notification.resource_id.trim()) {
+      return notification.resource_id.trim();
+    }
+
+    if (typeof notification.action_url === "string") {
+      const match = notification.action_url.match(/invite=([^&]+)/);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }, [metadata, notification.resource_id, notification.action_url]);
+
+  const isInviteNotification = Boolean(inviteId) && notification.resource_type === "member";
+  const isInviteActionable = isInviteNotification && (!!onAcceptInvite || !!onDeclineInvite);
+  const metadataWorkspaceId =
+    typeof (metadata as any).workspace_id === "string" ? (metadata as any).workspace_id as string : null;
+
+  const canAutoSwitchWorkspace = Boolean(
+    metadataWorkspaceId &&
+    notification.action_url &&
+    !notification.action_url.startsWith("http") &&
+    !notification.action_url.startsWith("/invite")
+  );
+  
+  const cleanContent = useMemo(() => {
+    if (!notification.content) return null;
+    const text = stripHtmlTags(notification.content);
+    if (!text) return null;
+    return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+  }, [notification.content]);
+
+  // Memoizar cálculo de timeAgo para evitar recálculos desnecessários
+  const timeAgo = useMemo(() => {
+    return formatDistanceToNow(new Date(notification.created_at), {
+      addSuffix: true,
+      locale: ptBR
+    });
+  }, [notification.created_at]);
+  
+  // Memoizar lógica de renderização de ícones
+  const iconConfig = useMemo(() => {
+    const getIcon = (): { Icon: LucideIcon; color: string; bg: string } => {
+    // Prioridade 0: Menções (@usuario)
+    if ((metadata as any).mention_type === "comment" || (metadata as any).mention_type === "description") {
+      return {
+        Icon: AtSign,
+        color: metadata.color || "text-blue-600",
+        bg: metadata.bg || "bg-blue-50"
+      };
+    }
+
+    // Prioridade 1: Anexos (especialmente áudio)
+    if (metadata.file_type === 'audio') {
+      return {
+        Icon: Mic,
+        color: metadata.color || 'text-purple-600',
+        bg: metadata.bg || 'bg-purple-50'
+      };
+    }
+    
+    if (metadata.file_type === 'image') {
+      return {
+        Icon: Image,
+        color: metadata.color || 'text-blue-600',
+        bg: metadata.bg || 'bg-blue-50'
+      };
+    }
+    
+    if (metadata.file_type === 'pdf') {
+      return {
+        Icon: FileText,
+        color: metadata.color || 'text-red-600',
+        bg: metadata.bg || 'bg-red-50'
+      };
+    }
+    
+    if (metadata.file_count && metadata.file_count > 1) {
+      return {
+        Icon: Files,
+        color: metadata.color || 'text-gray-600',
+        bg: metadata.bg || 'bg-gray-50'
+      };
+    }
+    
+    // Prioridade 2: Admin (Segurança)
+    if (notification.category === 'admin' && notification.resource_type === 'security') {
+      return {
+        Icon: ShieldAlert,
+        color: metadata.color || 'text-red-600',
+        bg: metadata.bg || 'bg-red-50'
+      };
+    }
+    
+    if (notification.resource_type === 'member') {
+      if (notification.title.toLowerCase().includes('adicionado') || 
+          notification.title.toLowerCase().includes('aceitou')) {
+        return {
+          Icon: PartyPopper,
+          color: metadata.color || 'text-green-600',
+          bg: metadata.bg || 'bg-green-50'
+        };
+      }
+      return {
+        Icon: UserMinus,
+        color: metadata.color || 'text-orange-600',
+        bg: metadata.bg || 'bg-orange-50'
+      };
+    }
+    
+    // Prioridade 3: Operacional (Padrão)
+    if (notification.resource_type === 'task') {
+      if (notification.title.toLowerCase().includes('atribuíd') || 
+          notification.title.toLowerCase().includes('atribuiu')) {
+        return {
+          Icon: UserPlus,
+          color: metadata.color || 'text-blue-600',
+          bg: metadata.bg || 'bg-blue-50'
+        };
+      }
+      
+      if (notification.title.toLowerCase().includes('coment') || 
+          notification.title.toLowerCase().includes('comentou')) {
+        return {
+          Icon: MessageSquare,
+          color: metadata.color || 'text-gray-600',
+          bg: metadata.bg || 'bg-gray-50'
+        };
+      }
+      
+      if (notification.title.toLowerCase().includes('concluíd') || 
+          notification.title.toLowerCase().includes('finalizou')) {
+        return {
+          Icon: CheckCircle2,
+          color: metadata.color || 'text-green-600',
+          bg: metadata.bg || 'bg-green-50'
+        };
+      }
+    }
+    
+    // Fallback: System
+    if (notification.category === 'system') {
+      return {
+        Icon: AlertCircle,
+        color: metadata.color || 'text-orange-600',
+        bg: metadata.bg || 'bg-orange-50'
+      };
+    }
+    
+      // Default
+      return {
+        Icon: AlertCircle,
+        color: 'text-gray-600',
+        bg: 'bg-gray-50'
+      };
+    };
+    
+    return getIcon();
+  }, [
+    metadata.file_type,
+    metadata.file_count,
+    notification.category,
+    notification.resource_type,
+    notification.title
+  ]);
+
+  const { Icon, color, bg } = iconConfig;
+  
+  const handleClick = () => {
+    if (!isRead) {
+      onMarkAsRead(notification.id);
+    }
+  };
+
+  const handleNavigate = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!canAutoSwitchWorkspace || !metadataWorkspaceId || !notification.action_url) return;
+    if (metadataWorkspaceId === activeWorkspaceId) return;
+
+    event.preventDefault();
+    document.cookie = `active_workspace_id=${metadataWorkspaceId}; path=/; max-age=2592000; samesite=lax`;
+    setActiveWorkspaceId(metadataWorkspaceId);
+    window.location.href = notification.action_url;
+  };
+
+  const content = (
+    <div
+      className={cn(
+        "p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors flex gap-3 items-start group cursor-pointer",
+        !isRead && "bg-slate-50"
+      )}
+      onClick={handleClick}
+    >
+      {/* Avatar/Icon */}
+      <div className="flex-shrink-0 pt-1">
+        {notification.category === 'system' || !notification.triggering_user ? (
+          <div className={cn("h-8 w-8 rounded-full flex items-center justify-center", bg)}>
+            <Icon className={cn("w-4 h-4", color)} />
+          </div>
+        ) : (
+          <Avatar className="h-8 w-8">
+            <AvatarImage 
+              src={notification.triggering_user?.avatar_url || undefined} 
+              alt={notification.triggering_user?.full_name || 'Usuário'} 
+            />
+            <AvatarFallback className={bg}>
+              <Icon className={cn("w-4 h-4", color)} />
+            </AvatarFallback>
+          </Avatar>
+        )}
+      </div>
+
+      {/* Content Container */}
+      <div className="flex-1 space-y-1 min-w-0">
+        <p className="text-sm text-gray-800 leading-snug font-medium">
+          {notification.title}
+        </p>
+        
+        {cleanContent && (
+          <p className="text-sm text-gray-600 leading-snug line-clamp-2">
+            {cleanContent}
+          </p>
+        )}
+
+        {/* Timestamp */}
+        <p className="text-xs text-gray-400 mt-1">
+          {timeAgo}
+        </p>
+
+        {isInviteActionable && (
+          <div className="flex items-center gap-2 pt-2">
+            <Button
+              size="sm"
+              className="h-7 px-2"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (inviteId) {
+                  onAcceptInvite?.(inviteId, notification.id);
+                }
+              }}
+              disabled={inviteId ? !!inviteActionState?.[inviteId] : false}
+            >
+              {inviteId && inviteActionState?.[inviteId] === "accept" ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Aceitando...
+                </>
+              ) : (
+                "Aceitar"
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (inviteId) {
+                  onDeclineInvite?.(inviteId, notification.id);
+                }
+              }}
+              disabled={inviteId ? !!inviteActionState?.[inviteId] : false}
+            >
+              {inviteId && inviteActionState?.[inviteId] === "decline" ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Recusando...
+                </>
+              ) : (
+                "Recusar"
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Unread Dot */}
+      <div className="flex-shrink-0 pt-2">
+        {isRead ? (
+          <div className="w-2 h-2" /> // Spacer para manter alinhamento
+        ) : (
+          <div className="w-2 h-2 bg-blue-500 rounded-full" />
+        )}
+      </div>
+    </div>
+  );
+
+  // Envolver em Link se action_url existir
+  if (notification.action_url && !isInviteActionable) {
+    return (
+      <Link href={notification.action_url} className="block" onClick={handleNavigate}>
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
+}
+
+// Memoizar componente para evitar re-renders desnecessários
+export const NotificationItem = memo(NotificationItemComponent, (prev, next) => {
+  // Comparar apenas propriedades relevantes
+  return (
+    prev.notification.id === next.notification.id &&
+    prev.notification.read_at === next.notification.read_at &&
+    prev.notification.title === next.notification.title &&
+    prev.notification.content === next.notification.content &&
+    prev.onMarkAsRead === next.onMarkAsRead &&
+    prev.onAcceptInvite === next.onAcceptInvite &&
+    prev.onDeclineInvite === next.onDeclineInvite &&
+    prev.inviteActionState === next.inviteActionState
+  );
+});
+

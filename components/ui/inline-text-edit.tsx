@@ -12,6 +12,7 @@ interface InlineTextEditProps {
     inputClassName?: string;
     placeholder?: string;
     disabled?: boolean;
+    maxLength?: number; // ✅ Limite de caracteres para título
 }
 
 export function InlineTextEdit({
@@ -21,6 +22,7 @@ export function InlineTextEdit({
     inputClassName,
     placeholder = "Sem título",
     disabled = false,
+    maxLength, // ✅ Limite de caracteres
 }: InlineTextEditProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [tempValue, setTempValue] = useState(value);
@@ -52,8 +54,13 @@ export function InlineTextEdit({
     };
 
     const handleSave = () => {
-        if (tempValue.trim() !== value) {
-            onSave(tempValue.trim());
+        const trimmed = tempValue.trim();
+        if (trimmed !== value) {
+            // ✅ Validar maxLength antes de salvar
+            const finalValue = maxLength && trimmed.length > maxLength 
+                ? trimmed.substring(0, maxLength).trim() 
+                : trimmed;
+            onSave(finalValue);
         }
         setIsEditing(false);
     };
@@ -68,7 +75,13 @@ export function InlineTextEdit({
             <Input
                 ref={inputRef}
                 value={tempValue}
-                onChange={(e) => setTempValue(e.target.value)}
+                onChange={(e) => {
+                    // ✅ Limitar caracteres durante digitação
+                    const newValue = maxLength 
+                        ? e.target.value.substring(0, maxLength)
+                        : e.target.value;
+                    setTempValue(newValue);
+                }}
                 onKeyDown={handleKeyDown}
                 onBlur={handleSave}
                 className={cn(
@@ -77,6 +90,7 @@ export function InlineTextEdit({
                     inputClassName
                 )}
                 placeholder={placeholder}
+                maxLength={maxLength} // ✅ Limite HTML nativo também
                 onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -89,7 +103,7 @@ export function InlineTextEdit({
     }
 
     return (
-        <div className="flex items-center gap-1.5 group/title">
+        <div className="flex items-center gap-1.5 group/title min-w-0 overflow-hidden">
             <span
                 data-inline-edit="true"
                 onClick={(e) => {
@@ -106,11 +120,11 @@ export function InlineTextEdit({
                     }
                 }}
                 className={cn(
-                    "cursor-text truncate",
+                    "cursor-text truncate block min-w-0", // ✅ Adicionar block e min-w-0 para truncate funcionar
                     disabled && "cursor-default",
                     className
                 )}
-                title={tempValue}
+                title={tempValue && tempValue.length > 70 ? tempValue : undefined} // ✅ Tooltip apenas se truncado (>70 chars)
             >
                 {tempValue || placeholder}
             </span>

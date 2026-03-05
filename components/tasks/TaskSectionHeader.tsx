@@ -2,7 +2,6 @@
 
 import { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 
 interface TaskSectionHeaderProps {
     title: string;
@@ -20,13 +19,13 @@ export function TaskSectionHeader({
     leftContent,
 }: TaskSectionHeaderProps) {
     return (
-        <div className="flex items-center justify-between h-8 mb-2 select-none px-1 group">
-            {/* Esquerda (Info) */}
-            <div className="flex items-center gap-2">
+        <div className="flex items-center h-8 mb-2 select-none px-1 group">
+            {/* Esquerda (Info + Ações) */}
+            <div className="flex items-center gap-2 min-w-0">
                 {leftContent}
                 {color && (
-                    <div 
-                        className="w-2 h-2 rounded-full mr-0.5" 
+                    <div
+                        className="w-2 h-2 rounded-full mr-0.5"
                         style={{ backgroundColor: color }}
                     />
                 )}
@@ -39,12 +38,10 @@ export function TaskSectionHeader({
                 >
                     {count}
                 </Badge>
-                {/* Actions next to title */}
-                {actions && <div className="ml-1">{actions}</div>}
-            </div>
 
-            {/* Direita (Espaçador se necessário) */}
-            <div></div>
+                {/* Ações agora ficam logo ao lado */}
+                {actions && <div className="flex items-center">{actions}</div>}
+            </div>
         </div>
     );
 }

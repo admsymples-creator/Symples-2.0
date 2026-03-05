@@ -1,0 +1,148 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { WeeklyView } from "@/components/home/WeeklyView";
+import { EmptyWeekState } from "@/components/home/EmptyWeekState";
+import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
+import { Database } from "@/types/database.types";
+
+type Task = Database["public"]["Tables"]["tasks"]["Row"];
+
+interface WeeklyViewWrapperProps {
+  tasks: Task[];
+  workspaces: { id: string; name: string }[];
+  welcomeSeen: boolean; // ✅ Prop recebida do pai
+}
+
+// const WELCOME_SEEN_KEY = 'symples-welcome-seen'; // Não é mais necessário ler aqui
+
+export function WeeklyViewWrapper({ tasks, workspaces, welcomeSeen }: WeeklyViewWrapperProps) {
+  const router = useRouter();
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+
+  const [isMounted, setIsMounted] = useState(false);
+  const [isTutorialActive, setIsTutorialActive] = useState(false);
+
+  const hasTasks = tasks && tasks.length > 0;
+
+  // Montar componente no cliente para evitar erro de hidratação
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // ✅ Lógica simplificada: Mostrar playceholder apenas se NÃO tem tarefas e JÁ viu o welcome
+  // Se ainda não viu (welcomeSeen === false), mostra o placeholder de loading ou nada (esperando o modal)
+  const showEmptyState = !hasTasks && welcomeSeen;
+
+  const handleStartTutorial = () => {
+    setIsTutorialActive(true);
+
+    // ✅ Atualiza URL para ativar hints na Sidebar (se houver workspace criado recentemente)
+    // O ID do workspace novo poderia vir de um cookie ou contexto, mas por simplificação
+    // vamos ativar o modo tutorial genérico que a Sidebar já escuta.
+    const params = new URLSearchParams(window.location.search);
+    params.set('tutorial', 'true');
+
+    // Tenta recuperar cookie de workspace recém criado se ainda existir (ou lê de sessionStorage se tivéssemos salvo)
+    // Como o cookie 'newly_accepted_workspace_id' é limpo rapido, talvez o highlight da sidebar
+    // seja mais efetivo se for genérico ou se persistirmos o ID em memória no HomePageClient.
+    // Por enquanto, apenas 'tutorial=true' já ativa o destaque visual na Sidebar se implementado.
+
+    router.push(`?${params.toString()}`);
+  };
+
+  const handleCreateTask = () => {
+    setIsCreateTaskModalOpen(true);
+  };
+
+  const handleTaskCreated = () => {
+    setIsCreateTaskModalOpen(false);
+    if (typeof window !== "undefined") {
+      const ts = Date.now();
+      sessionStorage.setItem("home_tasks_refresh_ts", String(ts));
+      window.dispatchEvent(new CustomEvent("home-tasks-updated"));
+    }
+  };
+
+  const handleTaskUpdated = () => {
+    // NÃO fazer router.refresh() imediato - a atualização otimista já cobre a UI
+    // O refresh será feito automaticamente quando necessário (ex: navegação)
+    // router.refresh() estava causando a tarefa a desaparecer
+  };
+
+  // Determinar o que mostrar: EmptyState ou WeeklyView
+  // Durante a hidratação inicial (!isMounted), sempre mostrar placeholder neutro
+  // Após montagem, usar a lógica normal com animações
+  // Determinar o que mostrar: EmptyState ou WeeklyView
+  // Durante a hidratação inicial (!isMounted), sempre mostrar placeholder neutro
+  const shouldShowEmptyState = isMounted && showEmptyState && !isTutorialActive;
+  const shouldShowWeeklyView = isMounted && (hasTasks || isTutorialActive);
+
+  // Sempre renderizar a mesma estrutura wrapper para evitar erro de hidratação
+  // O AnimatePresence precisa estar sempre presente para manter a estrutura consistente
+  return (
+    <>
+      <div>
+        <AnimatePresence mode="wait">
+          {!isMounted ? (
+            // Renderização inicial (servidor e primeiro render do cliente)
+            // ✅ Usa o Skeleton do EmptyState para evitar "flash" branco
+            // suppressHydrationWarning: Extensões do navegador podem adicionar atributos (ex: bis_skin_checked)
+            <div key="placeholder-hydration" suppressHydrationWarning>
+              <EmptyWeekState skeletonOnly />
+            </div>
+          ) : shouldShowEmptyState ? (
+            <motion.div
+              key="empty-state"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Visão Semanal
+                  </h2>
+                </div>
+                <EmptyWeekState onAction={handleStartTutorial} />
+              </div>
+            </motion.div>
+          ) : shouldShowWeeklyView ? (
+            <motion.div
+              key="weekly-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <WeeklyView
+                tasks={tasks}
+                workspaces={workspaces}
+                highlightInput={isTutorialActive}
+                onTaskUpdate={handleTaskUpdated}
+              />
+            </motion.div>
+          ) : (
+            // Fallback (ex: carregando dados finais)
+            // suppressHydrationWarning: Extensões do navegador podem adicionar atributos (ex: bis_skin_checked)
+            <div key="placeholder-waiting" suppressHydrationWarning>
+              <EmptyWeekState skeletonOnly />
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Modal de Criação de Tarefa */}
+      <TaskDetailModal
+        open={isCreateTaskModalOpen}
+        onOpenChange={setIsCreateTaskModalOpen}
+        mode="create"
+        onTaskCreated={handleTaskCreated}
+        onTaskUpdated={handleTaskUpdated}
+      />
+    </>
+  );
+}

@@ -22,6 +22,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 | :--- | :--- | :--- |  
 | \`bg-brand-green\` | \*\*\#22C55E\*\* (Green-500) | Botões Primários ("Novo", "Comentar"), Ícone Chat |  
 | \`text-brand-green\` | \*\*\#15803D\*\* (Green-700) | Textos de sucesso, Valores positivos |  
+| \`bg-primary\` / \`bg-\[#050815\]\` | \*\*\#050815\*\* | Cor primária escura (fundos escuros, textos em fundo claro) |  
 | \`bg-sidebar-active\` | \*\*\#EEF2FF\*\* (Indigo-50) | Item selecionado na Sidebar |  
 | \`text-sidebar-active\` | \*\*\#4F46E5\*\* (Indigo-600) | Texto do item selecionado na Sidebar |  
 | \`bg-background\` | \*\*\#F9FAFB\*\* (Gray-50) | Fundo geral da aplicação |  
@@ -41,6 +42,12 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
     \* \`rounded-xl\` (12px) para Cards do Dashboard e Modal.  
     \* \`rounded-full\` para Badges de Status e Avatares.  
 \* \*\*Shadow:\*\* \`shadow-sm\` para cards, \`shadow-lg\` para o Modal.
+\* \*\*Padrão de Cards:\*\* Todos os cards do sistema devem usar \`border-none shadow-sm\` para manter consistência visual:
+    \* Cards da Home: \`rounded-lg border-none shadow-sm\` (mantém bordas arredondadas)
+    \* Cards do Financeiro: \`border-none shadow-sm\`
+    \* Cards de Lista de Membros: \`border-none shadow-sm\`
+    \* Cards de Projetos/Workspaces: \`rounded-xl border-none shadow-sm\`
+    \* Exceção: Card de título da Home usa \`rounded-lg border-none shadow-sm\` como card separado
 
 \---
 
@@ -50,6 +57,14 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 \*Referência: Lado esquerdo de todas as imagens.\*  
 \- \*\*Largura:\*\* Fixa (\~240-260px).  
 \- \*\*Cor:\*\* Branca (\`bg-white\`) com borda direita (\`border-r\`).  
+\- \*\*Títulos de Seção:\*\*  
+  \- "PESSOAL" (uppercase) antes dos itens pessoais (Home, Planner)  
+  \- "ESPAÇOS DE TRABALHO" (uppercase) antes do seletor de workspace  
+  \- Estilo: \`text-xs font-semibold text-gray-500 uppercase tracking-wider\`  
+  \- Visíveis apenas quando sidebar expandida  
+\- \*\*Seletor de Workspace:\*\*  
+  \- Borda leve: \`border border-gray-200 rounded-lg\`  
+  \- Dropdown com lista de workspaces e opção de criar novo  
 \- \*\*Estados:\*\*  
     \- \*Inativo:\* Texto cinza escuro, ícone cinza.  
     \- \*Ativo:\* Fundo roxo/azul bem claro (\`bg-indigo-50\`), texto roxo/azul escuro, barra lateral ou peso maior na fonte.  
@@ -68,6 +83,17 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 \* \*\*Ghost/Text:\*\* Fundo transparente, hover cinza claro. Ex: Ações da tabela ("...").  
 \* \*\*FAB (Floating Action Button):\*\* Círculo verde flutuante no canto inferior direito com ícone de chat.
 
+**\#\#\# 4.1.1. Tabs (\`Tabs\` - Padronizado)**  
+\* \*\*Variante Default (Padrão):\*\* Usar \`variant="default"\` em todas as tabs principais do sistema.  
+  \- Container: \`bg-[#f9fafb] border border-gray-200 h-10 p-1\`  
+  \- Tabs Ativas: \`bg-white text-gray-900 shadow-sm\`  
+  \- Tabs Inativas: \`text-gray-500\`  
+  \- Uso: Home (Minha semana/Meu mês), Tarefas (Minhas/Time/Todas), Financeiro (Visão Geral/Recorrentes/Planejamento), Settings (Geral/Membros/Faturamento/Perfil), Visualização (Lista/Quadro/Calendário)  
+\* \*\*Variante Pill:\*\* \`variant="pill"\` - Fundo cinza claro (\`bg-gray-100\`), usado apenas em modais financeiros (Entrada/Saída)  
+\* \*\*Variante Underline:\*\* \`variant="underline"\` - Estilo underline com borda azul quando ativo, usado apenas em notificações  
+\* \*\*Variante Grid:\*\* \`variant="grid"\` - Distribuição igual de colunas, usado apenas em casos específicos  
+\* \*\*Regra:\*\* Todas as tabs principais devem usar \`variant="default"\` para manter consistência visual
+
 **\#\#\# 4.2. Cards de KPI (Financeiro)**  
 \*Referência: image\_20e3f2.png\*  
 \- \*\*Estilo:\*\* Container branco, sombra suave.  
@@ -83,6 +109,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 \- \*\*Status Badge:\*\*  
     \- \*Finalizado:\* Dot Verde \+ Texto "Finalizado".  
     \- \*Em progresso:\* Dot Amarelo \+ Texto.  
+    \- \*Bloqueado:\* Dot Vermelho \+ Texto "Bloqueado".  
     \- \*Não iniciado:\* Dot Cinza \+ Texto.  
 \- \*\*Avatares:\*\* Círculos pequenos, sobrepostos se houver mais de um.
 
@@ -114,8 +141,21 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 6.1. Padrão de Telas de Autenticação (Auth)
 - **Layout:** Split-Screen Obrigatório.
-- **Lado Esquerdo (Branding):** Fundo `bg-slate-900`. Contém Logo e Elementos de Navegação/Status (ex: Stepper).
+- **Lado Esquerdo (Branding):** Fundo `bg-[#050815]`. Contém Logo e Elementos de Navegação/Status (ex: Stepper).
 - **Lado Direito (Ação):** Fundo `bg-white`. Formulários alinhados à esquerda (não centralizados).
+- **Logos:**
+  - Fundos escuros (`bg-[#050815]`): usar `logo.svg` (branco/claro)
+  - Fundos claros (`bg-white`): usar `logo-black.svg` (preto/escuro)
+  - Todos os logos devem estar envolvidos em `<Link href="/">` para serem clicáveis
+- **Ordem de Elementos (Login e Signup):**
+  1. Botões sociais (Google, Magic Link) no topo
+  2. Separador "ou" (linha com texto centralizado)
+  3. Formulário (campos de entrada)
+  4. Botão primário (verde `bg-green-600`)
+  5. Links de ajuda (Esqueceu senha?, Criar conta, etc.)
+- **Login:** Suporta 3 modos - senha (padrão), magic link, recuperação de senha
+- **Signup:** Senha obrigatória, campo de nome opcional, magic link removido
+- **Acessibilidade:** Todos os botões de toggle de senha devem ter `aria-label`
 
 ### 6.2. Ajustes de Cores (A11y)
 - **Botões Primários:** Usar `bg-green-600` (e não 500) para passar nos testes de contraste WCAG com texto branco.
@@ -144,15 +184,42 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 
 ### 7.6. Visão Semanal (DayColumn)
 - **Componente:** `components/home/DayColumn.tsx`
-- **Layout:** Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
-- **Quick Add:** Input no rodapé com seletor de data/hora (`TaskDateTimePicker`)
-  - Ícone de calendário ao lado do campo de texto
-  - Permite selecionar data e hora específica para tarefas pessoais
-  - Atualização imediata ao selecionar (não precisa clicar em "Confirmar")
-- **Ordenação de Tarefas:**
+- **Layout:** 
+  - Coluna vertical com altura dinâmica (`min-h-[500px] max-h-[80vh]`)
+  - Scroll interno com custom scrollbar
+  - Design refinado com gradientes sutis e bordas suaves
+  - Destaque visual para dia atual: `bg-gradient-to-b from-green-50/60 to-white border-[1.5px] border-green-200/80`
+  - Hover effects em dias inativos: `hover:border-gray-200 hover:bg-gray-50/50`
+- **Header:**
+  - Nome do dia em uppercase com tracking-wider
+  - Data em destaque abaixo
+  - Badge de contador de tarefas pendentes (aparece quando `pendingCount > 0`)
+  - Cores dinâmicas: verde para hoje, cinza para outros dias
+- **Quick Add (Input Area):**
+  - Input no rodapé com design refinado
+  - Textarea com auto-resize (máximo 120px de altura)
+  - Ícone Plus que muda para ponto verde pulsante quando focado
+  - Toolbar inferior que aparece quando focado ou com texto:
+    - Botão customizado do `TaskDateTimePicker` com estado visual (verde quando data definida)
+    - Dica "ENTER para salvar"
+  - Blur effect no topo do footer para conteúdo scrollando
+  - Estados visuais: ring verde e shadow quando focado
+  - Tutorial highlight com animação pulse quando `highlightInput` está ativo
+- **Ordenação de Tarefas (Memoizada com `useMemo`):**
   1. Tarefas pessoais com horário específico (não 00:00)
   2. Tarefas pessoais sem horário (00:00 ou sem data)
   3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Empty State:**
+  - Aparece apenas no hover do container (`opacity-0 group-hover/column:opacity-100`)
+  - Design minimalista com ícone FolderOpen em círculo cinza
+  - Texto "Tudo limpo" com subtítulo
+- **Performance:**
+  - Ordenação memoizada com `useMemo` para evitar recálculos
+  - Contador de pendências memoizado
+- **UX:**
+  - Toast notifications para erros (via `sonner`)
+  - Rollback automático do input em caso de erro
+  - Espaço extra no final do scroll para não bater no input
 - **Filtro de Workspace:**
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
@@ -206,7 +273,7 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - **Hero Input:** O valor monetário é o protagonista. Fonte gigante (`text-5xl`), centralizado, sem bordas de input. A cor do texto muda conforme o tipo (Verde/Vermelho).
   - **Corpo:** Campos secundários (Data, Categoria, Descrição) agrupados em um bloco visualmente distinto (fundo cinza claro ou lista com ícones à esquerda).
 - **Ações:**
-  - Botão Principal: Neutro Escuro (`bg-slate-900`). Não usar verde/vermelho para o botão de salvar para evitar poluição visual.
+  - Botão Principal: Neutro Escuro (`bg-[#050815]`). Não usar verde/vermelho para o botão de salvar para evitar poluição visual.
 
 ### 8.3. Listas Financeiras (Extrato)
 - **Transaction Row:**
@@ -259,7 +326,18 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 - **Empty State (Boas-vindas):**
   - **Hero:** Componente `AIOrb` (Esfera escura com borda gradiente giratória + Ícone Sparkles).
   - **Chips:** Grid de 4 sugestões rápidas ("Criar tarefa", "Ver saldo") abaixo do Orb.
-- **Chat Interface:**
+- **Chat Interface (GlobalAssistantSheet):**
+  - Header centralizado com título "Assistente Symples"
+  - Área de chat com scroll automático
+  - Zero state com saudação dinâmica e sugestões de ações
+  - Input fixo no rodapé com botões para:
+    - Upload de imagem/print
+    - Gravação de áudio (máx. 2 minutos)
+    - Envio de mensagem
+  - Suporte a mensagens de texto, áudio e imagem
+  - Transcrição automática de áudio usando OpenAI Whisper
+  - Generative UI com componentes dinâmicos (KanbanConfirmationCard)
+  - Estado "pensando" com ThinkingIndicator (orb + frases rotativas)
   - **Respostas Ricas:** A IA não retorna apenas texto. Ela renderiza **Mini-Cards** (Tarefas/Transações) dentro do fluxo da conversa.
   - **Input:** Barra flutuante com sombra forte (`shadow-xl`) na parte inferior.
 
@@ -297,6 +375,17 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Sistema de notificações em tempo real
   - Badge de contador
   - Lista de notificações com ações
+
+- **WelcomeEmptyState (`components/home/WelcomeEmptyState.tsx`):**
+  - Estado vazio para First Time User Experience (FTUX)
+  - Card centralizado com ícone Sparkles
+  - Botão CTA verde para criar primeira tarefa
+  - Integração com TaskDetailModal
+
+- **WeeklyViewWrapper (`components/home/WeeklyViewWrapper.tsx`):**
+  - Wrapper que gerencia estado vazio vs. grid semanal
+  - Integra modal de criação de tarefas
+  - Atualização automática após criação
 
 ### 9.2. Componentes de Tarefas
 - **TaskDetailModal (`components/tasks/TaskDetailModal.tsx`):**
@@ -427,10 +516,25 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Hero Input: Valor monetário gigante (`text-6xl`)
   - Toggle Entrada/Saída (Verde/Vermelho)
   - Bloco de detalhes agrupado
-  - Botão primário neutro (`bg-slate-900`)
+  - Botão primário neutro (`bg-[#050815]`)
 
 ### 9.4. Componentes de IA
 - **AIOrb (`components/assistant/AIOrb.tsx`):**
+  - Esfera escura (slate-950) com ícone Symples no centro
+  - Animações condicionais baseadas em `isLoading` e `compact`
+  - Suporte a diferentes tamanhos (normal e compacto para FAB)
+  
+- **ThinkingIndicator (`components/assistant/ThinkingIndicator.tsx`):**
+  - Orb animado com anel verde girando (0.6s)
+  - Ícone Symples no centro
+  - Frases rotativas a cada 3 segundos com efeito shimmer
+  - Usado durante processamento de mensagens
+
+- **KanbanConfirmationCard (`components/assistant/KanbanConfirmationCard.tsx`):**
+  - Card estilo Kanban para confirmação de criação de tarefas
+  - Campos editáveis: título, descrição, data, responsável, prioridade, status
+  - Botões de ação: Cancelar e Confirmar
+  - Parte do sistema Generative UI
   - Esfera escura (`bg-slate-950`)
   - Borda gradiente giratória (animação CSS)
   - Ícone Sparkles centralizado
@@ -627,15 +731,41 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
 ## 14. VISÃO SEMANAL - COMPONENTES E FUNCIONALIDADES (v2.3)
 
 ### 14.1. DayColumn (`components/home/DayColumn.tsx`)
-- **Layout**: Coluna vertical com altura fixa (`h-[420px]`) e scroll interno
-- **Quick Add**: Input no rodapé com seletor de data/hora
-  - Ícone de calendário clicável ao lado do campo de texto
-  - Permite definir data e hora específica para tarefas pessoais
-  - Data/hora selecionada é aplicada automaticamente ao criar tarefas
-- **Ordenação de Tarefas**:
+- **Layout**: 
+  - Coluna vertical com altura dinâmica (`min-h-[500px] max-h-[80vh]`)
+  - Scroll interno com custom scrollbar
+  - Design refinado com gradientes sutis e bordas suaves
+  - Destaque visual para dia atual com gradiente verde
+  - Hover effects em dias inativos
+- **Header**:
+  - Nome do dia em uppercase com tracking-wider
+  - Data em destaque abaixo
+  - Badge de contador de tarefas pendentes (quando `pendingCount > 0`)
+  - Cores dinâmicas baseadas em `isToday`
+- **Quick Add**: 
+  - Input no rodapé com design card-like refinado
+  - Textarea com auto-resize (máximo 120px)
+  - Ícone Plus que muda para ponto verde pulsante quando focado
+  - Toolbar inferior condicional com:
+    - Botão customizado do `TaskDateTimePicker` com estado visual
+    - Dica "ENTER para salvar"
+  - Blur effect no topo do footer
+  - Estados visuais aprimorados (ring verde, shadow, transform)
+  - Tutorial highlight com animação pulse
+- **Ordenação de Tarefas** (Memoizada com `useMemo`):
   1. Tarefas pessoais com horário específico (não 00:00)
   2. Tarefas pessoais sem horário (00:00 ou sem data)
   3. Tarefas de workspace (apenas atribuídas ao usuário)
+- **Empty State**:
+  - Aparece apenas no hover do container
+  - Design minimalista com ícone e texto explicativo
+- **Performance**:
+  - Ordenação e contadores memoizados
+  - Handlers otimizados
+- **UX**:
+  - Toast notifications para erros
+  - Rollback automático em caso de erro
+  - Espaço extra no final do scroll
 - **Filtro de Workspace**:
   - Tarefas de workspace aparecem apenas quando `assignee_id = user.id`
   - Tarefas pessoais aparecem quando `created_by = user.id` OU `assignee_id = user.id`
@@ -694,7 +824,218 @@ A interface atual é predominantemente \*\*Light Mode\*\*, focada em clareza e l
   - Renderização apenas no cliente (evita problemas de hidratação)
 - **Formato**: Exibe data e hora no formato `d MMM, HH:mm` (pt-BR)
 
-## 15. Journal Visual de Preview
+### 14.4. WelcomeEmptyState (`components/home/WelcomeEmptyState.tsx`)
+- **Componente**: Estado vazio para First Time User Experience (FTUX) no Dashboard
+- **Props**: `workspaceName` (string, opcional), `onAction` (função callback)
+- **Layout**: Card centralizado (`bg-white`, `border-gray-200`, `shadow-sm`) com padding generoso (`p-12`)
+- **Elementos**:
+  - **Ícone**: `Sparkles` (Lucide) em círculo verde claro (`bg-green-50`, `text-green-600`)
+  - **Título**: "Bem-vindo ao [workspaceName]!" em `text-2xl font-bold text-gray-900`
+  - **Subtítulo**: "Tudo pronto para começar? Crie sua primeira tarefa ou explore o menu." em `text-gray-600`
+  - **CTA Button**: "Criar minha primeira tarefa" (`bg-green-600 hover:bg-green-700`)
+- **Uso**: Aparece quando o usuário não tem tarefas na semana, substituindo o grid vazio
+
+### 14.5. WeeklyViewWrapper (`components/home/WeeklyViewWrapper.tsx`)
+- **Componente**: Wrapper client que gerencia estado do modal e lógica condicional
+- **Props**: `tasks` (Task[]), `workspaces` (Array de workspaces)
+- **Funcionalidades**:
+  - Verifica se `tasks.length === 0`
+  - Se vazio: renderiza `<WelcomeEmptyState />`
+  - Se há tarefas: renderiza `<WeeklyView />` normalmente
+  - Integra `TaskDetailModal` para criação de tarefas
+  - Gerencia estado do modal (`isModalOpen`)
+- **Callbacks**:
+  - `handleCreateTask()`: Abre o modal em modo create
+  - `handleTaskCreated()`: Fecha modal e atualiza página via `router.refresh()`
+  - `handleTaskUpdated()`: Atualiza página após edição
+
+## 15. Home Page Redesign (v2.4)
+
+### 15.1. Estrutura da Home Page
+- **Header:** Título "Bom dia, Usuário 👋" com subtítulo
+- **Barra de Ações:**
+  - Botão "Criar tarefa" à esquerda (verde `bg-green-600`)
+  - Tabs de período à direita: "Minha semana" / "Meu mês" (variant="default")
+- **Cards Informativos (Grid 2 colunas):**
+  - **Card "Minhas tarefas" (esquerda):**
+    - Título "Minhas tarefas" com tabs internos alinhados à direita na mesma linha
+    - Tabs: "Próximas" (padrão), "Atrasadas", "Concluídas" (variant="default")
+    - Lista de tarefas usando `TaskRowMinify` em ordem cronológica
+    - Altura fixa `h-[600px]` com scroll interno usando `ScrollArea`
+    - Filtros: Próximas (não completadas, data >= hoje), Atrasadas (não completadas, data < hoje), Concluídas (status = done)
+  - **Card "Caixa de entrada" (direita):**
+    - Título "Caixa de entrada"
+    - Lista de notificações usando `NotificationItem`
+    - Altura fixa `h-[600px]` com scroll interno usando `ScrollArea`
+    - Marca notificações como lidas ao clicar
+- **Visão por Workspace:** Mantida abaixo dos cards
+
+### 15.2. Componentes Criados
+- **HomeActionBar (`components/home/HomeActionBar.tsx`):** Barra com botão criar tarefa e tabs de período
+- **HomeActionBarWrapper (`components/home/HomeActionBarWrapper.tsx`):** Wrapper com Context API para compartilhar estado de período entre barra e cards
+- **HomeTasksSection (`components/home/HomeTasksSection.tsx`):** Card de tarefas com tabs internos e filtros
+- **HomeInboxSection (`components/home/HomeInboxSection.tsx`):** Card de notificações
+
+## 16. Padronização de Tabs (v2.4)
+
+### 16.1. Sistema de Variantes
+- **Componente Base:** `components/ui/tabs.tsx` usando CVA (class-variance-authority)
+- **Variantes Disponíveis:**
+  - `default`: Padrão para todas as tabs principais (bg-[#f9fafb], border border-gray-200, tabs ativas com bg-white)
+  - `pill`: Fundo cinza claro (bg-gray-100), usado apenas em modais financeiros
+  - `underline`: Estilo underline com borda azul quando ativo, usado apenas em notificações
+  - `grid`: Distribuição igual de colunas, usado em casos específicos
+
+### 16.2. Regra de Uso
+- **Todas as tabs principais devem usar `variant="default"`** para manter consistência visual
+- Tabs padronizadas em: Home (Minha semana/Meu mês), Tarefas (Minhas/Time/Todas, Lista/Quadro/Calendário), Financeiro (Visão Geral/Recorrentes/Planejamento), Settings (Geral/Membros/Faturamento/Perfil)
+- Background padrão: `#f9fafb` (cinza muito claro)
+- Tabs ativas: `bg-white` com sombra suave (`shadow-sm`)
+- Tabs inativas: `text-gray-500`
+
+## 17. Sidebar Refinamentos (v2.4)
+
+### 17.1. Títulos de Seção
+- **"PESSOAL"** (uppercase) antes dos itens pessoais (Home, Planner)
+- **"ESPAÇOS DE TRABALHO"** (uppercase) antes do seletor de workspace
+- Estilo: `text-xs font-semibold text-gray-500 uppercase tracking-wider`
+- Visíveis apenas quando sidebar expandida (`!isCollapsed`)
+
+### 17.2. Seletor de Workspace
+- Borda leve: `border border-gray-200 rounded-lg`
+- Dropdown com lista de workspaces e opção de criar novo
+- Exibe badge de trial quando aplicável
+
+## 18. Padrão de Cards Unificado (v2.5)
+
+### 18.1. Estilo Padrão
+- **Todos os cards do sistema:** `border-none shadow-sm`
+- **Cards da Home:** `rounded-lg border-none shadow-sm` (mantém bordas arredondadas)
+- **Cards do Financeiro:** `border-none shadow-sm`
+- **Cards de Lista de Membros:** `border-none shadow-sm`
+- **Cards de Projetos/Workspaces:** `rounded-xl border-none shadow-sm`
+- **Card de Título da Home:** `rounded-lg border-none shadow-sm` (estilo de card próprio, separado do header)
+
+### 18.1.1. Altura de Cards que Preenchem Espaço
+- **Cards que precisam ter altura igual:** Usar `flex flex-col min-h-[400px]` no Card
+- **CardHeader:** `flex-shrink-0` para manter tamanho fixo
+- **CardContent:** `flex-1 min-h-0 overflow-y-auto` para preencher espaço e permitir scroll interno
+- **Aplicação:** Cards "Entradas", "Saídas" e "Por Categoria" no financeiro seguem este padrão
+
+### 18.2. Background das Páginas
+- **Página de Tarefas:** `bg-white` (fundo branco)
+- **Página de Financeiro:** `bg-white` com scroll permitido
+- **Páginas gerais:** `bg-white` ou `bg-gray-50/50` conforme necessário
+
+### 18.3. Visão Lista de Tarefas
+- **Ghost Button "Novo Grupo":** Aparece sempre na visão lista quando `viewOption === "group"`
+- **Background:** `bg-white` (removido `bg-gray-50/50`)
+
+### 18.4. Lista de Membros do Time
+- **Fotos de Membros:** Exibe `avatar_url` quando disponível, fallback para iniciais
+- **Cards:** `border-none shadow-sm` seguindo padrão unificado
+
+## 19. Performance e Debug (v2.5)
+
+### 19.1. Logs de Performance
+- **Produção:** Todos os logs de performance (`[PERF]`, `console.log` de timing) foram removidos do código de produção
+- **Desenvolvimento:** Logs de performance só aparecem quando `process.env.DEBUG_PERF === "1"` (configurado via variável de ambiente)
+- **Função `logPerf`:** Existe em `tasks.ts`, `finance.ts`, `user.ts` mas só funciona se `DEBUG_PERF=1`
+- **Regra:** Nunca incluir `console.log` de performance diretamente no código - usar sempre a função `logPerf` protegida
+
+### 19.2. Carregamento Imediato de Páginas
+- **Planner:** 
+  - Inicializa `loading` como `false` quando `initialTasks !== undefined` (mesmo se array vazio)
+  - Renderiza imediatamente quando tem dados iniciais, mesmo sem `currentWorkspace` definido
+  - `currentWorkspace` é resolvido de forma assíncrona mas não bloqueia renderização
+  - Skeleton só aparece se realmente não há dados iniciais (`initialTasks === undefined`)
+- **Home:** Usa dados iniciais do servidor para renderização imediata
+- **Padrão:** Todas as páginas devem usar Server Components para buscar dados e passar para Client Components via props `initial*`
+
+## 20. Saudação Dinâmica (v2.5)
+
+### 20.1. Componente DynamicGreeting
+- **Localização:** `components/home/DynamicGreeting.tsx`
+- **Função utilitária:** `lib/utils/greeting.ts` - `getGreeting(userName)`
+- **Funcionalidade:** Gera saudação dinâmica baseada no horário do dia
+  - **Bom dia:** 5h às 11h59
+  - **Boa tarde:** 12h às 17h59
+  - **Boa noite:** 18h às 4h59
+- **Extração de nome:** Usa o primeiro nome do usuário ou "Usuário" como fallback
+- **Uso:** 
+  - Home page: `<DynamicGreeting userName={user?.full_name} />`
+  - Assistente IA: Usa a mesma função utilitária para consistência
+
+### 20.2. Integração
+- **Server Component:** Busca perfil do usuário via `getUserProfile()` na página home
+- **Client Component:** `DynamicGreeting` é renderizado no cliente para atualização dinâmica baseada na hora atual
+- **Reutilização:** A função `getGreeting` é compartilhada entre Home e Assistente IA
+
+## 21. Padrão de Tabelas Clean (v2.6)
+
+### 21.1. Estilo Unificado
+Todas as tabelas do sistema seguem um padrão clean e consistente:
+
+```tsx
+// Card Container
+<Card className="border-none shadow-sm overflow-hidden">
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm text-left">
+      {/* Header */}
+      <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
+        <tr>
+          <th className="px-4 py-3 font-medium">Coluna</th>
+        </tr>
+      </thead>
+      
+      {/* Body */}
+      <tbody className="divide-y divide-gray-100">
+        <tr className="hover:bg-gray-50/50 transition-colors h-[52px]">
+          <td className="px-4 py-3">Conteúdo</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</Card>
+```
+
+### 21.2. Especificações de Estilo
+- **Header:**
+  - Background: `bg-gray-50`
+  - Texto: `text-gray-500 font-medium`
+  - Borda inferior: `border-b border-gray-100`
+  - Padding células: `px-4 py-3`
+
+- **Body:**
+  - Divisores: `divide-y divide-gray-100`
+  - Hover: `hover:bg-gray-50/50 transition-colors`
+  - Altura fixa das linhas: `h-[52px]` (para consistência visual)
+  - Padding células: `px-4 py-3`
+
+- **Card Container:**
+  - Estilo: `border-none shadow-sm`
+  - Overflow: `overflow-hidden` (para bordas arredondadas limpas)
+  - Scroll: `overflow-x-auto` no wrapper interno
+
+- **Avatares em Tabelas:**
+  - Tamanho padrão: `h-8 w-8` (compacto)
+  - Ícones internos: `h-3.5 w-3.5`
+
+### 21.3. Aplicação
+Este padrão está implementado em:
+- Lista de Clientes (`clients-page-client.tsx`)
+- Lista de Membros do Time (`settings-client.tsx`)
+- Lista de Convites Pendentes (`settings-client.tsx`)
+- Histórico de Transações do Cliente (`[clientId]/page.tsx`)
+
+### 21.4. Consistência Visual
+O padrão garante:
+- Interface mais leve e profissional
+- Densidade de informação otimizada
+- Experiência consistente entre páginas
+- Manutenção simplificada
+
+## 22. Journal Visual de Preview
 
 - Mudanças incrementais de UI/UX e ajustes finos de componentes em **preview** devem ser registradas em  
   `.context/journal-symples.md`, sempre com data e hora.  

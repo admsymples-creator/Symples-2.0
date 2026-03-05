@@ -39,9 +39,21 @@ export default function ItemDaListaPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         assignee_id: null,
+        client_id: null,
         due_date: "2024-12-18",
         position: 1,
         origin_context: null,
+        // Novos campos obrigatórios
+        recurrence_type: null,
+        recurrence_parent_id: null,
+        recurrence_interval: null,
+        recurrence_end_date: null,
+        recurrence_count: 0,
+        recurrence_days: null,
+        group_id: null,
+        subtasks: null,
+        tags: [],
+        visible_on_board: true,
     };
 
     // Mock data para KanbanCard

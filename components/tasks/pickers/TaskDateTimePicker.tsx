@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar as CalendarIcon, Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -12,9 +14,17 @@ import { ptBR } from "date-fns/locale";
 interface TaskDateTimePickerProps {
     date: Date | null;
     onSelect: (date: Date | null) => void;
+    /** Quando o popover abre e date é null, usa esta data (ex.: data do card na weekly view) */
+    defaultDateWhenNull?: Date | null;
     trigger?: React.ReactElement;
     align?: "start" | "center" | "end";
     side?: "top" | "bottom" | "left" | "right";
+    recurrenceType?: 'daily' | 'weekly' | 'monthly' | 'custom' | null;
+    onRecurrenceChange?: (type: 'daily' | 'weekly' | 'monthly' | 'custom' | null) => void;
+    recurrenceDays?: number[] | null;
+    onRecurrenceDaysChange?: (days: number[]) => void;
+    allowCustomRecurrence?: boolean;
+    onConfirmApplied?: () => void;
 }
 
 // Funções utilitárias para atalhos
@@ -41,15 +51,32 @@ const getNextWeek = (): Date => {
 export function TaskDateTimePicker({
     date,
     onSelect,
+    defaultDateWhenNull,
     trigger,
     align = "end",
     side = "left",
+    recurrenceType: initialRecurrenceType,
+    onRecurrenceChange,
+    recurrenceDays: initialRecurrenceDays,
+    onRecurrenceDaysChange,
+    allowCustomRecurrence = true,
+    onConfirmApplied,
 }: TaskDateTimePickerProps) {
     const [isMounted, setIsMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date | null>(date);
-    const [hour, setHour] = useState<number>(date ? date.getHours() : 9);
+    const [hour, setHour] = useState<number>(date ? date.getHours() : 0);
     const [minute, setMinute] = useState<number>(date ? date.getMinutes() : 0);
+    const [recurrenceEnabled, setRecurrenceEnabled] = useState<boolean>(initialRecurrenceType !== null && initialRecurrenceType !== undefined);
+    const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly' | 'custom' | null>(initialRecurrenceType || null);
+    const [recurrenceDays, setRecurrenceDays] = useState<number[]>(() => Array.isArray(initialRecurrenceDays) ? initialRecurrenceDays : []);
+    const lastDaysFromPropsRef = React.useRef<string>("");
+    const lastEmittedDaysRef = React.useRef<string>("");
+    const lastChangeSourceRef = React.useRef<"props" | "internal" | null>(null);
+
+    const getDaysKey = (days: number[]) => {
+        return [...days].sort((a, b) => a - b).join(",");
+    };
 
     // Garantir que renderiza apenas no cliente para evitar problemas de hidratação
     useEffect(() => {
@@ -65,6 +92,15 @@ export function TaskDateTimePicker({
         }
     }, [date]);
 
+    useEffect(() => {
+        if (!Array.isArray(initialRecurrenceDays)) return;
+        const incomingKey = getDaysKey(initialRecurrenceDays);
+        if (incomingKey === lastDaysFromPropsRef.current) return;
+        lastDaysFromPropsRef.current = incomingKey;
+        lastChangeSourceRef.current = "props";
+        setRecurrenceDays(initialRecurrenceDays);
+    }, [initialRecurrenceDays]);
+
     const handleDateSelect = (newDate: Date | undefined) => {
         if (!newDate) {
             setSelectedDate(null);
@@ -74,8 +110,8 @@ export function TaskDateTimePicker({
         }
 
         // Preservar hora e minuto ao selecionar nova data
-        // Se não há data selecionada ainda, usar hora padrão (9:00)
-        const currentHour = selectedDate ? hour : 9;
+        // Se não há data selecionada ainda, usar padrão sem horário (00:00)
+        const currentHour = selectedDate ? hour : 0;
         const currentMinute = selectedDate ? minute : 0;
         const dateWithTime = new Date(newDate);
         dateWithTime.setHours(currentHour, currentMinute, 0, 0);
@@ -83,7 +119,7 @@ export function TaskDateTimePicker({
         
         // Atualizar hora/minuto se não havia data antes
         if (!selectedDate) {
-            setHour(9);
+            setHour(0);
             setMinute(0);
         }
         
@@ -113,7 +149,18 @@ export function TaskDateTimePicker({
 
     const handleConfirm = () => {
         onSelect(selectedDate);
+        if (onRecurrenceChange) {
+            onRecurrenceChange(recurrenceEnabled ? (recurrenceType || "daily") : null);
+        }
+        if (onRecurrenceDaysChange) {
+            if (recurrenceEnabled && (recurrenceType === "weekly" || recurrenceType === "custom")) {
+                onRecurrenceDaysChange(recurrenceDays);
+            } else {
+                onRecurrenceDaysChange([]);
+            }
+        }
         setIsOpen(false);
+        onConfirmApplied?.();
     };
 
     const handleQuickSelect = (quickDate: Date) => {
@@ -126,15 +173,128 @@ export function TaskDateTimePicker({
 
     const handleClear = () => {
         setSelectedDate(null);
-        setHour(9);
+        setHour(0);
         setMinute(0);
+        setRecurrenceEnabled(false);
+        setRecurrenceType(null);
+        setRecurrenceDays([]);
         onSelect(null);
+        if (onRecurrenceChange) {
+            onRecurrenceChange(null);
+        }
         setIsOpen(false);
     };
+
+    const handleOpenChange = (open: boolean) => {
+        if (open && !date && defaultDateWhenNull) {
+            const d = new Date(defaultDateWhenNull);
+            d.setHours(0, 0, 0, 0);
+            // Apenas pré-selecionar localmente — não salvar no pai até o usuário confirmar
+            setSelectedDate(d);
+            setHour(0);
+            setMinute(0);
+        }
+        setIsOpen(open);
+    };
+
+    const handleRecurrenceToggle = (checked: boolean) => {
+        setRecurrenceEnabled(checked);
+        if (!checked) {
+            setRecurrenceType(null);
+            lastChangeSourceRef.current = "internal";
+            setRecurrenceDays([]);
+            if (onRecurrenceChange) {
+                onRecurrenceChange(null);
+            }
+            if (onRecurrenceDaysChange) {
+                onRecurrenceDaysChange([]);
+            }
+        } else {
+            // Definir padrão como 'daily' quando ativar
+            const defaultType = recurrenceType || 'daily';
+            setRecurrenceType(defaultType);
+            if (onRecurrenceChange) {
+                onRecurrenceChange(defaultType);
+            }
+
+            if (defaultType === "weekly" || defaultType === "custom") {
+                if (recurrenceDays.length === 0) {
+                    const baseDate = selectedDate ?? new Date();
+                    const next = [baseDate.getDay()];
+                    lastChangeSourceRef.current = "internal";
+                    setRecurrenceDays(next);
+                    if (onRecurrenceDaysChange) {
+                        onRecurrenceDaysChange(next);
+                    }
+                } else if (onRecurrenceDaysChange) {
+                    onRecurrenceDaysChange(recurrenceDays);
+                }
+            }
+        }
+    };
+
+    const handleRecurrenceTypeChange = (value: string) => {
+        const newType = value as 'daily' | 'weekly' | 'monthly' | 'custom';
+        setRecurrenceType(newType);
+        if (onRecurrenceChange) {
+            onRecurrenceChange(newType);
+        }
+        if (newType !== "weekly" && newType !== "custom") {
+            lastChangeSourceRef.current = "internal";
+            setRecurrenceDays([]);
+            if (onRecurrenceDaysChange) {
+                onRecurrenceDaysChange([]);
+            }
+        }
+    };
+
+    const handleRecurrenceDaysChange = (day: number) => {
+        lastChangeSourceRef.current = "internal";
+        setRecurrenceDays((prev) => {
+            const exists = prev.includes(day);
+            return exists ? prev.filter((d) => d !== day) : [...prev, day];
+        });
+    };
+
+    useEffect(() => {
+        if (!recurrenceEnabled) return;
+        if (recurrenceType !== "weekly" && recurrenceType !== "custom") return;
+        if (recurrenceDays.length > 0) return;
+
+        const baseDate = selectedDate ?? new Date();
+        const defaultDay = baseDate.getDay();
+        const next = [defaultDay];
+        lastChangeSourceRef.current = "internal";
+        setRecurrenceDays(next);
+    }, [recurrenceEnabled, recurrenceType, selectedDate, recurrenceDays.length]);
+
+    useEffect(() => {
+        if (onRecurrenceDaysChange) {
+            const key = getDaysKey(recurrenceDays);
+            if (key === lastEmittedDaysRef.current) return;
+            if (lastChangeSourceRef.current === "props" && key === lastDaysFromPropsRef.current) {
+                lastEmittedDaysRef.current = key;
+                lastChangeSourceRef.current = null;
+                return;
+            }
+            onRecurrenceDaysChange(recurrenceDays);
+            lastEmittedDaysRef.current = key;
+            lastChangeSourceRef.current = "internal";
+        }
+    }, [recurrenceDays, onRecurrenceDaysChange]);
 
     // Gerar opções de hora (0-23)
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const minutes = [0, 15, 30, 45];
+    const weekDayOptions = [
+        { value: 1, label: "S", name: "Segunda" },
+        { value: 2, label: "T", name: "Terça" },
+        { value: 3, label: "Q", name: "Quarta" },
+        { value: 4, label: "Q", name: "Quinta" },
+        { value: 5, label: "S", name: "Sexta" },
+        { value: 6, label: "S", name: "Sábado" },
+        { value: 0, label: "D", name: "Domingo" },
+    ];
 
     // Se não houver children, usar o trigger padrão
     const defaultTrigger = (
@@ -164,62 +324,23 @@ export function TaskDateTimePicker({
     }
 
     return (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <Popover open={isOpen} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
                 {triggerElement}
             </PopoverTrigger>
             <PopoverContent className="p-0 w-auto rounded-xl" align={align} side={side}>
-                <div className="p-4 space-y-3">
-                    {/* Atalhos Rápidos */}
-                    <div className="flex gap-2 px-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 flex-1"
-                            onClick={() => handleQuickSelect(getToday())}
-                        >
-                            Hoje
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 flex-1"
-                            onClick={() => handleQuickSelect(getTomorrow())}
-                        >
-                            Amanhã
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 flex-1"
-                            onClick={() => handleQuickSelect(getNextWeek())}
-                        >
-                            Próxima Semana
-                        </Button>
-                    </div>
-                    <div className="border-t border-gray-200" />
-                    
-                    {/* Calendar */}
-                    <Calendar
-                        mode="single"
-                        selected={selectedDate || undefined}
-                        onSelect={handleDateSelect}
-                        locale={ptBR}
-                        className="rounded-md border-0"
-                    />
-                    
-                    {/* Time Picker */}
-                    <div className="border-t border-gray-200 pt-3">
-                        <div className="text-xs font-medium text-gray-700 mb-2 px-2">Hora</div>
-                        <div className="flex gap-2 px-2">
-                            {/* Hour Selector */}
-                            <div className="flex-1">
-                                <div className="text-[10px] text-gray-500 mb-1">Hora</div>
-                                <div className="flex gap-1">
+                <div className="flex">
+                    {/* Coluna 1: Atalhos, Hora, Recorrência, Botões */}
+                    <div className="flex flex-col gap-4 w-[220px] p-4 justify-between">
+                        <div className="flex flex-col gap-4">
+                            {/* Hora */}
+                            <div className="space-y-2">
+                                <div className="text-xs font-medium text-gray-700">Hora</div>
+                                <div className="flex items-center gap-1.5">
                                     <select
                                         value={hour}
                                         onChange={(e) => handleTimeChange(parseInt(e.target.value), minute)}
-                                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
                                     >
                                         {hours.map((h) => (
                                             <option key={h} value={h}>
@@ -227,17 +348,11 @@ export function TaskDateTimePicker({
                                             </option>
                                         ))}
                                     </select>
-                                </div>
-                            </div>
-                            
-                            {/* Minute Selector */}
-                            <div className="flex-1">
-                                <div className="text-[10px] text-gray-500 mb-1">Minuto</div>
-                                <div className="flex gap-1">
+                                    <span className="text-gray-400 text-sm">:</span>
                                     <select
                                         value={minute}
                                         onChange={(e) => handleTimeChange(hour, parseInt(e.target.value))}
-                                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
                                     >
                                         {minutes.map((m) => (
                                             <option key={m} value={m}>
@@ -247,30 +362,108 @@ export function TaskDateTimePicker({
                                     </select>
                                 </div>
                             </div>
+
+                            {/* Recorrência */}
+                            {onRecurrenceChange && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id="recurrence-toggle"
+                                            checked={recurrenceEnabled}
+                                            onCheckedChange={handleRecurrenceToggle}
+                                        />
+                                        <label
+                                            htmlFor="recurrence-toggle"
+                                            className="text-xs font-medium text-gray-700 cursor-pointer"
+                                        >
+                                            Recorrência
+                                        </label>
+                                    </div>
+                                    {recurrenceEnabled && (
+                                        <>
+                                            <Select
+                                            value={recurrenceType || 'daily'}
+                                            onValueChange={handleRecurrenceTypeChange}
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="daily">Diária</SelectItem>
+                                                <SelectItem value="weekly">Semanal</SelectItem>
+                                                <SelectItem value="monthly">Mensal</SelectItem>
+                                                {allowCustomRecurrence && (
+                                                    <SelectItem value="custom">Personalizada</SelectItem>
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                        {(recurrenceType === "weekly" || recurrenceType === "custom") && (
+                                            <div className="space-y-2">
+                                                <div className="text-[11px] font-medium text-gray-600">Dias da semana</div>
+                                                <div className="flex items-center gap-1">
+                                                    {weekDayOptions.map((day) => {
+                                                        const isSelected = recurrenceDays.includes(day.value);
+                                                        return (
+                                                            <button
+                                                                key={day.value}
+                                                                type="button"
+                                                                onClick={() => handleRecurrenceDaysChange(day.value)}
+                                                                className={cn(
+                                                                    "h-7 w-7 rounded-full text-[11px] font-semibold border transition-colors",
+                                                                    isSelected
+                                                                        ? "bg-green-600 text-white border-green-600"
+                                                                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800"
+                                                                )}
+                                                                aria-label={day.name}
+                                                                title={day.name}
+                                                            >
+                                                                {day.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Botões de ação - alinhados inferiormente */}
+                        <div className="flex flex-col gap-2">
+                            {selectedDate && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7 w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    onClick={handleClear}
+                                >
+                                    <X className="size-3 mr-1" />
+                                    Remover
+                                </Button>
+                            )}
+                            <Button
+                                variant="default"
+                                size="sm"
+                                className="text-xs h-7 w-full bg-green-600 hover:bg-green-700"
+                                onClick={handleConfirm}
+                            >
+                                Agendar
+                            </Button>
                         </div>
                     </div>
-                    
-                    {/* Botões de ação */}
-                    <div className="border-t border-gray-200 pt-2 flex gap-2">
-                        {selectedDate && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-xs h-7 flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={handleClear}
-                            >
-                                <X className="size-3 mr-1" />
-                                Remover
-                            </Button>
-                        )}
-                        <Button
-                            variant="default"
-                            size="sm"
-                            className="text-xs h-7 flex-1 bg-green-600 hover:bg-green-700"
-                            onClick={handleConfirm}
-                        >
-                            Confirmar
-                        </Button>
+
+                    {/* Coluna 2: Calendário */}
+                    <div className="relative p-4">
+                        <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-200"></div>
+                        <Calendar
+                            mode="single"
+                            selected={selectedDate || undefined}
+                            onSelect={handleDateSelect}
+                            locale={ptBR}
+                            className="rounded-md border-0"
+                        />
                     </div>
                 </div>
             </PopoverContent>

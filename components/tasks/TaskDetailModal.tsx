@@ -1,16 +1,19 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
+import { AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useTaskCache } from "@/hooks/use-task-cache";
 import { saveAttachment, deleteAttachment } from "@/lib/actions/attachments";
-import { 
-    getTaskDetails,
-    getTaskBasicDetails,
+import {
     getTaskExtendedDetails,
-    addComment, 
-    updateTaskField, 
+    getTaskDetailsForModal,
+    getFullModalData,
+    addComment,
+    updateComment,
+    deleteComment,
+    updateTaskField,
     updateTaskFields,
     updateTaskTags,
     updateTaskSubtasks,
@@ -18,8 +21,9 @@ import {
     updateAudioTranscription,
     generateTaskShareLink
 } from "@/lib/actions/task-details";
-import { getWorkspaceMembers } from "@/lib/actions/tasks";
-import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TaskStatus } from "@/lib/config/tasks";
+import { getWorkspaceMembers, createTask } from "@/lib/actions/tasks";
+import { mapStatusToLabel, STATUS_TO_LABEL, ORDERED_STATUSES, TASK_CONFIG, TASK_STATUS, TaskStatus } from "@/lib/config/tasks";
+import { useWorkspace } from "@/components/providers/SidebarProvider";
 import {
     Dialog,
     DialogHeader,
@@ -55,6 +59,8 @@ import {
     Globe,
     Lock,
     Square,
+    AlertTriangle,
+    CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,12 +90,22 @@ import { cn } from "@/lib/utils";
 import { AudioMessageBubble } from "@/components/tasks/AudioMessageBubble";
 import { AttachmentCard } from "@/components/tasks/AttachmentCard";
 import { Editor } from "@/components/ui/editor";
-import { TaskAssigneePicker } from "@/components/tasks/pickers/TaskAssigneePicker";
+import { LinkifyText } from "@/components/ui/linkify-text";
+import { linkifyHtml } from "@/lib/utils/linkify-html";
+import { TaskMembersPicker } from "@/components/tasks/pickers/TaskMembersPicker";
+import { addTaskMember, removeTaskMember } from "@/lib/actions/task-members";
 import { TaskDatePicker } from "@/components/tasks/pickers/TaskDatePicker";
+import { TaskDetailActivityItem } from "@/components/tasks/TaskDetailActivityItem";
+import { TaskDetailHeader } from "@/components/tasks/TaskDetailHeader";
+import { TaskDetailSkeleton } from "@/components/tasks/TaskDetailSkeleton";
+import { TaskDetailProperties } from "@/components/tasks/TaskDetailProperties";
 import { TaskImageLightbox } from "@/components/tasks/TaskImageLightbox";
 import { CreateTaskFromAudioModal } from "@/components/tasks/CreateTaskFromAudioModal";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { toast } from "sonner";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { CreateTransactionModal } from "@/components/finance/CreateTransactionModal";
+import { getTransactionsByTask } from "@/lib/actions/finance";
 
 // ------------------------------------------------------------------
 // Types
@@ -99,10 +115,12 @@ interface SubTask {
     id: string;
     title: string;
     completed: boolean;
+    assignee_id?: string | null;
     assignee?: {
+        id?: string;
         name: string;
         avatar?: string;
-    };
+    } | null;
 }
 
 interface Activity {
@@ -130,6 +148,11 @@ interface Activity {
         source: "whatsapp" | "web";
         content?: string;
     };
+    isCurrentUser?: boolean;
+    edited?: boolean;
+    deleted?: boolean;
+    editedAt?: string;
+    deletedAt?: string;
 }
 
 interface FileAttachment {
@@ -140,12 +163,32 @@ interface FileAttachment {
     url?: string;
 }
 
+interface TaskPayment {
+    id: string;
+    amount: number;
+    status: "paid" | "pending" | "scheduled" | "cancelled";
+    type: "income" | "expense";
+    description: string;
+    due_date?: string | null;
+    created_at?: string | null;
+    counterparty_name?: string | null;
+    client_name?: string | null;
+}
+
 interface TaskDetailModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     mode?: "create" | "edit" | "view";
     onTaskCreated?: () => void;
     onTaskUpdated?: () => void;
+    onTaskUpdatedOptimistic?: (taskId: string, updates: Partial<{
+        title?: string;
+        status?: string;
+        dueDate?: string;
+        priority?: string;
+        assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        tags?: string[];
+    }>) => void;
     task?: {
         id: string;
         title: string;
@@ -159,6 +202,7 @@ interface TaskDetailModalProps {
         tags?: string[];
         breadcrumbs: string[];
         workspaceId?: string | null;
+        originContext?: string;
         contextMessage?: {
             type: "audio" | "text";
             content: string;
@@ -169,6 +213,7 @@ interface TaskDetailModalProps {
         attachments?: FileAttachment[];
     };
     initialDueDate?: string;
+    initialTags?: string[];
 }
 
 // ------------------------------------------------------------------
@@ -210,7 +255,7 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
             const barGap = 2;
             const totalGap = (bars - 1) * barGap;
             const barWidth = (canvas.width - totalGap) / bars;
-            
+
             let x = 0;
             const step = Math.floor(bufferLength / bars);
 
@@ -221,9 +266,9 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
                 }
                 const value = sum / step;
                 const percent = value / 255;
-                const height = Math.max(2, percent * (canvas.height * 0.8)); 
+                const height = Math.max(2, percent * (canvas.height * 0.8));
                 ctx.fillStyle = percent > 0.4 ? "#ef4444" : "#fca5a5";
-                const y = (canvas.height - height) / 2; 
+                const y = (canvas.height - height) / 2;
                 ctx.beginPath();
                 ctx.roundRect(x, y, barWidth, height, 2);
                 ctx.fill();
@@ -244,21 +289,183 @@ const RecordingVisualizer = ({ stream }: { stream: MediaStream }) => {
     return <canvas ref={canvasRef} width={240} height={32} className="w-full h-full max-w-[240px]" />;
 };
 
+// ------------------------------------------------------------------
+// Audio Recorder Display Component (Isolated Timer for Performance)
+// ------------------------------------------------------------------
+
+interface AudioRecorderDisplayProps {
+    stream: MediaStream | null;
+    onCancel: () => void;
+    onStop: (duration: number) => void;
+}
+
+const AudioRecorderDisplay = memo(({ stream, onCancel, onStop }: AudioRecorderDisplayProps) => {
+    const [recordingTime, setRecordingTime] = useState(0);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        interval = setInterval(() => {
+            setRecordingTime(t => t + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const handleStop = () => {
+        onStop(recordingTime);
+    };
+
+    return (
+        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
+                <div className="flex-1 flex items-center justify-center gap-4">
+                    <div className="flex-1 h-8 flex items-center justify-center">
+                        {stream && <RecordingVisualizer stream={stream} />}
+                    </div>
+                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
+                        {formatTime(recordingTime)}
+                    </span>
+                </div>
+            </div>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="text-red-500"
+                onClick={onCancel}
+                title="Cancelar gravação"
+            >
+                <Trash2 className="w-4 h-4" />
+            </Button>
+            <Button
+                size="icon"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={handleStop}
+                title="Finalizar gravação"
+            >
+                <Check className="w-4 h-4" />
+            </Button>
+        </div>
+    );
+});
+
+AudioRecorderDisplay.displayName = "AudioRecorderDisplay";
+
 // Feature flag
 const ENABLE_AUDIO_TO_TASK = false;
+const COMMENTS_PAGE_SIZE = 50;
 
-export function TaskDetailModal({ 
-    open, 
-    onOpenChange, 
-    mode = "edit", 
-    task, 
+const formatActivityTimestamp = (iso: string) =>
+    new Date(iso).toLocaleString("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "medium",
+    });
+
+const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+    }).format(value);
+
+const formatPaymentDate = (value?: string | null) => {
+    if (!value) return "Sem vencimento";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Sem vencimento";
+    return date.toLocaleDateString("pt-BR");
+};
+
+/** Strip HTML tags to get plain text (regex, sem DOM - melhor performance) */
+function stripHtmlTags(html: string): string {
+    if (!html) return "";
+    return html.replace(/<[^>]*>/g, "");
+}
+
+/** Parse date string YYYY-MM-DD to local Date */
+function parseLocalDate(dateString: string): Date {
+    const [year, month, day] = dateString.split("-").map(Number);
+    return new Date(year, month - 1, day);
+}
+
+/** Format date to YYYY-MM-DD (local) */
+function formatLocalDateString(dateString: string): string {
+    const d = new Date(dateString);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+/** Build due_date ISO from date-only string, optionally preserving time from base */
+function buildDueDateISO(dateOnly: string, baseDate?: string | null): string {
+    const [year, month, day] = dateOnly.split("-").map(Number);
+    const result = new Date(year, month - 1, day);
+    if (baseDate) {
+        const base = new Date(baseDate);
+        result.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+    } else {
+        result.setHours(12, 0, 0, 0);
+    }
+    return result.toISOString();
+}
+
+const mapCommentToActivityBase = (
+    comment: any,
+    currentUserId: string | null,
+    currentUserName: string
+): Activity => {
+    const isCurrentUser = currentUserId ? comment?.user?.id === currentUserId : undefined;
+    const displayUser =
+        isCurrentUser
+            ? "Você"
+            : comment?.user?.full_name || comment?.user?.email || currentUserName || "Sem nome";
+
+    const metadata = comment.metadata && typeof comment.metadata === 'object' ? comment.metadata : {};
+    const isDeleted = metadata.deleted === true || metadata.deleted_at;
+    const isEdited = metadata.edited === true || metadata.edited_at;
+
+    return {
+        id: comment.id,
+        type: comment.type === "comment" ? "commented" :
+            comment.type === "file" ? "file_shared" :
+                comment.type === "log" ? "updated" :
+                    comment.type === "audio" ? "audio" : "commented",
+        user: displayUser,
+        message: comment.type === "audio" ? undefined : (isDeleted ? "Esta mensagem foi removida" : comment.content),
+        timestamp: formatActivityTimestamp(comment.created_at),
+        attachedFiles: metadata.attachedFiles,
+        audio: (metadata.audio_url || metadata.url) ? {
+            url: metadata.audio_url || metadata.url,
+            duration: metadata.duration,
+            transcription: metadata.transcription,
+        } : undefined,
+        isCurrentUser,
+        edited: isEdited,
+        deleted: isDeleted,
+        editedAt: metadata.edited_at,
+        deletedAt: metadata.deleted_at,
+    };
+};
+
+export function TaskDetailModal({
+    open,
+    onOpenChange,
+    mode = "edit",
+    task,
     initialDueDate,
+    initialTags,
     onTaskCreated,
     onTaskUpdated,
+    onTaskUpdatedOptimistic,
 }: TaskDetailModalProps) {
     const isCreateMode = mode === "create";
     const isViewMode = mode === "view";
-    
+    const { activeWorkspaceId } = useWorkspace();
+
     // State - Inicializar vazios para evitar flash de conteúdo antigo
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
@@ -266,51 +473,243 @@ export function TaskDetailModal({
     const [dueDate, setDueDate] = useState(initialDueDate || "");
     const [assignee, setAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
     const [subTasks, setSubTasks] = useState<SubTask[]>([]);
+    const [editingSubTaskId, setEditingSubTaskId] = useState<string | null>(null);
+    const [editingSubTaskTitle, setEditingSubTaskTitle] = useState("");
+    const [savingSubTaskId, setSavingSubTaskId] = useState<string | null>(null);
     const [newSubTask, setNewSubTask] = useState("");
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [comment, setComment] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+    const optimisticIdRef = useRef<string | null>(null); // Ref para rastrear ID do comentário otimista
+    const activitiesScrollRef = useRef<HTMLDivElement>(null); // Ref para o container de scroll do histórico
+
     const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Guardar File objects originais
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const descriptionRef = useRef<HTMLDivElement>(null);
+    const [showExpandButton, setShowExpandButton] = useState(false);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserName, setCurrentUserName] = useState<string>("Você");
     const [isMaximized, setIsMaximized] = useState(false);
     const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingTimeRef = useRef<number>(0);
+    const finalDurationRef = useRef<number>(0); // Armazena duração final passada pelo AudioRecorderDisplay
     const mimeTypeRef = useRef<string>("audio/webm");
     const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
     const [selectedAudioForTask, setSelectedAudioForTask] = useState<{ url: string; duration: number } | null>(null);
     const [transcribingActivityId, setTranscribingActivityId] = useState<string | null>(null);
     const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [editingCommentText, setEditingCommentText] = useState<string>("");
+    const [isUpdatingComment, setIsUpdatingComment] = useState(false);
+    const [isDeletingComment, setIsDeletingComment] = useState<string | null>(null);
+    const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+    const saveStateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const titleSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const descriptionSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const [payments, setPayments] = useState<TaskPayment[]>([]);
+    const [paymentsLoading, setPaymentsLoading] = useState(false);
+    const [paymentsLoaded, setPaymentsLoaded] = useState(false);
+    const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
+
     // REGRA CRÍTICA: Se há um task?.id e não é create mode, SEMPRE começar em loading
     // Isso garante que o componente nasça em estado de carregamento, evitando flash de conteúdo vazio
     // Não importa se task tem outros dados - sempre precisamos buscar do backend
     const [isLoadingDetails, setIsLoadingDetails] = useState(() => {
-        // Se não é create mode e há um ID, SEMPRE começar em loading
         if (!isCreateMode && task?.id) {
             return true;
         }
         return false;
     });
     // CRÍTICO: currentTaskId deve começar como null, não como task?.id
-    // Isso força a verificação de dados carregados a funcionar corretamente
     // Só será definido quando os dados do backend forem carregados
     const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
     // Estado de "pronto" - só fica true quando os dados básicos do backend foram carregados
-    // Isso garante que o formulário nunca seja renderizado antes dos dados básicos estarem prontos
     const [isDataReady, setIsDataReady] = useState(false);
+    // Usuário atual para padronizar exibição de comentários
+    // getSession() lê o JWT do cookie localmente (~0ms) em vez de HTTP call (~300ms)
+    useEffect(() => {
+        const supabase = createBrowserClient();
+        supabase.auth.getSession().then(({ data }) => {
+            const user = data.session?.user;
+            if (user) {
+                setCurrentUserId(user.id);
+                const name =
+                    (user.user_metadata as any)?.full_name ||
+                    user.email ||
+                    "Você";
+                setCurrentUserName(name);
+            }
+        });
+    }, []);
+
+    // Tags são carregadas junto com o modal via getFullModalData (sem useEffect separado)
+    // Para modo create, tags vem do initialTags ou ficam vazias até workspaceId ser definido
+
+    useEffect(() => {
+        if (!open || !isCreateMode) return;
+        const membersWorkspaceId = workspaceId === null ? null : (workspaceId ?? activeWorkspaceId ?? null);
+        if (!membersWorkspaceId) {
+            setAvailableUsers([]);
+            return;
+        }
+        let isActive = true;
+        getWorkspaceMembers(membersWorkspaceId).then(members => {
+            if (!isActive) return;
+            setAvailableUsers(
+                members.map((m: any) => ({
+                    id: m.id,
+                    name: m.full_name || m.email || "Sem nome",
+                    avatar: m.avatar_url || undefined,
+                }))
+            );
+        });
+        return () => {
+            isActive = false;
+        };
+    }, [open, isCreateMode, workspaceId, activeWorkspaceId]);
+
+    // Inicializar workspaceId quando task mudar ou modal abrir
+    useEffect(() => {
+        if (!open) return;
+
+        if (isCreateMode) {
+            if (task && Object.prototype.hasOwnProperty.call(task, "workspaceId")) {
+                setWorkspaceId(task.workspaceId ?? null);
+                return;
+            }
+
+            if ((task as any)?.workspace_id !== undefined) {
+                setWorkspaceId((task as any)?.workspace_id ?? null);
+                return;
+            }
+
+            // Em modo create, usar o workspace ativo do contexto quando nao houver override
+            setWorkspaceId(activeWorkspaceId ?? null);
+            return;
+        }
+
+        if (task?.workspaceId || (task as any)?.workspace_id) {
+            setWorkspaceId(task?.workspaceId || (task as any)?.workspace_id || null);
+        } else if (task?.id) {
+            // Se tem task.id mas nao tem workspaceId, buscar do backend
+            // Isso sera feito no loadBasicData
+        } else {
+            setWorkspaceId(activeWorkspaceId ?? null);
+        }
+    }, [open, task, isCreateMode, activeWorkspaceId]);
+
+    useEffect(() => {
+        if (!open) {
+            setCreatePaymentOpen(false);
+        }
+    }, [open]);
+
+    const loadPayments = useCallback(async (force = false) => {
+        if (!currentTaskId || !workspaceId || isCreateMode) return;
+        if (paymentsLoading) return;
+        if (paymentsLoaded && !force) return;
+        setPaymentsLoading(true);
+        try {
+            const data = await getTransactionsByTask(currentTaskId, workspaceId);
+            const mapped = (data || []).map((item: any) => ({
+                id: item.id,
+                amount: Number(item.amount) || 0,
+                status: (item.status || "pending") as TaskPayment["status"],
+                type: (item.type || "expense") as TaskPayment["type"],
+                description: item.description,
+                due_date: item.due_date || null,
+                created_at: item.created_at || null,
+                counterparty_name: item.counterparty_name || null,
+                client_name: item.client?.name || null,
+            }));
+            setPayments(mapped);
+            setPaymentsLoaded(true);
+        } catch (error) {
+            console.error("Erro ao carregar pagamentos:", error);
+            setPayments([]);
+        } finally {
+            setPaymentsLoading(false);
+        }
+    }, [currentTaskId, workspaceId, isCreateMode, paymentsLoading, paymentsLoaded]);
+
+    useEffect(() => {
+        if (!open || !currentTaskId || isCreateMode) {
+            setPayments([]);
+            setPaymentsLoaded(false);
+            return;
+        }
+        setPaymentsLoaded(false);
+    }, [open, currentTaskId, isCreateMode]);
+
+    // Pagamentos só após o modal estar visível (não bloqueia abertura)
+    const PAYMENTS_DEFER_MS = 1000;
+    useEffect(() => {
+        if (!open || !currentTaskId || !workspaceId || isCreateMode) return;
+        const t = setTimeout(() => loadPayments(), PAYMENTS_DEFER_MS);
+        return () => clearTimeout(t);
+    }, [open, currentTaskId, workspaceId, isCreateMode, loadPayments]);
+
+    const mapCommentToActivity = useCallback(
+        (comment: any) => mapCommentToActivityBase(comment, currentUserId, currentUserName),
+        [currentUserId, currentUserName]
+    );
+    const notifyHomeTasksUpdated = useCallback(() => {
+        if (typeof window === "undefined") return;
+        const ts = String(Date.now());
+        sessionStorage.setItem("home_tasks_refresh_ts", ts);
+        window.dispatchEvent(new Event("home-tasks-updated"));
+    }, []);
+    const markSaving = useCallback(() => {
+        if (saveStateTimeoutRef.current) {
+            clearTimeout(saveStateTimeoutRef.current);
+        }
+        setSaveState("saving");
+    }, []);
+    const markSaved = useCallback((ok: boolean) => {
+        if (saveStateTimeoutRef.current) {
+            clearTimeout(saveStateTimeoutRef.current);
+        }
+        setSaveState(ok ? "saved" : "error");
+        saveStateTimeoutRef.current = setTimeout(() => {
+            setSaveState("idle");
+        }, 2000);
+    }, []);
+    useEffect(() => {
+        return () => {
+            if (saveStateTimeoutRef.current) {
+                clearTimeout(saveStateTimeoutRef.current);
+            }
+            if (titleSaveTimeoutRef.current) {
+                clearTimeout(titleSaveTimeoutRef.current);
+            }
+            if (descriptionSaveTimeoutRef.current) {
+                clearTimeout(descriptionSaveTimeoutRef.current);
+            }
+        };
+    }, []);
     // Estados para carregamento progressivo de seções específicas
     const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
     const [isLoadingComments, setIsLoadingComments] = useState(false);
     const [hasMoreComments, setHasMoreComments] = useState(false);
     const [commentsOffset, setCommentsOffset] = useState(0);
     // NÃO inicializar com dados do task prop - sempre começar vazio para forçar loading
-    const [localAssignee, setLocalAssignee] = useState<{ id: string; name: string; avatar?: string } | null>(null);
+    const [localMembers, setLocalMembers] = useState<Array<{ id: string; name: string; avatar?: string }>>([]);
     const [tags, setTags] = useState<string[]>([]);
+    const tagsRef = useRef<string[]>([]);
+    const setTagsAndRef = useCallback((nextTags: string[]) => {
+        tagsRef.current = nextTags;
+        setTags(nextTags);
+    }, []);
     const { uploadToStorage } = useFileUpload();
     const taskCache = useTaskCache(); // Hook de cache - deve ser chamado antes de usar taskCache
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -318,38 +717,66 @@ export function TaskDetailModal({
     const [shareLink, setShareLink] = useState<string>("");
     const [isGeneratingLink, setIsGeneratingLink] = useState(false);
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
+    const isCreatingRef = useRef(false);
+    const hasSubmittedCreateRef = useRef(false);
+const hasExplicitCreateAssigneeSelectionRef = useRef(false);
+    const [uploadingAttachments, setUploadingAttachments] = useState<Array<{
+        id: string;
+        name: string;
+        type: "image" | "pdf" | "other";
+        size: string;
+        progress: number;
+    }>>([]);
 
     // Derived - memoizado para melhor performance
-    const imageAttachments = useMemo(() => 
+    const imageAttachments = useMemo(() =>
         attachments
             .filter(att => att.type === "image")
             .map(att => ({ id: att.id, url: att.url || "", name: att.name })),
         [attachments]
     );
-    
+
     // Helper para invalidar cache e notificar atualização (definido antes dos handlers que o usam)
-    const invalidateCacheAndNotify = useCallback((taskId: string | null) => {
+    const invalidateCacheAndNotify = useCallback((
+        taskId: string | null,
+        optimisticUpdates?: Partial<{
+            title?: string;
+            status?: string;
+            dueDate?: string;
+            priority?: string;
+            assignees?: Array<{ name: string; avatar?: string; id?: string }>;
+        }>,
+        options?: { refresh?: boolean }
+    ) => {
+        // ✅ OPTIMISTIC UI: Atualizar estado local primeiro
+        if (taskId && optimisticUpdates && onTaskUpdatedOptimistic) {
+            onTaskUpdatedOptimistic(taskId, optimisticUpdates);
+        }
+        // Invalidar cache
         if (taskId) {
             taskCache.invalidate(taskId);
         }
-        onTaskUpdated?.();
-    }, [taskCache, onTaskUpdated]);
-    
+        // Notificar atualização (pode fazer refetch se necessário)
+        if (options?.refresh !== false) {
+            onTaskUpdated?.();
+        }
+    }, [taskCache, onTaskUpdated, onTaskUpdatedOptimistic]);
+
     // Memoizar handlers para evitar re-renders desnecessários
     const handleAttachmentDeleteClick = useCallback((id: string) => {
         setAttachmentToDelete(id);
     }, []);
-    
+
     const confirmAttachmentDelete = useCallback(async () => {
         if (!attachmentToDelete) return;
-        
+
         const id = attachmentToDelete;
         setAttachmentToDelete(null);
-        
+
         try {
             if (currentTaskId) {
                 await deleteAttachment(id);
-                invalidateCacheAndNotify(currentTaskId);
+                invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
             }
             setAttachments(prev => prev.filter(f => f.id !== id));
             toast.success("Arquivo excluído com sucesso");
@@ -358,7 +785,7 @@ export function TaskDetailModal({
             toast.error("Erro ao excluir arquivo");
         }
     }, [attachmentToDelete, currentTaskId, invalidateCacheAndNotify]);
-    
+
     const handleImagePreview = useCallback((index: number) => {
         setLightboxIndex(index);
     }, []);
@@ -366,18 +793,18 @@ export function TaskDetailModal({
     // Handler para gerar link de compartilhamento
     const handleGenerateShareLink = useCallback(async () => {
         if (!currentTaskId) return;
-        
+
         setIsGeneratingLink(true);
         try {
             const result = await generateTaskShareLink(currentTaskId, shareLinkType);
-            
+
             if (result.success && result.shareLink) {
                 setShareLink(result.shareLink);
                 // Copiar automaticamente para a área de transferência
                 await navigator.clipboard.writeText(result.shareLink);
                 toast.success(
-                    shareLinkType === "public" 
-                        ? "Link público gerado e copiado!" 
+                    shareLinkType === "public"
+                        ? "Link público gerado e copiado!"
                         : "Link privado gerado e copiado!"
                 );
             } else {
@@ -390,21 +817,21 @@ export function TaskDetailModal({
             setIsGeneratingLink(false);
         }
     }, [currentTaskId, shareLinkType]);
-    
+
     // Handler para visualizar transcrição (definido antes de renderedActivities que o usa)
     const handleViewTranscriptionRef = useRef<((activityId: string, audioUrl: string) => Promise<void>) | null>(null);
-    
+
     const handleViewTranscription = useCallback(async (activityId: string, audioUrl: string) => {
         const activity = activities.find(a => a.id === activityId);
         if (activity?.audio?.transcription) {
             return;
         }
-        
+
         setTranscribingActivityId(activityId);
         try {
             const response = await fetch(audioUrl);
             const blob = await response.blob();
-            
+
             const formData = new FormData();
             formData.append("audio", blob, "audio.webm");
 
@@ -422,8 +849,8 @@ export function TaskDetailModal({
             const transcribedText = transcribeData.transcription || "";
 
             // Atualizar localmente
-            setActivities(prev => prev.map(act => 
-                act.id === activityId 
+            setActivities(prev => prev.map(act =>
+                act.id === activityId
                     ? {
                         ...act,
                         audio: {
@@ -452,149 +879,127 @@ export function TaskDetailModal({
             setTranscribingActivityId(null);
         }
     }, [activities, currentTaskId, isCreateMode]);
-    
+
     // Atualizar ref quando handleViewTranscription mudar
     handleViewTranscriptionRef.current = handleViewTranscription;
-    
-    // Memoizar lista de atividades renderizadas para melhor performance
-    const renderedActivities = useMemo(() => {
-        return activities.map((act: Activity) => (
-            <div key={act.id} className="flex gap-3 text-sm relative group">
-                <div className="flex-shrink-0 relative z-10 bg-gray-50 pt-2">
-                    <div className="w-2 h-2 rounded-full bg-gray-300 ring-4 ring-gray-50" />
-                </div>
-                
-                <div className="flex-1 pb-2">
-                    {act.type === "origin" && act.origin && (
-                        <div className="flex items-start gap-2">
-                            <div className={cn(
-                                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                act.origin.source === "whatsapp" ? "bg-green-100" : "bg-blue-100"
-                            )}>
-                                {act.origin.source === "whatsapp" ? (
-                                    <MessageSquare className="w-4 h-4 text-green-600" />
-                                ) : (
-                                    <Monitor className="w-4 h-4 text-blue-600" />
-                                )}
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-gray-700 mb-1">
-                                    <span className="font-medium text-gray-900">Tarefa criada via </span>
-                                    <span className="font-semibold text-gray-900">
-                                        {act.origin.source === "whatsapp" ? "WhatsApp" : "App Web"}
-                                    </span>
-                                </p>
-                                {act.origin.content && (
-                                    <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600">
-                                        "{act.origin.content}"
-                                    </div>
-                                )}
-                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
-                            </div>
-                        </div>
-                    )}
-                    
-                    {act.type !== "origin" && (
-                        <>
-                            <p className="text-gray-700">
-                                <span className="font-medium text-gray-900">{act.user}</span>{" "}
-                                {act.type === "created" && "criou a tarefa"}
-                                {act.type === "commented" && "comentou"}
-                                {act.type === "updated" && "atualizou a tarefa"}
-                                {act.type === "file_shared" && "enviou um arquivo"}
-                                {act.type === "audio" && "enviou um áudio"}
-                            </p>
 
-                            {act.type === "audio" && (
-                                <div className="mt-2 space-y-2">
-                                    <div className="max-w-[240px]">
-                                        <AudioMessageBubble 
-                                            duration={act.audio?.duration || 0} 
-                                            isOwnMessage={act.user === "Você"} 
-                                            audioUrl={act.audio?.url} 
-                                        />
-                                    </div>
-                                    {act.audio?.url && (
-                                        <div className="space-y-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-xs text-gray-500 hover:text-gray-700"
-                                                onClick={() => handleViewTranscriptionRef.current?.(act.id, act.audio!.url!)}
-                                                disabled={transcribingActivityId === act.id}
-                                            >
-                                                {transcribingActivityId === act.id ? (
-                                                    <>
-                                                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                                        Transcrevendo...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <FileText className="w-3 h-3 mr-1" />
-                                                        {act.audio?.transcription ? "Ver transcrição" : "Gerar transcrição"}
-                                                    </>
-                                                )}
-                                            </Button>
-                                            {act.audio?.transcription && (
-                                                <div className="mt-2 p-3 border rounded-md bg-gray-50">
-                                                    <p className="text-xs text-gray-600 whitespace-pre-wrap">
-                                                        {act.audio.transcription}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {act.message && act.type !== "updated" && (
-                                <div className="bg-white p-2.5 rounded-lg border border-gray-200 mt-1.5 shadow-sm text-gray-600">
-                                    {act.message}
-                                </div>
-                            )}
-                            
-                            {act.attachedFiles && act.attachedFiles.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {act.attachedFiles.map((f, idx) => (
-                                        <div key={idx} className="p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                                            {f.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-medium">{f.name}</span>
-                                                <span className="text-[10px] text-gray-400">{f.size}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {act.file && !act.attachedFiles && (
-                                <div className="mt-2 p-2 bg-white rounded-md border border-gray-200 flex items-center gap-2 w-fit pr-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                                    {act.file.type === "image" ? <FileImage className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-red-500" />}
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-medium">{act.file.name}</span>
-                                        <span className="text-[10px] text-gray-400">{act.file.size}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {(act.type as Activity["type"]) !== "origin" && (
-                                <p className="text-[10px] text-gray-400 mt-1">{act.timestamp}</p>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
-        ));
-    }, [activities, transcribingActivityId]);
-    
     // REGRA CRÍTICA: Determinar se deve mostrar skeleton
     // Com carregamento progressivo, mostramos skeleton apenas quando dados básicos não estão prontos
     // Dados básicos prontos = isDataReady === true
-    const shouldShowSkeleton = open && !isCreateMode && task?.id && !isDataReady;
-    
+    // Removida dependência de task?.id para evitar flash branco quando task ainda não está disponível
+    const shouldShowSkeleton = open && !isCreateMode && !isDataReady;
+
     // Determinar quais seções ainda estão carregando
     const showAttachmentsSkeleton = isLoadingAttachments;
     const showCommentsSkeleton = isLoadingComments;
+
+    // Scroll automático para o final do histórico quando atividades mudarem ou modal abrir
+    const activitiesLength = activities.length;
+    useEffect(() => {
+        if (!open) return;
+        if (!activitiesScrollRef.current) return;
+        if (activitiesLength === 0) return;
+
+        // Usar requestAnimationFrame para garantir que o DOM foi atualizado após render
+        requestAnimationFrame(() => {
+            if (activitiesScrollRef.current) {
+                activitiesScrollRef.current.scrollTop = activitiesScrollRef.current.scrollHeight;
+            }
+        });
+    }, [activitiesLength, open]);
+
+    // Handler para fechar modal com salvamento automático
+    const handleClose = useCallback(async (newOpen: boolean) => {
+        if (!newOpen && open) {
+            // Modal está sendo fechado - salvar automaticamente
+
+            if (isCreateMode) {
+                // Modo create: criar tarefa se houver título
+                if (title.trim() && !currentTaskId) {
+                    if (isCreatingRef.current || hasSubmittedCreateRef.current) {
+                        onOpenChange(newOpen);
+                        return;
+                    }
+                    hasSubmittedCreateRef.current = true;
+                    isCreatingRef.current = true;
+                    try {
+                        // Mapear status para o tipo aceito por createTask (não aceita "review")
+                        const dbStatus = status === "review" ? "in_progress" : status;
+                        const createWorkspaceId = task && Object.prototype.hasOwnProperty.call(task, "workspaceId")
+                            ? (task.workspaceId ?? null)
+                            : (workspaceId ?? null);
+
+                        const shouldPersistCreateAssignee = hasExplicitCreateAssigneeSelectionRef.current;
+                        const result = await createTask({
+                            title: title.trim(),
+                            description: description || "",
+                            status: dbStatus as "todo" | "in_progress" | "done" | "archived",
+                            due_date: dueDate || null,
+                            workspace_id: createWorkspaceId,
+                            is_personal: createWorkspaceId === null,
+                            origin_context: task?.originContext || undefined,
+                            assignee_id: shouldPersistCreateAssignee ? (localMembers[0]?.id || null) : null,
+                            tags: tagsRef.current.length > 0 ? tagsRef.current : undefined,
+                            subtasks: subTasks.map(st => ({
+                                title: st.title,
+                                assignee_id: st.assignee_id || null,
+                            })),
+                        });
+
+                        if (result.success && result.data) {
+                            setCurrentTaskId(result.data.id);
+                            onTaskCreated?.();
+                            toast.success("Tarefa criada com sucesso!");
+                        } else {
+                            toast.error(result.error || "Erro ao criar tarefa");
+                        }
+                    } catch (error) {
+                        console.error("Erro ao criar tarefa:", error);
+                        toast.error("Erro ao criar tarefa");
+                    } finally {
+                        isCreatingRef.current = false;
+                        hasSubmittedCreateRef.current = false;
+                        hasExplicitCreateAssigneeSelectionRef.current = false;
+                    }
+                } else if (currentTaskId) {
+                    // Tarefa já foi criada
+                }
+            }
+            // Modo edit: não salvar ao fechar; tudo já é salvo automaticamente
+        }
+        onOpenChange(newOpen);
+    }, [open, isCreateMode, currentTaskId, title, description, status, dueDate, task, workspaceId, tagsRef, localMembers, subTasks, onTaskCreated, onTaskUpdated, onOpenChange]);
+
+    const onOpenShare = useCallback(() => setIsShareModalOpen(true), []);
+    const onToggleMaximize = useCallback(() => setIsMaximized((prev) => !prev), []);
+    const onCloseModal = useCallback(() => handleClose(false), [handleClose]);
+
+    const handleTagsChange = useCallback(
+        (newTags: string[]) => {
+            const oldTags = Array.isArray(tags) ? [...tags] : [];
+            setTagsAndRef(newTags);
+            if (currentTaskId) {
+                onTaskUpdatedOptimistic?.(currentTaskId, { tags: newTags });
+            }
+            if (currentTaskId && !isCreateMode) {
+                markSaving();
+                updateTaskTags(currentTaskId, newTags)
+                    .then(() => {
+                        markSaved(true);
+                        invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                        notifyHomeTasksUpdated();
+                    })
+                    .catch((error) => {
+                        markSaved(false);
+                        console.error("Erro ao salvar tags:", error);
+                        toast.error("Erro ao salvar tags");
+                        setTagsAndRef(oldTags);
+                        onTaskUpdatedOptimistic?.(currentTaskId, { tags: oldTags });
+                    });
+            }
+        },
+        [currentTaskId, isCreateMode, tags, setTagsAndRef, onTaskUpdatedOptimistic, markSaving, markSaved, notifyHomeTasksUpdated, invalidateCacheAndNotify]
+    );
 
     // Limpar estados quando task.id mudar ou modal fechar
     // Este useEffect deve rodar ANTES de qualquer renderização do formulário
@@ -605,9 +1010,9 @@ export function TaskDetailModal({
             setDescription("");
             setStatus("todo");
             setDueDate("");
-            setTags([]);
+            setTagsAndRef([]);
             setSubTasks([]);
-            setLocalAssignee(null);
+            setLocalMembers([]);
             setAttachments([]);
             setActivities([]);
             setCurrentTaskId(null);
@@ -615,6 +1020,9 @@ export function TaskDetailModal({
             setIsLoadingAttachments(false);
             setIsLoadingComments(false);
             setIsDataReady(false);
+            isCreatingRef.current = false;
+            hasSubmittedCreateRef.current = false;
+            hasExplicitCreateAssigneeSelectionRef.current = false;
             return;
         }
 
@@ -627,9 +1035,9 @@ export function TaskDetailModal({
                 setDescription("");
                 setStatus("todo");
                 setDueDate("");
-                setTags([]);
+                setTagsAndRef([]);
                 setSubTasks([]);
-                setLocalAssignee(null);
+                setLocalMembers([]);
                 setAttachments([]);
                 setActivities([]);
                 // NÃO definir currentTaskId aqui - será definido quando os dados forem carregados
@@ -643,8 +1051,13 @@ export function TaskDetailModal({
         } else if (open && isCreateMode) {
             // Modo create - não precisa de loading
             setIsLoadingDetails(false);
+            hasExplicitCreateAssigneeSelectionRef.current = false;
+            // Preencher tags iniciais se fornecido (criação consciente de contexto)
+            if (initialTags && initialTags.length > 0) {
+                setTagsAndRef(initialTags);
+            }
         }
-    }, [open, task?.id ?? null, isCreateMode, currentTaskId]);
+    }, [open, task?.id ?? null, isCreateMode, currentTaskId, initialTags]);
 
     // Load task details when modal opens - CARREGAMENTO PROGRESSIVO
     useEffect(() => {
@@ -655,258 +1068,163 @@ export function TaskDetailModal({
             setCommentsOffset(0);
             setHasMoreComments(false);
 
-            const loadBasicData = async () => {
+            const loadTaskData = async () => {
                 try {
-                    // Verificar cache primeiro
                     const cachedBasic = taskCache.getBasicData(task.id);
-                    
-                    if (cachedBasic) {
-                        // Dados do cache - atualizar imediatamente
+                    const cachedExtended = taskCache.getExtendedData(task.id);
+
+                    if (cachedBasic && cachedExtended) {
                         if (!active) return;
-                        
                         setCurrentTaskId(cachedBasic.id);
                         setTitle(cachedBasic.title || "");
                         setDescription(cachedBasic.description || "");
                         setStatus(cachedBasic.status || "todo");
-                        setDueDate(cachedBasic.due_date ? new Date(cachedBasic.due_date).toISOString().split("T")[0] : "");
-                        
-                        if (cachedBasic.assignee) {
-                            setLocalAssignee({
+                        setDueDate(cachedBasic.due_date ? formatLocalDateString(cachedBasic.due_date) : "");
+                        setWorkspaceId(cachedBasic.workspace_id || null);
+                        if ((cachedBasic as any).assignees && Array.isArray((cachedBasic as any).assignees)) {
+                            setLocalMembers((cachedBasic as any).assignees.map((a: any) => ({ id: a.id, name: a.name, avatar: a.avatar })));
+                        } else if (cachedBasic.assignee) {
+                            setLocalMembers([{
                                 id: cachedBasic.assignee.id,
                                 name: cachedBasic.assignee.full_name || cachedBasic.assignee.email || "Sem nome",
                                 avatar: cachedBasic.assignee.avatar_url || undefined,
-                            });
-                        } else {
-                            setLocalAssignee(null);
+                            }]);
+                        } else setLocalMembers([]);
+                        if (cachedBasic.origin_context?.tags && Array.isArray(cachedBasic.origin_context.tags)) {
+                            setTagsAndRef(cachedBasic.origin_context.tags);
+                        } else if ((cachedBasic as any).tags && Array.isArray((cachedBasic as any).tags)) {
+                            setTagsAndRef((cachedBasic as any).tags);
                         }
-                        
-                        if (cachedBasic.origin_context?.tags) {
-                            setTags(cachedBasic.origin_context.tags);
+                        const mappedAttachments: FileAttachment[] = cachedExtended.attachments.map((att) => ({
+                            id: att.id,
+                            name: att.file_name,
+                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
+                            size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                            url: att.file_url,
+                        }));
+                        setAttachments(mappedAttachments);
+                        setActivities(cachedExtended.comments.map(mapCommentToActivity));
+                        setHasMoreComments(cachedExtended.comments.length >= COMMENTS_PAGE_SIZE);
+                        setCommentsOffset(0);
+                        if (cachedExtended.subtasks && Array.isArray(cachedExtended.subtasks)) {
+                            setSubTasks(cachedExtended.subtasks);
                         }
-                        
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
-                        
-                        // Carregar membros em background (não está no cache)
-                        getWorkspaceMembers(task.workspaceId || null).then(members => {
+                        setIsLoadingAttachments(false);
+                        setIsLoadingComments(false);
+                        // Members/tags: usar cache de workspace se disponível, senão buscar
+                        const wsHint = cachedBasic.workspace_id || task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null;
+                        if (wsHint) {
+                            const cachedMembers = taskCache.getWorkspaceMembers(wsHint);
+                            const cachedTags = taskCache.getWorkspaceTags(wsHint);
+                            if (cachedMembers && cachedTags) {
+                                if (active) {
+                                    setAvailableUsers(cachedMembers);
+                                    setAvailableTags(cachedTags);
+                                }
+                                return;
+                            }
+                        }
+                        // Fallback: buscar members/tags do servidor (leve, commentsLimit=1)
+                        getFullModalData(task.id, wsHint, 1).then(result => {
                             if (active) {
-                                setAvailableUsers(
-                                    members.map((m: any) => ({
-                                        id: m.id,
-                                        name: m.full_name || m.email || "Sem nome",
-                                        avatar: m.avatar_url || undefined,
-                                    }))
-                                );
+                                setAvailableUsers(result.members);
+                                setAvailableTags(result.availableTags);
+                                // Cachear para próximas aberturas
+                                const ws = result.basic?.workspace_id || wsHint;
+                                if (ws) {
+                                    taskCache.setWorkspaceMembers(ws, result.members);
+                                    taskCache.setWorkspaceTags(ws, result.availableTags);
+                                }
                             }
                         });
-                        
-                        return; // Dados do cache, não precisa buscar do backend
+                        return;
                     }
-                    
-                    // FASE 1: Carregar dados básicos do backend (rápido)
-                    const [basicDetails, members] = await Promise.all([
-                        getTaskBasicDetails(task.id),
-                        getWorkspaceMembers(task.workspaceId || null)
-                    ]);
-                    
-                    if (!active) return;
 
-                    if (basicDetails && active) {
-                        // Verificar se ainda é a mesma tarefa antes de atualizar
-                        if (basicDetails.id !== task.id) {
-                            return;
-                        }
-                        
-                        // Armazenar no cache
+                    setIsLoadingAttachments(true);
+                    setIsLoadingComments(true);
+
+                    // Uma única server action: 1 auth, todas as queries em paralelo
+                    const wsHint = task?.workspaceId || (task as any)?.workspace_id || activeWorkspaceId || null;
+                    const result = await getFullModalData(task.id, wsHint, COMMENTS_PAGE_SIZE);
+
+                    if (!active) return;
+                    if (result.basic?.id !== task.id) return;
+
+                    const { basic: basicDetails, extended: extendedDetails, members, availableTags: serverTags } = result;
+
+                    if (basicDetails) {
                         taskCache.setBasicData(task.id, basicDetails);
-                        
-                        // Atualizar dados básicos imediatamente
                         setCurrentTaskId(basicDetails.id);
                         setTitle(basicDetails.title || "");
                         setDescription(basicDetails.description || "");
                         setStatus(basicDetails.status || "todo");
-                        setDueDate(basicDetails.due_date ? new Date(basicDetails.due_date).toISOString().split("T")[0] : "");
-                        
-                        if (basicDetails.assignee) {
-                            setLocalAssignee({
+                        setDueDate(basicDetails.due_date ? formatLocalDateString(basicDetails.due_date) : "");
+                        setWorkspaceId(basicDetails.workspace_id || null);
+                        if ((basicDetails as any).assignees && Array.isArray((basicDetails as any).assignees)) {
+                            setLocalMembers((basicDetails as any).assignees.map((a: any) => ({ id: a.id, name: a.name, avatar: a.avatar })));
+                        } else if (basicDetails.assignee) {
+                            setLocalMembers([{
                                 id: basicDetails.assignee.id,
                                 name: basicDetails.assignee.full_name || basicDetails.assignee.email || "Sem nome",
                                 avatar: basicDetails.assignee.avatar_url || undefined,
-                            });
-                        } else {
-                            setLocalAssignee(null);
+                            }]);
+                        } else setLocalMembers([]);
+                        if (basicDetails.origin_context?.tags && Array.isArray(basicDetails.origin_context.tags)) {
+                            setTagsAndRef(basicDetails.origin_context.tags);
+                        } else if ((basicDetails as any).tags && Array.isArray((basicDetails as any).tags)) {
+                            setTagsAndRef((basicDetails as any).tags);
                         }
-                        
-                        if (basicDetails.origin_context?.tags) {
-                            setTags(basicDetails.origin_context.tags);
+                        setAvailableUsers(members);
+                        setAvailableTags(serverTags);
+                        // Cachear members/tags por workspace para próximas aberturas
+                        const ws = basicDetails.workspace_id;
+                        if (ws) {
+                            taskCache.setWorkspaceMembers(ws, members);
+                            taskCache.setWorkspaceTags(ws, serverTags);
                         }
-
-                        setAvailableUsers(
-                            members.map((m: any) => ({
-                                id: m.id,
-                                name: m.full_name || m.email || "Sem nome",
-                                avatar: m.avatar_url || undefined,
-                            }))
-                        );
-                        
-                        // Marcar dados básicos como prontos - formulário pode ser mostrado agora
                         setIsDataReady(true);
                         setIsLoadingDetails(false);
                     }
-                } catch (error) {
-                    if (active) {
-                        console.error("Erro ao carregar dados básicos da tarefa:", error);
-                        toast.error("Erro ao carregar detalhes da tarefa");
-                        setIsLoadingDetails(false);
-                        setIsDataReady(false);
-                    }
-                }
-            };
-
-            const loadExtendedData = async () => {
-                try {
-                    // Verificar cache primeiro
-                    const cachedExtended = taskCache.getExtendedData(task.id);
-                    
-                    if (cachedExtended) {
-                        // Dados do cache - atualizar imediatamente
-                        if (!active) return;
-                        
-                        // Verificar se ainda é a mesma tarefa (mas não bloquear se currentTaskId ainda não foi definido)
-                        if (currentTaskId !== null && currentTaskId !== task.id) {
-                            return;
-                        }
-                        
-                        // Atualizar anexos
-                        const mappedAttachments: FileAttachment[] = cachedExtended.attachments.map((att) => ({
-                            id: att.id,
-                            name: att.file_name,
-                            type: (att.file_type || "other") as "image" | "pdf" | "other",
-                            size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
-                            url: att.file_url,
-                        }));
-                        setAttachments(mappedAttachments);
-                        setIsLoadingAttachments(false);
-                        
-                        // Atualizar comentários
-                        const mappedActivities: Activity[] = cachedExtended.comments.map((comment) => ({
-                            id: comment.id,
-                            type: comment.type === "comment" ? "commented" : 
-                                  comment.type === "file" ? "file_shared" :
-                                  comment.type === "log" ? "updated" : 
-                                  comment.type === "audio" ? "audio" : "commented",
-                            user: comment.user.full_name || comment.user.email || "Sem nome",
-                            message: comment.type === "audio" ? undefined : comment.content,
-                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                            attachedFiles: comment.metadata?.attachedFiles,
-                            audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                url: comment.metadata.audio_url || comment.metadata.url,
-                                duration: comment.metadata.duration,
-                                transcription: comment.metadata.transcription,
-                            } : undefined,
-                        }));
-                        setActivities(mappedActivities);
-                        setIsLoadingComments(false);
-                        
-                        // Verificar se há mais comentários para carregar
-                        setHasMoreComments(cachedExtended.comments.length >= 20);
-                        setCommentsOffset(0); // Resetar offset quando usar cache
-                        
-                        // Atualizar subtarefas
-                        if (cachedExtended.subtasks && Array.isArray(cachedExtended.subtasks)) {
-                            setSubTasks(cachedExtended.subtasks);
-                        }
-                        
-                        return; // Dados do cache, não precisa buscar do backend
-                    }
-                    
-                    // FASE 2: Carregar dados estendidos do backend (anexos, comentários, subtarefas)
-                    setIsLoadingAttachments(true);
-                    setIsLoadingComments(true);
-                    
-                    const extendedDetails = await getTaskExtendedDetails(task.id, 20, 0);
-                    
-                    if (!active) return;
 
                     if (extendedDetails) {
-                        // Verificar se ainda é a mesma tarefa (mas não bloquear se currentTaskId ainda não foi definido)
-                        // Se currentTaskId ainda não foi definido, significa que estamos carregando pela primeira vez
-                        if (currentTaskId !== null && currentTaskId !== task.id) {
-                            setIsLoadingAttachments(false);
-                            setIsLoadingComments(false);
-                            return;
-                        }
-                        
-                        // Armazenar no cache
                         taskCache.setExtendedData(task.id, extendedDetails);
-                        
-                        // Atualizar anexos
                         const mappedAttachments: FileAttachment[] = (extendedDetails.attachments || []).map((att) => ({
                             id: att.id,
                             name: att.file_name,
-                            type: (att.file_type || "other") as "image" | "pdf" | "other",
+                            type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
                             size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                             url: att.file_url,
                         }));
                         setAttachments(mappedAttachments);
-                        setIsLoadingAttachments(false);
-                        
-                        // Atualizar comentários
-                        const mappedActivities: Activity[] = (extendedDetails.comments || []).map((comment) => ({
-                            id: comment.id,
-                            type: comment.type === "comment" ? "commented" : 
-                                  comment.type === "file" ? "file_shared" :
-                                  comment.type === "log" ? "updated" : 
-                                  comment.type === "audio" ? "audio" : "commented",
-                            user: comment.user.full_name || comment.user.email || "Sem nome",
-                            message: comment.type === "audio" ? undefined : comment.content,
-                            timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                            attachedFiles: comment.metadata?.attachedFiles,
-                            audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                url: comment.metadata.audio_url || comment.metadata.url,
-                                duration: comment.metadata.duration,
-                                transcription: comment.metadata.transcription,
-                            } : undefined,
-                        }));
-                        setActivities(mappedActivities);
-                        setIsLoadingComments(false);
-                        
-                        // Verificar se há mais comentários para carregar
-                        setHasMoreComments((extendedDetails.comments || []).length >= 20);
-                        setCommentsOffset(0); // Resetar offset quando carregar dados iniciais
-                        
-                        // Atualizar subtarefas
+                        setActivities((extendedDetails.comments || []).map(mapCommentToActivity));
+                        setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                        setCommentsOffset(0);
                         if (extendedDetails.subtasks && Array.isArray(extendedDetails.subtasks)) {
                             setSubTasks(extendedDetails.subtasks);
                         }
                     } else {
-                        // Se extendedDetails é null/undefined, não há dados para carregar
                         setAttachments([]);
                         setActivities([]);
-                        setIsLoadingAttachments(false);
-                        setIsLoadingComments(false);
                         setHasMoreComments(false);
                         setCommentsOffset(0);
                     }
+                    setIsLoadingAttachments(false);
+                    setIsLoadingComments(false);
                 } catch (error) {
                     if (active) {
-                        console.error("Erro ao carregar dados estendidos da tarefa:", error);
+                        console.error("Erro ao carregar detalhes da tarefa:", error);
+                        toast.error("Erro ao carregar detalhes da tarefa");
+                        setIsLoadingDetails(false);
+                        setIsDataReady(false);
                         setIsLoadingAttachments(false);
                         setIsLoadingComments(false);
                     }
                 }
             };
-            
-            // Carregar dados básicos primeiro
-            loadBasicData();
-            
-            // Carregar dados estendidos em paralelo (mas depois dos básicos)
-            // Pequeno delay para garantir que dados básicos sejam processados primeiro
-            setTimeout(() => {
-                if (active) {
-                    loadExtendedData();
-                }
-            }, 50);
+
+            void loadTaskData();
         } else if (open && isCreateMode) {
             setTitle("");
             setDescription("");
@@ -915,10 +1233,10 @@ export function TaskDetailModal({
             setSubTasks([]);
             setAttachments([]);
             setActivities([]);
-            setTags([]);
+            setTagsAndRef([]);
             setCurrentTaskId(null);
-            setLocalAssignee(null);
-            
+            setLocalMembers([]);
+
             const loadCurrentUser = async () => {
                 try {
                     const members = await getWorkspaceMembers(null);
@@ -943,51 +1261,24 @@ export function TaskDetailModal({
         };
     }, [open, isCreateMode, task?.id ?? null, initialDueDate]);
 
-    // Audio recording timer
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (isRecording) {
-            interval = setInterval(() => {
-                setRecordingTime(t => {
-                    const newTime = t + 1;
-                    recordingTimeRef.current = newTime;
-                    return newTime;
-                });
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isRecording]);
+
+    // Audio recording timer removed - now handled by AudioRecorderDisplay component
 
     // Função para carregar mais comentários
     const loadMoreComments = useCallback(async () => {
         if (!currentTaskId || !hasMoreComments || isLoadingComments) return;
-        
+
         setIsLoadingComments(true);
         try {
-            const newOffset = commentsOffset + 20;
-            const extendedDetails = await getTaskExtendedDetails(currentTaskId, 20, newOffset);
-            
+            const newOffset = commentsOffset + COMMENTS_PAGE_SIZE;
+            const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, newOffset);
+
             if (extendedDetails && extendedDetails.comments.length > 0) {
-                const mappedActivities: Activity[] = extendedDetails.comments.map((comment) => ({
-                    id: comment.id,
-                    type: comment.type === "comment" ? "commented" : 
-                          comment.type === "file" ? "file_shared" :
-                          comment.type === "log" ? "updated" : 
-                          comment.type === "audio" ? "audio" : "commented",
-                    user: comment.user.full_name || comment.user.email || "Sem nome",
-                    message: comment.type === "audio" ? undefined : comment.content,
-                    timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                    attachedFiles: comment.metadata?.attachedFiles,
-                    audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                        url: comment.metadata.audio_url || comment.metadata.url,
-                        duration: comment.metadata.duration,
-                        transcription: comment.metadata.transcription,
-                    } : undefined,
-                }));
-                
+                const mappedActivities: Activity[] = extendedDetails.comments.map(mapCommentToActivity);
+
                 setActivities(prev => [...prev, ...mappedActivities]);
                 setCommentsOffset(newOffset);
-                setHasMoreComments(extendedDetails.comments.length >= 20);
+                setHasMoreComments(extendedDetails.comments.length >= COMMENTS_PAGE_SIZE);
             } else {
                 setHasMoreComments(false);
             }
@@ -999,69 +1290,268 @@ export function TaskDetailModal({
         }
     }, [currentTaskId, hasMoreComments, isLoadingComments, commentsOffset]);
 
+    // Função helper para recarregar atividades do banco
+    const reloadActivities = useCallback(async (taskId: string) => {
+        try {
+            const extendedDetails = await getTaskExtendedDetails(taskId, COMMENTS_PAGE_SIZE, 0);
+            if (extendedDetails) {
+                const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
+                // Substituir completamente o estado base
+                // Filtrar qualquer comentário otimista pendente antes de atualizar
+                const optimisticIdToFilter = optimisticIdRef.current;
+                const filteredActivities = optimisticIdToFilter
+                    ? mappedActivities.filter(act => act.id !== optimisticIdToFilter)
+                    : mappedActivities;
+
+                // Atualizar estado base - o useOptimistic automaticamente atualizará
+                setActivities(filteredActivities);
+                // Limpar ref do otimista após atualizar o estado
+                optimisticIdRef.current = null;
+                setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                setCommentsOffset(0);
+            }
+        } catch (error) {
+            console.error("Erro ao recarregar atividades:", error);
+        }
+    }, [mapCommentToActivity]);
+
+    // Handler para editar comentário com optimistic UI
+    const handleEditComment = useCallback((activityId: string, currentMessage: string) => {
+        setEditingCommentId(activityId);
+        setEditingCommentText(currentMessage);
+    }, []);
+
+    const handleSaveEditComment = useCallback(async () => {
+        if (!editingCommentId || !editingCommentText.trim()) {
+            setEditingCommentId(null);
+            setEditingCommentText("");
+            return;
+        }
+
+        const trimmedText = editingCommentText.trim();
+        const previousActivity = activities.find(a => a.id === editingCommentId);
+        if (!previousActivity) return;
+
+        // Optimistic UI: atualizar estado local imediatamente
+        const previousMessage = previousActivity.message;
+        setActivities(prev => prev.map(act =>
+            act.id === editingCommentId
+                ? {
+                    ...act,
+                    message: trimmedText,
+                    edited: true,
+                    editedAt: new Date().toISOString()
+                }
+                : act
+        ));
+
+        setIsUpdatingComment(true);
+        try {
+            const result = await updateComment(editingCommentId, trimmedText);
+            if (!result.success) {
+                // Rollback em caso de erro
+                setActivities(prev => prev.map(act =>
+                    act.id === editingCommentId
+                        ? { ...act, message: previousMessage, edited: previousActivity.edited, editedAt: previousActivity.editedAt }
+                        : act
+                ));
+                toast.error(result.error || "Erro ao editar comentário");
+            } else {
+                // Sincronizar cache e recarregar atividades
+                if (currentTaskId) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+                }
+                toast.success("Comentário editado");
+            }
+        } catch (error) {
+            // Rollback em caso de exceção
+            setActivities(prev => prev.map(act =>
+                act.id === editingCommentId
+                    ? { ...act, message: previousMessage, edited: previousActivity.edited, editedAt: previousActivity.editedAt }
+                    : act
+            ));
+            console.error("Erro ao editar comentário:", error);
+            toast.error("Erro ao editar comentário");
+        } finally {
+            setIsUpdatingComment(false);
+            setEditingCommentId(null);
+            setEditingCommentText("");
+        }
+    }, [editingCommentId, editingCommentText, activities, currentTaskId, reloadActivities, invalidateCacheAndNotify]);
+
+    const handleCancelEditComment = useCallback(() => {
+        setEditingCommentId(null);
+        setEditingCommentText("");
+    }, []);
+
+    // Handler para excluir comentário com optimistic UI
+    const handleDeleteComment = useCallback(async (activityId: string) => {
+        const previousActivity = activities.find(a => a.id === activityId);
+        if (!previousActivity) return;
+
+        // Optimistic UI: marcar como deletado imediatamente
+        setActivities(prev => prev.map(act =>
+            act.id === activityId
+                ? {
+                    ...act,
+                    message: "Esta mensagem foi removida",
+                    deleted: true,
+                    deletedAt: new Date().toISOString()
+                }
+                : act
+        ));
+
+        setIsDeletingComment(activityId);
+        try {
+            const result = await deleteComment(activityId);
+            if (!result.success) {
+                // Rollback em caso de erro
+                setActivities(prev => prev.map(act =>
+                    act.id === activityId
+                        ? {
+                            ...act,
+                            message: previousActivity.message,
+                            deleted: previousActivity.deleted,
+                            deletedAt: previousActivity.deletedAt
+                        }
+                        : act
+                ));
+                toast.error(result.error || "Erro ao excluir comentário");
+            } else {
+                // Sincronizar cache e recarregar atividades
+                if (currentTaskId) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+                }
+                toast.success("Comentário removido");
+            }
+        } catch (error) {
+            // Rollback em caso de exceção
+            setActivities(prev => prev.map(act =>
+                act.id === activityId
+                    ? {
+                            ...act,
+                            message: previousActivity.message,
+                            deleted: previousActivity.deleted,
+                            deletedAt: previousActivity.deletedAt
+                        }
+                    : act
+            ));
+            console.error("Erro ao excluir comentário:", error);
+            toast.error("Erro ao excluir comentário");
+        } finally {
+            setIsDeletingComment(null);
+        }
+    }, [activities, currentTaskId, reloadActivities, invalidateCacheAndNotify]);
+
+    // Lista de atividades: cada item é memoizado para evitar re-render de todos ao digitar em um comentário
+    const handleViewTranscriptionStable = useCallback((activityId: string, audioUrl: string) => {
+        handleViewTranscriptionRef.current?.(activityId, audioUrl);
+    }, []);
+
+    const renderedActivities = useMemo(() => {
+        return activities.map((act: Activity) => (
+            <TaskDetailActivityItem
+                key={act.id}
+                activity={act}
+                isEditing={editingCommentId === act.id}
+                editingText={editingCommentId === act.id ? editingCommentText : ""}
+                transcribingActivityId={transcribingActivityId}
+                isUpdatingComment={isUpdatingComment}
+                isDeletingComment={isDeletingComment}
+                onViewTranscription={handleViewTranscriptionStable}
+                onEditComment={handleEditComment}
+                onDeleteComment={handleDeleteComment}
+                onSaveEditComment={handleSaveEditComment}
+                onCancelEditComment={handleCancelEditComment}
+                onEditingTextChange={setEditingCommentText}
+            />
+        ));
+    }, [activities, transcribingActivityId, editingCommentId, editingCommentText, isUpdatingComment, isDeletingComment, handleViewTranscriptionStable, handleSaveEditComment, handleCancelEditComment, handleEditComment, handleDeleteComment]);
+
     // Handlers
-    const handleStatusChange = async (newStatus: string) => {
+    const handleStatusChange = useCallback(async (newStatus: string) => {
         if (status === newStatus) return;
+        const oldStatus = status;
         const oldLabel = STATUS_TO_LABEL[status];
         const newLabel = STATUS_TO_LABEL[newStatus as TaskStatus];
-        
-        setStatus(newStatus as TaskStatus);
-        
-        if (currentTaskId && !isCreateMode) {
-            const result = await updateTaskField(currentTaskId, "status", newStatus);
-            if (result.success) {
-                invalidateCacheAndNotify(currentTaskId);
-            }
-        }
-        
-        setActivities(prev => [{
-            id: `act-${Date.now()}`,
-            type: "updated",
-            user: "Você",
-            message: `alterou o status de ${oldLabel} para ${newLabel}`,
-            timestamp: "Agora mesmo"
-        }, ...prev]);
-        
-        toast.success(`Status alterado para ${newLabel}`);
-    };
 
-    const handleAddSubTask = async () => {
+        setStatus(newStatus as TaskStatus);
+
+        if (currentTaskId && !isCreateMode) {
+            onTaskUpdatedOptimistic?.(currentTaskId, { status: newLabel });
+
+            try {
+                markSaving();
+                const result = await updateTaskField(currentTaskId, "status", newStatus);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, { status: newLabel }, { refresh: false });
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+                    toast.success(`Status alterado para ${newLabel}`);
+                } else {
+                    setStatus(oldStatus);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                    markSaved(false);
+                    toast.error(result.error || "Erro ao alterar status");
+                }
+            } catch (error) {
+                console.error("Erro ao alterar status:", error);
+                setStatus(oldStatus);
+                onTaskUpdatedOptimistic?.(currentTaskId, { status: oldLabel });
+                markSaved(false);
+                toast.error("Erro ao alterar status");
+            }
+        } else {
+            toast.success(`Status alterado para ${newLabel}`);
+        }
+    }, [status, currentTaskId, isCreateMode, onTaskUpdatedOptimistic, markSaving, invalidateCacheAndNotify, reloadActivities, markSaved]);
+
+    const handleAddSubTask = useCallback(async () => {
         if (!newSubTask.trim()) return;
         const newItem: SubTask = {
             id: `st-${Date.now()}`,
             title: newSubTask,
-            completed: false
+            completed: false,
+            assignee_id: null,
+            assignee: null
         };
-        
+
         const updatedSubTasks = [...subTasks, newItem];
         setSubTasks(updatedSubTasks);
         setNewSubTask("");
-        
+
         if (currentTaskId && !isCreateMode) {
             try {
+                const oldSubtasks = subTasks;
                 const result = await updateTaskSubtasks(currentTaskId, updatedSubTasks);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: `adicionou a sub-tarefa: "${newItem.title}"`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    await addComment(
+                        currentTaskId,
+                        `adicionou a sub-tarefa: "${newItem.title}"`,
+                        {
+                            field: "subtasks",
+                            action: "subtask_added",
+                            subtask_title: newItem.title
+                        },
+                        "log"
+                    );
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
-                    // Reverter se falhar
-                    setSubTasks(subTasks);
+                    setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
                 toast.error("Erro ao salvar sub-tarefa");
-                // Reverter se falhar
                 setSubTasks(subTasks);
             }
         } else {
-            // Modo create - apenas adicionar localmente
             setActivities(prev => [{
                 id: `act-${Date.now()}`,
                 type: "updated",
@@ -1070,38 +1560,183 @@ export function TaskDetailModal({
                 timestamp: "Agora mesmo"
             }, ...prev]);
         }
+    }, [newSubTask, subTasks, currentTaskId, isCreateMode, invalidateCacheAndNotify, reloadActivities, markSaved]);
+
+    const handleUpdateSubTaskTitle = async (id: string, newTitle: string) => {
+        const trimmedTitle = newTitle.trim();
+        if (!trimmedTitle) {
+            setEditingSubTaskId(null);
+            setEditingSubTaskTitle("");
+            return;
+        }
+
+        const target = subTasks.find(t => t.id === id);
+        if (!target || target.title === trimmedTitle) {
+            setEditingSubTaskId(null);
+            setEditingSubTaskTitle("");
+            return;
+        }
+
+        const oldSubtasks = subTasks;
+        const updated = subTasks.map(t => t.id === id ? { ...t, title: trimmedTitle } : t);
+        setSubTasks(updated);
+        setEditingSubTaskId(null);
+        setEditingSubTaskTitle("");
+
+        if (currentTaskId && !isCreateMode) {
+            setSavingSubTaskId(id);
+            try {
+                const result = await updateTaskSubtasks(currentTaskId, updated);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    await addComment(
+                        currentTaskId,
+                        `editou a sub-tarefa: "${target.title}" → "${trimmedTitle}"`,
+                        {
+                            field: "subtasks",
+                            action: "subtask_title_updated",
+                            subtask_title: trimmedTitle,
+                            previous_title: target.title
+                        },
+                        "log"
+                    );
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+                } else {
+                    toast.error(result.error || "Erro ao salvar título da sub-tarefa");
+                    setSubTasks(oldSubtasks);
+                }
+            } catch (error) {
+                console.error("Erro ao salvar título da sub-tarefa:", error);
+                toast.error("Erro ao salvar título da sub-tarefa");
+                setSubTasks(oldSubtasks);
+            } finally {
+                setSavingSubTaskId(null);
+            }
+        }
+    };
+
+    const handleUpdateSubTaskAssignee = async (id: string, assigneeId: string | null) => {
+        const target = subTasks.find(t => t.id === id);
+        if (!target) return;
+
+        const selectedMember = assigneeId ? availableUsers.find(u => u.id === assigneeId) : null;
+        const memberExists = assigneeId ? localMembers.some(m => m.id === assigneeId) : false;
+        const newMemberEntry = selectedMember ? { id: selectedMember.id, name: selectedMember.name, avatar: selectedMember.avatar } : null;
+        const oldMembers = [...localMembers];
+        const updated = subTasks.map(t => t.id === id ? {
+            ...t,
+            assignee_id: assigneeId,
+            assignee: selectedMember ? { id: selectedMember.id, name: selectedMember.name, avatar: selectedMember.avatar } : null
+        } : t);
+
+        const oldSubtasks = subTasks;
+        setSubTasks(updated);
+        if (assigneeId && newMemberEntry && !memberExists && currentTaskId && !isCreateMode) {
+            const optimisticMembers = [...localMembers, newMemberEntry];
+            setLocalMembers(optimisticMembers);
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: optimisticMembers });
+        }
+
+        if (currentTaskId && !isCreateMode) {
+            setSavingSubTaskId(id);
+            let addedToTask = false;
+            try {
+                if (assigneeId && newMemberEntry && !memberExists) {
+                    const addResult = await addTaskMember(currentTaskId, assigneeId);
+                    if (!addResult.success) {
+                        toast.error("Erro ao adicionar membro à tarefa");
+                        setSubTasks(oldSubtasks);
+                        setLocalMembers(oldMembers);
+                        onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                        setSavingSubTaskId(null);
+                        return;
+                    }
+                    addedToTask = true;
+                }
+
+                const result = await updateTaskSubtasks(currentTaskId, updated);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    const action = selectedMember ? "subtask_assigned" : "subtask_unassigned";
+                    const message = selectedMember
+                        ? `atribuiu ${selectedMember.name} à sub-tarefa: "${target.title}"`
+                        : `removeu o responsável da sub-tarefa: "${target.title}"`;
+                    await addComment(
+                        currentTaskId,
+                        message,
+                        {
+                            field: "subtasks",
+                            action,
+                            subtask_title: target.title,
+                            assignee_id: assigneeId
+                        },
+                        "log"
+                    );
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+                } else {
+                    toast.error(result.error || "Erro ao atualizar responsável da sub-tarefa");
+                    setSubTasks(oldSubtasks);
+                    setLocalMembers(oldMembers);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                    if (addedToTask && assigneeId) {
+                        await removeTaskMember(currentTaskId, assigneeId);
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao atualizar responsável da sub-tarefa:", error);
+                toast.error("Erro ao atualizar responsável da sub-tarefa");
+                setSubTasks(oldSubtasks);
+                setLocalMembers(oldMembers);
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                if (addedToTask && assigneeId) {
+                    await removeTaskMember(currentTaskId, assigneeId);
+                }
+            } finally {
+                setSavingSubTaskId(null);
+            }
+        }
     };
 
     const handleToggleSubTask = async (id: string) => {
         const task = subTasks.find(t => t.id === id);
         if (!task) return;
-        
+
         const newCompleted = !task.completed;
+        const oldSubtasks = subTasks;
         const updated = subTasks.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
         setSubTasks(updated);
-        
+
         if (currentTaskId && !isCreateMode) {
             try {
                 const result = await updateTaskSubtasks(currentTaskId, updated);
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: `${newCompleted ? "concluiu" : "reabriu"} a sub-tarefa: "${task.title}"`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    // Criar log manual para subtarefas
+                    await addComment(
+                        currentTaskId,
+                        `${newCompleted ? "concluiu" : "reabriu"} a sub-tarefa: "${task.title}"`,
+                        {
+                            field: "subtasks",
+                            action: newCompleted ? "subtask_completed" : "subtask_reopened",
+                            subtask_title: task.title
+                        },
+                        "log"
+                    );
+                    // Recarregar atividades do banco
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                 } else {
                     toast.error(result.error || "Erro ao salvar sub-tarefa");
                     // Reverter se falhar
-                    setSubTasks(subTasks);
+                    setSubTasks(oldSubtasks);
                 }
             } catch (error) {
                 console.error("Erro ao salvar sub-tarefa:", error);
                 toast.error("Erro ao salvar sub-tarefa");
                 // Reverter se falhar
-                setSubTasks(subTasks);
+                setSubTasks(oldSubtasks);
             }
         } else {
             setActivities(prev => [{
@@ -1117,6 +1752,7 @@ export function TaskDetailModal({
     const handleSendComment = async () => {
         if (!comment.trim() && pendingAttachments.length === 0) return;
         if (!currentTaskId && !isCreateMode) return;
+        if (isSubmitting) return; // Prevenir múltiplos envios
 
         const commentText = comment.trim() || (pendingAttachments.length > 0 ? "Anexo compartilhado" : "");
         const attachedFiles = pendingAttachments.map(f => ({
@@ -1126,6 +1762,25 @@ export function TaskDetailModal({
         }));
 
         if (currentTaskId && !isCreateMode) {
+            setIsSubmitting(true);
+
+            // Adicionar comentário otimista no estado base (order ASC: adicionamos ao final)
+            const optimisticId = `optimistic-${Date.now()}`;
+            optimisticIdRef.current = optimisticId;
+            const optimisticDisplayUser = currentUserId ? "Você" : currentUserName;
+            const optimisticActivity: Activity = {
+                id: optimisticId,
+                type: pendingAttachments.length > 0 ? "file_shared" : "commented",
+                user: optimisticDisplayUser,
+                message: commentText,
+                timestamp: formatActivityTimestamp(new Date().toISOString()),
+                attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
+            };
+            setActivities(prev => [...prev, optimisticActivity]);
+
+            // Toast otimista - aparece imediatamente sincronizado com optimistic UI
+            toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
+
             try {
                 // Primeiro, fazer upload dos arquivos se houver
                 const uploadedFileUrls: string[] = [];
@@ -1143,7 +1798,7 @@ export function TaskDetailModal({
                                     fileSize: file.size,
                                     filePath: uploadResult.path,
                                 });
-                                
+
                                 if (saveResult.success) {
                                     uploadedFileUrls.push(uploadResult.url);
                                 } else {
@@ -1163,70 +1818,70 @@ export function TaskDetailModal({
                 // Salvar comentário com metadata dos anexos
                 const commentType = pendingAttachments.length > 0 ? "file" : "comment";
                 const result = await addComment(
-                    currentTaskId, 
+                    currentTaskId,
                     commentText,
                     {
                         attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined
                     },
                     commentType as any
                 );
-                
+
                 if (!result.success) {
+                    // Em caso de erro, mostrar toast de erro (substitui o toast otimista)
                     toast.error(result.error || "Erro ao criar comentário");
+                    // Remover comentário otimista antes de recarregar
+                    const optimisticIdToRemove = optimisticIdRef.current;
+                    if (optimisticIdToRemove) {
+                        setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                        optimisticIdRef.current = null;
+                    }
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
                     return;
                 }
 
-                // Recarregar dados do backend para garantir que está salvo
-                const taskDetails = await getTaskDetails(currentTaskId);
-                if (taskDetails) {
-                    // Atualizar atividades com dados do backend
-                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
-                        id: comment.id,
-                        type: comment.type === "comment" ? "commented" : 
-                              comment.type === "file" ? "file_shared" :
-                              comment.type === "log" ? "updated" : 
-                              comment.type === "audio" ? "audio" : "commented",
-                        user: comment.user.full_name || comment.user.email || "Sem nome",
-                        message: comment.type === "audio" ? undefined : comment.content,
-                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                        attachedFiles: comment.metadata?.attachedFiles,
-                        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                            url: comment.metadata.audio_url || comment.metadata.url,
-                            duration: comment.metadata.duration,
-                            transcription: comment.metadata.transcription,
-                        } : undefined,
-                    }));
+                // Buscar comentários e anexos em uma única chamada (evita getTaskDetails pesado)
+                const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, 0);
+                if (extendedDetails) {
+                    const mappedActivities: Activity[] = (extendedDetails.comments || []).map(mapCommentToActivity);
                     setActivities(mappedActivities);
-
-                    // Atualizar anexos também
-                    const mappedAttachments: FileAttachment[] = taskDetails.attachments.map((att) => ({
+                    setHasMoreComments((extendedDetails.comments || []).length >= COMMENTS_PAGE_SIZE);
+                    setCommentsOffset(0);
+                    optimisticIdRef.current = null;
+                    const mappedAttachments: FileAttachment[] = (extendedDetails.attachments || []).map((att) => ({
                         id: att.id,
                         name: att.file_name,
-                        type: (att.file_type || "other") as "image" | "pdf" | "other",
+                        type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
                         size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
                         url: att.file_url,
                     }));
                     setAttachments(mappedAttachments);
                 } else {
-                    // Fallback: adicionar localmente se não conseguir recarregar
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: pendingAttachments.length > 0 ? "file_shared" : "commented",
-                        user: "Você",
-                        message: commentText,
-                        attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
+                    // fallback: remover otimista se não conseguir recarregar
+                    const optimisticIdToRemove = optimisticIdRef.current;
+                    if (optimisticIdToRemove) {
+                        setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                        optimisticIdRef.current = null;
+                    }
                 }
 
+                // Só limpar input se sucesso (toast já foi mostrado otimista)
                 setComment("");
                 setPendingAttachments([]);
                 setPendingFiles([]); // Limpar File objects também
-                invalidateCacheAndNotify(currentTaskId);
-                toast.success(pendingAttachments.length > 0 ? "Comentário com anexos enviado" : "Comentário enviado");
+                invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
             } catch (error) {
                 console.error("Erro ao criar comentário:", error);
                 toast.error("Erro ao criar comentário");
+                // Remover comentário otimista em caso de erro
+                const optimisticIdToRemove = optimisticIdRef.current;
+                if (optimisticIdToRemove) {
+                    setActivities(prev => prev.filter(act => act.id !== optimisticIdToRemove));
+                    optimisticIdRef.current = null;
+                }
+                void reloadActivities(currentTaskId);
+            } finally {
+                setIsSubmitting(false);
             }
         } else {
             // Modo create - apenas adicionar localmente
@@ -1271,15 +1926,51 @@ export function TaskDetailModal({
             return;
         }
 
-        for (const file of files) {
+        // Criar entradas de upload inicial
+        const newUploads = files.map(file => {
             const isImage = file.type.startsWith("image/");
             const isPdf = file.type === "application/pdf";
-            const type = isImage ? "image" : isPdf ? "pdf" : "other";
-            
+            return {
+                id: `upload-${Date.now()}-${file.name}`,
+                name: file.name,
+                type: (isImage ? "image" : isPdf ? "pdf" : "other") as "image" | "pdf" | "other",
+                size: `${(file.size / 1024).toFixed(0)} KB`,
+                progress: 0,
+                file: file // manter referência para usar no loop
+            };
+        });
+
+        // Adicionar ao estado de uploads
+        setUploadingAttachments(prev => [...prev, ...newUploads.map(({ file, ...rest }) => rest)]);
+
+        // Processar cada arquivo
+        for (const uploadItem of newUploads) {
+            const { file, ...itemInfo } = uploadItem;
+
             try {
+                // Simular progresso
+                const progressInterval = setInterval(() => {
+                    setUploadingAttachments(prev => prev.map(u => {
+                        if (u.id === itemInfo.id) {
+                            // Incrementar até 90% aleatoriamente
+                            const next = Math.min(90, u.progress + Math.random() * 20);
+                            return { ...u, progress: next };
+                        }
+                        return u;
+                    }));
+                }, 200);
+
                 if (currentTaskId) {
                     const result = await uploadToStorage(file, "task-files");
+
+                    clearInterval(progressInterval);
+
                     if (result.success && result.url) {
+                        // Setar 100%
+                        setUploadingAttachments(prev => prev.map(u =>
+                            u.id === itemInfo.id ? { ...u, progress: 100 } : u
+                        ));
+
                         await saveAttachment({
                             taskId: currentTaskId,
                             fileUrl: result.url,
@@ -1287,38 +1978,48 @@ export function TaskDetailModal({
                             fileType: file.type,
                             fileSize: file.size,
                         });
-                        
+
                         const newFile: FileAttachment = {
                             id: `f-${Date.now()}`,
                             name: file.name,
-                            type,
-                            size: `${(file.size / 1024).toFixed(0)} KB`,
+                            type: itemInfo.type,
+                            size: itemInfo.size,
                             url: result.url
                         };
-                        
+
+                        // Pequeno delay para mostrar o 100% antes de trocar pelo card real
+                        await new Promise(resolve => setTimeout(resolve, 500));
+
                         setAttachments(prev => [...prev, newFile]);
-                        
-                        setActivities(prev => [{
-                            id: `act-${Date.now()}`,
-                            type: "file_shared",
-                            user: "Você",
-                            file: {
-                                name: newFile.name,
-                                type: newFile.type,
-                                size: newFile.size
-                            },
-                            timestamp: "Agora mesmo"
-                        }, ...prev]);
+                        // Remover do estado de upload
+                        setUploadingAttachments(prev => prev.filter(u => u.id !== itemInfo.id));
                     }
                 }
             } catch (error) {
                 console.error("Erro ao fazer upload:", error);
                 toast.error("Erro ao fazer upload do arquivo");
+                setUploadingAttachments(prev => prev.filter(u => u.id !== itemInfo.id));
             }
         }
-        
+
+        // Recarregar anexos (getTaskExtendedDetails é mais leve que getTaskDetails)
+        if (currentTaskId) {
+            void reloadActivities(currentTaskId);
+            const extendedDetails = await getTaskExtendedDetails(currentTaskId, COMMENTS_PAGE_SIZE, 0);
+            if (extendedDetails?.attachments) {
+                const mappedAttachments: FileAttachment[] = extendedDetails.attachments.map((att) => ({
+                    id: att.id,
+                    name: att.file_name,
+                    type: (att.file_type?.startsWith("image/") ? "image" : att.file_type === "application/pdf" ? "pdf" : "other") as FileAttachment["type"],
+                    size: att.file_size ? `${(att.file_size / 1024 / 1024).toFixed(1)} MB` : "0 MB",
+                    url: att.file_url,
+                }));
+                setAttachments(mappedAttachments);
+            }
+        }
+
         toast.success(`${files.length} arquivo(s) adicionado(s)`);
-        invalidateCacheAndNotify(currentTaskId);
+        invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
     };
 
     const { getRootProps, getInputProps, isDragActive, open: openFileUpload } = useDropzone({
@@ -1335,79 +2036,46 @@ export function TaskDetailModal({
     const startRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
+
             audioChunksRef.current = [];
             recordingTimeRef.current = 0;
-            
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
-                ? 'audio/webm' 
-                : MediaRecorder.isTypeSupported('audio/mp4') 
-                ? 'audio/mp4' 
-                : 'audio/ogg';
-            
+
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+                ? 'audio/webm'
+                : MediaRecorder.isTypeSupported('audio/mp4')
+                    ? 'audio/mp4'
+                    : 'audio/ogg';
+
             mimeTypeRef.current = mimeType;
-            
+
             const recorder = new MediaRecorder(stream, { mimeType });
-            
+
             recorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
                     audioChunksRef.current.push(e.data);
                 }
             };
-            
+
             recorder.onstop = async () => {
                 if (audioChunksRef.current.length > 0) {
                     const blob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
                     const url = URL.createObjectURL(blob);
-                    const finalDuration = recordingTimeRef.current || 1;
-                    
+                    const finalDuration = finalDurationRef.current || recordingTimeRef.current || 1;
+
                     if (currentTaskId && !isCreateMode) {
                         try {
                             const formData = new FormData();
                             formData.append("audio", blob, "audio.webm");
                             formData.append("duration", finalDuration.toString());
-                            
+
                             const result = await uploadAudioComment(currentTaskId, formData);
                             if (result.success && result.data) {
-                                const audioData = result.data as any;
-                                
-                                // Recarregar dados do backend para garantir que está salvo
-                                const taskDetails = await getTaskDetails(currentTaskId);
-                                if (taskDetails) {
-                                    // Atualizar atividades com dados do backend
-                                    const mappedActivities: Activity[] = taskDetails.comments.map((comment) => ({
-                                        id: comment.id,
-                                        type: comment.type === "comment" ? "commented" : 
-                                              comment.type === "file" ? "file_shared" :
-                                              comment.type === "log" ? "updated" : 
-                                              comment.type === "audio" ? "audio" : "commented",
-                                        user: comment.user.full_name || comment.user.email || "Sem nome",
-                                        message: comment.type === "audio" ? undefined : comment.content,
-                                        timestamp: new Date(comment.created_at).toLocaleString("pt-BR"),
-                                        attachedFiles: comment.metadata?.attachedFiles,
-                                        audio: (comment.metadata?.audio_url || comment.metadata?.url) ? {
-                                            url: comment.metadata.audio_url || comment.metadata.url,
-                                            duration: comment.metadata.duration,
-                                            transcription: comment.metadata.transcription,
-                                        } : undefined,
-                                    }));
-                                    setActivities(mappedActivities);
-                                } else {
-                                    // Fallback: adicionar localmente se não conseguir recarregar
-                                    setActivities(prev => [{
-                                        id: audioData.id || `act-${Date.now()}`,
-                                        type: "audio",
-                                        user: "Você",
-                                        timestamp: new Date().toLocaleString("pt-BR"),
-                                        audio: {
-                                            url: audioData.metadata?.url || url,
-                                            duration: audioData.metadata?.duration || finalDuration
-                                        }
-                                    }, ...prev]);
-                                }
-                                
+                                // Recarregar atividades do banco para garantir que está salvo
+                                void reloadActivities(currentTaskId);
+                                markSaved(true);
+
                                 toast.success(`Áudio enviado (${finalDuration}s)`);
-                                invalidateCacheAndNotify(currentTaskId);
+                                invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
                             } else {
                                 toast.error(result.error || "Erro ao enviar áudio");
                             }
@@ -1427,35 +2095,36 @@ export function TaskDetailModal({
                         toast.success(`Áudio enviado (${finalDuration}s)`);
                     }
                 }
-                
+
                 stream.getTracks().forEach(track => track.stop());
                 setMediaStream(null);
                 setMediaRecorder(null);
-                setRecordingTime(0);
                 recordingTimeRef.current = 0;
+                finalDurationRef.current = 0;
                 audioChunksRef.current = [];
             };
-            
+
             recorder.onerror = (e) => {
                 console.error("Erro no MediaRecorder:", e);
                 toast.error("Erro ao gravar áudio");
             };
-            
+
             recorder.start(100);
-            
+
             setMediaRecorder(recorder);
             setMediaStream(stream);
             setIsRecording(true);
-            setRecordingTime(0);
+            finalDurationRef.current = 0;
         } catch (error) {
             console.error("Erro ao acessar microfone:", error);
             toast.error("Permissão de microfone necessária para gravar.");
         }
     };
 
-    const handleStopRecording = () => {
+    const handleStopRecording = (duration: number) => {
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
-            recordingTimeRef.current = recordingTime;
+            finalDurationRef.current = duration;
+            recordingTimeRef.current = duration;
             mediaRecorder.stop();
         }
         setIsRecording(false);
@@ -1466,137 +2135,255 @@ export function TaskDetailModal({
             mediaRecorder.onstop = null;
             mediaRecorder.stop();
         }
-        
+
         if (mediaStream) {
             mediaStream.getTracks().forEach(track => track.stop());
             setMediaStream(null);
         }
-        
+
         setMediaRecorder(null);
         setIsRecording(false);
-        setRecordingTime(0);
+        finalDurationRef.current = 0;
+        recordingTimeRef.current = 0;
         audioChunksRef.current = [];
     };
 
-    const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
+    // formatTime removido - agora está no AudioRecorderDisplay
 
-    const handleAssigneeChange = async (userId: string | null) => {
+    // Constante para limite de caracteres na descrição
+    const MAX_DESCRIPTION_LENGTH = 3000;
+
+    // Contar caracteres do texto puro (sem HTML) - stripHtmlTags é helper de módulo
+    const getDescriptionCharCount = useMemo(
+        () => stripHtmlTags(description).length,
+        [description]
+    );
+
+    const isDescriptionOverLimit = getDescriptionCharCount > MAX_DESCRIPTION_LENGTH;
+
+    // Detectar se o conteúdo excede 160px de altura (para mostrar botão "Ver mais")
+    useEffect(() => {
+        if (!isEditingDescription && descriptionRef.current) {
+            const element = descriptionRef.current;
+            // Resetar altura para medir o tamanho real
+            element.style.maxHeight = "none";
+            const height = element.scrollHeight;
+            element.style.maxHeight = "";
+
+            // Se altura real > 160px (40 * 4px = 160px), mostrar botão
+            setShowExpandButton(height > 160);
+        } else {
+            setShowExpandButton(false);
+        }
+    }, [description, isEditingDescription]);
+
+    const scheduleTitleSave = useCallback((nextTitle: string, fallbackTitle?: string) => {
         if (!currentTaskId || isCreateMode) return;
-        
-        const oldAssignee = localAssignee;
-        
-        try {
-            const result = await updateTaskField(
-                currentTaskId,
-                "assignee_id",
-                userId
-            );
-            
-            if (result.success) {
-                let newAssigneeName = "";
-                
-                if (userId) {
-                    const selectedUser = availableUsers.find(u => u.id === userId);
-                    if (selectedUser) {
-                        setLocalAssignee({
-                            id: selectedUser.id,
-                            name: selectedUser.name,
-                            avatar: selectedUser.avatar,
-                        });
-                        newAssigneeName = selectedUser.name;
-                    }
+        if (titleSaveTimeoutRef.current) {
+            clearTimeout(titleSaveTimeoutRef.current);
+        }
+        markSaving();
+        const optimisticTitle = nextTitle.trim();
+        titleSaveTimeoutRef.current = setTimeout(async () => {
+            try {
+                const result = await updateTaskField(currentTaskId, "title", optimisticTitle);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, { title: optimisticTitle }, { refresh: false });
+                    markSaved(true);
                 } else {
-                    setLocalAssignee(null);
-                }
-                
-                // Recarregar dados do backend para garantir sincronização
-                const taskDetails = await getTaskDetails(currentTaskId);
-                if (taskDetails) {
-                    if (taskDetails.assignee) {
-                        const assigneeName = taskDetails.assignee.full_name || taskDetails.assignee.email || "Sem nome";
-                        setLocalAssignee({
-                            id: taskDetails.assignee.id,
-                            name: assigneeName,
-                            avatar: taskDetails.assignee.avatar_url || undefined,
-                        });
-                        newAssigneeName = assigneeName;
-                    } else {
-                        setLocalAssignee(null);
+                    markSaved(false);
+                    toast.error(result.error || "Erro ao salvar título");
+                    if (fallbackTitle !== undefined) {
+                        onTaskUpdatedOptimistic?.(currentTaskId, { title: fallbackTitle });
                     }
                 }
-                
-                // Adicionar atividade no histórico
-                const activityMessage = userId 
-                    ? (oldAssignee 
-                        ? `atribuiu a tarefa de ${oldAssignee.name} para ${newAssigneeName || "novo responsável"}`
-                        : `atribuiu a tarefa para ${newAssigneeName || "novo responsável"}`)
-                    : (oldAssignee 
-                        ? `removeu ${oldAssignee.name} como responsável`
-                        : `removeu o responsável`);
-                
-                setActivities(prev => [{
-                    id: `act-${Date.now()}`,
-                    type: "updated",
-                    user: "Você",
-                    message: activityMessage,
-                    timestamp: "Agora mesmo"
-                }, ...prev]);
-                
-                invalidateCacheAndNotify(currentTaskId);
-                toast.success("Responsável atualizado");
+            } catch (error) {
+                console.error("Erro ao salvar título:", error);
+                markSaved(false);
+                toast.error("Erro ao salvar título");
+                if (fallbackTitle !== undefined) {
+                    onTaskUpdatedOptimistic?.(currentTaskId, { title: fallbackTitle });
+                }
+            }
+        }, 500);
+    }, [currentTaskId, isCreateMode, invalidateCacheAndNotify, markSaving, markSaved, onTaskUpdatedOptimistic]);
+
+    // Handler memoizado para salvar descrição
+    const handleSaveDescription = useCallback(async () => {
+        setIsDescriptionExpanded(false);
+        setIsEditingDescription(false);
+        if (currentTaskId && !isCreateMode) {
+            const oldDescription = description; // Guardar para rollback
+            const normalizedDescription =
+                stripHtmlTags(description).trim().length === 0 ? "" : description;
+            if (normalizedDescription !== description) {
+                setDescription(normalizedDescription);
+            }
+            try {
+                markSaving();
+                const result = await updateTaskField(currentTaskId, "description", normalizedDescription);
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+                } else {
+                    // ✅ REVERTER se falhar
+                    setDescription(oldDescription);
+                    markSaved(false);
+                    toast.error(result.error || "Erro ao salvar descrição");
+                }
+            } catch (error) {
+                // ✅ REVERTER em caso de exceção
+                console.error("Erro ao salvar descrição:", error);
+                setDescription(oldDescription);
+                markSaved(false);
+                toast.error("Erro ao salvar descrição");
+            }
+        }
+    }, [currentTaskId, isCreateMode, description, invalidateCacheAndNotify, reloadActivities]);
+
+    // Auto-save da descrição (debounce 800ms) enquanto o usuário edita
+    const DESCRIPTION_SAVE_DELAY_MS = 800;
+    useEffect(() => {
+        if (!currentTaskId || isCreateMode || !isEditingDescription) {
+            if (descriptionSaveTimeoutRef.current) {
+                clearTimeout(descriptionSaveTimeoutRef.current);
+                descriptionSaveTimeoutRef.current = null;
+            }
+            return;
+        }
+        if (descriptionSaveTimeoutRef.current) {
+            clearTimeout(descriptionSaveTimeoutRef.current);
+        }
+        descriptionSaveTimeoutRef.current = setTimeout(async () => {
+            descriptionSaveTimeoutRef.current = null;
+            const normalized =
+                stripHtmlTags(description).trim().length === 0 ? "" : description;
+            try {
+                markSaving();
+                const result = await updateTaskField(currentTaskId, "description", normalized, { skipLog: true });
+                if (result.success) {
+                    invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                    markSaved(true);
+                } else {
+                    markSaved(false);
+                    toast.error(result.error || "Erro ao salvar descrição");
+                    // Rollback: restaurar descrição do servidor
+                    const rollback = await getFullModalData(currentTaskId, workspaceId ?? null, 1);
+                    if (rollback?.basic != null) {
+                        setDescription(rollback.basic.description ?? "");
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao salvar descrição:", error);
+                markSaved(false);
+                toast.error("Erro ao salvar descrição");
+                // Rollback: restaurar descrição do servidor
+                getFullModalData(currentTaskId, workspaceId ?? null, 1).then((rollback) => {
+                    if (rollback?.basic != null) {
+                        setDescription(rollback.basic.description ?? "");
+                    }
+                });
+            }
+        }, DESCRIPTION_SAVE_DELAY_MS);
+        return () => {
+            if (descriptionSaveTimeoutRef.current) {
+                clearTimeout(descriptionSaveTimeoutRef.current);
+            }
+        };
+    }, [description, isEditingDescription, currentTaskId, isCreateMode, workspaceId, invalidateCacheAndNotify, markSaving, markSaved]);
+
+    const handleMembersChange = useCallback(async (memberIds: string[]) => {
+        if (isCreateMode) {
+            hasExplicitCreateAssigneeSelectionRef.current = true;
+        }
+        const oldMembers = [...localMembers];
+        const oldMemberIds = oldMembers.map(m => m.id);
+
+        const added = memberIds.filter(id => !oldMemberIds.includes(id));
+        const removed = oldMemberIds.filter(id => !memberIds.includes(id));
+
+        const newMembers = memberIds.map(id => {
+            const member = availableUsers.find(u => u.id === id);
+            return member ? { id: member.id, name: member.name, avatar: member.avatar } : null;
+        }).filter(Boolean) as Array<{ id: string; name: string; avatar?: string }>;
+
+        setLocalMembers(newMembers);
+
+        if (currentTaskId) {
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: newMembers });
+        }
+
+        if (!currentTaskId || isCreateMode) {
+            return;
+        }
+
+        try {
+            const addPromises = added.map(userId => addTaskMember(currentTaskId, userId));
+            const removePromises = removed.map(userId => removeTaskMember(currentTaskId, userId));
+
+            const results = await Promise.all([...addPromises, ...removePromises]);
+            const hasError = results.some(r => !r.success);
+
+            if (hasError) {
+                setLocalMembers(oldMembers);
+                onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+                toast.error("Erro ao atualizar membros");
             } else {
-                toast.error(result.error || "Erro ao atualizar responsável");
+                invalidateCacheAndNotify(currentTaskId, { assignees: newMembers }, { refresh: false });
+                void reloadActivities(currentTaskId);
+                const changeCount = added.length + removed.length;
+                toast.success(changeCount === 1 ? "Membro atualizado" : `${changeCount} membros atualizados`);
             }
         } catch (error) {
-            console.error("Erro ao atualizar responsável:", error);
-            toast.error("Erro ao atualizar responsável");
+            console.error("Erro ao atualizar membros:", error);
+            setLocalMembers(oldMembers);
+            onTaskUpdatedOptimistic?.(currentTaskId, { assignees: oldMembers });
+            toast.error("Erro ao atualizar membros");
         }
-    };
+    }, [localMembers, availableUsers, currentTaskId, isCreateMode, onTaskUpdatedOptimistic, invalidateCacheAndNotify, reloadActivities]);
 
-    const handleDueDateChange = async (date: Date | null) => {
-        const dateString = date ? date.toISOString().split("T")[0] : "";
+    const handleDueDateChange = useCallback(async (date: Date | null) => {
+        const dateString = date ? formatLocalDateString(date.toISOString()) : "";
         const oldDate = dueDate;
         setDueDate(dateString);
-        
+
         if (currentTaskId && !isCreateMode) {
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+            // ✅ Atualizar TaskRowMinify imediatamente via optimistic update
+            const baseDueDate = (task?.dueDate || (task as any)?.due_date || null);
+            const optimisticDueDate = date ? buildDueDateISO(formatLocalDateString(date.toISOString()), baseDueDate) : undefined;
+            onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: optimisticDueDate });
+
             try {
+                markSaving();
                 const result = await updateTaskField(
                     currentTaskId,
                     "due_date",
-                    date ? date.toISOString() : null
+                    date ? buildDueDateISO(formatLocalDateString(date.toISOString()), baseDueDate) : null
                 );
                 if (result.success) {
-                    invalidateCacheAndNotify(currentTaskId);
-                    
-                    // Adicionar atividade no histórico
+                    invalidateCacheAndNotify(currentTaskId, { dueDate: optimisticDueDate }, { refresh: false });
+                    // Recarregar atividades do banco para garantir que o log foi persistido
+                    void reloadActivities(currentTaskId);
+                    markSaved(true);
+
                     const dateFormatted = date ? date.toLocaleDateString("pt-BR") : "removida";
-                    const oldDateFormatted = oldDate ? new Date(oldDate).toLocaleDateString("pt-BR") : "sem data";
-                    
-                    setActivities(prev => [{
-                        id: `act-${Date.now()}`,
-                        type: "updated",
-                        user: "Você",
-                        message: date 
-                            ? (oldDate ? `alterou a data de entrega de ${oldDateFormatted} para ${dateFormatted}` : `definiu a data de entrega para ${dateFormatted}`)
-                            : `removeu a data de entrega`,
-                        timestamp: "Agora mesmo"
-                    }, ...prev]);
-                    
                     toast.success(date ? `Data de entrega atualizada para ${dateFormatted}` : "Data de entrega removida");
                 } else {
+                    markSaved(false);
                     toast.error(result.error || "Erro ao atualizar data de entrega");
-                    // Reverter se falhar
+                    // ✅ REVERTER se falhar
                     setDueDate(oldDate);
+                    onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: oldDate || undefined });
                 }
             } catch (error) {
                 console.error("Erro ao atualizar data de entrega:", error);
+                markSaved(false);
                 toast.error("Erro ao atualizar data de entrega");
-                // Reverter se falhar
+                // ✅ REVERTER se falhar
                 setDueDate(oldDate);
+                onTaskUpdatedOptimistic?.(currentTaskId, { dueDate: oldDate || undefined });
             }
         } else {
             // Modo create - apenas atualizar localmente
@@ -1611,526 +2398,672 @@ export function TaskDetailModal({
                 }, ...prev]);
             }
         }
-    };
+    }, [currentTaskId, isCreateMode, dueDate, task?.dueDate, (task as any)?.due_date, onTaskUpdatedOptimistic, markSaving, invalidateCacheAndNotify, reloadActivities, markSaved]);
 
     return (
         <>
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogPortal>
-                <DialogOverlay className="bg-black/50" />
-                <DialogPrimitive.Content
-                    className={cn(
-                        "fixed z-50 bg-background duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 p-0 flex flex-col overflow-hidden shadow-lg",
-                        isMaximized 
-                            ? "left-0 top-0 w-screen h-screen translate-x-0 translate-y-0 rounded-none border-0"
-                            : "left-[50%] top-[50%] w-[90vw] max-w-6xl h-[80vh] translate-x-[-50%] translate-y-[-50%] rounded-xl border data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]"
-                    )}
-                >
-                    <DialogTitle className="sr-only">
-                        {isCreateMode ? "Criar Nova Tarefa" : `Detalhes da Tarefa: ${task?.title || ""}`}
-                    </DialogTitle>
-                    
-                    {/* Header */}
-                    <div className="px-6 py-4 border-b border-gray-100 shrink-0 bg-white">
-                        <div className="flex items-center justify-between">
-                            {!isCreateMode && task?.breadcrumbs && (
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    {task.breadcrumbs.map((crumb, i) => (
-                                        <div key={i} className="flex items-center gap-2">
-                                            <span>{crumb}</span>
-                                            {i < task.breadcrumbs.length - 1 && <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {isCreateMode && (
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    <span>Nova Tarefa</span>
-                                </div>
-                            )}
+            <Dialog open={open} onOpenChange={handleClose}>
+                <DialogPortal>
+                    <DialogOverlay className="bg-black/50" />
+                    <DialogPrimitive.Content
+                        className={cn(
+                            "fixed z-50 bg-background duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 p-0 flex flex-col overflow-hidden shadow-lg",
+                            isMaximized
+                                ? "left-0 top-0 w-screen h-screen translate-x-0 translate-y-0 rounded-none border-0"
+                                : "left-[50%] top-[50%] w-[90vw] max-w-6xl h-[80vh] translate-x-[-50%] translate-y-[-50%] rounded-xl border data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]"
+                        )}
+                    >
+                        <DialogTitle className="sr-only">
+                            {isCreateMode ? "Criar Nova Tarefa" : `Detalhes da Tarefa: ${task?.title || ""}`}
+                        </DialogTitle>
 
-                            <div className="flex items-center gap-2 ml-auto">
-                                {!isCreateMode && (
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={() => setIsShareModalOpen(true)}
-                                        title="Compartilhar tarefa"
-                                    >
-                                        <Share2 className="h-4 w-4" />
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => setIsMaximized(!isMaximized)}
-                                >
-                                    {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => onOpenChange(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
+                        <TaskDetailHeader
+                            breadcrumbs={task?.breadcrumbs}
+                            isCreateMode={isCreateMode}
+                            saveState={saveState}
+                            isMaximized={isMaximized}
+                            onShare={onOpenShare}
+                            onMaximize={onToggleMaximize}
+                            onClose={onCloseModal}
+                        />
 
-                    {/* Main Grid */}
-                    <div className="flex-1 grid md:grid-cols-[1.5fr_1fr] overflow-hidden bg-white">
-                        
-                        {/* LEFT COLUMN: Editor */}
-                        <div className="border-r border-gray-100 p-6 overflow-y-auto custom-scrollbar flex flex-col">
-                            {shouldShowSkeleton ? (
-                                // Skeleton Loading
-                                <div className="space-y-6 animate-pulse">
-                                    {/* Title Skeleton */}
-                                    <div className="h-12 bg-gray-200 rounded w-3/4" />
-                                    
-                                    {/* Properties Skeleton */}
-                                    <div className="grid grid-cols-3 gap-6">
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-16" />
-                                            <div className="h-8 bg-gray-200 rounded w-24" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-20" />
-                                            <div className="h-8 bg-gray-200 rounded w-32" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="h-3 bg-gray-200 rounded w-16" />
-                                            <div className="h-8 bg-gray-200 rounded w-28" />
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Description Skeleton */}
-                                    <div className="space-y-2">
-                                        <div className="h-3 bg-gray-200 rounded w-24" />
-                                        <div className="h-32 bg-gray-100 rounded" />
-                                    </div>
-                                    
-                                    {/* Attachments Skeleton */}
-                                    <div className="space-y-2">
-                                        <div className="h-3 bg-gray-200 rounded w-20" />
-                                        <div className="h-32 bg-gray-100 rounded border-2 border-dashed border-gray-200" />
-                                    </div>
-                                    
-                                    {/* Subtasks Skeleton */}
-                                    <div className="space-y-2">
-                                        <div className="h-3 bg-gray-200 rounded w-24" />
-                                        <div className="space-y-2">
-                                            <div className="h-10 bg-gray-100 rounded" />
-                                            <div className="h-10 bg-gray-100 rounded" />
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                            {/* Title */}
-                            <div className="group relative mb-6">
-                                {isViewMode ? (
-                                    <h1 className="text-4xl font-bold">{title}</h1>
+                        {/* Main Grid */}
+                        <div className="flex-1 grid md:grid-cols-[1.5fr_1fr] overflow-hidden bg-white">
+
+                            {/* LEFT COLUMN: Editor */}
+                            <div className="border-r border-gray-100 p-6 overflow-y-auto custom-scrollbar flex flex-col">
+                                {shouldShowSkeleton ? (
+                                    <TaskDetailSkeleton />
                                 ) : (
-                                    <Input
-                                        value={title}
-                                        onChange={(e) => {
-                                            setTitle(e.target.value);
-                                            if (currentTaskId && !isCreateMode) {
-                                                updateTaskField(currentTaskId, "title", e.target.value);
-                                            }
-                                        }}
-                                        className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
-                                    />
-                                )}
-                            </div>
-
-                            {/* Properties */}
-                            <div className="grid grid-cols-3 gap-6 mb-8 items-start">
-                                {/* Status */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Status</label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <button className="flex items-center gap-2 text-sm hover:bg-gray-100 p-1.5 -ml-1.5 rounded transition-colors w-fit">
-                                                <Badge 
-                                                    variant="secondary" 
-                                                    className={cn("pointer-events-none font-normal px-2 py-0.5", TASK_CONFIG[status]?.lightColor)}
-                                                >
-                                                    {mapStatusToLabel(status)}
-                                                </Badge>
-                                                <ChevronDown className="h-3 w-3 text-gray-400" />
-                                            </button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-48 p-1" align="start">
-                                            <div className="flex flex-col gap-0.5">
-                                                {ORDERED_STATUSES.map((s) => (
-                                                    <button
-                                                        key={s}
-                                                        className={cn(
-                                                            "text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors flex items-center justify-between",
-                                                            status === s && "bg-gray-50 font-medium"
-                                                        )}
-                                                        onClick={() => handleStatusChange(s)}
-                                                    >
-                                                        <span>{STATUS_TO_LABEL[s]}</span>
-                                                        {status === s && <Check className="h-3 w-3 text-green-600" />}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-
-                                {/* Assignee */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Responsável</label>
-                                    <TaskAssigneePicker
-                                        assigneeId={localAssignee?.id || null}
-                                        onSelect={handleAssigneeChange}
-                                    />
-                                </div>
-
-                                {/* Due Date */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Entrega</label>
-                                    <TaskDatePicker
-                                        date={dueDate ? new Date(dueDate) : null}
-                                        onSelect={handleDueDateChange}
-                                        align="start"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Description */}
-                            <div className="mb-8 group/desc">
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
-                                    {!isEditingDescription && (
-                                        <Button variant="ghost" size="sm" className="h-6 text-xs opacity-0 group-hover/desc:opacity-100" onClick={() => setIsEditingDescription(true)}>
-                                            <Pencil className="w-3 h-3 mr-1" /> Editar
-                                        </Button>
-                                    )}
-                                </div>
-                                {isEditingDescription ? (
-                                    <div className="border rounded-md p-1">
-                                        <Editor 
-                                            value={description} 
-                                            onChange={setDescription}
-                                            placeholder="Adicione uma descrição..."
-                                        />
-                                        <div className="flex justify-end mt-2 p-2">
-                                            <Button size="sm" onClick={async () => {
-                                                setIsEditingDescription(false);
-                                                if (currentTaskId && !isCreateMode) {
-                                                    await updateTaskField(currentTaskId, "description", description);
-                                                    invalidateCacheAndNotify(currentTaskId);
-                                                }
-                                            }}>Concluir</Button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div 
-                                        className="min-h-[80px] p-3 rounded-md hover:bg-gray-50 cursor-pointer transition-all prose prose-sm max-w-none text-gray-700 border border-transparent hover:border-gray-200"
-                                        onClick={() => setIsEditingDescription(true)}
-                                        dangerouslySetInnerHTML={{ __html: description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>" }}
-                                    />
-                                )}
-                            </div>
-
-                            {/* Attachments Dropzone */}
-                            <div className="mb-8">
-                                <label className="text-xs font-medium text-gray-500 uppercase mb-2 block">Arquivos</label>
-                                <div 
-                                    {...getRootProps()}
-                                    className={cn(
-                                        "border-dashed border-2 rounded-md p-6 mb-4 cursor-pointer group transition-colors",
-                                        isDragActive ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-green-400"
-                                    )}
-                                >
-                                    <input {...getInputProps()} />
-                                    <div className="flex flex-col items-center justify-center gap-2 text-gray-400 group-hover:text-green-600">
-                                        <UploadCloud className="w-8 h-8" />
-                                        <p className="text-sm">Arraste arquivos ou clique para fazer upload</p>
-                                    </div>
-                                </div>
-                                
-                                {showAttachmentsSkeleton ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 animate-pulse">
-                                        {[1, 2, 3].map((i) => (
-                                            <div key={i} className="h-24 bg-gray-100 rounded-lg border border-gray-200" />
-                                        ))}
-                                    </div>
-                                ) : attachments.length > 0 ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                        {attachments.map(att => {
-                                            const imageIndex = att.type === "image" 
-                                                ? imageAttachments.findIndex(img => img.id === att.id)
-                                                : -1;
-                                            return (
-                                                <AttachmentCard
-                                                    key={att.id}
-                                                    file={att}
-                                                    onDelete={handleAttachmentDeleteClick}
-                                                    onPreview={imageIndex >= 0 ? () => handleImagePreview(imageIndex) : undefined}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                ) : null}
-                            </div>
-
-                            {/* Subtasks */}
-                            <div>
-                                <label className="text-xs font-medium text-gray-500 uppercase mb-3 block">Sub-tarefas</label>
-                                <div className="space-y-2 mb-3">
-                                    {subTasks.map(st => (
-                                        <div key={st.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group">
-                                            <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
-                                            <span className={cn("flex-1 text-sm", st.completed && "line-through text-gray-400")}>{st.title}</span>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
-                                                const updated = subTasks.filter(t => t.id !== st.id);
-                                                setSubTasks(updated);
-                                                if (currentTaskId && !isCreateMode) {
-                                                    try {
-                                                        const result = await updateTaskSubtasks(currentTaskId, updated);
-                                                        if (result.success) {
-                                                            onTaskUpdated?.();
-                                                        } else {
-                                                            toast.error(result.error || "Erro ao remover sub-tarefa");
-                                                            // Reverter se falhar
-                                                            setSubTasks(subTasks);
-                                                        }
-                                                    } catch (error) {
-                                                        console.error("Erro ao remover sub-tarefa:", error);
-                                                        toast.error("Erro ao remover sub-tarefa");
-                                                        // Reverter se falhar
-                                                        setSubTasks(subTasks);
-                                                    }
-                                                }
-                                            }}>
-                                                <X className="w-3 h-3" />
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <Input 
-                                        value={newSubTask} 
-                                        onChange={(e) => setNewSubTask(e.target.value)} 
-                                        onKeyDown={(e) => e.key === "Enter" && handleAddSubTask()}
-                                        placeholder="Adicionar item..." 
-                                        className="flex-1"
-                                    />
-                                    <Button onClick={handleAddSubTask} size="icon" variant="outline" className="h-10 w-10">
-                                        <Plus className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                                </>
-                            )}
-
-                        </div>
-
-                        {/* RIGHT COLUMN: Context & Timeline */}
-                        <div className="bg-gray-50 p-6 flex flex-col overflow-hidden h-full">
-                            {shouldShowSkeleton ? (
-                                // Timeline Skeleton
-                                <div className="space-y-4 animate-pulse">
-                                    <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
-                                    <div className="space-y-4">
-                                        {[1, 2, 3].map((i) => (
-                                            <div key={i} className="flex gap-3">
-                                                <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0" />
-                                                <div className="flex-1 space-y-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-24 h-4 bg-gray-200 rounded" />
-                                                        <div className="w-16 h-3 bg-gray-200 rounded" />
-                                                    </div>
-                                                    <div className="w-full h-10 bg-gray-100 rounded-lg" />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                            {/* Origin Card */}
-                            {task?.contextMessage && (
-                                <>
-                                    <h3 className="text-sm font-semibold text-gray-700 mb-4">Contexto Original</h3>
-                                    <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4 shadow-sm flex items-start gap-3">
-                                        <div className={cn(
-                                            "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-                                            task.contextMessage.type === "audio" ? "bg-green-100" : "bg-blue-100"
-                                        )}>
-                                            {task.contextMessage.type === "audio" ? (
-                                                <Play className="w-5 h-5 text-green-600" />
+                                    <>
+                                        {/* Title */}
+                                        <div className="group relative mb-6">
+                                            {isViewMode ? (
+                                                <h1 className="text-4xl font-bold">{title}</h1>
                                             ) : (
-                                                <MessageSquare className="w-5 h-5 text-blue-600" />
+                                                <Input
+                                                    placeholder="Digite o título da tarefa..."
+                                                    value={title}
+                                                    onChange={(e) => {
+                                                        const newTitle = e.target.value;
+                                                        const previousTitle = title;
+                                                        setTitle(newTitle);
+                                                        if (currentTaskId && !isCreateMode) {
+                                                            // ? Atualizar TaskRowMinify imediatamente via optimistic update
+                                                            onTaskUpdatedOptimistic?.(currentTaskId, { title: newTitle });
+                                                            scheduleTitleSave(newTitle, previousTitle);
+                                                        }
+                                                    }}
+                                                    className="text-4xl font-bold border-0 p-0 pr-8 focus-visible:ring-0 shadow-none hover:underline decoration-gray-300 decoration-dashed underline-offset-4 bg-transparent h-auto"
+                                                />
                                             )}
                                         </div>
-                                        <div className="flex-1">
-                                            <p className="text-xs text-gray-500 mb-1 font-medium">
-                                                Criada via {task.contextMessage.type === "audio" ? "WhatsApp" : "App Web"}
-                                            </p>
-                                            <p className="text-sm text-gray-700 mb-1">"{task.contextMessage.content}"</p>
-                                            <p className="text-xs text-gray-400">{task.contextMessage.timestamp}</p>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
 
-                            {/* Timeline */}
-                            <div className="flex-1 flex flex-col min-h-0">
-                                <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Histórico</h4>
-                                
-                                <div className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar">
-                                    <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
+                                        <TaskDetailProperties
+                                            status={status}
+                                            onStatusChange={handleStatusChange}
+                                            tags={tags}
+                                            availableTags={availableTags}
+                                            onTagsChange={handleTagsChange}
+                                            localMembers={localMembers}
+                                            onMembersChange={handleMembersChange}
+                                            availableUsers={availableUsers}
+                                            workspaceId={workspaceId}
+                                            dueDate={dueDate ? parseLocalDate(dueDate) : null}
+                                            onDueDateChange={handleDueDateChange}
+                                        />
 
-                                    <div className="space-y-4 relative pl-1">
-                                        {showCommentsSkeleton ? (
-                                            <div className="space-y-4 py-2">
-                                                {[1, 2, 3].map((i) => (
-                                                    <div key={i} className="flex gap-3 relative z-10">
-                                                        <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0 animate-pulse" />
-                                                        <div className="flex-1 space-y-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-24 h-4 bg-gray-100 rounded animate-pulse" />
-                                                                <div className="w-16 h-3 bg-gray-100 rounded animate-pulse" />
-                                                            </div>
-                                                            <div className="w-full h-10 bg-gray-50 rounded-lg animate-pulse border border-gray-100" />
+                                        {/* Description */}
+                                        <div className="mb-8">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-xs font-medium text-gray-500 uppercase block">Descrição</label>
+                                            </div>
+                                            {isEditingDescription ? (
+                                                <div className="border rounded-md p-1">
+                                                    <Editor
+                                                        value={description}
+                                                        onChange={setDescription}
+                                                        placeholder="Adicione uma descrição... (use @ para mencionar)"
+                                                        workspaceId={workspaceId ?? activeWorkspaceId ?? null}
+                                                    />
+                                                    <div className="flex items-center justify-between mt-2 p-2">
+                                                        <div className="flex flex-col">
+                                                            <span className={cn(
+                                                                "text-xs",
+                                                                isDescriptionOverLimit ? "text-red-500" : "text-gray-400"
+                                                            )}>
+                                                                {getDescriptionCharCount}/{MAX_DESCRIPTION_LENGTH}
+                                                            </span>
+                                                            {isDescriptionOverLimit && (
+                                                                <span className="text-xs text-red-500 mt-0.5">
+                                                                    Limite de caracteres excedido.
+                                                                </span>
+                                                            )}
                                                         </div>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={handleSaveDescription}
+                                                            disabled={isDescriptionOverLimit}
+                                                        >
+                                                            Concluir
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="relative group/description">
+                                                    <div
+                                                        ref={descriptionRef}
+                                                        className={cn(
+                                                            "p-3 rounded-md prose prose-sm max-w-none text-gray-700 border border-transparent outline-none focus:outline-none focus-visible:outline-none active:outline-none cursor-pointer hover:bg-gray-50 transition-colors",
+                                                            "[&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:hover:underline [&_a]:no-underline",
+                                                            !isDescriptionExpanded && showExpandButton && "max-h-40 overflow-hidden"
+                                                        )}
+                                                        style={{
+                                                            // Garantir que links fiquem azuis mesmo com prose
+                                                            '--tw-prose-links': '#2563eb',
+                                                        } as React.CSSProperties}
+                                                        tabIndex={-1}
+                                                        onClick={(e) => {
+                                                            // Não ativar edição se clicou em um link
+                                                            if ((e.target as HTMLElement).tagName === 'A') return;
+                                                            setIsDescriptionExpanded(false);
+                                                            setIsEditingDescription(true);
+                                                        }}
+                                                        dangerouslySetInnerHTML={{ __html: linkifyHtml(description || "<p class='text-gray-400'>Clique para adicionar uma descrição...</p>") }}
+                                                    />
+                                                    {/* Gradiente da direita para esquerda no hover */}
+                                                    <div
+                                                        className={cn(
+                                                            "absolute right-0 top-0 bottom-0 w-24 pointer-events-none opacity-0 group-hover/description:opacity-100 transition-opacity duration-200",
+                                                            "bg-gradient-to-l from-white via-white via-60% to-transparent"
+                                                        )}
+                                                    />
+                                                    <div className="absolute top-2 right-2 opacity-0 group-hover/description:opacity-100 transition-opacity z-10">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setIsDescriptionExpanded(false);
+                                                                setIsEditingDescription(true);
+                                                            }}
+                                                            className="h-7 text-xs"
+                                                        >
+                                                            <Pencil className="w-3 h-3 mr-1" /> Editar
+                                                        </Button>
+                                                    </div>
+                                                    {!isDescriptionExpanded && showExpandButton && (
+                                                        <>
+                                                            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                                                            <div className="flex justify-center mt-2">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setIsDescriptionExpanded(true);
+                                                                    }}
+                                                                >
+                                                                    Ver mais
+                                                                </Button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {isDescriptionExpanded && showExpandButton && (
+                                                        <div className="flex justify-center mt-2">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setIsDescriptionExpanded(false);
+                                                                }}
+                                                            >
+                                                                Ver menos
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Attachments Dropzone */}
+                                        <div className="mb-8">
+                                            <label className="text-xs font-medium text-gray-500 uppercase mb-2 block">Arquivos</label>
+                                            <div
+                                                {...getRootProps()}
+                                                className={cn(
+                                                    "border-dashed border-2 rounded-md p-6 mb-4 cursor-pointer group transition-colors",
+                                                    isDragActive ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-green-400"
+                                                )}
+                                            >
+                                                <input {...getInputProps()} />
+                                                <div className="flex flex-col items-center justify-center gap-2 text-gray-400 group-hover:text-green-600">
+                                                    <UploadCloud className="w-8 h-8" />
+                                                    <p className="text-sm">Arraste arquivos ou clique para fazer upload</p>
+                                                </div>
+                                            </div>
+
+                                            {showAttachmentsSkeleton ? (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 animate-pulse">
+                                                    {[1, 2, 3].map((i) => (
+                                                        <div key={i} className="h-24 bg-gray-100 rounded-lg border border-gray-200" />
+                                                    ))}
+                                                </div>
+                                            ) : attachments.length > 0 || uploadingAttachments.length > 0 ? (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                    {/* Uploading Attachments */}
+                                                    <AnimatePresence>
+                                                        {uploadingAttachments.map(att => (
+                                                            <AttachmentCard
+                                                                key={att.id}
+                                                                file={att}
+                                                                onDelete={() => { }} // Desabilitar delete durante upload
+                                                                uploadProgress={att.progress}
+                                                            />
+                                                        ))}
+                                                    </AnimatePresence>
+
+                                                    {/* Existing Attachments */}
+                                                    <AnimatePresence>
+                                                        {attachments.map(att => {
+                                                            const imageIndex = att.type === "image"
+                                                                ? imageAttachments.findIndex(img => img.id === att.id)
+                                                                : -1;
+                                                            return (
+                                                                <AttachmentCard
+                                                                    key={att.id}
+                                                                    file={att}
+                                                                    onDelete={handleAttachmentDeleteClick}
+                                                                    onPreview={imageIndex >= 0 ? () => handleImagePreview(imageIndex) : undefined}
+                                                                />
+                                                            );
+                                                        })}
+                                                    </AnimatePresence>
+                                                </div>
+                                            ) : null}
+                                        </div>
+
+                                        {/* Subtasks */}
+                                        <div>
+                                            <label className="text-xs font-medium text-gray-500 uppercase mb-3 block">Sub-tarefas</label>
+                                            <div className="space-y-2 mb-3">
+                                                {subTasks.map(st => (
+                                                    <div key={st.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 group">
+                                                        <Checkbox checked={st.completed} onCheckedChange={() => handleToggleSubTask(st.id)} />
+                                                        <div className="flex-1 min-w-0">
+                                                            {editingSubTaskId === st.id ? (
+                                                                <Input
+                                                                    value={editingSubTaskTitle}
+                                                                    autoFocus
+                                                                    onChange={(e) => setEditingSubTaskTitle(e.target.value)}
+                                                                    onBlur={() => handleUpdateSubTaskTitle(st.id, editingSubTaskTitle)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === "Enter") {
+                                                                            handleUpdateSubTaskTitle(st.id, editingSubTaskTitle);
+                                                                        } else if (e.key === "Escape") {
+                                                                            setEditingSubTaskId(null);
+                                                                            setEditingSubTaskTitle("");
+                                                                        }
+                                                                    }}
+                                                                    className="h-8 text-sm"
+                                                                    disabled={savingSubTaskId === st.id}
+                                                                />
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    className={cn(
+                                                                        "w-full text-left text-sm truncate",
+                                                                        st.completed && "line-through text-gray-400",
+                                                                        savingSubTaskId === st.id && "opacity-60"
+                                                                    )}
+                                                                    onClick={() => {
+                                                                        setEditingSubTaskId(st.id);
+                                                                        setEditingSubTaskTitle(st.title);
+                                                                    }}
+                                                                >
+                                                                    {st.title}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        <TaskMembersPicker
+                                                            memberIds={st.assignee_id ? [st.assignee_id] : []}
+                                                            onChange={(ids) => handleUpdateSubTaskAssignee(st.id, ids[0] || null)}
+                                                            members={availableUsers}
+                                                            workspaceId={task?.workspaceId || undefined}
+                                                            maxAvatars={1}
+                                                            trigger={
+                                                                <div className="size-7 rounded-full border border-dashed border-gray-200 flex items-center justify-center hover:border-gray-300 transition-colors overflow-hidden">
+                                                                    {st.assignee ? (
+                                                                        st.assignee.avatar ? (
+                                                                            <img
+                                                                                src={st.assignee.avatar}
+                                                                                alt={st.assignee.name}
+                                                                                className="size-7 object-cover"
+                                                                                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-xs text-gray-600 font-medium">
+                                                                                {st.assignee.name.charAt(0)}
+                                                                            </span>
+                                                                        )
+                                                                    ) : (
+                                                                        <User className="size-3 text-gray-400" />
+                                                                    )}
+                                                                </div>
+                                                            }
+                                                        />
+                                                        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={async () => {
+                                                            const oldSubtasks = subTasks; // ✅ Guardar valor antigo para rollback
+                                                            const updated = subTasks.filter(t => t.id !== st.id);
+                                                            // ✅ OPTIMISTIC UI: Atualizar estado ANTES da chamada ao servidor
+                                                            setSubTasks(updated);
+                                                            if (currentTaskId && !isCreateMode) {
+                                                                try {
+                                                                    const result = await updateTaskSubtasks(currentTaskId, updated);
+                                                                    if (result.success) {
+                                                                        invalidateCacheAndNotify(currentTaskId, undefined, { refresh: false });
+                                                                        // Criar log manual para subtarefas
+                                                                        await addComment(
+                                                                            currentTaskId,
+                                                                            `removeu a sub-tarefa: "${st.title}"`,
+                                                                            {
+                                                                                field: "subtasks",
+                                                                                action: "subtask_removed",
+                                                                                subtask_title: st.title
+                                                                            },
+                                                                            "log"
+                                                                        );
+                                                                        // Recarregar atividades do banco
+                                                                        void reloadActivities(currentTaskId);
+                                                                        markSaved(true);
+                                                                    } else {
+                                                                        // ✅ REVERTER se falhar
+                                                                        setSubTasks(oldSubtasks);
+                                                                        toast.error(result.error || "Erro ao remover sub-tarefa");
+                                                                    }
+                                                                } catch (error) {
+                                                                    // ✅ REVERTER em caso de exceção
+                                                                    console.error("Erro ao remover sub-tarefa:", error);
+                                                                    setSubTasks(oldSubtasks);
+                                                                    toast.error("Erro ao remover sub-tarefa");
+                                                                }
+                                                            }
+                                                        }}>
+                                                            <X className="w-3 h-3" />
+                                                        </Button>
                                                     </div>
                                                 ))}
                                             </div>
-                                        ) : activities.length === 0 ? (
-                                            <p className="text-sm text-gray-400 text-center py-4">Nenhuma atividade</p>
-                                        ) : (
-                                            renderedActivities
-                                        )}
-                                    </div>
-                                </div>
-                                
-                                {/* Input Area */}
-                                <div className="pt-4 border-t border-gray-200 bg-gray-50">
-                                    {pendingAttachments.length > 0 && (
-                                        <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
-                                            {pendingAttachments.map((file) => (
-                                                <div key={file.id} className="relative group bg-white border border-gray-200 rounded-md p-2 w-24 h-20 flex flex-col items-center justify-center shrink-0">
-                                                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button 
-                                                            className="bg-red-500 text-white rounded-full p-0.5"
-                                                            onClick={() => {
-                                                                setPendingAttachments(prev => prev.filter(f => f.id !== file.id));
-                                                                setPendingFiles(prev => prev.filter((_, i) => pendingAttachments.findIndex(pf => pf.id === file.id) !== i));
-                                                            }}
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    value={newSubTask}
+                                                    onChange={(e) => setNewSubTask(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && handleAddSubTask()}
+                                                    placeholder="Adicionar item..."
+                                                    className="flex-1"
+                                                />
+                                                <Button onClick={handleAddSubTask} size="icon" variant="outline" className="h-10 w-10">
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        {!isCreateMode && currentTaskId && (
+                                            <div className="mt-6">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <label className="text-xs font-medium text-gray-500 uppercase">Pagamentos</label>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8 gap-2"
+                                                        onClick={() => setCreatePaymentOpen(true)}
+                                                    >
+                                                        <CreditCard className="h-4 w-4" />
+                                                        Novo
+                                                    </Button>
+                                                </div>
+
+                                                {paymentsLoading ? (
+                                                    <div className="space-y-2">
+                                                        {[1, 2].map((item) => (
+                                                            <div key={item} className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+                                                        ))}
                                                     </div>
-                                                    {file.type === "image" ? (
-                                                        <FileImage className="w-8 h-8 text-blue-500 mb-1" />
-                                                    ) : (
-                                                        <FileText className="w-8 h-8 text-red-500 mb-1" />
-                                                    )}
-                                                    <span className="text-[10px] text-gray-600 truncate w-full text-center">{file.name}</span>
+                                                ) : payments.length === 0 ? (
+                                                    <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
+                                                        Nenhum pagamento vinculado.
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-3">
+                                                        {/* Total Summary */}
+                                                        {payments.length > 0 && (
+                                                            <div className="grid grid-cols-2 gap-3 mb-2">
+                                                                <div className="bg-green-50 rounded-lg p-2 border border-green-100 flex flex-col">
+                                                                    <span className="text-[10px] uppercase font-bold text-green-600/70">Receitas</span>
+                                                                    <span className="text-sm font-bold text-green-700">
+                                                                        {formatCurrency(payments.filter(p => p.type === "income").reduce((acc, curr) => acc + curr.amount, 0))}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="bg-red-50 rounded-lg p-2 border border-red-100 flex flex-col">
+                                                                    <span className="text-[10px] uppercase font-bold text-red-600/70">Despesas</span>
+                                                                    <span className="text-sm font-bold text-red-700">
+                                                                        {formatCurrency(payments.filter(p => p.type === "expense").reduce((acc, curr) => acc + curr.amount, 0))}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {payments.map((payment) => {
+                                                            const statusLabel = payment.status === "paid"
+                                                                ? "Pago"
+                                                                : payment.status === "scheduled"
+                                                                    ? "Agendado"
+                                                                    : payment.status === "cancelled"
+                                                                        ? "Cancelado"
+                                                                        : "Pendente";
+                                                            const statusStyle = payment.status === "paid"
+                                                                ? "bg-green-100 text-green-700"
+                                                                : payment.status === "scheduled"
+                                                                    ? "bg-blue-100 text-blue-700"
+                                                                    : payment.status === "cancelled"
+                                                                        ? "bg-red-100 text-red-700"
+                                                                        : "bg-gray-100 text-gray-700";
+                                                            const detailLabel = payment.client_name || payment.counterparty_name;
+                                                            return (
+                                                                <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                                                                            <span>{formatPaymentDate(payment.due_date || payment.created_at)}</span>
+                                                                            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", statusStyle)}>
+                                                                                {statusLabel}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-sm font-medium text-gray-900 truncate">{payment.description}</p>
+                                                                        {detailLabel && (
+                                                                            <p className="text-xs text-gray-500">Cliente: {detailLabel}</p>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className={cn(
+                                                                        "text-sm font-semibold",
+                                                                        payment.type === "income" ? "text-green-600" : "text-gray-900"
+                                                                    )}>
+                                                                        {payment.type === "income" ? "+" : "-"} {formatCurrency(payment.amount)}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                            </div>
+
+                            {/* RIGHT COLUMN: Context & Timeline */}
+                            <div className="bg-gray-50 p-6 flex flex-col overflow-hidden h-full">
+                                {shouldShowSkeleton ? (
+                                    // Timeline Skeleton
+                                    <div className="space-y-4 animate-pulse">
+                                        <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
+                                        <div className="space-y-4">
+                                            {[1, 2, 3].map((i) => (
+                                                <div key={i} className="flex gap-3">
+                                                    <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0" />
+                                                    <div className="flex-1 space-y-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-24 h-4 bg-gray-200 rounded" />
+                                                            <div className="w-16 h-3 bg-gray-200 rounded" />
+                                                        </div>
+                                                        <div className="w-full h-10 bg-gray-100 rounded-lg" />
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
-                                    )}
-                                    
-                                    {isRecording ? (
-                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                            <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md h-14">
-                                                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
-                                                <div className="flex-1 flex items-center justify-center gap-4">
-                                                    <div className="flex-1 h-8 flex items-center justify-center">
-                                                        {mediaStream && <RecordingVisualizer stream={mediaStream} />}
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Origin Card */}
+                                        {task?.contextMessage && (
+                                            <>
+                                                <h3 className="text-sm font-semibold text-gray-700 mb-4">Contexto Original</h3>
+                                                <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4 shadow-sm flex items-start gap-3">
+                                                    <div className={cn(
+                                                        "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+                                                        task.contextMessage.type === "audio" ? "bg-green-100" : "bg-blue-100"
+                                                    )}>
+                                                        {task.contextMessage.type === "audio" ? (
+                                                            <Play className="w-5 h-5 text-green-600" />
+                                                        ) : (
+                                                            <MessageSquare className="w-5 h-5 text-blue-600" />
+                                                        )}
                                                     </div>
-                                                    <span className="text-sm font-mono text-red-700 min-w-[50px] text-right">
-                                                        {formatTime(recordingTime)}
-                                                    </span>
+                                                    <div className="flex-1">
+                                                        <p className="text-xs text-gray-500 mb-1 font-medium">
+                                                            Criada via {task.contextMessage.type === "audio" ? "WhatsApp" : "App Web"}
+                                                        </p>
+                                                        <p className="text-sm text-gray-700 mb-1">"{task.contextMessage.content}"</p>
+                                                        <p className="text-xs text-gray-400">{task.contextMessage.timestamp}</p>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-red-500"
-                                                onClick={handleCancelRecording}
-                                                title="Cancelar gravação"
+                                            </>
+                                        )}
+
+                                        {/* Timeline */}
+                                        <div className="flex-1 flex flex-col min-h-0">
+                                            <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Histórico</h4>
+
+                                            <div
+                                                ref={activitiesScrollRef}
+                                                className="flex-1 overflow-y-auto mb-4 relative pr-2 custom-scrollbar"
                                             >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                size="icon"
-                                                className="bg-green-600 hover:bg-green-700"
-                                                onClick={handleStopRecording}
-                                                title="Finalizar gravação"
-                                            >
-                                                <Check className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <div className="relative">
-                                            <input {...getCommentInputProps()} />
-                                            <Input
-                                                value={comment}
-                                                onChange={(e) => setComment(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter" && !e.shiftKey) {
-                                                        e.preventDefault();
-                                                        handleSendComment();
-                                                    }
-                                                }}
-                                                placeholder="Adicionar comentário..."
-                                                className="pr-32 bg-white shadow-sm"
-                                            />
-                                            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-gray-400 hover:text-green-600"
-                                                    onClick={openCommentUpload}
-                                                    title="Anexar arquivo"
-                                                >
-                                                    <Paperclip className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-gray-400 hover:text-red-500"
-                                                    onClick={startRecording}
-                                                    title="Enviar áudio"
-                                                >
-                                                    <Mic className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    size="icon"
-                                                    className="h-8 w-8 bg-green-600 hover:bg-green-700"
-                                                    onClick={handleSendComment}
-                                                    disabled={!comment.trim() && pendingAttachments.length === 0}
-                                                    title="Enviar comentário"
-                                                >
-                                                    <Send className="h-3 w-3" />
-                                                </Button>
+                                                <div className="absolute left-[7px] top-0 bottom-0 w-px bg-gray-200" />
+
+                                                <div className="space-y-4 relative pl-1">
+                                                    {showCommentsSkeleton ? (
+                                                        <div className="space-y-4 py-2">
+                                                            {[1, 2, 3].map((i) => (
+                                                                <div key={i} className="flex gap-3 relative z-10">
+                                                                    <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 shrink-0 animate-pulse" />
+                                                                    <div className="flex-1 space-y-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="w-24 h-4 bg-gray-100 rounded animate-pulse" />
+                                                                            <div className="w-16 h-3 bg-gray-100 rounded animate-pulse" />
+                                                                        </div>
+                                                                        <div className="w-full h-10 bg-gray-50 rounded-lg animate-pulse border border-gray-100" />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : activities.length === 0 ? (
+                                                        <p className="text-sm text-gray-400 text-center py-4">Nenhuma atividade</p>
+                                                    ) : (
+                                                        renderedActivities
+                                                    )}
+                                                </div>
+
+                                                {hasMoreComments && (
+                                                    <div className="flex justify-center pb-4">
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={loadMoreComments}
+                                                            disabled={isLoadingComments}
+                                                        >
+                                                            {isLoadingComments ? (
+                                                                <>
+                                                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                                    Carregando...
+                                                                </>
+                                                            ) : (
+                                                                "Carregar mais"
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Input Area */}
+                                            <div className="pt-4 border-t border-gray-200 bg-gray-50">
+                                                {pendingAttachments.length > 0 && (
+                                                    <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+                                                        {pendingAttachments.map((file) => (
+                                                            <div key={file.id} className="relative group bg-white border border-gray-200 rounded-md p-2 w-24 h-20 flex flex-col items-center justify-center shrink-0">
+                                                                <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <button
+                                                                        className="bg-red-500 text-white rounded-full p-0.5"
+                                                                        onClick={() => {
+                                                                            setPendingAttachments(prev => prev.filter(f => f.id !== file.id));
+                                                                            setPendingFiles(prev => prev.filter((_, i) => pendingAttachments.findIndex(pf => pf.id === file.id) !== i));
+                                                                        }}
+                                                                    >
+                                                                        <X className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
+                                                                {file.type === "image" ? (
+                                                                    <FileImage className="w-8 h-8 text-blue-500 mb-1" />
+                                                                ) : (
+                                                                    <FileText className="w-8 h-8 text-red-500 mb-1" />
+                                                                )}
+                                                                <span className="text-[10px] text-gray-600 truncate w-full text-center">{file.name}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {isRecording ? (
+                                                    <AudioRecorderDisplay
+                                                        stream={mediaStream}
+                                                        onCancel={handleCancelRecording}
+                                                        onStop={handleStopRecording}
+                                                    />
+                                                ) : (
+                                                    <div className="relative">
+                                                        <input {...getCommentInputProps()} />
+                                                        <Input
+                                                            value={comment}
+                                                            onChange={(e) => setComment(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" && !e.shiftKey && !isSubmitting) {
+                                                                    e.preventDefault();
+                                                                    handleSendComment();
+                                                                }
+                                                            }}
+                                                            placeholder="Adicionar comentário..."
+                                                            className="pr-32 bg-white shadow-sm"
+                                                            disabled={isSubmitting}
+                                                        />
+                                                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-gray-400 hover:text-green-600"
+                                                                onClick={openCommentUpload}
+                                                                title="Anexar arquivo"
+                                                            >
+                                                                <Paperclip className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-gray-400 hover:text-red-500"
+                                                                onClick={startRecording}
+                                                                title="Enviar áudio"
+                                                            >
+                                                                <Mic className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                size="icon"
+                                                                className="h-8 w-8 bg-green-600 hover:bg-green-700"
+                                                                onClick={handleSendComment}
+                                                                disabled={isSubmitting || (!comment.trim() && pendingAttachments.length === 0)}
+                                                                title="Enviar comentário"
+                                                            >
+                                                                <Send className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+                                    </>
+                                )}
                             </div>
-                                </>
-                            )}
                         </div>
-                    </div>
                     </DialogPrimitive.Content>
                 </DialogPortal>
             </Dialog>
-            
+
+            <CreateTransactionModal
+                open={createPaymentOpen}
+                onOpenChange={setCreatePaymentOpen}
+                initialRelatedTask={currentTaskId ? { id: currentTaskId, title } : undefined}
+                initialWorkspaceId={workspaceId || undefined}
+                onCreated={() => loadPayments(true)}
+            />
+
             {/* Modal de Confirmação de Exclusão de Arquivo */}
             <ConfirmModal
                 open={!!attachmentToDelete}
@@ -2166,7 +3099,7 @@ export function TaskDetailModal({
                         <DialogTitle className="text-lg font-semibold mb-4">
                             Compartilhar Tarefa
                         </DialogTitle>
-                        
+
                         <div className="space-y-4">
                             {/* Seleção de Tipo */}
                             <div className="space-y-2">
@@ -2200,7 +3133,7 @@ export function TaskDetailModal({
                                             Apenas membros do workspace
                                         </p>
                                     </button>
-                                    
+
                                     <button
                                         type="button"
                                         onClick={() => setShareLinkType("public")}
@@ -2290,5 +3223,5 @@ export function TaskDetailModal({
                 </DialogPortal>
             </Dialog>
         </>
-        );
+    );
 }

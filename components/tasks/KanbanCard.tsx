@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState, useRef, useEffect } from "react";
+import React, { useCallback, useState, useMemo, memo } from "react";
 import { 
   GitPullRequest, 
   MessageSquare, 
@@ -13,7 +13,7 @@ import {
   CheckCircle2
 } from "lucide-react";
 import { useTaskPreload } from "@/hooks/use-task-preload";
-import { Avatar } from "./Avatar";
+import { Avatar, AvatarGroup } from "./Avatar";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -22,7 +22,6 @@ import { TASK_CONFIG, mapLabelToStatus, ORDERED_STATUSES } from "@/lib/config/ta
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { updateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 import {
@@ -137,55 +136,47 @@ function KanbanCardComponent({
   disabled = false,
 }: KanbanCardProps) {
   const { preloadTask, cancelPreload } = useTaskPreload();
-  
-  // Estado para edição de título
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleValue, setTitleValue] = useState(title);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
   // Estados para controlar abertura dos Popovers
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
-
-  // Sincronizar titleValue com prop title quando não estiver editando
-  useEffect(() => {
-    if (!isEditingTitle) {
-      setTitleValue(title);
-    }
-  }, [title, isEditingTitle]);
-
-  // Auto-focus no input de título
-  useEffect(() => {
-    if (isEditingTitle && titleInputRef.current) {
-      titleInputRef.current.focus();
-      titleInputRef.current.select();
-    }
-  }, [isEditingTitle]);
   
-  // Lógica de Data
-  const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
-  const isToday = dueDate && isTodayFunc(dueDate);
-  const isFocusActive = isNextSunday(dueDate);
-  const isUrgentActive = isToday || priority === "high" || priority === "urgent";
+  // Memoizar cálculos de data (evitar recalcular a cada render)
+  const dateCalculations = useMemo(() => {
+    const isOverdue = dueDate && new Date(dueDate) < new Date() && !completed;
+    const isToday = dueDate && isTodayFunc(dueDate);
+    const isFocusActive = isNextSunday(dueDate);
+    const isUrgentActive = !completed && (isToday || priority === "high" || priority === "urgent");
+    return { isOverdue, isToday, isFocusActive, isUrgentActive };
+  }, [dueDate, completed, priority]);
+  
+  const { isOverdue, isToday, isFocusActive, isUrgentActive } = dateCalculations;
 
-  // Configuração Visual
-  const dbStatus = mapLabelToStatus(status);
-  const statusConfig = TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
+  // Memoizar configuração visual
+  const statusConfig = useMemo(() => {
+    const dbStatus = mapLabelToStatus(status);
+    return TASK_CONFIG[dbStatus] || TASK_CONFIG.todo;
+  }, [status]);
 
-  const getGroupColorClass = (colorName?: string) => {
-    if (!colorName || colorName.startsWith("#")) return null;
-    const colorMap: Record<string, string> = {
-      "red": "bg-red-500", "blue": "bg-blue-500", "green": "bg-green-500",
-      "yellow": "bg-yellow-500", "purple": "bg-purple-500", "pink": "bg-pink-500",
-      "orange": "bg-orange-500", "slate": "bg-slate-500", "cyan": "bg-cyan-500",
-      "indigo": "bg-indigo-500",
+  // Memoizar cálculo de cor do grupo
+  const groupColorInfo = useMemo(() => {
+    const getGroupColorClass = (colorName?: string) => {
+      if (!colorName || colorName.startsWith("#")) return null;
+      const colorMap: Record<string, string> = {
+        "red": "bg-red-500", "blue": "bg-blue-500", "green": "bg-green-500",
+        "yellow": "bg-yellow-500", "purple": "bg-purple-500", "pink": "bg-pink-500",
+        "orange": "bg-orange-500", "slate": "bg-slate-500", "cyan": "bg-cyan-500",
+        "indigo": "bg-indigo-500",
+      };
+      return colorMap[colorName];
     };
-    return colorMap[colorName];
-  };
+    return {
+      groupColorClass: getGroupColorClass(groupColor),
+      isHexColor: groupColor?.startsWith("#")
+    };
+  }, [groupColor]);
   
-  const groupColorClass = getGroupColorClass(groupColor);
-  const isHexColor = groupColor?.startsWith("#");
+  const { groupColorClass, isHexColor } = groupColorInfo;
 
   // Drag and Drop
   const {
@@ -201,15 +192,15 @@ function KanbanCardComponent({
     data: { type: 'task', taskId: id }
   });
 
-  const dragStyle = {
+  // Memoizar estilo de drag (evitar recriar objeto a cada render)
+  const dragStyle = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.3 : disabled ? 0.75 : 1, // Opacidade menor no original quando arrasta (padrão Trello)
-    willChange: 'transform',
-  };
+    transition: isDragging ? 'none' : transition,
+    willChange: isDragging ? 'transform' as const : undefined,
+  }), [transform, transition, isDragging]);
 
-  // Actions - Optimistic UI
-  const handleDateUpdate = async (date: Date | undefined) => {
+  // Actions - Optimistic UI (memoizar callbacks)
+  const handleDateUpdate = useCallback(async (date: Date | undefined) => {
     setIsDateOpen(false); // Fechar Popover imediatamente
     const previousDueDate = dueDate;
     onTaskUpdatedOptimistic?.(id, { dueDate: date ? date.toISOString() : undefined });
@@ -231,9 +222,9 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
       toast.error("Erro ao atualizar data");
     }
-  };
+  }, [id, dueDate, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleAssigneeUpdate = async (memberId: string | null) => {
+  const handleAssigneeUpdate = useCallback(async (memberId: string | null) => {
     setIsAssigneeOpen(false); // Fechar Popover imediatamente
     const previousAssignees = assignees;
     const updatedAssignees = memberId && members 
@@ -255,47 +246,9 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { assignees: previousAssignees });
       toast.error("Erro ao atualizar responsável");
     }
-  };
+  }, [id, assignees, members, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleTitleSave = async (newTitle: string) => {
-    if (newTitle.trim() === title) {
-      setIsEditingTitle(false);
-      return;
-    }
-
-    if (!newTitle.trim()) {
-      toast.error("O título não pode estar vazio");
-      setTitleValue(title);
-      setIsEditingTitle(false);
-      return;
-    }
-
-    const trimmedTitle = newTitle.trim();
-    const previousTitle = title;
-    
-    onTaskUpdatedOptimistic?.(id, { title: trimmedTitle });
-    setTitleValue(trimmedTitle);
-    setIsEditingTitle(false);
-
-    try {
-      const result = await updateTask({ id, title: trimmedTitle });
-      
-      if (!result.success) {
-        onTaskUpdatedOptimistic?.(id, { title: previousTitle });
-        setTitleValue(previousTitle);
-        toast.error("Erro ao atualizar título");
-      } else {
-        toast.success("Título atualizado");
-        onTaskUpdated?.();
-      }
-    } catch (error) {
-      onTaskUpdatedOptimistic?.(id, { title: previousTitle });
-      setTitleValue(previousTitle);
-      toast.error("Erro ao atualizar título");
-    }
-  };
-
-  const handleStatusUpdate = async (newStatus: string) => {
+  const handleStatusUpdate = useCallback(async (newStatus: string) => {
     setIsStatusOpen(false); // Fechar Popover imediatamente
     const previousStatus = status;
     onTaskUpdatedOptimistic?.(id, { status: newStatus });
@@ -315,9 +268,9 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { status: previousStatus });
       toast.error("Erro ao atualizar status");
     }
-  };
+  }, [id, status, onTaskUpdatedOptimistic, onTaskUpdated]);
 
-  const handleSmartTrigger = async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
+  const handleSmartTrigger = useCallback(async (type: 'focus' | 'urgent', e: React.MouseEvent) => {
     // IMPORTANTE: Stop propagation para não iniciar o drag ao clicar
     e.stopPropagation();
     e.preventDefault();
@@ -353,15 +306,19 @@ function KanbanCardComponent({
       onTaskUpdatedOptimistic?.(id, { dueDate: previousDueDate });
       toast.error("Erro ao atualizar tarefa");
     }
-  };
+  }, [id, dueDate, onTaskUpdatedOptimistic, onTaskUpdated]);
 
   // Handler de clique no card (abre detalhes)
+  // O dnd-kit com activationConstraint.distance > 0 já distingue click vs drag nativamente.
+  // Se o mouse mover > 5px, ativa o drag e o click NÃO dispara.
   const handleClick = useCallback(() => {
-    // Não precisa verificar isDragging aqui se o sensor do pai tiver 'distance: 8'
-    onClick?.();
-  }, [onClick]);
+    if (!isDragging) {
+      onClick?.();
+    }
+  }, [onClick, isDragging]);
 
-  const taskForMenu = {
+  // Memoizar objeto taskForMenu
+  const taskForMenu = useMemo(() => ({
     id,
     title,
     description: null,
@@ -371,27 +328,35 @@ function KanbanCardComponent({
     assignee_id: assignees[0]?.id || null,
     workspace_id: null,
     origin_context: {},
-  };
+  }), [id, title, status, priority, dueDate, assignees]);
 
-  // Função helper para parar propagação (usada em botões e inputs)
-  const stopProp = (e: React.BaseSyntheticEvent) => {
+  // Função helper para parar propagação (memoizada)
+  const stopProp = useCallback((e: React.BaseSyntheticEvent) => {
     e.stopPropagation();
-  };
+  }, []);
+
+  // Memoizar handlers de mouse
+  const handleMouseEnter = useCallback(() => {
+    preloadTask(id, null);
+  }, [id, preloadTask]);
 
   return (
     <div
       ref={setNodeRef}
       style={dragStyle}
       {...attributes}
-      {...(disabled ? {} : listeners)} // VOLTAMOS os listeners para a raiz
+      {...(disabled ? {} : listeners)} // Listeners de drag na raiz
       className={cn(
-        "group bg-white rounded-xl p-3 border border-gray-200 shadow-sm w-full relative",
-        "hover:shadow-md transition-all duration-200 flex flex-col min-h-[112px]",
-        disabled ? "opacity-75 cursor-default" : "cursor-grab active:cursor-grabbing",
-        isDragging && "shadow-xl rotate-2 z-50 ring-2 ring-blue-500/20"
+        "group rounded-xl p-2.5 border w-full relative touch-none select-none hover:border-[#050815] hover:ring-[2px] hover:ring-inset hover:ring-[#050815]",
+        "flex flex-col",
+        !isDragging && "motion-safe:transition-all motion-safe:duration-200",
+        disabled ? "opacity-75 cursor-default" : isDragging ? "cursor-grabbing" : "cursor-grab",
+        isDragging
+          ? "opacity-40 bg-gray-50 border-dashed border-gray-300 shadow-none"
+          : "bg-white border-gray-200"
       )}
       onClick={handleClick}
-      onMouseEnter={() => preloadTask(id, null)}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={cancelPreload}
     >
       {/* Menu de Ações (Absoluto) */}
@@ -411,13 +376,13 @@ function KanbanCardComponent({
       {/* Indicador de Grupo */}
       {(groupColorClass || isHexColor) && (
         <div 
-          className={cn("w-[30px] h-[5px] rounded-full mb-3", groupColorClass)}
+          className={cn("w-[30px] h-[5px] rounded-full mb-2", groupColorClass)}
           style={isHexColor ? { backgroundColor: groupColor } : undefined}
         />
       )}
 
-      {/* Header: Status com edição rápida */}
-      <div className="flex items-center justify-between mb-2">
+      {/* Header: Status com edição rápida e Tag do Projeto */}
+      <div className="flex items-center justify-between mb-1.5 gap-2">
         <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
           <PopoverTrigger asChild>
             <Badge
@@ -461,10 +426,28 @@ function KanbanCardComponent({
             </Command>
           </PopoverContent>
         </Popover>
+        
+        {/* Tags do Projeto - lado direito */}
+        {tags.length > 0 && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {tags.map((tag, index) => (
+              <Badge
+                key={index}
+                variant="outline"
+                className={cn(
+                  "text-[9px] px-1.5 py-0 h-4 font-normal text-gray-500 border-gray-200 bg-gray-50",
+                  "hover:bg-gray-50"
+                )}
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Body: Checkbox & Título */}
-      <div className="mb-3 flex-1 flex flex-col min-h-0 relative z-20">
+      <div className="mb-2 flex-1 flex flex-col min-h-0 relative z-20">
         <div className="flex gap-2">
           <div 
             className="pt-0.5 flex-shrink-0"
@@ -479,70 +462,20 @@ function KanbanCardComponent({
           </div>
           
           <div className="flex-1 min-w-0">
-            {isEditingTitle ? (
-              <Input
-                ref={titleInputRef}
-                value={titleValue}
-                onChange={(e) => setTitleValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleTitleSave(titleValue);
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    setTitleValue(title);
-                    setIsEditingTitle(false);
-                  }
-                }}
-                onBlur={() => handleTitleSave(titleValue)}
-                onClick={stopProp}
-                onPointerDown={stopProp} // Protege Input de Drag
-                className={cn(
-                  "font-semibold text-gray-800 text-sm mb-2 leading-snug",
-                  "border border-gray-300 focus-visible:ring-2 focus-visible:ring-gray-200",
-                  "px-2 py-1 rounded",
-                  completed && "line-through text-gray-500"
-                )}
-              />
-            ) : (
-              <h4 
-                className={cn(
-                  "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
-                  "cursor-text hover:bg-gray-50 rounded px-1 -mx-1",
-                  completed && "line-through text-gray-500"
-                )}
-                onClick={(e) => {
-                  e.stopPropagation(); // Impede abrir modal ao clicar para editar
-                  setIsEditingTitle(true);
-                }}
-                // NOTA: Não colocamos stopProp no pointerDown aqui para permitir arrastar pelo título se não for edição
-              >
-                {title}
-              </h4>
-            )}
+            <h4
+              className={cn(
+                "font-semibold text-gray-800 text-sm mb-2 leading-snug line-clamp-3 transition-colors",
+                completed && "line-through text-gray-500"
+              )}
+            >
+              {title}
+            </h4>
           </div>
         </div>
-        
-        {/* Tags */}
-        {tags.length > 0 && (
-          <div className="flex items-center gap-1 flex-wrap flex-shrink-0 mt-1">
-            {tags.map((tag, index) => (
-              <span
-                key={index}
-                className={cn(
-                  "text-[10px] px-1.5 py-0.5 rounded-md font-semibold uppercase tracking-wide",
-                  getTagColor(tag)
-                )}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Footer: Meta & Ações */}
-      <div className="mt-auto pt-3 border-t border-gray-50 flex justify-between items-center relative z-20">
+      <div className="mt-auto pt-2 border-t border-gray-50 flex justify-between items-center relative z-20">
         
         {/* Lado Esquerdo: Data & Smart Triggers */}
         <div className="flex items-center gap-2">
@@ -557,8 +490,9 @@ function KanbanCardComponent({
                 <div className="flex items-center gap-1.5">
                   {dueDate ? (
                     <>
-                      <CalendarIcon className={cn("w-3.5 h-3.5", isOverdue ? "text-red-600" : isToday ? "text-green-600" : "text-gray-400")} />
+                      <CalendarIcon className={cn("w-3.5 h-3.5", completed ? "text-gray-400" : isOverdue ? "text-red-600" : isToday ? "text-green-600" : "text-gray-400")} />
                       <span className={cn("text-xs font-medium", 
+                        completed ? "text-gray-400" :
                         isOverdue ? "text-red-600 bg-red-50 px-1.5 py-0.5 rounded" : 
                         isToday ? "text-green-600" : "text-gray-500"
                       )}>
@@ -659,11 +593,10 @@ function KanbanCardComponent({
               <PopoverTrigger asChild>
                 <button className="outline-none rounded-full transition-all hover:scale-105 hover:ring-2 hover:ring-gray-100">
                   {assignees.length > 0 ? (
-                    <Avatar
-                      name={assignees[0].name}
-                      avatar={assignees[0].avatar}
+                    <AvatarGroup
+                      users={assignees}
+                      max={3}
                       size="sm"
-                      className="border border-white shadow-sm"
                     />
                   ) : (
                     <div className="size-6 rounded-full border border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 bg-white text-gray-300 hover:text-gray-400">
@@ -714,4 +647,27 @@ function KanbanCardComponent({
   );
 }
 
-export const KanbanCard = KanbanCardComponent;
+// Memoizar componente para evitar re-renders desnecessários
+export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
+  // Comparação personalizada para otimizar re-renders
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.title === nextProps.title &&
+    prevProps.completed === nextProps.completed &&
+    prevProps.status === nextProps.status &&
+    prevProps.priority === nextProps.priority &&
+    prevProps.dueDate === nextProps.dueDate &&
+    prevProps.disabled === nextProps.disabled &&
+    prevProps.groupColor === nextProps.groupColor &&
+    prevProps.subtasksCount === nextProps.subtasksCount &&
+    prevProps.commentsCount === nextProps.commentsCount &&
+    prevProps.onClick === nextProps.onClick &&
+    prevProps.onTaskUpdated === nextProps.onTaskUpdated &&
+    prevProps.onTaskUpdatedOptimistic === nextProps.onTaskUpdatedOptimistic &&
+    prevProps.onDelete === nextProps.onDelete &&
+    prevProps.onToggleComplete === nextProps.onToggleComplete &&
+    JSON.stringify(prevProps.assignees) === JSON.stringify(nextProps.assignees) &&
+    JSON.stringify(prevProps.tags) === JSON.stringify(nextProps.tags) &&
+    JSON.stringify(prevProps.members) === JSON.stringify(nextProps.members)
+  );
+});

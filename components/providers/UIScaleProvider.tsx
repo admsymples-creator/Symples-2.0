@@ -14,7 +14,7 @@ const UIContext = createContext<UIContextType | undefined>(undefined);
 const STORAGE_KEY = "symples-ui-scale";
 
 export function UIScaleProvider({ children }: { children: ReactNode }) {
-  const [scale, setScaleState] = useState<UIScale>(1);
+  const [scale, setScaleState] = useState<UIScale>(0.85);
 
   useEffect(() => {
     const savedScale = localStorage.getItem(STORAGE_KEY);
@@ -23,8 +23,11 @@ export function UIScaleProvider({ children }: { children: ReactNode }) {
       if ([0.85, 0.925, 1, 1.125].includes(parsed)) {
         setScaleState(parsed);
         document.documentElement.style.fontSize = `${parsed * 100}%`;
+        return;
       }
     }
+
+    document.documentElement.style.fontSize = "85%";
   }, []);
 
   const setScale = (newScale: UIScale) => {
@@ -44,6 +47,8 @@ export function UIScaleProvider({ children }: { children: ReactNode }) {
                 if (saved) {
                   var scale = parseFloat(saved);
                   document.documentElement.style.fontSize = (scale * 100) + '%';
+                } else {
+                  document.documentElement.style.fontSize = '85%';
                 }
               } catch (e) {}
             })();

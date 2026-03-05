@@ -15,19 +15,29 @@ interface CachedExtendedData {
   ttl: number;
 }
 
+interface CachedWorkspaceData<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
 /**
  * Hook para gerenciar cache de tarefas em memória
  * Cache de dados básicos: 5 minutos
  * Cache de dados estendidos: 2 minutos
+ * Cache de members/tags por workspace: 5 minutos
  */
 export function useTaskCache() {
   // Cache em memória usando Map
   const basicCacheRef = useRef<Map<string, CachedBasicData>>(new Map());
   const extendedCacheRef = useRef<Map<string, CachedExtendedData>>(new Map());
+  const membersCacheRef = useRef<Map<string, CachedWorkspaceData<Array<{ id: string; name: string; avatar?: string }>>>>(new Map());
+  const tagsCacheRef = useRef<Map<string, CachedWorkspaceData<string[]>>>(new Map());
 
   // TTLs em milissegundos
   const BASIC_TTL = 5 * 60 * 1000; // 5 minutos
   const EXTENDED_TTL = 2 * 60 * 1000; // 2 minutos
+  const WORKSPACE_TTL = 5 * 60 * 1000; // 5 minutos
 
   /**
    * Limpa entradas expiradas do cache
@@ -46,6 +56,20 @@ export function useTaskCache() {
     for (const [key, value] of extendedCacheRef.current.entries()) {
       if (now - value.timestamp > value.ttl) {
         extendedCacheRef.current.delete(key);
+      }
+    }
+
+    // Limpar cache de members por workspace
+    for (const [key, value] of membersCacheRef.current.entries()) {
+      if (now - value.timestamp > value.ttl) {
+        membersCacheRef.current.delete(key);
+      }
+    }
+
+    // Limpar cache de tags por workspace
+    for (const [key, value] of tagsCacheRef.current.entries()) {
+      if (now - value.timestamp > value.ttl) {
+        tagsCacheRef.current.delete(key);
       }
     }
   }, []);
@@ -109,6 +133,58 @@ export function useTaskCache() {
   }, []);
 
   /**
+   * Obtém members do workspace do cache se ainda válidos
+   */
+  const getWorkspaceMembers = useCallback((workspaceId: string): Array<{ id: string; name: string; avatar?: string }> | null => {
+    cleanExpiredEntries();
+    const cached = membersCacheRef.current.get(workspaceId);
+    if (!cached) return null;
+    const now = Date.now();
+    if (now - cached.timestamp > cached.ttl) {
+      membersCacheRef.current.delete(workspaceId);
+      return null;
+    }
+    return cached.data;
+  }, [cleanExpiredEntries]);
+
+  /**
+   * Armazena members do workspace no cache
+   */
+  const setWorkspaceMembers = useCallback((workspaceId: string, data: Array<{ id: string; name: string; avatar?: string }>) => {
+    membersCacheRef.current.set(workspaceId, {
+      data,
+      timestamp: Date.now(),
+      ttl: WORKSPACE_TTL,
+    });
+  }, []);
+
+  /**
+   * Obtém tags do workspace do cache se ainda válidas
+   */
+  const getWorkspaceTags = useCallback((workspaceId: string): string[] | null => {
+    cleanExpiredEntries();
+    const cached = tagsCacheRef.current.get(workspaceId);
+    if (!cached) return null;
+    const now = Date.now();
+    if (now - cached.timestamp > cached.ttl) {
+      tagsCacheRef.current.delete(workspaceId);
+      return null;
+    }
+    return cached.data;
+  }, [cleanExpiredEntries]);
+
+  /**
+   * Armazena tags do workspace no cache
+   */
+  const setWorkspaceTags = useCallback((workspaceId: string, data: string[]) => {
+    tagsCacheRef.current.set(workspaceId, {
+      data,
+      timestamp: Date.now(),
+      ttl: WORKSPACE_TTL,
+    });
+  }, []);
+
+  /**
    * Invalida cache de uma tarefa específica
    */
   const invalidate = useCallback((taskId: string) => {
@@ -122,6 +198,8 @@ export function useTaskCache() {
   const clear = useCallback(() => {
     basicCacheRef.current.clear();
     extendedCacheRef.current.clear();
+    membersCacheRef.current.clear();
+    tagsCacheRef.current.clear();
   }, []);
 
   /**
@@ -143,12 +221,23 @@ export function useTaskCache() {
     getExtendedData,
     setBasicData,
     setExtendedData,
+    getWorkspaceMembers,
+    setWorkspaceMembers,
+    getWorkspaceTags,
+    setWorkspaceTags,
     invalidate,
     clear,
     hasBasicData,
     hasExtendedData,
   };
 }
+
+
+
+
+
+
+
 
 
 

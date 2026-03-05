@@ -2,6 +2,7 @@
 
 import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { createMentionNotificationsForTaskText } from "@/lib/utils/mentions";
 
 /**
  * Interface para detalhes completos da tarefa
@@ -32,6 +33,7 @@ export interface TaskDetails {
     email: string | null;
     avatar_url: string | null;
   } | null;
+  assignees?: Array<{ id: string; name: string; avatar?: string }>;
   creator: {
     id: string;
     full_name: string | null;
@@ -88,6 +90,7 @@ export interface TaskBasicDetails {
     email: string | null;
     avatar_url: string | null;
   } | null;
+  assignees?: Array<{ id: string; name: string; avatar?: string }>;
   creator: {
     id: string;
     full_name: string | null;
@@ -174,6 +177,14 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
       workspace:workspaces!tasks_workspace_id_fkey (
         id,
         name
+      ),
+      task_members (
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
       )
     `)
     .eq("id", taskId)
@@ -184,13 +195,43 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     return null;
   }
 
-  // Extrair tags do origin_context se existir
+  // Extrair tags da coluna tags (preferencial) ou do origin_context (fallback)
   let tags: string[] = [];
-  if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
+  if ((task as any).tags && Array.isArray((task as any).tags)) {
+    tags = (task as any).tags;
+  } else if (task.origin_context && typeof task.origin_context === 'object' && 'tags' in task.origin_context) {
     const contextTags = (task.origin_context as any).tags;
     if (Array.isArray(contextTags)) {
       tags = contextTags;
     }
+  }
+
+  // Transformar task_members em array assignees
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if (task.task_members && Array.isArray(task.task_members)) {
+    task.task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
   }
 
   return {
@@ -210,7 +251,313 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
     assignee: task.assignee,
     creator: task.creator,
     workspace: task.workspace,
+    assignees, // Adicionar array de assignees
   };
+}
+
+/**
+ * Busca básico + estendido em uma única round-trip (menos latência ao abrir o modal).
+ * Um único auth + cliente; queries básica, anexos e comentários em paralelo.
+ */
+export async function getTaskDetailsForModal(
+  taskId: string,
+  commentsLimit: number = 50
+): Promise<{ basic: TaskBasicDetails | null; extended: TaskExtendedDetails | null }> {
+  const result = await getFullModalData(taskId, null, commentsLimit);
+  return { basic: result.basic, extended: result.extended };
+}
+
+/**
+ * Resultado completo para abrir o modal: task + attachments + comments + members + tags.
+ * **Uma única server action** = 1 auth + todas as queries em paralelo.
+ */
+export interface FullModalData {
+  basic: TaskBasicDetails | null;
+  extended: TaskExtendedDetails | null;
+  members: Array<{ id: string; name: string; avatar?: string }>;
+  availableTags: string[];
+}
+
+export async function getFullModalData(
+  taskId: string,
+  workspaceIdHint: string | null,
+  commentsLimit: number = 50,
+): Promise<FullModalData> {
+  const empty: FullModalData = { basic: null, extended: null, members: [], availableTags: [] };
+
+  const supabase = await createServerActionClient();
+  // getSession() lê o JWT do cookie localmente (~0ms) em vez de HTTP call (~400ms)
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
+  if (!user) return empty;
+
+  // ── 1. TODAS as queries em um único Promise.all ─────────────────────────
+  //    task, attachments, comments, members, tags(tasks), project_icons, userProfile
+  //    Tags e members usam workspaceIdHint do cliente (evita 2ª rodada sequencial)
+  const [
+    taskResult,
+    attachmentsResult,
+    commentsResult,
+    membersResult,
+    tagTasksResult,
+    projectIconsResult,
+    userProfileResult,
+  ] = await Promise.all([
+    // 1. Task com relações
+    supabase
+      .from("tasks")
+      .select(`
+        id,
+        title,
+        description,
+        status,
+        priority,
+        due_date,
+        assignee_id,
+        workspace_id,
+        created_by,
+        created_at,
+        updated_at,
+        origin_context,
+        subtasks,
+        assignee:profiles!tasks_assignee_id_fkey (
+          id,
+          full_name,
+          email,
+          avatar_url
+        ),
+        creator:profiles!tasks_created_by_fkey (
+          id,
+          full_name,
+          email
+        ),
+        workspace:workspaces!tasks_workspace_id_fkey (
+          id,
+          name
+        ),
+        task_members (
+          user:user_id (
+            id,
+            full_name,
+            email,
+            avatar_url
+          )
+        )
+      `)
+      .eq("id", taskId)
+      .single(),
+
+    // 2. Attachments
+    supabase
+      .from("task_attachments")
+      .select("id, file_url, file_name, file_type, file_size, uploader_id, created_at")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: false }),
+
+    // 3. Comments
+    supabase
+      .from("task_comments")
+      .select(`
+        id,
+        content,
+        type,
+        metadata,
+        created_at,
+        user:user_id (
+          id,
+          full_name,
+          email,
+          avatar_url
+        )
+      `)
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true })
+      .range(0, commentsLimit - 1),
+
+    // 4. Members (usa hint do cliente; se não tiver, resolve depois)
+    workspaceIdHint
+      ? supabase
+          .from("workspace_members")
+          .select("user:user_id(id, full_name, email, avatar_url)")
+          .eq("workspace_id", workspaceIdHint)
+      : Promise.resolve({ data: null, error: null }),
+
+    // 5. Tags: tasks com tags do workspace
+    workspaceIdHint
+      ? supabase
+          .from("tasks")
+          .select("tags")
+          .eq("workspace_id", workspaceIdHint)
+          .neq("status", "archived")
+          .not("tags", "is", null)
+      : Promise.resolve({ data: null, error: null }),
+
+    // 6. Project icons (tags adicionais)
+    workspaceIdHint
+      ? (supabase as any)
+          .from("project_icons")
+          .select("tag_name")
+          .eq("workspace_id", workspaceIdHint)
+      : Promise.resolve({ data: null, error: null }),
+
+    // 7. Profile do usuário logado (para garantir que está na lista de members)
+    supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_url")
+      .eq("id", user.id)
+      .single(),
+  ]);
+
+  const { data: task, error: taskError } = taskResult;
+  if (taskError || !task) {
+    console.error("Erro ao buscar tarefa (modal):", taskError);
+    return empty;
+  }
+
+  const { data: attachments, error: attachmentsError } = attachmentsResult;
+  const { data: comments, error: commentsError } = commentsResult;
+  if (attachmentsError) console.error("Erro ao buscar anexos:", attachmentsError);
+  if (commentsError) console.error("Erro ao buscar comentários:", commentsError);
+
+  // ── 2. Se workspaceIdHint não foi fornecido mas task tem workspace_id, buscar members + tags agora
+  const resolvedWorkspaceId = task.workspace_id || workspaceIdHint;
+  let membersData = membersResult?.data ?? null;
+
+  if (resolvedWorkspaceId && !workspaceIdHint) {
+    // Fallback: hint não veio, mas task tem workspace_id — buscar em paralelo
+    const [membersFallback, tagsFallback, iconsFallback] = await Promise.all([
+      supabase
+        .from("workspace_members")
+        .select("user:user_id(id, full_name, email, avatar_url)")
+        .eq("workspace_id", resolvedWorkspaceId),
+      supabase
+        .from("tasks")
+        .select("tags")
+        .eq("workspace_id", resolvedWorkspaceId)
+        .neq("status", "archived")
+        .not("tags", "is", null),
+      (supabase as any)
+        .from("project_icons")
+        .select("tag_name")
+        .eq("workspace_id", resolvedWorkspaceId),
+    ]);
+    membersData = membersFallback.data;
+    // Remontar tags abaixo usando fallback data
+    (tagTasksResult as any).data = tagsFallback.data;
+    (tagTasksResult as any).error = tagsFallback.error;
+    (projectIconsResult as any).data = iconsFallback.data;
+    (projectIconsResult as any).error = iconsFallback.error;
+  }
+
+  // ── 3. Extrair tags únicas ──────────────────────────────────────────────
+  const allTags = new Set<string>();
+  if (!tagTasksResult.error && tagTasksResult.data) {
+    (tagTasksResult.data as any[]).forEach((t: any) => {
+      if (t.tags && Array.isArray(t.tags)) {
+        t.tags.forEach((tag: string) => {
+          if (tag && tag.trim()) allTags.add(tag.trim());
+        });
+      }
+    });
+  }
+  if (!projectIconsResult.error && projectIconsResult.data) {
+    (projectIconsResult.data as any[]).forEach((icon: any) => {
+      if (icon.tag_name && icon.tag_name.trim()) allTags.add(icon.tag_name.trim());
+    });
+  }
+  const tagsData = Array.from(allTags).sort();
+
+  // ── 4. Mapear membros ───────────────────────────────────────────────────
+  const members: Array<{ id: string; name: string; avatar?: string }> = [];
+  if (membersData && Array.isArray(membersData)) {
+    membersData.forEach((m: any) => {
+      const u = Array.isArray(m.user) ? m.user[0] : m.user;
+      if (u) {
+        members.push({
+          id: u.id,
+          name: u.full_name || u.email || "Sem nome",
+          avatar: u.avatar_url || undefined,
+        });
+      }
+    });
+  }
+  // Garantir que o usuário logado esteja na lista (usando resultado já obtido em paralelo)
+  if (!members.some(m => m.id === user.id)) {
+    const profile = userProfileResult?.data;
+    if (profile) {
+      members.push({
+        id: profile.id,
+        name: profile.full_name || profile.email || "Sem nome",
+        avatar: profile.avatar_url || undefined,
+      });
+    }
+  }
+
+  // ── 5. Montar basic + extended ──────────────────────────────────────────
+  let tags: string[] = [];
+  if ((task as any).tags && Array.isArray((task as any).tags)) {
+    tags = (task as any).tags;
+  } else if (task.origin_context && typeof task.origin_context === "object" && "tags" in task.origin_context) {
+    const contextTags = (task.origin_context as any).tags;
+    if (Array.isArray(contextTags)) tags = contextTags;
+  }
+
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: (task.assignee as any).full_name || (task.assignee as any).email || "Usuário",
+      avatar: (task.assignee as any).avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+  if (task.task_members && Array.isArray(task.task_members)) {
+    task.task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
+  const basic: TaskBasicDetails = {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    status: (task.status as "todo" | "in_progress" | "done" | "archived") || "todo",
+    priority: (task.priority as "low" | "medium" | "high" | "urgent") || "medium",
+    due_date: task.due_date,
+    assignee_id: task.assignee_id,
+    workspace_id: task.workspace_id,
+    created_by: task.created_by || user.id,
+    created_at: task.created_at || new Date().toISOString(),
+    updated_at: task.updated_at || new Date().toISOString(),
+    origin_context: task.origin_context,
+    tags,
+    assignee: task.assignee as TaskBasicDetails["assignee"],
+    creator: task.creator as TaskBasicDetails["creator"],
+    workspace: task.workspace as TaskBasicDetails["workspace"],
+    assignees,
+  };
+
+  const extended: TaskExtendedDetails = {
+    attachments: (attachments || []).map((att: any) => ({
+      ...att,
+      created_at: att.created_at || new Date().toISOString(),
+    })),
+    comments: (comments || []).map((c: any) => ({
+      ...c,
+      created_at: c.created_at || new Date().toISOString(),
+    })),
+    subtasks: (task as any)?.subtasks || [],
+  };
+
+  return { basic, extended, members, availableTags: tagsData };
 }
 
 /**
@@ -219,7 +566,7 @@ export async function getTaskBasicDetails(taskId: string): Promise<TaskBasicDeta
  */
 export async function getTaskExtendedDetails(
   taskId: string,
-  commentsLimit: number = 20,
+  commentsLimit: number = 50,
   commentsOffset: number = 0
 ): Promise<TaskExtendedDetails | null> {
   const supabase = await createServerActionClient();
@@ -321,6 +668,14 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
         workspace:workspaces!tasks_workspace_id_fkey (
           id,
           name
+        ),
+        task_members (
+          user:user_id (
+            id,
+            full_name,
+            email,
+            avatar_url
+          )
         )
       `)
       .eq("id", taskId)
@@ -366,6 +721,34 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
     console.error("Erro ao buscar comentários:", commentsError);
   }
 
+  // Transformar task_members em array assignees
+  const assignees: Array<{ id: string; name: string; avatar?: string }> = [];
+  const seenIds = new Set<string>();
+
+  // Adicionar assignee_id primeiro (se existir)
+  if (task.assignee_id && task.assignee) {
+    assignees.push({
+      id: task.assignee_id,
+      name: task.assignee.full_name || task.assignee.email || "Usuário",
+      avatar: task.assignee.avatar_url || undefined,
+    });
+    seenIds.add(task.assignee_id);
+  }
+
+  // Adicionar membros de task_members (se não já incluídos)
+  if ((task as any).task_members && Array.isArray((task as any).task_members)) {
+    (task as any).task_members.forEach((tm: any) => {
+      if (tm.user && !seenIds.has(tm.user.id)) {
+        assignees.push({
+          id: tm.user.id,
+          name: tm.user.full_name || tm.user.email || "Usuário",
+          avatar: tm.user.avatar_url || undefined,
+        });
+        seenIds.add(tm.user.id);
+      }
+    });
+  }
+
   return {
     ...task,
     status: (task.status as "todo" | "in_progress" | "done" | "archived") || "todo",
@@ -383,6 +766,7 @@ export async function getTaskDetails(taskId: string): Promise<TaskDetails | null
     })),
     tags: (task as any).tags || [],
     subtasks: (task as any).subtasks || [],
+    assignees, // Adicionar array de assignees
   };
 }
 
@@ -406,7 +790,7 @@ export async function addComment(
   // Converter tipo "audio" para "comment" já que o banco não aceita "audio"
   const commentType = type === "audio" ? "comment" : (type || "comment");
   
-  const { error } = await supabase
+  const { data: insertedComment, error } = await supabase
     .from("task_comments")
     .insert({
       task_id: taskId,
@@ -414,11 +798,27 @@ export async function addComment(
       content,
       type: commentType as "comment" | "log" | "file" | "system",
       metadata,
-    });
+    })
+    .select("id")
+    .single();
 
   if (error) {
     console.error("Erro ao adicionar comentário:", error);
     return { success: false, error: error.message };
+  }
+
+  // Criar notificações de menção (se houver @usuario no conteúdo)
+  try {
+    await createMentionNotificationsForTaskText({
+      taskId,
+      text: content,
+      mentionType: "comment",
+      commentId: insertedComment?.id,
+      authorId: user.id,
+    });
+  } catch (mentionError) {
+    console.error("[addComment] Erro ao criar notificações de menção:", mentionError);
+    // Não falhar a criação do comentário se as notificações falharem
   }
 
   revalidatePath(`/tasks`);
@@ -426,15 +826,164 @@ export async function addComment(
 }
 
 /**
- * Atualiza um campo específico da tarefa
+ * Atualiza um comentário (apenas o autor pode editar)
+ */
+export async function updateComment(
+  commentId: string,
+  newContent: string
+): Promise<{ success: boolean; error?: string; comment?: any }> {
+  const supabase = await createServerActionClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Buscar o comentário para verificar se o usuário é o autor
+  const { data: comment, error: fetchError } = await supabase
+    .from("task_comments")
+    .select("id, user_id, content, metadata")
+    .eq("id", commentId)
+    .single();
+
+  if (fetchError || !comment) {
+    return { success: false, error: "Comentário não encontrado" };
+  }
+
+  // Verificar se o usuário é o autor
+  if (comment.user_id !== user.id) {
+    return { success: false, error: "Você não tem permissão para editar este comentário" };
+  }
+
+  // Não permitir editar comentários do tipo "log" ou "system"
+  const { data: fullComment } = await supabase
+    .from("task_comments")
+    .select("type")
+    .eq("id", commentId)
+    .single();
+
+  if (fullComment && (fullComment.type === "log" || fullComment.type === "system")) {
+    return { success: false, error: "Comentários do sistema não podem ser editados" };
+  }
+
+  // Preparar metadata atualizado
+  const currentMetadata = (comment.metadata && typeof comment.metadata === 'object') 
+    ? comment.metadata 
+    : {};
+  
+  const updatedMetadata = {
+    ...currentMetadata,
+    edited_at: new Date().toISOString(),
+    edited: true,
+  };
+
+  // Atualizar o comentário
+  const { data: updatedComment, error: updateError } = await supabase
+    .from("task_comments")
+    .update({
+      content: newContent,
+      metadata: updatedMetadata,
+    })
+    .eq("id", commentId)
+    .select()
+    .single();
+
+  if (updateError) {
+    console.error("Erro ao atualizar comentário:", updateError);
+    return { success: false, error: updateError.message };
+  }
+
+  revalidatePath(`/tasks`);
+  return { success: true, comment: updatedComment };
+}
+
+/**
+ * Exclui um comentário (apenas o autor pode excluir)
+ * Marca como deletado ao invés de remover fisicamente
+ */
+export async function deleteComment(
+  commentId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerActionClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Buscar o comentário para verificar se o usuário é o autor
+  const { data: comment, error: fetchError } = await supabase
+    .from("task_comments")
+    .select("id, user_id, content, metadata, type")
+    .eq("id", commentId)
+    .single();
+
+  if (fetchError || !comment) {
+    return { success: false, error: "Comentário não encontrado" };
+  }
+
+  // Verificar se o usuário é o autor
+  if (comment.user_id !== user.id) {
+    return { success: false, error: "Você não tem permissão para excluir este comentário" };
+  }
+
+  // Não permitir excluir comentários do tipo "log" ou "system"
+  if (comment.type === "log" || comment.type === "system") {
+    return { success: false, error: "Comentários do sistema não podem ser excluídos" };
+  }
+
+  // Preparar metadata atualizado
+  const currentMetadata = (comment.metadata && typeof comment.metadata === 'object') 
+    ? comment.metadata 
+    : {};
+  
+  const updatedMetadata = {
+    ...currentMetadata,
+    deleted_at: new Date().toISOString(),
+    deleted: true,
+  };
+
+  // Marcar como deletado (não remover fisicamente)
+  const { error: updateError } = await supabase
+    .from("task_comments")
+    .update({
+      content: "Esta mensagem foi removida",
+      metadata: updatedMetadata,
+    })
+    .eq("id", commentId);
+
+  if (updateError) {
+    console.error("Erro ao excluir comentário:", updateError);
+    return { success: false, error: updateError.message };
+  }
+
+  revalidatePath(`/tasks`);
+  return { success: true };
+}
+
+/**
+ * Atualiza um campo específico da tarefa e cria log de atividade
  */
 export async function updateTaskField(
   taskId: string,
   field: string,
-  value: any
+  value: any,
+  options?: {
+    skipLog?: boolean;
+    logContent?: string;
+    oldValue?: any;
+  }
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerActionClient();
   
+  // Verificar autenticação para criar log
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
   console.log(`Atualizando tarefa ${taskId}, campo ${field}, valor:`, JSON.stringify(value));
 
   // Validar campo permitido
@@ -445,12 +994,27 @@ export async function updateTaskField(
     "priority",
     "due_date",
     "assignee_id",
+    "workspace_id",
     "tags",
     "subtasks"
   ];
 
   if (!allowedFields.includes(field)) {
     return { success: false, error: `Campo '${field}' não é permitido` };
+  }
+
+  // Buscar valor antigo para criar log
+  let oldValue: any = options?.oldValue;
+  if (!oldValue && !options?.skipLog) {
+    const { data: currentTask } = await supabase
+      .from("tasks")
+      .select(field)
+      .eq("id", taskId)
+      .single();
+    
+    if (currentTask) {
+      oldValue = (currentTask as any)[field];
+    }
   }
 
   // Converter valores especiais se necessário
@@ -487,6 +1051,145 @@ export async function updateTaskField(
     return { success: false, error: error.message };
   }
 
+  // ✅ Auto-reset de urgência: Se o status mudou para "done", resetar prioridade "urgent" para "medium"
+  if (field === "status" && updateValue === "done") {
+    try {
+      const { data: taskForPriority } = await supabase
+        .from("tasks")
+        .select("priority")
+        .eq("id", taskId)
+        .single();
+
+      if (taskForPriority && taskForPriority.priority === "urgent") {
+        console.log("[updateTaskField] Resetando prioridade urgente para medium após conclusão:", taskId);
+        await supabase
+          .from("tasks")
+          .update({ priority: "medium" })
+          .eq("id", taskId);
+      }
+    } catch (priorityError) {
+      console.error("[updateTaskField] Erro ao resetar prioridade:", priorityError);
+      // Não falhar o update principal se o reset de prioridade falhar
+    }
+  }
+
+  // Criar log de atividade se não foi pulado
+  if (!options?.skipLog) {
+    let logContent = options?.logContent;
+    
+    // Se não fornecido, gerar conteúdo do log baseado no campo
+    if (!logContent) {
+      const fieldLabels: Record<string, string> = {
+        title: "título",
+        description: "descrição",
+        status: "status",
+        priority: "prioridade",
+        due_date: "data de vencimento",
+        assignee_id: "responsável",
+        tags: "tags",
+        subtasks: "subtarefas"
+      };
+      
+      const fieldLabel = fieldLabels[field] || field;
+      
+      if (field === "status") {
+        const statusLabels: Record<string, string> = {
+          "todo": "Não iniciada",
+          "in_progress": "Em progresso",
+          "review": "Em revisão",
+          "correction": "Correção",
+          "blocked": "Bloqueado",
+          "done": "Concluída",
+          "archived": "Arquivada"
+        };
+        const oldStatusLabel = oldValue ? statusLabels[oldValue] || oldValue : "N/A";
+        const newStatusLabel = updateValue ? statusLabels[updateValue] || updateValue : "N/A";
+        logContent = `alterou o status de ${oldStatusLabel} para ${newStatusLabel}`;
+      } else if (field === "priority") {
+        const priorityLabels: Record<string, string> = {
+          "low": "Baixa",
+          "medium": "Média",
+          "high": "Alta",
+          "urgent": "Urgente"
+        };
+        const oldPriorityLabel = oldValue ? priorityLabels[oldValue] || oldValue : "N/A";
+        const newPriorityLabel = updateValue ? priorityLabels[updateValue] || updateValue : "N/A";
+        logContent = `alterou a prioridade de ${oldPriorityLabel} para ${newPriorityLabel}`;
+      } else if (field === "assignee_id") {
+        if (!oldValue && updateValue) {
+          logContent = `atribuiu a tarefa`;
+        } else if (oldValue && !updateValue) {
+          logContent = `removeu a atribuição`;
+        } else if (oldValue && updateValue && oldValue !== updateValue) {
+          logContent = `alterou o responsável`;
+        }
+      } else if (field === "due_date") {
+        const oldDate = oldValue ? new Date(oldValue).toLocaleDateString("pt-BR") : "sem data";
+        const newDate = updateValue ? new Date(updateValue).toLocaleDateString("pt-BR") : "sem data";
+        logContent = `alterou a data de vencimento de ${oldDate} para ${newDate}`;
+      } else if (field === "subtasks") {
+        const oldCount = Array.isArray(oldValue) ? oldValue.length : 0;
+        const newCount = Array.isArray(updateValue) ? updateValue.length : 0;
+        if (newCount > oldCount) {
+          logContent = `adicionou ${newCount - oldCount} subtarefa(s)`;
+        } else if (newCount < oldCount) {
+          logContent = `removeu ${oldCount - newCount} subtarefa(s)`;
+        } else {
+          logContent = `atualizou as subtarefas`;
+        }
+      } else {
+        logContent = `alterou o ${fieldLabel}`;
+      }
+    }
+
+    if (logContent) {
+      // Buscar informações do usuário para o log
+      const { data: userProfile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", user.id)
+        .single();
+
+      const userName = userProfile?.full_name || userProfile?.email || "Usuário";
+
+      // Criar log em task_comments
+      const { error: logError } = await supabase
+        .from("task_comments")
+        .insert({
+          task_id: taskId,
+          user_id: user.id,
+          content: logContent,
+          type: "log",
+          metadata: {
+            field,
+            old_value: oldValue,
+            new_value: updateValue,
+            action: "field_updated"
+          }
+        });
+
+      if (logError) {
+        console.error("Erro ao criar log de atividade:", logError);
+        // Não falhar a atualização se o log falhar, apenas logar o erro
+      }
+    }
+  }
+
+  // Notificações de menção quando a descrição da tarefa é atualizada
+  if (field === "description" && typeof value === "string" && value.trim()) {
+    try {
+      await createMentionNotificationsForTaskText({
+        taskId,
+        text: value,
+        mentionType: "description",
+        authorId: user.id,
+      });
+    } catch (mentionError) {
+      console.error("[updateTaskField] Erro ao criar notificações de menção na descrição:", mentionError);
+      // Não falhar a atualização da tarefa se as notificações falharem
+    }
+  }
+
   console.log(`Sucesso ao atualizar ${field}`);
   revalidatePath(`/tasks`);
   return { success: true };
@@ -501,6 +1204,11 @@ export async function updateTaskFields(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerActionClient();
   
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+  
   // Validar campos permitidos
   const allowedFields = [
     "title",
@@ -509,6 +1217,7 @@ export async function updateTaskFields(
     "priority",
     "due_date",
     "assignee_id",
+    "workspace_id",
     "tags",
     "subtasks"
   ];
@@ -543,6 +1252,21 @@ export async function updateTaskFields(
     return { success: false, error: error.message };
   }
 
+  // Notificações de menção quando a descrição é atualizada em lote
+  if (typeof updateData.description === "string" && updateData.description.trim()) {
+    try {
+      await createMentionNotificationsForTaskText({
+        taskId,
+        text: updateData.description,
+        mentionType: "description",
+        authorId: user.id,
+      });
+    } catch (mentionError) {
+      console.error("[updateTaskFields] Erro ao criar notificações de menção na descrição:", mentionError);
+      // Não falhar a atualização da tarefa se as notificações falharem
+    }
+  }
+
   revalidatePath(`/tasks`);
   return { success: true };
 }
@@ -559,6 +1283,7 @@ export async function updateTaskTags(
 
 /**
  * Atualiza as subtarefas
+ * Nota: Logs são criados manualmente pelos handlers para ter mais detalhes
  */
 export async function updateTaskSubtasks(
   taskId: string,
@@ -572,7 +1297,8 @@ export async function updateTaskSubtasks(
     console.log("Atualizando subtasks (raw):", subtasks);
     console.log("Atualizando subtasks (json):", subtasksJson);
     
-    return await updateTaskField(taskId, "subtasks", subtasksJson);
+    // Pular log automático, pois os handlers criam logs mais detalhados
+    return await updateTaskField(taskId, "subtasks", subtasksJson, { skipLog: true });
   } catch (error) {
     console.error("Erro ao preparar subtasks para update:", error);
     return { success: false, error: "Erro interno ao processar subtarefas" };

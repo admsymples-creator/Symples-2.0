@@ -1,10 +1,9 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef, startTransition } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { usePathname, useSearchParams, useRouter } from "next/navigation";
-import { Home, CheckSquare, DollarSign, Settings, Building2, Sparkles, Plus, ChevronsUpDown, ChevronsLeft, ChevronsRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Home, CheckSquare, DollarSign, Settings, Building2, Plus, ChevronsUpDown, Folder, Users, ChevronDown, Search, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +17,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSidebar, useWorkspace } from "@/components/providers/SidebarProvider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { SubscriptionData } from "@/lib/types/subscription";
+import { GlobalSearch } from "@/components/layout/GlobalSearch";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
+import { getWorkspaceTags } from "@/lib/actions/workspace-tags";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
+import { setProjectIcon, getProjectIcons, renameProjectTag, deleteProjectTag, getProjectTaskCount } from "@/lib/actions/projects";
+import { clearProjectCache } from "@/lib/utils/project-cache";
+import { SidebarWorkspaceSwitcher } from "@/components/layout/SidebarWorkspaceSwitcher";
+import dynamic from "next/dynamic";
+import { getIconComponent } from "@/components/projects/IconPicker";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface NavItem {
     label: string;
@@ -25,41 +44,102 @@ interface NavItem {
     icon: React.ComponentType<{ className?: string }>;
 }
 
-const personalItems: NavItem[] = [
-    { label: "Minha Semana", href: "/home", icon: Home },
-    { label: "Assistente IA", href: "/assistant", icon: Sparkles },
-];
-
-const workspaceItems: NavItem[] = [
+const managementItemsBase: NavItem[] = [
+    { label: "Home", href: "/home", icon: Home },
     { label: "Tarefas", href: "/tasks", icon: CheckSquare },
     { label: "Financeiro", href: "/finance", icon: DollarSign },
+    { label: "Clientes", href: "/clients", icon: Building2 },
+    { label: "Time", href: "/team", icon: Users },
 ];
+
+// projectTasksItem removido - Tarefas agora está em managementItemsBase
 
 interface SidebarProps {
     workspaces?: { id: string; name: string; slug: string | null; logo_url?: string | null }[];
+    initialSubscription?: Pick<SubscriptionData, 'id' | 'plan' | 'account_plan' | 'subscription_status' | 'trial_ends_at'> | null;
+    initialProjectsTags?: string[];
+    initialProjectsIcons?: Map<string, string>;
+    initialWorkspaceId?: string;
 }
 
-function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
+// Logger de debug
+function debugRender(componentName: string) {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        const now = new Date();
+        console.debug(`[${componentName}] Rendered at ${now.toISOString().split('T')[1]}`, {
+            ts: performance.now()
+        });
+    }
+}
+
+// Memoizar NavItemView para evitar re-renders desnecessários
+const NavItemView = React.memo(function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive: boolean, isCollapsed: boolean }) {
     const Icon = item.icon;
-    
-    const content = (
-         <Link
+    const router = useRouter();
+
+    const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        // Verificar se o href é válido
+        if (!item.href || item.href.startsWith('/undefined') || item.href === '/') {
+            e.preventDefault();
+            e.stopPropagation();
+            console.error('[Sidebar] Invalid href on click:', item.href);
+            return;
+        }
+
+        try {
+            sessionStorage.setItem("nav-click-ts", String(performance.now()));
+            sessionStorage.setItem("nav-click-href", item.href);
+        } catch { }
+
+        // Log para debug apenas em desenvolvimento
+        if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            console.log('[Sidebar] Navigation click:', { href: item.href, label: item.label });
+        }
+
+        // Usar router.push como fallback se o Link não funcionar
+        // Não prevenir o comportamento padrão do Link - deixar ele fazer a navegação
+    };
+
+    // Prefetch mais agressivo - usar router.prefetch do Next.js (mais eficiente)
+    const handleMouseEnter = useCallback(() => {
+        router.prefetch(item.href);
+
+        // Pré-carregar componentes pesados específicos para rotas
+        if (typeof window !== 'undefined') {
+            if (item.href.includes('/tasks')) {
+                import("@/components/tasks/TaskBoard").catch(() => { });
+                import("@/components/tasks/TaskDetailModal").catch(() => { });
+            }
+        }
+    }, [item.href, router]);
+
+    const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        handleClick(e);
+        // Se o href for inválido, já foi prevenido no handleClick
+        // Se for válido, deixar o Link fazer a navegação normalmente
+    };
+
+    const linkElement = (
+        <Link
             href={item.href}
+            prefetch={true}
+            onMouseEnter={handleMouseEnter}
+            onClick={handleLinkClick}
             className={cn(
-                "flex items-center gap-3 rounded-lg transition-colors relative group whitespace-nowrap",
+                "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap",
                 isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm w-full",
                 isActive
-                    ? "bg-green-50 text-green-700 font-semibold"
+                    ? "bg-gray-50 text-gray-900 font-semibold"
                     : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
             )}
         >
             <Icon className={cn(
                 "flex-shrink-0",
                 isCollapsed ? "w-5 h-5" : "w-5 h-5",
-                isActive ? "text-green-700" : "text-gray-500"
+                isActive ? "text-[#050815]" : "text-gray-500"
             )} />
             <span className={cn(
-                "transition-all duration-300 overflow-hidden",
+                "transition-all duration-150 overflow-hidden",
                 isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"
             )}>
                 {item.label}
@@ -71,47 +151,211 @@ function NavItemView({ item, isActive, isCollapsed }: { item: NavItem, isActive:
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
-                    {content}
+                    {linkElement}
                 </TooltipTrigger>
-                <TooltipContent side="right">
+                <TooltipContent side="right" className="z-[100]">
                     {item.label}
                 </TooltipContent>
             </Tooltip>
         );
     }
 
-    return content;
+    return linkElement;
+}, (prevProps, nextProps) => {
+    // Comparação customizada para evitar re-renders desnecessários
+    return (
+        prevProps.item.href === nextProps.item.href &&
+        prevProps.isActive === nextProps.isActive &&
+        prevProps.isCollapsed === nextProps.isCollapsed
+    );
+});
+
+function ToggleItemView({ label, icon, isActive, isCollapsed, isOpen, onToggle, className }: { label: string; icon: React.ComponentType<{ className?: string }>; isActive: boolean; isCollapsed: boolean; isOpen: boolean; onToggle: () => void; className?: string }) {
+    const Icon = icon;
+
+    const buttonElement = (
+        <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={isOpen}
+            className={cn(
+                "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap w-full",
+                isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm",
+                isActive
+                    ? "bg-gray-50 text-gray-900 font-semibold"
+                    : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900",
+                className
+            )}
+        >
+            <div className="w-6 h-6 rounded-md bg-[#050815] flex items-center justify-center flex-shrink-0">
+                <Icon className="w-4 h-4 text-white" />
+            </div>
+            <span className={cn(
+                "transition-all duration-150 overflow-hidden",
+                isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"
+            )}>
+                {label}
+            </span>
+            {!isCollapsed && (
+                <ChevronDown className={cn("ml-auto w-4 h-4 text-gray-400 transition-transform", !isOpen && "-rotate-90")} />
+            )}
+        </button>
+    );
+
+    if (isCollapsed) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    {buttonElement}
+                </TooltipTrigger>
+                <TooltipContent side="right" className="z-[100]">
+                    {label}
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
+
+    return buttonElement;
 }
 
-function SidebarContent({ workspaces = [] }: SidebarProps) {
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
+// Componente otimizado para projetos com navegação rápida e prefetch - Memoizado
+const ProjectToggleItem = React.memo(function ProjectToggleItem({ label, icon, href, isActive, isCollapsed, menu }: {
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    href: string;
+    isActive: boolean;
+    isCollapsed: boolean;
+    menu?: React.ReactNode;
+}) {
+    const Icon = icon;
     const router = useRouter();
-    const { isCollapsed, toggleSidebar } = useSidebar();
+
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        startTransition(() => {
+            router.push(href);
+        });
+    }, [href, router]);
+
+    const handleMouseEnter = useCallback(() => {
+        // Prefetch ao hover para carregar mais rápido
+        router.prefetch(href);
+    }, [href, router]);
+
+    const buttonElement = (
+        <button
+            type="button"
+            onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
+            className={cn(
+                "flex items-center gap-3 rounded-lg transition-colors duration-75 relative group whitespace-nowrap w-full",
+                isCollapsed ? "justify-center p-2 h-10 w-10 mx-auto" : "px-3 py-2 text-sm",
+                isActive
+                    ? "bg-gray-50 text-gray-900 font-semibold"
+                    : "text-gray-600 font-medium hover:bg-gray-50 hover:text-gray-900"
+            )}
+        >
+            <div className="w-6 h-6 rounded-md bg-[#050815] flex items-center justify-center flex-shrink-0">
+                <Icon className="w-4 h-4 text-white" />
+            </div>
+            <span className={cn(
+                "transition-all duration-150 overflow-hidden",
+                isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"
+            )}>
+                {label}
+            </span>
+            {!isCollapsed && (
+                <span className="ml-auto flex items-center gap-1">
+                    {menu && (
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            {menu}
+                        </span>
+                    )}
+                </span>
+            )}
+        </button>
+    );
+
+    if (isCollapsed) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    {buttonElement}
+                </TooltipTrigger>
+                <TooltipContent side="right" className="z-[100]">
+                    {label}
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
+
+    return buttonElement;
+}, (prevProps, nextProps) => {
+    // Comparação customizada para evitar re-renders desnecessários
+    return (
+        prevProps.label === nextProps.label &&
+        prevProps.href === nextProps.href &&
+        prevProps.isActive === nextProps.isActive &&
+        prevProps.isCollapsed === nextProps.isCollapsed &&
+        prevProps.menu === nextProps.menu
+    );
+});
+
+function SidebarContent({ workspaces = [], initialSubscription = null, initialProjectsTags, initialProjectsIcons, initialWorkspaceId }: SidebarProps) {
+    debugRender('SidebarContent');
+    const pathname = usePathname();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const { isCollapsed } = useSidebar();
     const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+    const [isProjectsOpen, setIsProjectsOpen] = useState(true); // Aberto por padrão
+    // Inicializar com dados do servidor para exibição instantânea
+    const [workspaceTags, setWorkspaceTags] = useState<string[]>(() => initialProjectsTags || []);
+    const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+    const [newProjectName, setNewProjectName] = useState("");
+    const [selectedIcon, setSelectedIcon] = useState<string>("Folder");
+    const [isCreateProjectSaving, setIsCreateProjectSaving] = useState(false);
+    const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+    const [editProjectName, setEditProjectName] = useState("");
+    const [editProjectOriginalName, setEditProjectOriginalName] = useState<string | null>(null);
+    const [editProjectIcon, setEditProjectIcon] = useState<string>("Folder");
+    const [isEditProjectSaving, setIsEditProjectSaving] = useState(false);
+    const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
+    const [deleteProjectName, setDeleteProjectName] = useState<string | null>(null);
+    const [deleteProjectCount, setDeleteProjectCount] = useState<number>(0);
+    const [isDeleteProjectLoading, setIsDeleteProjectLoading] = useState(false);
+    const [projectIcons, setProjectIcons] = useState<Map<string, string>>(() => initialProjectsIcons || new Map());
+    const workspaceTagsCache = useRef<Map<string, { tags: string[]; ts: number }>>(new Map());
+    const projectIconsCache = useRef<Map<string, { icons: Map<string, string>; ts: number }>>(new Map());
+    const IconPicker = useMemo(
+        () => dynamic(() => import("@/components/projects/IconPicker").then((mod) => mod.IconPicker), {
+            loading: () => <div className="h-10" />,
+        }),
+        []
+    );
 
-    const isActive = (href: string) => {
-        if (href.includes('?')) {
-            const [path, query] = href.split('?');
-            const params = new URLSearchParams(query);
-            const targetTab = params.get('tab');
-            const currentTab = searchParams.get('tab');
-            
-            return pathname === path && currentTab === targetTab;
-        }
+    // Calcular dias restantes do trial (memoizado) - apenas lógica visual baseada em props
+    const trialDaysRemaining = useMemo(() => {
+        if (!initialSubscription?.trial_ends_at) return null;
+        const trialEndsAt = new Date(initialSubscription.trial_ends_at);
+        const now = new Date();
+        const daysRemaining = Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        return daysRemaining > 0 ? daysRemaining : 0;
+    }, [initialSubscription?.trial_ends_at]);
 
-        if (href === "/settings") {
-            return pathname === "/settings" && (!searchParams.get('tab') || searchParams.get('tab') === 'general');
-        }
+    const isAgency =
+        initialSubscription?.account_plan === "agency" ||
+        initialSubscription?.plan === "agency";
 
-        if (href === "/home") {
-            return pathname === "/home";
-        }
-        return pathname?.startsWith(href);
-    };
+    const isTrialing =
+        (initialSubscription?.subscription_status === 'trialing' ||
+            initialSubscription?.subscription_status === 'trial') &&
+        !initialSubscription?.account_plan &&
+        !isAgency;
+    const displayPlanName = getDisplayPlanName(initialSubscription?.plan || null, initialSubscription?.account_plan);
 
-    const hasWorkspaces = workspaces.length > 0;
-    
+    const hasWorkspaces = React.useMemo(() => workspaces.length > 0, [workspaces.length]);
+
     // Set initial workspace if not set
     React.useEffect(() => {
         if (hasWorkspaces && !activeWorkspaceId) {
@@ -122,239 +366,851 @@ function SidebarContent({ workspaces = [] }: SidebarProps) {
         }
     }, [workspaces, hasWorkspaces, activeWorkspaceId, setActiveWorkspaceId]);
 
-    const currentWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
-    const workspaceBase = currentWorkspace?.slug || currentWorkspace?.id || "";
-    const workspacePrefix = workspaceBase ? `/${workspaceBase}` : "";
+    const currentWorkspace = React.useMemo(() => {
+        // Se não temos activeWorkspaceId mas temos workspaces, usar o primeiro
+        if (!activeWorkspaceId && workspaces.length > 0) {
+            return workspaces[0];
+        }
+        return workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
+    }, [workspaces, activeWorkspaceId]);
+
+    const workspacePrefix = useMemo(() => {
+        // Garantir que sempre temos um workspace válido
+        const workspace = currentWorkspace || (workspaces.length > 0 ? workspaces[0] : null);
+        if (!workspace) {
+            if (process.env.NODE_ENV === 'development') {
+                console.warn('[Sidebar] No workspace available for prefix:', {
+                    currentWorkspace,
+                    activeWorkspaceId,
+                    workspaces: workspaces.length
+                });
+            }
+            return "";
+        }
+
+        const base = workspace.slug || workspace.id || "";
+        const prefix = base ? `/${base}` : "";
+
+        // Log para debug apenas em desenvolvimento
+        if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            if (!prefix) {
+                console.warn('[Sidebar] workspacePrefix is empty:', {
+                    workspace,
+                    activeWorkspaceId,
+                    workspaces: workspaces.length,
+                    base,
+                    slug: workspace.slug,
+                    id: workspace.id
+                });
+            }
+        }
+
+        return prefix;
+    }, [currentWorkspace, activeWorkspaceId, workspaces]);
+
+    const isPersonal = useMemo(() => {
+        if (!currentWorkspace) return true;
+        return isPersonalWorkspace(currentWorkspace, workspaces);
+    }, [currentWorkspace, workspaces]);
+    // OTIMIZAÇÃO: Usar dados iniciais imediatamente e só fazer fetch se workspace mudar
+    useEffect(() => {
+        if (!activeWorkspaceId || isPersonal) {
+            setWorkspaceTags([]);
+            setProjectIcons(new Map());
+            return;
+        }
+
+        // Se temos dados iniciais, usar imediatamente e atualizar cache
+        // Isso garante que os projetos apareçam instantaneamente
+        // Se temos dados iniciais E o workspace ativo corresponde ao inicial, usar cache
+        // Isso garante que os projetos apareçam instantaneamente APENAS se estivermos no workspace certo
+        const isDataForCurrentWorkspace = initialWorkspaceId && activeWorkspaceId === initialWorkspaceId;
+
+        if (initialProjectsTags !== undefined && isDataForCurrentWorkspace) {
+            // Atualizar cache com dados iniciais para este workspace
+            workspaceTagsCache.current.set(activeWorkspaceId, { tags: initialProjectsTags, ts: Date.now() });
+            if (initialProjectsIcons) {
+                projectIconsCache.current.set(activeWorkspaceId, { icons: initialProjectsIcons, ts: Date.now() });
+            }
+            // Garantir que os dados iniciais estão no estado
+            setWorkspaceTags(initialProjectsTags);
+            if (initialProjectsIcons) {
+                setProjectIcons(initialProjectsIcons);
+            }
+            // Não fazer fetch se temos dados iniciais VÁLIDOS
+            return;
+        }
+
+        // Se não temos dados iniciais, verificar cache e fazer fetch se necessário
+        let cancelled = false;
+        const loadWorkspaceTags = async () => {
+            try {
+                const now = Date.now();
+                const cachedTags = workspaceTagsCache.current.get(activeWorkspaceId);
+                const cachedIcons = projectIconsCache.current.get(activeWorkspaceId);
+                const tagsFresh = cachedTags && now - cachedTags.ts < 300000; // 5 minutos
+                const iconsFresh = cachedIcons && now - cachedIcons.ts < 300000;
+
+                // Mostrar cache imediatamente se disponível
+                if (tagsFresh) {
+                    setWorkspaceTags(cachedTags.tags);
+                }
+                if (iconsFresh) {
+                    setProjectIcons(cachedIcons.icons);
+                }
+
+                // Buscar dados frescos em background (não bloquear UI)
+                if (!tagsFresh || !iconsFresh) {
+                    const promises: Promise<any>[] = [];
+
+                    if (!tagsFresh) {
+                        promises.push(
+                            getWorkspaceTags(activeWorkspaceId).then(tags => {
+                                if (!cancelled) {
+                                    workspaceTagsCache.current.set(activeWorkspaceId, { tags, ts: Date.now() });
+                                    setWorkspaceTags(tags);
+                                }
+                            })
+                        );
+                    }
+
+                    if (!iconsFresh) {
+                        promises.push(
+                            getProjectIcons(activeWorkspaceId).then(icons => {
+                                if (!cancelled) {
+                                    projectIconsCache.current.set(activeWorkspaceId, { icons, ts: Date.now() });
+                                    setProjectIcons(icons);
+                                }
+                            })
+                        );
+                    }
+
+                    // Executar em paralelo
+                    Promise.all(promises).catch(error => {
+                        console.error("Erro ao carregar tags do workspace:", error);
+                        if (!cancelled) {
+                            setWorkspaceTags([]);
+                            setProjectIcons(new Map());
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error("Erro ao carregar tags do workspace:", error);
+                if (!cancelled) {
+                    setWorkspaceTags([]);
+                    setProjectIcons(new Map());
+                }
+            }
+        };
+
+        // Carregar apenas se não temos dados iniciais
+        loadWorkspaceTags();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeWorkspaceId, isPersonal, initialProjectsTags, initialProjectsIcons, initialWorkspaceId]); // Adicionar dependências dos dados iniciais
+
+    const managementItems = useMemo(() => {
+        // Não gerar links se não temos workspace prefix válido
+        if (!workspacePrefix || workspacePrefix === '/') {
+            if (process.env.NODE_ENV === 'development') {
+                console.warn('[Sidebar] workspacePrefix is invalid, returning empty managementItems:', {
+                    workspacePrefix,
+                    activeWorkspaceId,
+                    currentWorkspace,
+                    workspaces: workspaces.length
+                });
+            }
+            return [];
+        }
+
+        const filtered = isPersonal
+            ? managementItemsBase.filter((item) => item.href !== "/team" && item.href !== "/tasks")
+            : managementItemsBase;
+        const items = filtered.map((item) => ({
+            ...item,
+            href: `${workspacePrefix}${item.href}`,
+        }));
+
+        // Log para debug apenas em desenvolvimento
+        if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            if (items.some(item => !item.href || item.href.startsWith('/undefined'))) {
+                console.error('[Sidebar] Invalid hrefs in managementItems:', {
+                    items,
+                    workspacePrefix,
+                    activeWorkspaceId,
+                    currentWorkspace
+                });
+            }
+        }
+
+        return items;
+    }, [isPersonal, workspacePrefix, activeWorkspaceId, currentWorkspace, workspaces]);
+
+    // Prefetch automático de todas as rotas principais quando workspace muda
+    useEffect(() => {
+        if (!workspacePrefix) return;
+
+        // Prefetch todas as rotas de gestão em paralelo
+        managementItems.forEach((item) => {
+            router.prefetch(item.href);
+        });
+
+        // Prefetch settings também
+        router.prefetch("/settings");
+
+        // Prefetch de componentes pesados para rotas específicas
+        if (typeof window !== 'undefined') {
+            // Prefetch TaskBoard para /tasks
+            const tasksHref = managementItems.find(item => item.href.includes('/tasks'))?.href;
+            if (tasksHref) {
+                // Pré-carregar módulo do TaskBoard em background
+                import("@/components/tasks/TaskBoard").catch(() => { });
+            }
+
+        }
+    }, [workspacePrefix, managementItems, router]);
+
+    // projectTasksLink removido - Tarefas agora está em managementItems
+
+    const showProjectsSection = hasWorkspaces && !isPersonal;
+
+    // Memoizar pathname para evitar recálculos - usar useMemo para estabilizar referência
+    const stablePathname = useMemo(() => pathname, [pathname]);
+
+    // Memoizar resultados de isActive para cada href - evita recálculos durante render
+    // Usar apenas pathname (sem searchParams) para evitar re-renders em cascata
+    const activeStates = useMemo(() => {
+        const states: Record<string, boolean> = {};
+        const segments = stablePathname?.split("/").filter(Boolean) ?? [];
+
+        const isWorkspaceScoped = (segment: string) => {
+            if (!stablePathname) return false;
+            if (stablePathname === `/${segment}` || stablePathname.startsWith(`/${segment}/`)) {
+                return true;
+            }
+            return segments.length >= 2 && segments[1] === segment;
+        };
+
+        // Calcular todos os estados ativos de uma vez (sem searchParams para evitar cascata)
+        const checkActive = (href: string) => {
+            // Remover query params do href para comparação
+            const hrefWithoutQuery = href.split("?")[0];
+
+            const workspaceTargets = ["/home", "/finance", "/clients", "/team", "/tasks"];
+            const match = workspaceTargets.find((target) => hrefWithoutQuery.endsWith(target));
+            if (match) {
+                return isWorkspaceScoped(match.slice(1));
+            }
+
+            // Fast path 1: comparação exata (mais comum)
+            if (stablePathname === hrefWithoutQuery) return true;
+
+            // Fast path 2: startsWith para rotas workspace (segundo mais comum)
+            if (stablePathname?.startsWith(hrefWithoutQuery)) {
+                // Rotas exatas não devem ativar com subpaths
+                if (hrefWithoutQuery.endsWith("/home") || hrefWithoutQuery === "/settings") {
+                    return false; // já verificamos === acima
+                }
+                // Para rotas workspace, verificar se é exatamente o prefixo ou subpath válido
+                const remaining = stablePathname.slice(hrefWithoutQuery.length);
+                return remaining === "" || remaining.startsWith("/");
+            }
+
+            return false;
+        };
+
+        managementItems.forEach(item => {
+            states[item.href] = checkActive(item.href);
+        });
+
+        // Settings (verificação simples sem tab)
+        states["/settings"] = stablePathname === "/settings";
+        return states;
+    }, [stablePathname, managementItems]);
+
+    const currentTag = useMemo(() => searchParams.get("tag"), [searchParams]);
+
+    // Função isActive simplificada - apenas retorna valor memoizado
+    // Para /tasks, verifica se está na rota e se não há tag na URL (para não conflitar com projetos)
+    const isActive = useCallback((href: string) => {
+        const baseActive = activeStates[href] ?? false;
+
+        // Se for /tasks (sem query params), só está ativo se não houver tag na URL (senão é um projeto)
+        if (href.endsWith("/tasks") || (href.includes("/tasks") && !href.includes("?"))) {
+            // Verificar se pathname corresponde ao href (sem query params)
+            const hrefWithoutQuery = href.split("?")[0];
+            const pathnameMatches = stablePathname === hrefWithoutQuery || stablePathname?.startsWith(hrefWithoutQuery + "/");
+            return pathnameMatches && !currentTag;
+        }
+
+        return baseActive;
+    }, [activeStates, currentTag, stablePathname]);
+
+    // Função para verificar se uma tag está ativa (via query param)
+    const isTagActive = useCallback((tag: string) => {
+        return currentTag === tag;
+    }, [currentTag]);
+
+    // Função para criar novo projeto
+    const handleCreateProject = useCallback(async () => {
+        if (!newProjectName.trim() || !activeWorkspaceId || isCreateProjectSaving) return;
+
+        const projectName = newProjectName.trim();
+
+        // Verificar se ja existe
+        if (workspaceTags.includes(projectName)) {
+            alert("Este projeto ja existe!");
+            return;
+        }
+
+        setIsCreateProjectSaving(true);
+
+        // Salvar icone do projeto
+        const iconResult = await setProjectIcon(activeWorkspaceId, projectName, selectedIcon);
+        if (!iconResult.success) {
+            console.error("Erro ao salvar icone do projeto:", iconResult.error);
+            alert("Erro ao criar projeto. Tente novamente.");
+            setIsCreateProjectSaving(false);
+            return;
+        }
+
+        // Atualizacao otimista para deixar a UI imediata
+        const nextTags = workspaceTags.includes(projectName)
+            ? workspaceTags
+            : [...workspaceTags, projectName];
+        setWorkspaceTags(nextTags);
+        workspaceTagsCache.current.set(activeWorkspaceId, { tags: nextTags, ts: Date.now() });
+
+        setProjectIcons((prev) => {
+            const next = new Map(prev);
+            next.set(projectName, selectedIcon);
+            projectIconsCache.current.set(activeWorkspaceId, { icons: next, ts: Date.now() });
+            return next;
+        });
+
+        // Limpar cache de projetos para forcar recarregamento na home
+        clearProjectCache(activeWorkspaceId);
+
+        // Recarregar dados em background (nao bloquear UI)
+        void getWorkspaceTags(activeWorkspaceId)
+            .then((updatedTags) => {
+                setWorkspaceTags(updatedTags);
+                workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
+            })
+            .catch((error) => {
+                console.error("Erro ao recarregar tags:", error);
+            });
+
+        void getProjectIcons(activeWorkspaceId)
+            .then((updatedIcons) => {
+                setProjectIcons(updatedIcons);
+                projectIconsCache.current.set(activeWorkspaceId, { icons: updatedIcons, ts: Date.now() });
+            })
+            .catch((error) => {
+                console.error("Erro ao recarregar icones:", error);
+            });
+
+        // Fechar modal e limpar input
+        setIsCreateProjectOpen(false);
+        setNewProjectName("");
+        setSelectedIcon("Folder");
+        setIsCreateProjectSaving(false);
+
+        // Navegar para a pagina de tarefas com a tag
+        const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(projectName)}`;
+        router.push(tagHref);
+    }, [newProjectName, workspaceTags, workspacePrefix, router, activeWorkspaceId, selectedIcon, isCreateProjectSaving]);
+
+    const openEditProject = useCallback((tag: string) => {
+        setEditProjectOriginalName(tag);
+        setEditProjectName(tag);
+        setEditProjectIcon(projectIcons.get(tag) || "Folder");
+        setIsEditProjectOpen(true);
+    }, [projectIcons]);
+
+    const handleEditProject = useCallback(async () => {
+        if (!activeWorkspaceId || !editProjectOriginalName || isEditProjectSaving) return;
+        const nextName = editProjectName.trim();
+        if (!nextName) return;
+
+        if (nextName !== editProjectOriginalName && workspaceTags.includes(nextName)) {
+            alert("Este projeto ja existe!");
+            return;
+        }
+
+        setIsEditProjectSaving(true);
+
+        if (nextName !== editProjectOriginalName) {
+            const renameResult = await renameProjectTag(activeWorkspaceId, editProjectOriginalName, nextName);
+            if (!renameResult.success) {
+                alert(renameResult.error || "Erro ao renomear projeto.");
+                setIsEditProjectSaving(false);
+                return;
+            }
+        }
+
+        const iconResult = await setProjectIcon(activeWorkspaceId, nextName, editProjectIcon);
+        if (!iconResult.success) {
+            alert(iconResult.error || "Erro ao atualizar icone do projeto.");
+            setIsEditProjectSaving(false);
+            return;
+        }
+
+        const updatedTags = workspaceTags.map((tag) => (tag === editProjectOriginalName ? nextName : tag));
+        setWorkspaceTags(updatedTags);
+        workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
+
+        setProjectIcons((prev) => {
+            const next = new Map(prev);
+            next.delete(editProjectOriginalName);
+            next.set(nextName, editProjectIcon);
+            projectIconsCache.current.set(activeWorkspaceId, { icons: next, ts: Date.now() });
+            return next;
+        });
+
+        clearProjectCache(activeWorkspaceId);
+
+        if (isTagActive(editProjectOriginalName)) {
+            const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(nextName)}`;
+            router.push(tagHref);
+        }
+
+        setIsEditProjectOpen(false);
+        setEditProjectName("");
+        setEditProjectOriginalName(null);
+        setEditProjectIcon("Folder");
+        setIsEditProjectSaving(false);
+    }, [activeWorkspaceId, editProjectOriginalName, editProjectName, editProjectIcon, workspaceTags, workspacePrefix, router, isTagActive, isEditProjectSaving]);
+
+    const openDeleteProject = useCallback((tag: string) => {
+        if (!activeWorkspaceId) return;
+        setDeleteProjectName(tag);
+        setIsDeleteProjectOpen(true);
+        setIsDeleteProjectLoading(true);
+        getProjectTaskCount(activeWorkspaceId, tag)
+            .then((count) => {
+                setDeleteProjectCount(count);
+            })
+            .finally(() => {
+                setIsDeleteProjectLoading(false);
+            });
+    }, [activeWorkspaceId]);
+
+    const handleDeleteProject = useCallback(async () => {
+        if (!activeWorkspaceId || !deleteProjectName) return;
+
+        const tag = deleteProjectName;
+        const deleteResult = await deleteProjectTag(activeWorkspaceId, tag);
+        if (!deleteResult.success) {
+            alert(deleteResult.error || "Erro ao excluir projeto.");
+            return;
+        }
+
+        const updatedTags = workspaceTags.filter((item) => item !== tag);
+        setWorkspaceTags(updatedTags);
+        workspaceTagsCache.current.set(activeWorkspaceId, { tags: updatedTags, ts: Date.now() });
+
+        setProjectIcons((prev) => {
+            const next = new Map(prev);
+            next.delete(tag);
+            projectIconsCache.current.set(activeWorkspaceId, { icons: next, ts: Date.now() });
+            return next;
+        });
+
+        clearProjectCache(activeWorkspaceId);
+
+        if (isTagActive(tag)) {
+            router.push(`${workspacePrefix}/tasks`);
+        }
+        setIsDeleteProjectOpen(false);
+        setDeleteProjectName(null);
+        setDeleteProjectCount(0);
+    }, [activeWorkspaceId, deleteProjectName, workspaceTags, workspacePrefix, router, isTagActive]);
 
     return (
-        <aside 
+        <aside
             className={cn(
                 "bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50 transition-all duration-300 ease-in-out",
-                isCollapsed ? "w-[80px]" : "w-[260px]"
+                isCollapsed ? "w-[64px]" : "w-[260px]"
             )}
         >
-            {/* Logo & Toggle Button */}
-            <div className={cn(
-                "h-16 flex items-center border-b border-gray-200 transition-all duration-300 relative",
-                isCollapsed ? "justify-center px-0" : "px-4 justify-between"
-            )}>
-                <Link href="/home" className={cn("block", isCollapsed ? "mx-auto" : "")}>
-                    {isCollapsed ? (
-                         <Image
-                            src="/logo-dock.png"
-                            alt="Symples"
-                            width={32}
-                            height={32}
-                            className="h-8 w-8 object-contain"
-                        />
-                    ) : (
-                        <Image
-                            src="/logo-black.svg"
-                            alt="Symples"
-                            width={120}
-                            height={36}
-                            priority
-                            className="h-8 w-auto"
-                        />
-                    )}
-                </Link>
-
-                {/* Toggle Button - Top Right */}
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={toggleSidebar} 
-                    className={cn(
-                        "text-gray-400 hover:text-gray-600 transition-all",
-                        isCollapsed 
-                            ? "absolute -right-3 top-6 h-6 w-6 bg-white border border-gray-200 rounded-full shadow-sm hover:bg-gray-50 z-50" 
-                            : "h-8 w-8"
-                    )}
-                >
-                    {isCollapsed ? <ChevronsRight className="w-3 h-3" /> : <PanelLeftClose className="w-5 h-5" />}
-                </Button>
-            </div>
+            {/* Workspace Switcher */}
+            {/* Workspace Switcher */}
+            <SidebarWorkspaceSwitcher
+                isCollapsed={isCollapsed}
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                currentWorkspace={currentWorkspace}
+                initialSubscription={initialSubscription}
+            />
 
             {/* Navigation */}
-            <nav className="flex-1 overflow-y-auto p-4 overflow-x-hidden">
-                {/* Top: Minha Semana (Global) */}
-                <div className="mb-6">
-                    <ul className="space-y-1">
-                        {personalItems.map((item) => (
-                            <li key={item.href}>
-                                <NavItemView item={item} isActive={isActive(item.href)} isCollapsed={isCollapsed} />
-                            </li>
-                        ))}
-                    </ul>
-                    <div className={cn("mt-4 border-b border-gray-100 mx-3", isCollapsed && "mx-1")} />
-                </div>
-
-                {/* Workspace Selector */}
-                <div className="mb-6">
-                     {hasWorkspaces ? (
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button 
-                                    variant="ghost" 
-                                    className={cn(
-                                        "w-full h-12 gap-3 hover:bg-gray-100/80 transition-all group p-0",
-                                        isCollapsed ? "justify-center px-0" : "justify-start px-3"
-                                    )}
+            <nav className="flex-1 overflow-hidden p-4 overflow-x-hidden flex flex-col">
+                {/* Global Search */}
+                <div className={cn("mb-6", isCollapsed && "flex justify-center")}>
+                    {isCollapsed ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-10 w-10 bg-muted/50 border-muted-foreground/20 hover:bg-muted/80"
+                                    onClick={() => {
+                                        // Trigger search dialog via GlobalSearch
+                                        const event = new KeyboardEvent('keydown', {
+                                            key: 'k',
+                                            metaKey: true,
+                                            ctrlKey: true,
+                                            bubbles: true
+                                        });
+                                        document.dispatchEvent(event);
+                                    }}
                                 >
-                                    <div className="w-8 h-8 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm group-hover:shadow transition-shadow overflow-hidden">
-                                        {currentWorkspace?.logo_url ? (
-                                            <img 
-                                                src={currentWorkspace.logo_url} 
-                                                alt={currentWorkspace.name} 
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            <Building2 className="w-4 h-4" />
-                                        )}
-                                    </div>
-                                    
-                                    {!isCollapsed && (
-                                        <>
-                                            <div className="flex flex-col items-start text-left flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 w-full">
-                                                    <span className="font-semibold text-sm text-gray-900 truncate">
-                                                        {currentWorkspace?.name || "Selecione"}
-                                                    </span>
-                                                    <Badge variant="secondary" className="text-[10px] px-1.5 h-4 bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200 flex-shrink-0">
-                                                        14 dias
-                                                    </Badge>
-                                                </div>
-                                                <span className="text-[10px] text-gray-500 truncate group-hover:text-gray-700 transition-colors">
-                                                    Plano Trial
-                                                </span>
-                                            </div>
-
-                                            <ChevronsUpDown className="w-4 h-4 text-gray-400 ml-auto opacity-50 group-hover:opacity-100" />
-                                        </>
-                                    )}
+                                    <Search className="w-4 h-4" />
                                 </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-[220px]" align="start" side={isCollapsed ? "right" : "bottom"}>
-                                <DropdownMenuLabel className="text-xs text-gray-500 font-medium px-2 py-1.5">
-                                    Trocar Workspace
-                                </DropdownMenuLabel>
-                                {workspaces.map((workspace) => (
-                                    <DropdownMenuItem 
-                                        key={workspace.id} 
-                                        onClick={() => {
-                                            setActiveWorkspaceId(workspace.id);
-                                            const base = workspace.slug || workspace.id;
-                                            if (base) {
-                                                router.push(`/${base}/tasks`);
-                                            }
-                                        }}
-                                        className="gap-2 cursor-pointer"
-                                    >
-                                        <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
-                                            {workspace.logo_url ? (
-                                                <img 
-                                                    src={workspace.logo_url} 
-                                                    alt={workspace.name} 
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <Building2 className="w-3 h-3 text-gray-500" />
-                                            )}
-                                        </div>
-                                        <span className="flex-1 truncate">{workspace.name}</span>
-                                        {workspace.id === activeWorkspaceId && (
-                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                                        )}
-                                    </DropdownMenuItem>
-                                ))}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild className="cursor-pointer gap-2 text-green-600 focus:text-green-700 focus:bg-green-50">
-                                    <Link href="/onboarding">
-                                        <Plus className="w-4 h-4" />
-                                        Criar Novo Workspace
-                                    </Link>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="z-[100]">
+                                Buscar (⌘K)
+                            </TooltipContent>
+                        </Tooltip>
                     ) : (
-                        <Link 
-                            href="/onboarding" 
-                            className={cn(
-                                "flex items-center justify-center gap-2 w-full h-10 text-sm border border-dashed border-gray-300 rounded-md text-gray-500 hover:text-green-600 hover:border-green-500 hover:bg-green-50 transition-all",
-                                isCollapsed ? "px-0" : ""
-                            )}
-                        >
-                            <Plus className="w-4 h-4" />
-                            {!isCollapsed && "Criar Workspace"}
-                        </Link>
+                        <GlobalSearch />
                     )}
                 </div>
 
-                {/* Workspace Menu Items */}
-                <div>
+                {/* Gestao */}
+                <div className="mt-6 mb-6">
+                    {!isCollapsed && (
+                        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
+                            GESTÃO
+                        </h2>
+                    )}
                     <ul className="space-y-1">
-                        {workspaceItems.map((item) => {
-                            const href = workspacePrefix + item.href;
-                            const resolvedItem = { ...item, href };
-                            return (
+                        {managementItems
+                            .filter(item => item.href && !item.href.startsWith('/undefined') && item.href !== '/')
+                            .map((item) => (
                                 <li key={item.href}>
-                                    <NavItemView
-                                        item={resolvedItem}
-                                        isActive={isActive(href)}
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    <NavItemView item={item} isActive={isActive(item.href)} isCollapsed={isCollapsed} />
                                 </li>
-                            );
-                        })}
+                            ))}
                     </ul>
                 </div>
+
+                {showProjectsSection && (
+                    <div className="mb-2 flex-1 min-h-0 flex flex-col">
+                        <div className={cn("mb-2", isCollapsed ? "flex justify-center" : "px-3")}>
+                            {isCollapsed ? (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsProjectsOpen((prev) => !prev)}
+                                            aria-expanded={isProjectsOpen}
+                                            className="h-8 w-8 rounded-md text-gray-500 hover:bg-gray-50 flex items-center justify-center transition-colors"
+                                        >
+                                            <Folder className="w-4 h-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" className="z-[100]">
+                                        Projetos
+                                    </TooltipContent>
+                                </Tooltip>
+                            ) : (
+                                <div className="flex items-center w-full gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsProjectsOpen((prev) => !prev)}
+                                        aria-expanded={isProjectsOpen}
+                                        className="flex items-center flex-1 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700"
+                                    >
+                                        <span>PROJETOS</span>
+                                        <ChevronDown className={cn("ml-auto w-4 h-4 transition-transform", !isProjectsOpen && "-rotate-90")} />
+                                    </button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setIsCreateProjectOpen(true);
+                                        }}
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                        {isProjectsOpen && (
+                            <ul className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300">
+                                {workspaceTags.length === 0 ? (
+                                    <li className={cn(!isCollapsed && "px-3 py-2 text-xs text-gray-400")}>
+                                        {!isCollapsed && "Nenhum projeto ainda"}
+                                    </li>
+                                ) : (
+                                    workspaceTags.map((tag) => {
+                                        const tagHref = `${workspacePrefix}/tasks?tag=${encodeURIComponent(tag)}`;
+                                        const isTagCurrentlyActive = isTagActive(tag);
+                                        const iconName = projectIcons.get(tag) || "Folder";
+                                        const ProjectIcon = getIconComponent(iconName);
+                                        const projectMenu = (
+                                            <DropdownMenu modal={false}>
+                                            <DropdownMenuTrigger asChild>
+                                                <span
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    className="h-6 w-6 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50 inline-flex items-center justify-center"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                    }}
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation();
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter" || e.key === " ") {
+                                                            e.stopPropagation();
+                                                        }
+                                                    }}
+                                                >
+                                                    <MoreHorizontal className="w-4 h-4" />
+                                                </span>
+                                            </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-44">
+                                                    <DropdownMenuItem
+                                                        onClick={() => openEditProject(tag)}
+                                                        className="cursor-pointer"
+                                                    >
+                                                        <Pencil className="w-4 h-4 mr-2 text-gray-500" />
+                                                        Editar projeto
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        onClick={() => openDeleteProject(tag)}
+                                                        className="cursor-pointer text-red-600 focus:text-red-600"
+                                                    >
+                                                        <Trash2 className="w-4 h-4 mr-2" />
+                                                        Excluir projeto
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        );
+
+                                        return (
+                                            <li key={tag} className={cn(!isCollapsed && "pl-2")}>
+                                                <ProjectToggleItem
+                                                    href={tagHref}
+                                                    label={tag}
+                                                    icon={ProjectIcon}
+                                                    isActive={isTagCurrentlyActive}
+                                                    isCollapsed={isCollapsed}
+                                                    menu={projectMenu}
+                                                />
+                                            </li>
+                                        );
+                                    })
+                                )}
+                            </ul>
+                        )}
+                    </div>
+                )}
             </nav>
 
             {/* Footer */}
             <div className="p-4 border-t border-gray-200 mt-auto space-y-3">
-                {/* Trial Upgrade Callout - Hide when collapsed */}
-                {!isCollapsed && (
-                    <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-                        <h4 className="font-semibold text-green-800 text-xs mb-1">Trial - 14 dias restantes</h4>
-                        <p className="text-[10px] text-green-700 mb-2 leading-snug">
-                            Aproveite todos os recursos Pro do Symples.
+                {/* Trial Upgrade Callout - Hide when collapsed and only show if trialing */}
+                {!isCollapsed && isTrialing && trialDaysRemaining !== null && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <h4 className="font-semibold text-[#050815] text-xs mb-1">
+                            {trialDaysRemaining > 0
+                                ? `Trial - ${trialDaysRemaining} ${trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}`
+                                : 'Trial expirado'}
+                        </h4>
+                        <p className="text-[10px] text-[#050815] mb-2 leading-snug">
+                            {trialDaysRemaining > 0
+                                ? `Aproveite todos os recursos ${displayPlanName} do Symples.`
+                                : "Seu acesso está bloqueado. Escolha um plano para continuar."}
                         </p>
-                        <Button size="sm" className="w-full h-7 text-xs bg-green-600 hover:bg-green-700 text-white shadow-none">
-                            Assinar Agora
+                        <Button
+                            size="sm"
+                            className="w-full h-7 text-xs bg-[#050815] hover:bg-[#0a0f1f] text-white shadow-none"
+                            onClick={() => router.push('/billing')}
+                        >
+                            {trialDaysRemaining > 0 ? "Assinar Agora" : "Escolher Plano"}
                         </Button>
                     </div>
                 )}
 
                 <div className={cn("flex items-center", isCollapsed ? "justify-center flex-col gap-4" : "justify-between")}>
-                    {/* Settings Link */}
-                    <NavItemView 
-                        item={{ label: "Configurações", href: "/settings", icon: Settings }} 
-                        isActive={isActive("/settings")} 
-                        isCollapsed={isCollapsed} 
+                    <NavItemView
+                        item={{ label: "Configurações", href: "/settings", icon: Settings }}
+                        isActive={isActive("/settings")}
+                        isCollapsed={isCollapsed}
                     />
                 </div>
             </div>
+
+            {/* Modal de Criar Projeto */}
+            <Dialog open={isCreateProjectOpen} onOpenChange={setIsCreateProjectOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Criar Novo Projeto</DialogTitle>
+                        <DialogDescription>
+                            Digite o nome do projeto. Ele será criado quando você adicionar a primeira tarefa.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="project-name">Nome do Projeto</Label>
+                            <Input
+                                id="project-name"
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                placeholder="Ex: Coca-Cola, Site Redesign..."
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && newProjectName.trim()) {
+                                        handleCreateProject();
+                                    }
+                                }}
+                                autoFocus
+                            />
+                        </div>
+                        <IconPicker
+                            selectedIcon={selectedIcon}
+                            onIconSelect={setSelectedIcon}
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setIsCreateProjectOpen(false);
+                                setNewProjectName("");
+                                setSelectedIcon("Folder");
+                            }}
+                            disabled={isCreateProjectSaving}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleCreateProject}
+                            disabled={!newProjectName.trim() || isCreateProjectSaving}
+                        >
+                            {isCreateProjectSaving ? "Salvando..." : "Criar Projeto"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Modal de Editar Projeto */}
+            <Dialog open={isEditProjectOpen} onOpenChange={setIsEditProjectOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Editar Projeto</DialogTitle>
+                        <DialogDescription>
+                            Atualize o nome e o ícone do projeto.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-project-name">Nome do Projeto</Label>
+                            <Input
+                                id="edit-project-name"
+                                value={editProjectName}
+                                onChange={(e) => setEditProjectName(e.target.value)}
+                                placeholder="Ex: Coca-Cola, Site Redesign..."
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && editProjectName.trim()) {
+                                        handleEditProject();
+                                    }
+                                }}
+                                autoFocus
+                            />
+                        </div>
+                        <IconPicker
+                            selectedIcon={editProjectIcon}
+                            onIconSelect={setEditProjectIcon}
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setIsEditProjectOpen(false);
+                                setEditProjectName("");
+                                setEditProjectOriginalName(null);
+                                setEditProjectIcon("Folder");
+                            }}
+                            disabled={isEditProjectSaving}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            onClick={handleEditProject}
+                            disabled={!editProjectName.trim() || isEditProjectSaving}
+                        >
+                            {isEditProjectSaving ? "Salvando..." : "Salvar"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Modal de Excluir Projeto */}
+            <Dialog open={isDeleteProjectOpen} onOpenChange={setIsDeleteProjectOpen}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <DialogTitle>Excluir projeto</DialogTitle>
+                        <DialogDescription>
+                            {deleteProjectName ? `Você está prestes a excluir "${deleteProjectName}".` : "Você está prestes a excluir este projeto."}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="text-sm text-gray-600 space-y-2">
+                        {isDeleteProjectLoading ? (
+                            <div className="flex items-center gap-2 text-gray-500">
+                                <span className="h-3 w-3 rounded-full border border-gray-300 border-t-transparent animate-spin" />
+                                Carregando tarefas...
+                            </div>
+                        ) : (
+                            <p>
+                                {deleteProjectCount === 0
+                                    ? "Nenhuma tarefa será afetada."
+                                    : `${deleteProjectCount} ${deleteProjectCount === 1 ? "tarefa ficará" : "tarefas ficarão"} sem projeto.`}
+                            </p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                            As tarefas permanecem, apenas a tag do projeto será removida.
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setIsDeleteProjectOpen(false);
+                                setDeleteProjectName(null);
+                                setDeleteProjectCount(0);
+                            }}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteProject}
+                            disabled={!deleteProjectName}
+                        >
+                            Excluir
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </aside>
     );
+
 }
 
 export function Sidebar(props: SidebarProps) {
-    return (
-        <Suspense fallback={
-            <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50">
-                <div className="p-4 border-b border-gray-200">
-                    <div className="h-8 w-32 bg-gray-200 animate-pulse rounded" />
-                </div>
-                <nav className="flex-1 overflow-y-auto p-4">
-                    <div className="space-y-2">
-                        {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
-                        ))}
-                    </div>
-                </nav>
-            </aside>
-        }>
-            <SidebarContent {...props} />
-        </Suspense>
-    );
+    return <SidebarContent {...props} />;
 }

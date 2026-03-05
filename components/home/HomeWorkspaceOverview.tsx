@@ -1,0 +1,279 @@
+"use client";
+
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useWorkspace, useWorkspaceLoading } from "@/components/providers/SidebarProvider";
+import { useWorkspaces } from "@/components/providers/WorkspacesProvider";
+import { WorkspaceCard } from "@/components/home/WorkspaceCard";
+import { ProjectCard } from "@/components/home/ProjectCard";
+import { getProjectsWeeklyStats } from "@/lib/actions/dashboard";
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
+import { getProjectIcons } from "@/lib/actions/projects";
+import { getCachedProjects, setCachedProjects } from "@/lib/utils/project-cache";
+
+interface WorkspaceStats {
+  id: string;
+  name: string;
+  slug: string | null;
+  logo_url: string | null;
+  pendingCount: number;
+  totalCount: number;
+  overallPendingCount: number;
+  overallTotalCount: number;
+  members: Array<{
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+  }>;
+}
+
+export interface HomeWorkspaceOverviewProps {
+  workspaceStats: WorkspaceStats[];
+  weekStart: Date;
+  weekEnd: Date;
+  initialProjectStats?: Array<{ tag: string; pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>;
+  initialProjectIcons?: Record<string, string>; // Objeto serializável em vez de Map
+  initialIsPersonal?: boolean;
+}
+
+export function HomeWorkspaceOverview({
+  workspaceStats,
+  weekStart,
+  weekEnd,
+  initialProjectStats = [],
+  initialProjectIcons = {},
+  initialIsPersonal = false
+}: HomeWorkspaceOverviewProps) {
+  const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const { isSwitchingWorkspace } = useWorkspaceLoading();
+  const workspaces = useWorkspaces();
+  const hasLoadedOnceRef = useRef(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const [projectStats, setProjectStats] = useState<Array<{ tag: string; pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>>(initialProjectStats || []);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  // Converter objeto para Map se necessário
+  const [projectIcons, setProjectIcons] = useState<Map<string, string>>(() => {
+    if (initialProjectIcons) {
+      return new Map(Object.entries(initialProjectIcons));
+    }
+    return new Map();
+  });
+
+  // Detectar montagem no cliente
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Detectar se é workspace pessoal (usando função helper robusta)
+  // Usar initialIsPersonal no servidor/primeira renderização para evitar mismatch
+  const isPersonal = useMemo(() => {
+    // No servidor ou primeira renderização, usar initialIsPersonal
+    if (!isMounted && initialIsPersonal !== undefined) {
+      return initialIsPersonal;
+    }
+    // Após montagem, usar dados do provider
+    if (!activeWorkspaceId || !isLoaded) return false;
+    const currentWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+    return isPersonalWorkspace(currentWorkspace, workspaces);
+  }, [activeWorkspaceId, isLoaded, workspaces, isMounted, initialIsPersonal]);
+
+  // Sincronizar dados iniciais quando disponíveis
+  useEffect(() => {
+    if (initialProjectStats !== undefined && !isPersonal && initialIsPersonal === false) {
+      setProjectStats(initialProjectStats);
+      if (initialProjectIcons) {
+        setProjectIcons(new Map(Object.entries(initialProjectIcons)));
+      }
+    }
+  }, [initialProjectStats, initialProjectIcons, initialIsPersonal, isPersonal]);
+
+  // Buscar estatísticas de projetos quando for workspace profissional
+  // OTIMIZAÇÃO: Usar cache para evitar recarregamentos desnecessários
+  useEffect(() => {
+    const loadProjectStats = async () => {
+      if (!activeWorkspaceId || !isLoaded || isPersonal) {
+        if (isPersonal) {
+          setProjectStats([]);
+        }
+        return;
+      }
+
+      // Se está trocando de workspace, não mostrar skeleton - deixar o workspace loading aparecer
+      // Se está trocando de workspace, não mostrar skeleton - deixar o workspace loading aparecer
+      if (isSwitchingWorkspace) {
+        // Apenas abortar o fetch, mas não alterar o estado visual
+        return;
+      }
+
+      // Verificar cache primeiro (evitar setState se dados iguais = menos piscar ao concluir tarefa no Weekly)
+      const cached = getCachedProjects(activeWorkspaceId);
+      if (cached && hasLoadedOnceRef.current) {
+        setProjectStats((prev) => (prev.length === cached.stats.length && prev.every((p, i) => p.tag === cached.stats[i]?.tag)) ? prev : cached.stats);
+        setProjectIcons((prev) => {
+          if (prev.size !== cached.icons.size) return cached.icons;
+          for (const [k, v] of prev) if (cached.icons.get(k) !== v) return cached.icons;
+          return prev;
+        });
+        return;
+      }
+
+      // Usar dados iniciais do servidor se disponíveis (primeira carga)
+      if (initialProjectStats !== undefined && initialIsPersonal === false && !hasLoadedOnceRef.current) {
+        // Definir dados iniciais imediatamente para exibição
+        setProjectStats(initialProjectStats);
+        if (initialProjectIcons) {
+          const iconsMap = new Map(Object.entries(initialProjectIcons));
+          setProjectIcons(iconsMap);
+          // Salvar no cache
+          setCachedProjects(activeWorkspaceId, initialProjectStats, iconsMap);
+          hasLoadedOnceRef.current = true;
+        }
+        // Não fazer fetch na primeira carga se já temos dados do servidor
+        return;
+      }
+
+      // Fazer fetch apenas se não temos dados ou se workspace mudou
+      setLoadingProjects(true);
+      try {
+        // OTIMIZAÇÃO: Buscar stats e icons em paralelo
+        const [stats, icons] = await Promise.all([
+          getProjectsWeeklyStats(activeWorkspaceId, weekStart, weekEnd),
+          getProjectIcons(activeWorkspaceId)
+        ]);
+
+        setProjectStats(stats);
+        setProjectIcons(icons);
+        // Salvar no cache
+        setCachedProjects(activeWorkspaceId, stats, icons);
+        hasLoadedOnceRef.current = true;
+      } catch (error) {
+        console.error("Erro ao carregar estatísticas de projetos:", error);
+        // Não limpar dados se houver erro - manter o que temos
+        if (initialProjectStats === undefined) {
+          setProjectStats([]);
+          setProjectIcons(new Map());
+        }
+      } finally {
+        setLoadingProjects(false);
+      }
+    };
+
+    loadProjectStats();
+    // workspaces omitido de propósito: o efeito não usa workspaces diretamente (só isPersonal).
+    // Evita reexecução e setState quando o contexto re-renderiza e passa nova referência.
+  }, [activeWorkspaceId, isLoaded, isPersonal, weekStart, weekEnd, initialProjectStats, initialIsPersonal, isSwitchingWorkspace]);
+
+  // Resetar flag quando workspace muda
+  useEffect(() => {
+    hasLoadedOnceRef.current = false;
+  }, [activeWorkspaceId]);
+
+  // Filtrar stats para mostrar apenas workspaces (quando for pessoal)
+  // IMPORTANTE: Este useMemo deve estar ANTES de qualquer return condicional
+  const filteredWorkspaceStats = useMemo(() => {
+    if (isPersonal) {
+      return workspaceStats.filter((ws) => {
+        // Usar função helper para verificar se é workspace pessoal
+        const wsData = workspaces.find(w => w.id === ws.id);
+        return !isPersonalWorkspace(wsData, workspaces);
+      });
+    }
+    return [];
+  }, [workspaceStats, isPersonal, workspaces]);
+
+  // Workspace profissional: mostrar projetos
+  if (!isPersonal) {
+    // Não mostrar skeleton se está trocando workspace (deixar workspace loading aparecer)
+    if (loadingProjects) {
+      return (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Visão por Projeto
+          </h2>
+          {/* Skeleton loading para melhor UX */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-xl p-5 border border-gray-200 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-2 bg-gray-200 rounded w-1/2 mb-4"></div>
+                <div className="h-2 bg-gray-200 rounded w-full"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Mostrar mensagem se não houver projetos (em vez de retornar null)
+    if (projectStats.length === 0) {
+      return (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Visão por Projeto
+          </h2>
+          <div className="text-sm text-gray-500">
+            Nenhum projeto encontrado. Crie um projeto na página de Tarefas.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Visão por Projeto
+        </h2>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {projectStats.map((project, index) => {
+            const iconName = projectIcons.get(project.tag);
+            return (
+              <ProjectCard
+                key={project.tag}
+                tag={project.tag}
+                pendingCount={project.pendingCount}
+                totalCount={project.totalCount}
+                overallPendingCount={project.overallPendingCount}
+                overallTotalCount={project.overallTotalCount}
+                iconName={iconName}
+                isFirst={index === 0}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace pessoal: mostrar workspaces
+  if (filteredWorkspaceStats.length === 0) {
+    return null;
+  }
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        Visão por Workspace
+      </h2>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {filteredWorkspaceStats.map((workspace, index) => {
+          return (
+            <WorkspaceCard
+              key={workspace.id}
+              id={workspace.id}
+              name={workspace.name}
+              slug={workspace.slug}
+              logo_url={workspace.logo_url}
+              pendingCount={workspace.pendingCount}
+              totalCount={workspace.totalCount}
+              overallPendingCount={workspace.overallPendingCount}
+              overallTotalCount={workspace.overallTotalCount}
+              members={workspace.members}
+              isFirst={index === 0}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}

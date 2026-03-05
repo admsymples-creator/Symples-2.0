@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2, MoreHorizontal, Palette, Eraser } from "lucide-react";
+import { Pencil, Trash2, MoreHorizontal, Palette, Eraser, ArrowUp, ArrowDown, ArrowUpToLine, ArrowDownToLine, ArrowUpDown, CheckCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -29,11 +29,19 @@ interface GroupActionMenuProps {
     groupId: string;
     groupTitle: string;
     currentColor?: string;
+    tasks?: Array<{ id: string | number; completed?: boolean }>;
     onRename?: (groupId: string, newTitle: string) => void;
     onColorChange?: (groupId: string, color: string) => void;
     onDelete?: (groupId: string) => void;
-    onClear?: (groupId: string) => void;
+    onClear?: (groupId: string, type?: "all" | "completed") => void;
+    onReorder?: (groupId: string, direction: "up" | "down" | "top" | "bottom") => void;
+    onAddTask?: () => void;
+    canMoveUp?: boolean;
+    canMoveDown?: boolean;
+    canMoveToTop?: boolean;
+    canMoveToBottom?: boolean;
     className?: string;
+    isInbox?: boolean;
 }
 
 // Cores disponíveis para grupos
@@ -56,11 +64,19 @@ export function GroupActionMenu({
     groupId,
     groupTitle,
     currentColor,
+    tasks = [],
     onRename,
     onColorChange,
     onDelete,
     onClear,
+    onReorder,
+    onAddTask,
+    canMoveUp = true,
+    canMoveDown = true,
+    canMoveToTop = false,
+    canMoveToBottom = false,
     className,
+    isInbox = false,
 }: GroupActionMenuProps) {
     const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
     const [newTitle, setNewTitle] = useState(groupTitle);
@@ -68,6 +84,15 @@ export function GroupActionMenu({
     const [isClearing, setIsClearing] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+    const [clearType, setClearType] = useState<"all" | "completed" | undefined>(undefined);
+
+    // Calcular quantidade de tarefas que serão afetadas
+    const getTasksToClearCount = (type?: "all" | "completed"): number => {
+        if (type === "completed") {
+            return tasks.filter(t => t.completed === true).length;
+        }
+        return tasks.length;
+    };
 
     // Handler para renomear
     const handleRename = () => {
@@ -119,17 +144,19 @@ export function GroupActionMenu({
     const confirmClear = async () => {
         setIsClearing(true);
         try {
-            onClear?.(groupId);
+            onClear?.(groupId, clearType);
         } catch (error) {
             toast.error("Erro ao limpar tarefas");
             console.error(error);
         } finally {
             setIsClearing(false);
             setIsClearModalOpen(false);
+            setClearType(undefined);
         }
     };
 
-    const handleClearClick = () => {
+    const handleClearClick = (type?: "all" | "completed") => {
+        setClearType(type);
         setIsClearModalOpen(true);
     };
 
@@ -140,7 +167,7 @@ export function GroupActionMenu({
     // Obter cor atual do localStorage se não fornecida
     const getCurrentColor = (): string | undefined => {
         if (currentColor) return currentColor;
-        
+
         try {
             const groupColors = JSON.parse(
                 localStorage.getItem("taskGroupColors") || "{}"
@@ -152,6 +179,58 @@ export function GroupActionMenu({
     };
 
     const actualCurrentColor = getCurrentColor();
+
+    if (isInbox) {
+        return (
+            <>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                                "h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity",
+                                className
+                            )}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                            }}
+                            disabled={isClearing}
+                        >
+                            <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                        {/* Limpar Backlog/Inbox */}
+                        {onClear && (
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleClearClick("all");
+                                }}
+                                className="text-xs"
+                                disabled={isClearing}
+                            >
+                                <Eraser className="w-4 h-4 mr-2" />
+                                Limpar BACKLOG/INBOX
+                            </DropdownMenuItem>
+                        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Modal de Confirmação de Limpeza */}
+                <ConfirmModal
+                    open={isClearModalOpen}
+                    onOpenChange={setIsClearModalOpen}
+                    title="Limpar BACKLOG/INBOX?"
+                    description={`Isso irá mover ${getTasksToClearCount("all")} tarefas do BACKLOG/INBOX para o arquivo/concluídas. Confirma?`}
+                    confirmText="Limpar Tudo"
+                    isLoading={isClearing}
+                    onConfirm={confirmClear}
+                />
+            </>
+        );
+    }
 
     return (
         <>
@@ -173,6 +252,24 @@ export function GroupActionMenu({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
+                    {/* Adicionar tarefa */}
+                    {onAddTask && (
+                        <DropdownMenuItem
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onAddTask();
+                            }}
+                            className="text-xs"
+                        >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Adicionar tarefa
+                        </DropdownMenuItem>
+                    )}
+
+                    {onAddTask && (onRename || onColorChange || onReorder || onClear || onDelete) && (
+                        <DropdownMenuSeparator />
+                    )}
+
                     {/* Renomear */}
                     {onRename && (
                         <DropdownMenuItem
@@ -218,22 +315,101 @@ export function GroupActionMenu({
                         </DropdownMenuSub>
                     )}
 
-                    {/* Limpar Tarefas */}
-                    {onClear && (
-                        <DropdownMenuItem
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleClearClick();
-                            }}
-                            className="text-xs"
-                            disabled={isClearing}
-                        >
-                            <Eraser className="w-4 h-4 mr-2" />
-                            {isClearing ? "Limpando..." : "Limpar Tarefas"}
-                        </DropdownMenuItem>
+                    {/* Sub-menu: Ordenar Grupo */}
+                    {onReorder && (
+                        <>
+                            {(onRename || onColorChange) && <DropdownMenuSeparator />}
+                            <DropdownMenuSub>
+                                <DropdownMenuSubTrigger className="text-xs">
+                                    <ArrowUpDown className="w-4 h-4 mr-2" />
+                                    Ordenar
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-48">
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onReorder(groupId, "top");
+                                        }}
+                                        className="text-xs"
+                                        disabled={!canMoveToTop}
+                                    >
+                                        <ArrowUpToLine className="w-4 h-4 mr-2" />
+                                        Mover para o topo
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onReorder(groupId, "up");
+                                        }}
+                                        className="text-xs"
+                                        disabled={!canMoveUp}
+                                    >
+                                        <ArrowUp className="w-4 h-4 mr-2" />
+                                        Mover para cima
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onReorder(groupId, "down");
+                                        }}
+                                        className="text-xs"
+                                        disabled={!canMoveDown}
+                                    >
+                                        <ArrowDown className="w-4 h-4 mr-2" />
+                                        Mover para baixo
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onReorder(groupId, "bottom");
+                                        }}
+                                        className="text-xs"
+                                        disabled={!canMoveToBottom}
+                                    >
+                                        <ArrowDownToLine className="w-4 h-4 mr-2" />
+                                        Mover para o final
+                                    </DropdownMenuItem>
+                                </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                        </>
                     )}
 
-                    <DropdownMenuSeparator />
+                    {/* Sub-menu: Limpar Tarefas */}
+                    {onClear && (
+                        <>
+                            {(onRename || onColorChange || onReorder) && <DropdownMenuSeparator />}
+                            <DropdownMenuSub>
+                                <DropdownMenuSubTrigger className="text-xs">
+                                    <Eraser className="w-4 h-4 mr-2" />
+                                    Limpar
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-48">
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleClearClick("all");
+                                        }}
+                                        className="text-xs"
+                                        disabled={isClearing}
+                                    >
+                                        Todas as Tarefas
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleClearClick("completed");
+                                        }}
+                                        className="text-xs"
+                                        disabled={isClearing}
+                                    >
+                                        Somente concluídas
+                                    </DropdownMenuItem>
+                                </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                        </>
+                    )}
+
+                    {(onRename || onColorChange || onReorder || onClear) && <DropdownMenuSeparator />}
 
                     {/* Excluir Grupo */}
                     {onDelete && (
@@ -267,9 +443,15 @@ export function GroupActionMenu({
             <ConfirmModal
                 open={isClearModalOpen}
                 onOpenChange={setIsClearModalOpen}
-                title="Limpar Tarefas?"
-                description="Isso irá arquivar ou excluir todas as tarefas deste grupo. Esta ação não pode ser desfeita."
-                confirmText="Limpar Tudo"
+                title={clearType === "completed" ? "Limpar Tarefas Concluídas?" : "Limpar Todas as Tarefas?"}
+                description={(() => {
+                    const count = getTasksToClearCount(clearType);
+                    if (clearType === "completed") {
+                        return `Isso irá arquivar ${count} tarefa${count !== 1 ? 's' : ''} concluída${count !== 1 ? 's' : ''} deste grupo. Esta ação não pode ser desfeita.`;
+                    }
+                    return `Isso irá arquivar ${count} tarefa${count !== 1 ? 's' : ''} deste grupo. Esta ação não pode ser desfeita.`;
+                })()}
+                confirmText={clearType === "completed" ? "Limpar Concluídas" : "Limpar Tudo"}
                 isLoading={isClearing}
                 onConfirm={confirmClear}
             />

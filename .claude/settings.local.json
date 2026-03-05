@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(npx supabase db push:*)",
+      "Bash(npm run test:setup-user:*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(dotenv:*)"
+    ]
+  }
+}

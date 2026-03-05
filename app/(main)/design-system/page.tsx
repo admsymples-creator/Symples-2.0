@@ -69,9 +69,21 @@ export default function DesignSystemPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         assignee_id: null,
+        client_id: null,
         due_date: "2024-12-18",
         position: 1,
         origin_context: null,
+        // Novos campos obrigatórios
+        recurrence_type: null,
+        recurrence_parent_id: null,
+        recurrence_interval: null,
+        recurrence_end_date: null,
+        recurrence_count: 0,
+        recurrence_days: null,
+        group_id: null,
+        subtasks: null,
+        tags: [],
+        visible_on_board: true,
     };
 
     const categories = [
@@ -422,8 +434,8 @@ export default function DesignSystemPage() {
                                         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                                             <TaskRowTasks
                                                 {...taskRowTasksData}
-                                                onClick={() => {}}
-                                                onToggleComplete={() => {}}
+                                                onClick={() => { }}
+                                                onToggleComplete={() => { }}
                                             />
                                         </div>
                                     </div>
@@ -441,9 +453,9 @@ export default function DesignSystemPage() {
                                         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                                             <TaskRowHome
                                                 task={taskRowHomeData}
-                                                onToggle={() => {}}
-                                                onEdit={async () => {}}
-                                                onDelete={() => {}}
+                                                onToggle={() => { }}
+                                                onEdit={async () => { }}
+                                                onDelete={() => { }}
                                             />
                                         </div>
                                     </div>
@@ -469,7 +481,7 @@ export default function DesignSystemPage() {
                                                 tags={["Backend", "Urgente"]}
                                                 subtasksCount={5}
                                                 commentsCount={3}
-                                                onClick={() => {}}
+                                                onClick={() => { }}
                                             />
                                         </div>
                                     </div>
@@ -497,7 +509,7 @@ export default function DesignSystemPage() {
                                                 checklistCompleted={3}
                                                 attachmentsCount={2}
                                                 commentsCount={5}
-                                                onClick={() => {}}
+                                                onClick={() => { }}
                                             />
                                         </div>
                                     </div>

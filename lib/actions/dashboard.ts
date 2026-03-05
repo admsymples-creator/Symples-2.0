@@ -3,6 +3,7 @@
 import { createServerActionClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Database } from "@/types/database.types";
+import { cache } from "react";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 
@@ -25,6 +26,8 @@ export interface WorkspaceStats {
   logo_url: string | null;
   pendingCount: number;
   totalCount: number;
+  overallPendingCount: number;
+  overallTotalCount: number;
   members: WorkspaceMember[];
 }
 
@@ -34,10 +37,10 @@ export interface WorkspaceStats {
  * @param end - Data de fim (fim da semana - Domingo)
  * @returns Array de tarefas da semana
  */
-export async function getWeekTasks(
+export const getWeekTasks = cache(async (
   start: Date,
   end: Date
-): Promise<WeekTask[]> {
+): Promise<WeekTask[]> => {
   try {
     const supabase = await createServerActionClient();
 
@@ -71,7 +74,7 @@ export async function getWeekTasks(
       .lte("due_date", endISO);
 
     // Buscar tarefas de workspace (workspace_id IS NOT NULL)
-    // Aparecem APENAS se o usuário está atribuído (assignee_id = user.id)
+    // Aparecem se o usuário está atribuído (assignee_id = user.id) OU está em task_members
     const { data: workspaceTasks, error: workspaceError } = await supabase
       .from("tasks")
       .select(`
@@ -80,18 +83,60 @@ export async function getWeekTasks(
         assignee:profiles!tasks_assignee_id_fkey(full_name)
       `)
       .not("workspace_id", "is", null)
-      .eq("assignee_id", user.id) // APENAS tarefas atribuídas ao usuário
+      .eq("assignee_id", user.id) // Tarefas atribuídas via assignee_id
       .gte("due_date", startISO)
       .lte("due_date", endISO);
 
-    if (personalError || workspaceError) {
-      console.error("Erro ao buscar tarefas:", personalError || workspaceError);
+    // Buscar tarefas de workspace via task_members
+    const { data: taskMemberTasks, error: taskMemberError } = await supabase
+      .from("task_members")
+      .select(`
+        task_id,
+        tasks:task_id (
+          *,
+          workspaces(name),
+          assignee:profiles!tasks_assignee_id_fkey(full_name)
+        )
+      `)
+      .eq("user_id", user.id);
+
+    if (personalError || workspaceError || taskMemberError) {
+      console.error("Erro ao buscar tarefas:", personalError || workspaceError || taskMemberError);
       // Retornar array vazio em caso de erro (não quebrar a UI)
       return [];
     }
 
     // Combinar resultados
     const allTasks = [...(personalTasks || []), ...(workspaceTasks || [])];
+    const taskIdsSet = new Set(allTasks.map(task => task.id));
+
+    // Adicionar tarefas de task_members que não estão já incluídas
+    if (taskMemberTasks) {
+      taskMemberTasks.forEach((tm: any) => {
+        const task = tm.tasks;
+        if (
+          task &&
+          !taskIdsSet.has(task.id) &&
+          task.workspace_id !== null && // Apenas tarefas de workspace
+          task.status !== "archived" &&
+          task.due_date
+        ) {
+          const taskDate = new Date(task.due_date);
+          const startDateObj = new Date(startISO);
+          const endDateObj = new Date(endISO);
+          
+          // Filtrar por range de datas e garantir que não está em assignee_id já
+          if (
+            taskDate >= startDateObj &&
+            taskDate <= endDateObj &&
+            task.assignee_id !== user.id // Evitar duplicatas (já incluídas na query acima)
+          ) {
+            allTasks.push(task);
+            taskIdsSet.add(task.id);
+          }
+        }
+      });
+    }
 
     // Ordenar por data e depois por data de criação
     const sortedTasks = allTasks.sort((a, b) => {
@@ -115,17 +160,17 @@ export async function getWeekTasks(
     console.error("Erro inesperado ao buscar tarefas:", error);
     return [];
   }
-}
+});
 
 /**
  * Busca estatísticas semanais dos workspaces do usuário
  * @param start - Data de início (início da semana)
  * @param end - Data de fim (fim da semana)
  */
-export async function getWorkspacesWeeklyStats(
+export const getWorkspacesWeeklyStats = cache(async (
   start: Date,
   end: Date
-): Promise<WorkspaceStats[]> {
+): Promise<WorkspaceStats[]> => {
   try {
     const supabase = await createServerActionClient();
 
@@ -159,7 +204,7 @@ export async function getWorkspacesWeeklyStats(
 
     if (workspaceIds.length === 0) return [];
 
-    // 2. Buscar TODAS as tarefas desses workspaces na semana (Progresso do Time)
+    // 2. Buscar tarefas desses workspaces na semana (Progresso semanal)
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
@@ -172,6 +217,17 @@ export async function getWorkspacesWeeklyStats(
 
     if (tasksError) {
       console.error("Erro ao buscar tarefas dos workspaces:", tasksError);
+      return [];
+    }
+
+    // 2b. Buscar todas as tarefas dos workspaces (Progresso total)
+    const { data: allTasks, error: allTasksError } = await supabase
+      .from("tasks")
+      .select("workspace_id, status")
+      .in("workspace_id", workspaceIds);
+
+    if (allTasksError) {
+      console.error("Erro ao buscar tarefas totais dos workspaces:", allTasksError);
       return [];
     }
 
@@ -219,12 +275,14 @@ export async function getWorkspacesWeeklyStats(
                 logo_url: m.workspaces.logo_url || null,
                 pendingCount: 0,
                 totalCount: 0,
+                overallPendingCount: 0,
+                overallTotalCount: 0,
                 members: membersByWorkspace.get(m.workspace_id) || []
             });
         }
     });
 
-    // Contar tarefas
+    // Contar tarefas semanais
     tasks?.forEach((task) => {
       const stats = statsMap.get(task.workspace_id!);
       if (stats) {
@@ -235,56 +293,176 @@ export async function getWorkspacesWeeklyStats(
       }
     });
 
+    // Contar tarefas totais
+    allTasks?.forEach((task) => {
+      const stats = statsMap.get(task.workspace_id!);
+      if (stats) {
+        stats.overallTotalCount++;
+        if (task.status !== "done" && task.status !== "archived") {
+          stats.overallPendingCount++;
+        }
+      }
+    });
+
     return Array.from(statsMap.values());
 
   } catch (error) {
     console.error("Erro ao calcular estatísticas dos workspaces:", error);
     return [];
   }
-}
+});
 
 /**
- * Busca lista simples de workspaces do usuário
+ * Busca estatísticas semanais dos projetos (tags) de um workspace
+ * @param workspaceId - ID do workspace
+ * @param start - Data de início (início da semana)
+ * @param end - Data de fim (fim da semana)
  */
-export async function getUserWorkspaces() {
+export const getProjectsWeeklyStats = async (
+  workspaceId: string,
+  start: Date,
+  end: Date
+): Promise<Array<{
+  tag: string;
+  pendingCount: number;
+  totalCount: number;
+  overallPendingCount: number;
+  overallTotalCount: number;
+}>> => {
   try {
     const supabase = await createServerActionClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
     if (authError || !user) return [];
 
-    const { data: members, error } = await supabase
+    // Verificar se usuário é membro do workspace
+    const { data: membership } = await supabase
       .from("workspace_members")
-      .select(`
-        workspace_id,
-        workspaces (
-          id,
-          name,
-          slug
-        )
-      `)
-      .eq("user_id", user.id);
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .single();
 
-    if (error || !members) {
-      console.error("Erro ao buscar workspaces do usuário:", error);
-      return [];
+    if (!membership) return [];
+
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
+
+    // OTIMIZAÇÃO: Buscar apenas colunas necessárias e fazer queries em paralelo
+    // Buscar TODAS as tarefas do workspace que tenham tags (não apenas da semana)
+    // Isso garante que todos os projetos apareçam, mesmo sem tarefas na semana atual
+    const [tasksResult, projectIconsResult] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("tags, status, due_date") // Apenas colunas necessárias (não precisa de id nem due_date)
+        .eq("workspace_id", workspaceId)
+        .neq("status", "archived")
+        .not("tags", "is", null), // Apenas tarefas com tags
+      (supabase as any)
+        .from("project_icons")
+        .select("tag_name")
+        .eq("workspace_id", workspaceId)
+    ]);
+
+    const { data: tasks, error: tasksError } = tasksResult;
+    const { data: projectIcons, error: iconsError } = projectIconsResult;
+
+    // Não retornar vazio se houver erro - ainda podemos mostrar projetos com ícones
+    if (tasksError) {
+      console.error("Erro ao buscar tarefas dos projetos:", tasksError);
+      // Continuar mesmo com erro para mostrar projetos com ícones
     }
 
-    return members
-      .map((m: any) => m.workspaces)
-      .filter((w) => w !== null) as { id: string; name: string; slug?: string | null }[];
+    // Agrupar por tag
+    const statsMap = new Map<string, { pendingCount: number; totalCount: number; overallPendingCount: number; overallTotalCount: number }>();
+
+    // Processar tarefas se disponíveis
+    if (tasks) {
+      const startMs = new Date(startISO).getTime();
+      const endMs = new Date(endISO).getTime();
+      tasks.forEach((task: any) => {
+        if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
+          const inWeek = task.due_date
+            ? (() => {
+                const due = new Date(task.due_date).getTime();
+                return due >= startMs && due <= endMs;
+              })()
+            : false;
+
+          task.tags.forEach((tag: string) => {
+            if (tag && tag.trim()) {
+              const tagKey = tag.trim();
+              if (!statsMap.has(tagKey)) {
+                statsMap.set(tagKey, { pendingCount: 0, totalCount: 0, overallPendingCount: 0, overallTotalCount: 0 });
+              }
+              const stats = statsMap.get(tagKey)!;
+              stats.overallTotalCount++;
+              if (task.status !== "done" && task.status !== "archived") {
+                stats.overallPendingCount++;
+              }
+
+              if (inWeek) {
+                stats.totalCount++;
+                if (task.status !== "done" && task.status !== "archived") {
+                  stats.pendingCount++;
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+
+    // IMPORTANTE: Adicionar TODOS os projetos que têm ícones salvos
+    // Isso garante que projetos criados apareçam mesmo sem tarefas
+    if (!iconsError && projectIcons && Array.isArray(projectIcons)) {
+      projectIcons.forEach((icon: any) => {
+        if (icon && icon.tag_name && icon.tag_name.trim()) {
+          const tagKey = icon.tag_name.trim();
+          // Adicionar projeto mesmo sem tarefas (com contadores zerados)
+          if (!statsMap.has(tagKey)) {
+            statsMap.set(tagKey, { pendingCount: 0, totalCount: 0, overallPendingCount: 0, overallTotalCount: 0 });
+          }
+        }
+      });
+    } else if (iconsError) {
+      console.error("Erro ao buscar ícones dos projetos:", iconsError);
+      // Continuar mesmo com erro para mostrar projetos com tarefas
+    }
+
+    // Converter para array e ordenar por nome
+    const result = Array.from(statsMap.entries())
+      .map(([tag, stats]) => ({
+        tag,
+        ...stats,
+      }))
+      .sort((a, b) => a.tag.localeCompare(b.tag));
+
+    // Debug: Log apenas em desenvolvimento
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[getProjectsWeeklyStats] Workspace ${workspaceId}: ${result.length} projetos encontrados`);
+    }
+
+    return result;
+
   } catch (error) {
-    console.error("Erro inesperado ao buscar workspaces:", error);
+    console.error("Erro ao calcular estatísticas dos projetos:", error);
     return [];
   }
 }
+
+// getUserWorkspaces foi movido para lib/actions/user.ts para evitar duplicação
 
 /**
  * Busca tarefas de um dia específico
  * @param date - Data do dia
  * @returns Array de tarefas do dia
  */
-export async function getDayTasks(date: Date): Promise<WeekTask[]> {
+export const getDayTasks = cache(async (date: Date): Promise<WeekTask[]> => {
   try {
     const supabase = await createServerActionClient();
 
@@ -300,13 +478,14 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
     }
 
     // Criar range do dia (00:00:00 até 23:59:59)
+    // Usar meio-dia para start para garantir que o dia correto seja mantido ao converter para UTC
     const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
+    startOfDay.setHours(12, 0, 0, 0);
+    const startDateOnly = startOfDay.toISOString().split('T')[0];
+    const startISO = startDateOnly + 'T00:00:00.000Z';
     
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
-
-    const startISO = startOfDay.toISOString();
     const endISO = endOfDay.toISOString();
 
     // Buscar tarefas pessoais (workspace_id IS NULL)
@@ -324,7 +503,7 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
       .lte("due_date", endISO);
 
     // Buscar tarefas de workspace (workspace_id IS NOT NULL)
-    // Aparecem APENAS se o usuário está atribuído (assignee_id = user.id)
+    // Aparecem se o usuário está atribuído (assignee_id = user.id) OU está em task_members
     const { data: workspaceTasks, error: workspaceError } = await supabase
       .from("tasks")
       .select(`
@@ -333,17 +512,59 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
         assignee:profiles!tasks_assignee_id_fkey(full_name)
       `)
       .not("workspace_id", "is", null)
-      .eq("assignee_id", user.id) // APENAS tarefas atribuídas ao usuário
+      .eq("assignee_id", user.id) // Tarefas atribuídas via assignee_id
       .gte("due_date", startISO)
       .lte("due_date", endISO);
 
-    if (personalError || workspaceError) {
-      console.error("Erro ao buscar tarefas do dia:", personalError || workspaceError);
+    // Buscar tarefas de workspace via task_members
+    const { data: taskMemberTasks, error: taskMemberError } = await supabase
+      .from("task_members")
+      .select(`
+        task_id,
+        tasks:task_id (
+          *,
+          workspaces(name),
+          assignee:profiles!tasks_assignee_id_fkey(full_name)
+        )
+      `)
+      .eq("user_id", user.id);
+
+    if (personalError || workspaceError || taskMemberError) {
+      console.error("Erro ao buscar tarefas do dia:", personalError || workspaceError || taskMemberError);
       return [];
     }
 
     // Combinar resultados
     const allTasks = [...(personalTasks || []), ...(workspaceTasks || [])];
+    const taskIdsSet = new Set(allTasks.map(task => task.id));
+
+    // Adicionar tarefas de task_members que não estão já incluídas
+    if (taskMemberTasks) {
+      taskMemberTasks.forEach((tm: any) => {
+        const task = tm.tasks;
+        if (
+          task &&
+          !taskIdsSet.has(task.id) &&
+          task.workspace_id !== null && // Apenas tarefas de workspace
+          task.status !== "archived" &&
+          task.due_date
+        ) {
+          const taskDate = new Date(task.due_date);
+          const startDateObj = new Date(startISO);
+          const endDateObj = new Date(endISO);
+          
+          // Filtrar por range de datas e garantir que não está em assignee_id já
+          if (
+            taskDate >= startDateObj &&
+            taskDate <= endDateObj &&
+            task.assignee_id !== user.id // Evitar duplicatas (já incluídas na query acima)
+          ) {
+            allTasks.push(task);
+            taskIdsSet.add(task.id);
+          }
+        }
+      });
+    }
 
     // Ordenar por data e depois por data de criação
     const sortedTasks = allTasks.sort((a, b) => {
@@ -366,4 +587,4 @@ export async function getDayTasks(date: Date): Promise<WeekTask[]> {
     console.error("Erro inesperado ao buscar tarefas do dia:", error);
     return [];
   }
-}
+});

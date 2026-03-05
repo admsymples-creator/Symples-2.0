@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { TaskWithDetails, createTask, updateTask, updateTaskPosition } from "@/lib/actions/tasks";
-import { mapStatusToLabel } from "@/lib/config/tasks";
+import { mapStatusToLabel, LABEL_TO_STATUS } from "@/lib/config/tasks";
 import { arrayMove } from "@dnd-kit/sortable";
 import { Member } from "@/lib/actions/members";
 import { TaskGroup } from "@/components/tasks/TaskGroup";
@@ -21,23 +21,28 @@ import {
     DndContext,
     DragOverlay,
     closestCenter,
+    rectIntersection,
     KeyboardSensor,
     PointerSensor,
+    TouchSensor,
     useSensor,
     useSensors,
+    MeasuringStrategy,
 } from "@dnd-kit/core";
+import type { CollisionDetection } from "@dnd-kit/core";
 import {
     sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 
 interface TasksViewProps {
-  initialTasks: TaskWithDetails[];
-  workspaceId: string;
-  members: Member[];
+    initialTasks: TaskWithDetails[];
+    workspaceId: string;
+    members: Member[];
+    tagFilter?: string | null;
 }
 
 type ContextTab = "minhas" | "time" | "todas";
-type GroupBy = "status" | "priority" | "assignee";
+type GroupBy = "status" | "priority" | "assignee" | "date";
 type ViewMode = "list" | "kanban";
 
 interface Task {
@@ -51,9 +56,103 @@ interface Task {
     tags?: string[];
     hasUpdates?: boolean;
     workspaceId?: string | null;
+    position?: number;
 }
 
-export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps) {
+const DATE_ORDER = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"] as const;
+const DATE_COLORS: Record<(typeof DATE_ORDER)[number], string> = {
+    "Atrasadas": "#ef4444", // vermelho
+    "Hoje": "#16a34a", // verde
+    "Amanhã": "#eab308", // amarelo
+    "Esta Semana": "#2563eb", // azul
+    "Futuro": "#475569", // slate/acinzentado
+    "Sem Data": "#cbd5e1", // cinza claro
+};
+
+const startOfDay = (date: Date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+const addDays = (date: Date, days: number) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+};
+
+const startOfISOWeek = (date: Date) => {
+    const d = startOfDay(date);
+    const day = d.getDay();
+    const diff = (day + 6) % 7; // segunda = 0, domingo = 6
+    return addDays(d, -diff);
+};
+
+const endOfISOWeek = (date: Date) => {
+    const start = startOfISOWeek(date);
+    return addDays(start, 6);
+};
+
+const getDateBucket = (dueDate?: string | null): typeof DATE_ORDER[number] => {
+    if (!dueDate) return "Sem Data";
+    const parsed = new Date(dueDate);
+    if (isNaN(parsed.getTime())) return "Sem Data";
+
+    const today = startOfDay(new Date());
+    const target = startOfDay(parsed);
+    const tomorrow = addDays(today, 1);
+    const endWeek = endOfISOWeek(today);
+
+    if (target < today) return "Atrasadas";
+    if (target.getTime() === today.getTime()) return "Hoje";
+    if (target.getTime() === tomorrow.getTime()) return "Amanhã";
+    if (target <= endWeek) return "Esta Semana";
+    return "Futuro";
+};
+
+const getDueDateForBucket = (bucket: string): string | null => {
+    const today = startOfDay(new Date());
+    const endWeek = endOfISOWeek(today);
+
+    switch (bucket) {
+        case "Atrasadas":
+            return addDays(today, -1).toISOString();
+        case "Hoje":
+            return today.toISOString();
+        case "Amanhã":
+            return addDays(today, 1).toISOString();
+        case "Esta Semana":
+            return endWeek.toISOString();
+        case "Futuro":
+            return addDays(endWeek, 7).toISOString();
+        case "Sem Data":
+        default:
+            return null;
+    }
+};
+
+/** Calcula posição fracionária para inserção entre items, evitando recalcular todas as posições */
+function calculateFractionalPosition(tasks: Task[], newIndex: number): number {
+    if (tasks.length === 0) return 1000;
+    if (newIndex === 0) {
+        const firstPos = tasks[0]?.position ?? 1000;
+        return firstPos / 2;
+    }
+    if (newIndex >= tasks.length) {
+        const lastPos = tasks[tasks.length - 1]?.position ?? tasks.length * 1000;
+        return lastPos + 1000;
+    }
+    const prevPos = tasks[newIndex - 1]?.position ?? (newIndex) * 1000;
+    const nextPos = tasks[newIndex]?.position ?? (newIndex + 1) * 1000;
+    const midpoint = (prevPos + nextPos) / 2;
+    // Rebalance guard: se gap < 1, use fallback incremental
+    if (Math.abs(nextPos - prevPos) < 1) {
+        return prevPos + 0.5;
+    }
+    return midpoint;
+}
+
+export function TasksView({ initialTasks, workspaceId, members, tagFilter }: TasksViewProps) {
     // ✅ MINIFY v2: initialTasks só é usado para inicializar o estado local
     const [localTasks, setLocalTasks] = useState<Task[]>(() =>
         initialTasks.map((task) => mapTaskFromDB(task))
@@ -72,16 +171,32 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     const [isSyncing, setIsSyncing] = useState(false);
 
     // Sensores para drag and drop
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
+    const pointerSensor = useSensor(PointerSensor, {
+        activationConstraint: { distance: 5 },
+    });
+    const touchSensor = useSensor(TouchSensor, {
+        activationConstraint: { delay: 200, tolerance: 5 },
+    });
+    const keyboardSensor = useSensor(KeyboardSensor, {
+        coordinateGetter: sortableKeyboardCoordinates,
+    });
+    const sensors = useSensors(pointerSensor, touchSensor, keyboardSensor);
+
+    // Collision detection customizado: closestCenter para tasks, rectIntersection para colunas
+    const customCollisionDetection: CollisionDetection = useCallback((args) => {
+        // Primeiro tentar closestCenter (melhor para cards)
+        const closestCenterCollisions = closestCenter(args);
+        if (closestCenterCollisions.length > 0) return closestCenterCollisions;
+        // Fallback para rectIntersection (melhor para colunas vazias)
+        return rectIntersection(args);
+    }, []);
+
+    // Measuring config para melhor precisão de colisões
+    const measuringConfig = useMemo(() => ({
+        droppable: {
+            strategy: MeasuringStrategy.Always,
+        },
+    }), []);
 
     // ✅ OTIMIZAÇÃO: Função memoizada para evitar recriação
     const mapTaskFromDB = useCallback((task: TaskWithDetails): Task => {
@@ -101,17 +216,20 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             completed: task.status === "done",
             priority: (task.priority as "low" | "medium" | "high" | "urgent" | undefined) || undefined,
             status: mapStatusToLabel(task.status || "todo"),
-            assignees: task.assignee 
-                ? [{ 
-                    name: task.assignee.full_name || task.assignee.email || "Sem nome", 
-                    avatar: task.assignee.avatar_url || undefined,
-                    id: task.assignee.email || undefined
-                }] 
-                : [],
+            assignees: (task as any).assignees && Array.isArray((task as any).assignees)
+                ? (task as any).assignees // Usar array assignees se disponível (inclui task_members)
+                : task.assignee
+                    ? [{
+                        name: task.assignee.full_name || task.assignee.email || "Sem nome",
+                        avatar: task.assignee.avatar_url || undefined,
+                        id: task.assignee_id || undefined
+                    }]
+                    : [],
             dueDate: task.due_date || undefined,
             tags,
             hasUpdates: false,
             workspaceId: task.workspace_id || null,
+            position: task.position ?? undefined,
         };
     }, []);
 
@@ -126,10 +244,29 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
     // Agrupar tarefas
     const groupedData = useMemo(() => {
-        const groups: Record<string, Task[]> = {};
+        const groups: Record<string, { tasks: Task[]; color?: string }> = {};
+
+        // ✅ Inicializar grupos vazios baseados no tipo de agrupamento
+        if (groupBy === "status") {
+            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Bloqueado", "Concluido"];
+            statusOrder.forEach(status => {
+                groups[status] = { tasks: [], color: undefined };
+            });
+        } else if (groupBy === "priority") {
+            const priorityOrder = ["urgent", "high", "medium", "low"];
+            priorityOrder.forEach(priority => {
+                groups[priority] = { tasks: [], color: undefined };
+            });
+        } else if (groupBy === "date") {
+            // DATE_ORDER e DATE_COLORS já estão definidos no escopo do módulo
+            DATE_ORDER.forEach(dateBucket => {
+                groups[dateBucket] = { tasks: [], color: DATE_COLORS[dateBucket] };
+            });
+        }
 
         filteredTasks.forEach((task) => {
             let key: string;
+            let color: string | undefined;
 
             switch (groupBy) {
                 case "status":
@@ -138,6 +275,12 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 case "priority":
                     key = task.priority || "medium";
                     break;
+                case "date": {
+                    const bucket = getDateBucket(task.dueDate);
+                    key = bucket;
+                    color = DATE_COLORS[bucket] || undefined;
+                    break;
+                }
                 case "assignee":
                     key = task.assignees?.[0]?.name || "Sem responsável";
                     break;
@@ -146,16 +289,15 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             }
 
             if (!groups[key]) {
-                groups[key] = [];
+                groups[key] = { tasks: [], color };
             }
-            groups[key].push(task);
+            groups[key].tasks.push(task);
         });
 
         // ✅ Criar novos arrays para cada grupo para garantir novas referências
-        // Isso força o React a detectar mudanças mesmo quando o conteúdo é o mesmo
-        const newGroups: Record<string, Task[]> = {};
+        const newGroups: Record<string, { tasks: Task[]; color?: string }> = {};
         Object.keys(groups).forEach(key => {
-            newGroups[key] = [...groups[key]];
+            newGroups[key] = { tasks: [...groups[key].tasks], color: groups[key].color };
         });
 
         return newGroups;
@@ -164,16 +306,17 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
     // Converter grupos para formato de colunas (Kanban)
     // ✅ IMPORTANTE: Criar novas referências para garantir que React detecte mudanças
     const kanbanColumns = useMemo(() => {
-        const columns = Object.entries(groupedData).map(([key, tasks]) => ({
+        const columns = Object.entries(groupedData).map(([key, group]) => ({
             id: key,
             title: key,
-            tasks: [...tasks], // ✅ Criar novo array para garantir nova referência
+            tasks: [...group.tasks], // ✅ Criar novo array para garantir nova referência
+            color: group.color,
         }));
 
         // Ordenar colunas baseado no tipo de agrupamento
         let sortedColumns;
         if (groupBy === "status") {
-            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Correção", "Concluido"];
+            const statusOrder = ["Não iniciado", "Em progresso", "Revisão", "Bloqueado", "Concluido"];
             sortedColumns = columns.sort((a, b) => {
                 const aIndex = statusOrder.indexOf(a.title);
                 const bIndex = statusOrder.indexOf(b.title);
@@ -192,6 +335,16 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 if (bIndex === -1) return -1;
                 return aIndex - bIndex;
             });
+        } else if (groupBy === "date") {
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"];
+            sortedColumns = columns.sort((a, b) => {
+                const aIndex = dateOrder.indexOf(a.title);
+                const bIndex = dateOrder.indexOf(b.title);
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
         } else {
             sortedColumns = columns;
         }
@@ -201,13 +354,26 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
     // Converter grupos para formato de lista (TaskGroup)
     const listGroups = useMemo(() => {
-        return Object.entries(groupedData).map(([key, tasks]) => ({
+        const entries = Object.entries(groupedData);
+        if (groupBy === "date") {
+            const dateOrder = ["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"];
+            entries.sort((a, b) => {
+                const aIndex = dateOrder.indexOf(a[0]);
+                const bIndex = dateOrder.indexOf(b[0]);
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
+        }
+        return entries.map(([key, group]) => ({
             id: key,
             title: key,
-            tasks,
+            tasks: group.tasks,
+            color: group.color,
         }));
-    }, [groupedData]);
-    
+    }, [groupedData, groupBy]);
+
     // Refs para valores que mudam mas não devem causar re-criação de callbacks
     // Criados após os useMemo para terem acesso aos valores calculados
     const localTasksRef = useRef(localTasks);
@@ -247,7 +413,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             // Detectar coluna de destino: pode ser o ID da coluna (droppable) ou uma tarefa dentro dela
             let destinationColumnId: string | undefined;
-            
+
             // Primeiro, verificar se over.id é o ID de uma coluna
             const columnById = currentColumns.find((col) => col.id === over.id);
             if (columnById) {
@@ -268,7 +434,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             if (sourceColumn.id === destinationColumnId) {
                 const sourceTasks = sourceColumn.tasks;
                 const oldIndex = sourceTasks.findIndex((t) => t.id === active.id);
-                
+
                 // Se over.id é uma tarefa, usar seu índice; senão, adicionar no final
                 let newIndex = sourceTasks.findIndex((t) => t.id === over.id);
                 if (newIndex === -1) {
@@ -285,17 +451,21 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     const columnTaskIds = new Set(sourceTasks.map((t) => t.id));
                     const columnTasks = prev.filter((t) => columnTaskIds.has(t.id));
                     const otherTasks = prev.filter((t) => !columnTaskIds.has(t.id));
-                    
+
                     // Reordenar apenas as tarefas da coluna
                     const reorderedColumnTasks = arrayMove(columnTasks, oldIndex, newIndex);
-                    
+
                     // Reunir todas as tarefas
                     return [...reorderedColumnTasks, ...otherTasks];
                 });
                 setIsSyncing(true);
 
-                // ✅ 3. Calcular nova posição (usando índice + 1 como posição)
-                const newPosition = (newIndex + 1) * 1000;
+                // ✅ 3. Calcular nova posição fracionária (só atualiza 1 row)
+                const reorderedForCalc = arrayMove([...sourceTasks], oldIndex, newIndex);
+                const newPosition = calculateFractionalPosition(
+                    reorderedForCalc.filter((t) => t.id !== task.id),
+                    newIndex
+                );
 
                 // ✅ 4. Backend em background com rollback
                 updateTaskPosition({
@@ -323,7 +493,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
             if (groupBy === "status") {
                 // Mapear label da UI para status do banco
-                const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived" | "review" | "correction"> = {
+                const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived" | "review" | "correction" | "blocked"> = {
                     "Backlog": "todo",
                     "Não iniciado": "todo",
                     "Não iniciada": "todo",
@@ -332,6 +502,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     "Em progresso": "in_progress",
                     "Revisão": "review",
                     "Correção": "correction",
+                    "Bloqueado": "blocked",
                     "Concluido": "done",
                     "Finalizado": "done",
                     "Arquivado": "archived",
@@ -349,7 +520,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             } else if (groupBy === "priority") {
                 // A chave da coluna já é o valor da priority (low, medium, high, urgent)
                 const nextPriority = destinationColumnId as "low" | "medium" | "high" | "urgent";
-                
+
                 // Validar se é um valor válido
                 if (!["low", "medium", "high", "urgent"].includes(nextPriority)) {
                     console.warn("Priority inválida:", destinationColumnId);
@@ -365,11 +536,33 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                         t.id === task.id ? { ...t, priority: nextPriority } : t
                     )
                 );
+            } else if (groupBy === "date") {
+                const targetBucket = destinationColumnId as
+                    | "Atrasadas"
+                    | "Hoje"
+                    | "Amanhã"
+                    | "Esta Semana"
+                    | "Futuro"
+                    | "Sem Data";
+
+                if (!["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"].includes(targetBucket)) {
+                    console.warn("Bucket de data inválido:", destinationColumnId);
+                    return;
+                }
+
+                const nextDueDate = getDueDateForBucket(targetBucket);
+                updateData.due_date = nextDueDate;
+
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === task.id ? { ...t, dueDate: nextDueDate || undefined } : t
+                    )
+                );
             } else if (groupBy === "assignee") {
                 // Encontrar o membro correspondente ao nome da coluna
                 // Member tem estrutura: { user_id, profiles: { full_name, email, avatar_url } }
-                const member = members.find((m) => 
-                    m.profiles?.full_name === destinationColumnId || 
+                const member = members.find((m) =>
+                    m.profiles?.full_name === destinationColumnId ||
                     m.profiles?.email === destinationColumnId ||
                     destinationColumnId === "Sem responsável"
                 );
@@ -382,15 +575,15 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     prev.map((t) =>
                         t.id === task.id
                             ? {
-                                  ...t,
-                                  assignees: assigneeId && member?.profiles
-                                      ? [{ 
-                                          name: member.profiles.full_name || member.profiles.email || destinationColumnId, 
-                                          id: assigneeId, 
-                                          avatar: member.profiles.avatar_url || undefined 
-                                      }]
-                                      : [],
-                              }
+                                ...t,
+                                assignees: assigneeId && member?.profiles
+                                    ? [{
+                                        name: member.profiles.full_name || member.profiles.email || destinationColumnId,
+                                        id: assigneeId,
+                                        avatar: member.profiles.avatar_url || undefined
+                                    }]
+                                    : [],
+                            }
                             : t
                     )
                 );
@@ -416,12 +609,13 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             // Modo List: trabalhar com grupos
             const currentGroupedData = groupedDataRef.current;
 
-            const sourceGroup = Object.entries(currentGroupedData).find(([_, tasks]) =>
-                tasks.some((task) => task.id === active.id)
+            const sourceGroup = Object.entries(currentGroupedData).find(([_, group]) =>
+                group.tasks.some((task) => task.id === active.id)
             );
             if (!sourceGroup) return;
 
-            const [sourceGroupKey, sourceTasks] = sourceGroup;
+            const [sourceGroupKey, sourceGroupData] = sourceGroup;
+            const sourceTasks = sourceGroupData.tasks;
             const sourceTaskIndex = sourceTasks.findIndex((task) => task.id === active.id);
             const taskInGroup = sourceTasks[sourceTaskIndex];
             if (sourceTaskIndex === -1 || !taskInGroup) return;
@@ -431,8 +625,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             if (isGroupId) {
                 destinationGroupKey = over.id;
             } else {
-                destinationGroupKey = Object.entries(currentGroupedData).find(([_, tasks]) =>
-                    tasks.some((t) => t.id === over.id)
+                destinationGroupKey = Object.entries(currentGroupedData).find(([_, group]) =>
+                    group.tasks.some((t) => t.id === over.id)
                 )?.[0];
             }
 
@@ -443,71 +637,96 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             }
 
             // ✅ MINIFY v2: mover apenas no estado local, backend em background
-            const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
-                Backlog: "todo",
-                Triagem: "in_progress",
-                Execução: "in_progress",
-                Revisão: "done",
-                Arquivado: "archived",
-            };
-
+            // Usar statusMap centralizado
             const currentGroupBy = groupBy;
             let nextStatusLabel = taskInGroup.status;
 
             if (currentGroupBy === "status") {
                 nextStatusLabel = destinationGroupKey;
+
+                const nextStatusDb = LABEL_TO_STATUS[nextStatusLabel] || "todo";
+
+                // ✅ 2. Atualização otimista local
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === taskInGroup.id ? { ...t, status: nextStatusLabel } : t
+                    )
+                );
+                setIsSyncing(true);
+
+                // ✅ 3. Backend em background com rollback
+                updateTask({
+                    id: taskInGroup.id,
+                    status: nextStatusDb,
+                })
+                    .then(() => {
+                        // Sucesso silencioso
+                    })
+                    .catch((error) => {
+                        console.error("Erro ao mover tarefa:", error);
+                        // ✅ 4. Rollback em caso de erro
+                        setLocalTasks(previousTasks);
+                        toast.error("Erro ao salvar movimento. Tente novamente.");
+                    })
+                    .finally(() => {
+                        setIsSyncing(false);
+                    });
+            } else if (currentGroupBy === "date") {
+                const targetBucket = destinationGroupKey as
+                    | "Atrasadas"
+                    | "Hoje"
+                    | "Amanhã"
+                    | "Esta Semana"
+                    | "Futuro"
+                    | "Sem Data";
+
+                if (!["Atrasadas", "Hoje", "Amanhã", "Esta Semana", "Futuro", "Sem Data"].includes(targetBucket)) {
+                    return;
+                }
+
+                const nextDueDate = getDueDateForBucket(targetBucket);
+
+                setLocalTasks((prev) =>
+                    prev.map((t) =>
+                        t.id === taskInGroup.id ? { ...t, dueDate: nextDueDate || undefined } : t
+                    )
+                );
+                setIsSyncing(true);
+
+                updateTask({
+                    id: taskInGroup.id,
+                    due_date: nextDueDate,
+                })
+                    .then(() => {
+                        // Sucesso silencioso
+                    })
+                    .catch((error) => {
+                        console.error("Erro ao mover tarefa:", error);
+                        setLocalTasks(previousTasks);
+                        toast.error("Erro ao salvar movimento. Tente novamente.");
+                    })
+                    .finally(() => {
+                        setIsSyncing(false);
+                    });
             }
-
-            const nextStatusDb = statusMap[nextStatusLabel] || "todo";
-
-            // ✅ 2. Atualização otimista local
-            setLocalTasks((prev) =>
-                prev.map((t) =>
-                    t.id === taskInGroup.id ? { ...t, status: nextStatusLabel } : t
-                )
-            );
-            setIsSyncing(true);
-
-            // ✅ 3. Backend em background com rollback
-            updateTask({
-                id: taskInGroup.id,
-                status: nextStatusDb,
-            })
-                .then(() => {
-                    // Sucesso silencioso
-                })
-                .catch((error) => {
-                    console.error("Erro ao mover tarefa:", error);
-                    // ✅ 4. Rollback em caso de erro
-                    setLocalTasks(previousTasks);
-                    toast.error("Erro ao salvar movimento. Tente novamente.");
-                })
-                .finally(() => {
-                    setIsSyncing(false);
-                });
         }
     }, [groupBy, viewMode]);
 
     // ✅ MINIFY v2: Handler de criação com rollback
     const handleAddTask = useCallback((
         title: string,
-        context: { status?: string; priority?: string; assignee?: string }
+        context: { status?: string; priority?: string; assignee?: string; dueDate?: string | null }
     ) => {
-        const statusMap: Record<string, "todo" | "in_progress" | "done" | "archived"> = {
-            Backlog: "todo",
-            Triagem: "in_progress",
-            Execução: "in_progress",
-            Revisão: "done",
-        };
-
+        // Usar mapStatusToLabel e LABEL_TO_STATUS centralizados
         const tempId = `temp-${Date.now()}`;
-        const nextStatusLabel = context.status || "Backlog";
-        const nextStatusDb = statusMap[nextStatusLabel] || "todo";
+        const nextStatusLabel = context.status || "Não iniciado";
+        const nextStatusDb = LABEL_TO_STATUS[nextStatusLabel] || "todo";
 
         // ✅ 1. Snapshot do estado anterior (para rollback)
         const previousTasks = [...localTasksRef.current];
 
         // ✅ 2. Atualização otimista no estado local
+        const tags = tagFilter ? [tagFilter] : [];
         setLocalTasks((prev) => [
             {
                 id: tempId,
@@ -516,8 +735,9 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 status: nextStatusLabel,
                 priority: context.priority as any,
                 assignees: [],
-                tags: [],
+                tags: tags,
                 hasUpdates: false,
+                dueDate: context.dueDate || undefined,
                 workspaceId,
             },
             ...prev,
@@ -530,7 +750,9 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             workspace_id: workspaceId,
             status: nextStatusDb,
             priority: context.priority as any,
+            due_date: context.dueDate || undefined,
             is_personal: false,
+            tags: tags.length > 0 ? tags : undefined,
         })
             .then((result) => {
                 if (!result || !("success" in result)) {
@@ -554,7 +776,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             .finally(() => {
                 setIsSyncing(false);
             });
-    }, [workspaceId, mapTaskFromDB]);
+    }, [workspaceId, mapTaskFromDB, tagFilter]);
 
     // ✅ MINIFY v2: Handler de toggle com rollback
     const handleToggleComplete = useCallback((taskId: string, completed: boolean) => {
@@ -601,12 +823,12 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             prev.map((task) =>
                 task.id === taskId
                     ? {
-                          ...task,
-                          ...(updates.title && { title: updates.title }),
-                          ...(updates.dueDate !== undefined && {
-                              dueDate: updates.dueDate || undefined,
-                          }),
-                      }
+                        ...task,
+                        ...(updates.title && { title: updates.title }),
+                        ...(updates.dueDate !== undefined && {
+                            dueDate: updates.dueDate || undefined,
+                        }),
+                    }
                     : task
             )
         );
@@ -654,7 +876,7 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             if (taskIndex === -1) {
                 return prev;
             }
-            
+
             // ✅ Criar novo array com imutabilidade garantida
             const updated = prev.map((task, index) => {
                 if (index === taskIndex) {
@@ -662,13 +884,13 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 }
                 return task;
             });
-            
+
             return updated;
         });
     }, []);
 
     // ✅ Callback memoizado para optimistic updates (deve vir depois de updateLocalTask)
-    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title: string; status: string; dueDate?: string; assignees: Array<{ name: string; avatar?: string; id?: string }> }>) => {
+    const handleOptimisticUpdate = useCallback((taskId: string, updates: Partial<{ title?: string; status?: string; dueDate?: string; priority?: string; assignees?: Array<{ name: string; avatar?: string; id?: string }>; tags?: string[] }>) => {
         // Mapear updates para o formato do estado local
         const localUpdates: Partial<Task> = {};
         if (updates.title) localUpdates.title = updates.title;
@@ -677,7 +899,12 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             localUpdates.status = updates.status;
         }
         if (updates.dueDate !== undefined) localUpdates.dueDate = updates.dueDate || undefined;
-        if (updates.assignees) localUpdates.assignees = updates.assignees;
+        if (updates.priority) localUpdates.priority = updates.priority as "low" | "medium" | "high" | "urgent";
+        if (updates.assignees) {
+            localUpdates.assignees = updates.assignees;
+            // ✅ Também atualizar assigneeId se a interface Task tiver esse campo
+            // Nota: tasks-view.tsx não usa assigneeId, mas mantemos para consistência
+        }
         updateLocalTask(taskId, localUpdates);
     }, [updateLocalTask]);
 
@@ -687,12 +914,12 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
         // A atualização otimista é feita via updateLocalTask
         console.log("Simulando refresh opcional…");
     }, []);
-    
+
     // ✅ OTIMIZAÇÃO: Handler memoizado para drag cancel
     const handleDragCancel = useCallback(() => {
         setActiveTask(null);
     }, []);
-    
+
     // ✅ OTIMIZAÇÃO: Handler memoizado para modal change
     const handleModalOpenChange = useCallback((open: boolean) => {
         setIsModalOpen(open);
@@ -701,30 +928,31 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
             setSelectedTaskId(null);
         }
     }, []);
-    
+
     // ✅ OTIMIZAÇÃO: Handler memoizado para add task no kanban
     const handleKanbanAddTask = useCallback((columnId: string) => {
         const context: any = {};
         if (groupBy === "status") context.status = columnId;
         if (groupBy === "priority") context.priority = columnId;
+        if (groupBy === "date") context.dueDate = getDueDateForBucket(columnId);
         handleAddTask("", context);
     }, [groupBy, handleAddTask]);
 
-  return (
+    return (
         <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/50 relative">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
-        <div className="flex items-center gap-4">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
+                <div className="flex items-center gap-4">
                     {/* Tabs de Contexto */}
                     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ContextTab)}>
-                        <TabsList className="bg-white border rounded-lg h-9">
-                            <TabsTrigger value="minhas" className="h-7 rounded-md text-sm px-3">
+                        <TabsList variant="default">
+                            <TabsTrigger value="minhas" variant="default">
                                 Minhas
                             </TabsTrigger>
-                            <TabsTrigger value="time" className="h-7 rounded-md text-sm px-3">
+                            <TabsTrigger value="time" variant="default">
                                 Time
                             </TabsTrigger>
-                            <TabsTrigger value="todas" className="h-7 rounded-md text-sm px-3">
+                            <TabsTrigger value="todas" variant="default">
                                 Todas
                             </TabsTrigger>
                         </TabsList>
@@ -733,14 +961,14 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                     {/* Busca */}
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            <Input 
-              placeholder="Buscar tarefas..." 
+                        <Input
+                            placeholder="Buscar tarefas..."
                             className="pl-9 w-[240px] h-9 bg-white rounded-lg border-gray-200 shadow-sm"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          
+                        />
+                    </div>
+
                     {/* Filtro */}
                     <Button
                         variant="outline"
@@ -757,7 +985,6 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="status">Status</SelectItem>
-                            <SelectItem value="priority">Prioridade</SelectItem>
                             <SelectItem value="assignee">Responsável</SelectItem>
                         </SelectContent>
                     </Select>
@@ -766,47 +993,32 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
 
                     {/* ✅ MINIFY v2: Indicador de sincronização discreto */}
                     {isSyncing && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>Salvando...</span>
-                      </div>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Salvando...</span>
+                        </div>
                     )}
 
                     {/* View Switcher */}
-                    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg h-9">
-             <button 
-                            onClick={() => setViewMode("list")}
-                            className={cn(
-                                "p-1.5 rounded-md transition-all h-7",
-                                viewMode === "list"
-                                    ? "bg-white text-gray-900 shadow-sm"
-                                    : "text-gray-500 hover:text-gray-900"
-                            )}
-                            title="Lista"
-             >
-                            <List className="w-4 h-4" />
-             </button>
-             <button 
-                            onClick={() => setViewMode("kanban")}
-                            className={cn(
-                                "p-1.5 rounded-md transition-all h-7",
-                                viewMode === "kanban"
-                                    ? "bg-white text-gray-900 shadow-sm"
-                                    : "text-gray-500 hover:text-gray-900"
-                            )}
-                            title="Kanban"
-             >
-                            <LayoutGrid className="w-4 h-4" />
-             </button>
-          </div>
-        </div>
-      </div>
+                    <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+                        <TabsList variant="default">
+                            <TabsTrigger value="list" variant="default">
+                                <List className="w-4 h-4" />
+                            </TabsTrigger>
+                            <TabsTrigger value="kanban" variant="default">
+                                <LayoutGrid className="w-4 h-4" />
+                            </TabsTrigger>
+                        </TabsList>
+                    </Tabs>
+                </div>
+            </div>
 
-      {/* Content */}
+            {/* Content */}
             <div className="flex-1 overflow-auto p-6">
                 <DndContext
                     sensors={sensors}
-                    collisionDetection={closestCenter}
+                    collisionDetection={customCollisionDetection}
+                    measuring={measuringConfig}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     onDragCancel={handleDragCancel}
@@ -819,6 +1031,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                                     id={group.id}
                                     title={group.title}
                                     tasks={group.tasks}
+                                    groupColor={group.color}
+                                    workspaceId={workspaceId || null}
                                     onTaskClick={handleTaskClick}
                                 />
                             ))}
@@ -845,15 +1059,34 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                         />
                     )}
 
-                    <DragOverlay>
+                    <DragOverlay
+                        dropAnimation={{
+                            duration: 200,
+                            easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+                        }}
+                    >
                         {activeTask ? (
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-4 opacity-90">
-                                <p className="text-sm font-medium">{activeTask.title}</p>
-          </div>
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-3 pointer-events-none cursor-grabbing w-[280px] ring-2 ring-gray-900/5">
+                                <div className="flex items-center gap-2 mb-1">
+                                    {activeTask.priority && (
+                                        <span className={cn(
+                                            "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                            activeTask.priority === "urgent" && "bg-red-100 text-red-700",
+                                            activeTask.priority === "high" && "bg-orange-100 text-orange-700",
+                                            activeTask.priority === "medium" && "bg-yellow-100 text-yellow-700",
+                                            activeTask.priority === "low" && "bg-gray-100 text-gray-600",
+                                        )}>
+                                            {activeTask.priority}
+                                        </span>
+                                    )}
+                                    <span className="text-[10px] text-gray-400">{activeTask.status}</span>
+                                </div>
+                                <p className="text-sm font-medium text-gray-800 line-clamp-2">{activeTask.title}</p>
+                            </div>
                         ) : null}
                     </DragOverlay>
                 </DndContext>
-      </div>
+            </div>
 
             {/* Modal de Detalhes */}
             <TaskDetailModal
@@ -864,7 +1097,8 @@ export function TasksView({ initialTasks, workspaceId, members }: TasksViewProps
                 mode={selectedTaskId ? "edit" : "create"}
                 onTaskCreated={reloadTasks}
                 onTaskUpdated={reloadTasks}
-      />
-    </div>
-  );
+                onTaskUpdatedOptimistic={handleOptimisticUpdate}
+            />
+        </div>
+    );
 }

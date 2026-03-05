@@ -13,7 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export function NewTransactionButton() {
+interface NewTransactionButtonProps {
+  workspaceId?: string;
+}
+
+export function NewTransactionButton({ workspaceId }: NewTransactionButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -27,7 +31,11 @@ export function NewTransactionButton() {
         <span className="sm:hidden">Novo</span>
       </Button>
 
-      <CreateTransactionModal open={isOpen} onOpenChange={setIsOpen} />
+      <CreateTransactionModal 
+        open={isOpen} 
+        onOpenChange={setIsOpen} 
+        initialWorkspaceId={workspaceId}
+      />
     </>
   );
 }

@@ -3,7 +3,7 @@
 import React from "react";
 import { Avatar } from "./Avatar";
 import { Calendar, MoreHorizontal, Paperclip, MessageSquare } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDateDisplay } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
@@ -217,7 +217,9 @@ function TaskCardComponent({
                             <Calendar
                                 className={cn(
                                     "w-3 h-3",
-                                    isOverdue
+                                    completed
+                                        ? "text-gray-400"
+                                        : isOverdue
                                         ? "text-red-600"
                                         : isToday
                                         ? "text-green-600"
@@ -227,17 +229,16 @@ function TaskCardComponent({
                             <span
                                 className={cn(
                                     "text-[10px] font-medium",
-                                    isOverdue
+                                    completed
+                                        ? "text-gray-400"
+                                        : isOverdue
                                         ? "text-red-600"
                                         : isToday
                                         ? "text-green-600"
                                         : "text-gray-500"
                                 )}
                             >
-                                {new Date(dueDate).toLocaleDateString("pt-BR", {
-                                    day: "2-digit",
-                                    month: "short",
-                                })}
+                                {formatDateDisplay(dueDate)}
                             </span>
                         </div>
                     )}

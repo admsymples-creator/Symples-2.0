@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,35 +25,56 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi, Loader2 } from "lucide-react";
+import { Upload, UserPlus, Trash2, CreditCard, CheckCircle2, Copy, Minimize2, Maximize2, Mail, X, Calendar, Phone, Monitor, Wifi, Loader2, MoreVertical, Edit, RotateCcw, Shield } from "lucide-react";
 import { useUI } from "@/components/providers/UIScaleProvider";
 import { updateProfile, Profile, Workspace, getWorkspaceById } from "@/lib/actions/user";
-import { updateWorkspaceSettings } from "@/lib/actions/workspace-settings";
-import { inviteMember, revokeInvite, Member, Invite, getWorkspaceMembers, getPendingInvites } from "@/lib/actions/members";
+import { updateWorkspaceSettings, deleteWorkspace } from "@/lib/actions/workspace-settings";
+import { 
+  inviteMember, 
+  revokeInvite, 
+  resendInvite,
+  removeMember,
+  updateMemberRole,
+  Member, 
+  Invite, 
+  getWorkspaceMembers, 
+  getPendingInvites,
+  getCurrentUserRole
+} from "@/lib/actions/members";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/modals/confirm-modal";
 import { Slider } from "@/components/ui/slider";
-import { useWorkspace } from "@/components/providers/SidebarProvider";
-
-// Mock Data for Billing History
-const BILLING_HISTORY = [
-  { date: "01 Nov 2025", amount: "R$ 97,00", status: "Pago" },
-  { date: "01 Out 2025", amount: "R$ 97,00", status: "Pago" },
-  { date: "01 Set 2025", amount: "R$ 97,00", status: "Pago" },
-];
+import { useOptionalWorkspace } from "@/components/providers/SidebarProvider";
+import { getDisplayPlanName } from "@/lib/utils/subscription-helpers";
+import type { SubscriptionData } from "@/lib/types/subscription";
 
 interface SettingsPageClientProps {
   user: Profile | null;
   workspace: Workspace | null;
   initialMembers: Member[];
   initialInvites: Invite[];
+  initialSubscription?: SubscriptionData | null;
+  mode?: "settings" | "team";
 }
 
-export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites }: SettingsPageClientProps) {
+type SettingsTab = "general" | "members" | "billing" | "profile";
+
+export function SettingsPageClient({ user, workspace: initialWorkspace, initialMembers, initialInvites, initialSubscription, mode }: SettingsPageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const activeTab = searchParams.get("tab") || "general";
-  const { activeWorkspaceId, isLoaded } = useWorkspace();
+  const effectiveMode = mode ?? "settings";
+  const initialTab = useMemo(() => {
+    if (effectiveMode === "team") return "members";
+    const tabParam = searchParams.get("tab") as SettingsTab | null;
+    if (tabParam === "members") return "general";
+    return tabParam || "general";
+  }, [effectiveMode, searchParams]);
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => initialTab);
+  const workspaceContext = useOptionalWorkspace();
+  const activeWorkspaceId = workspaceContext?.activeWorkspaceId || null;
+  const isLoaded = workspaceContext?.isLoaded || false;
+  const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(initialSubscription || null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
 
   // Workspace state - agora dinâmico baseado no contexto
   const [workspace, setWorkspace] = useState<Workspace | null>(initialWorkspace);
@@ -80,9 +101,34 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_url || null);
 
-  // Carregar workspace ativo quando o contexto mudar
+  // Sincronizar dados iniciais quando disponíveis - executar apenas uma vez no mount
   useEffect(() => {
+    if (initialWorkspace) {
+      setWorkspace(initialWorkspace);
+      setWorkspaceName(initialWorkspace.name);
+      setSlug(initialWorkspace.slug || "");
+      setWorkspaceLogoPreview((initialWorkspace as any)?.logo_url || null);
+    }
+    if (initialMembers.length > 0 || initialInvites.length > 0) {
+      setMembers(initialMembers);
+      setInvites(initialInvites);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Executar apenas no mount
+
+  // Carregar workspace ativo quando o contexto mudar (apenas se não temos dados iniciais)
+  useEffect(() => {
+    if (effectiveMode === "team") {
+      return;
+    }
+
     if (!isLoaded || !activeWorkspaceId) {
+      return;
+    }
+
+    // OTIMIZAÇÃO: Se já temos dados iniciais para este workspace, não recarregar
+    if (initialWorkspace && activeWorkspaceId === initialWorkspace.id) {
+      // Dados já estão carregados, não fazer fetch
       return;
     }
 
@@ -114,7 +160,54 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     };
 
     loadActiveWorkspace();
-  }, [activeWorkspaceId, isLoaded]);
+  }, [activeWorkspaceId, isLoaded, initialWorkspace, effectiveMode]);
+
+  // Carregar dados de subscription quando workspace mudar ou tab billing for aberta
+  useEffect(() => {
+    if (!activeWorkspaceId || activeTab !== 'billing') {
+      return;
+    }
+
+    const loadSubscription = async () => {
+      setIsLoadingSubscription(true);
+      try {
+        // Usar API route ao invés de Server Action no Client Component
+        const response = await fetch(`/api/workspace/subscription?workspaceId=${activeWorkspaceId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setSubscriptionData(data);
+        } else {
+          setSubscriptionData(null);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar subscription:", error);
+        setSubscriptionData(null);
+      } finally {
+        setIsLoadingSubscription(false);
+      }
+    };
+
+    loadSubscription();
+  }, [activeWorkspaceId, activeTab]);
+
+  // Prevent hydration mismatch - mount Tabs only on client
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const handleTabChange = useCallback((value: string) => {
+    if (effectiveMode === "team") {
+      return;
+    }
+    const nextTab = value as SettingsTab;
+    setActiveTab(nextTab);
+
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", nextTab);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
 
   // Update state if props change (para perfil do usuário)
   useEffect(() => {
@@ -141,18 +234,43 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
     }
   };
 
+  // Prevent hydration mismatch - mount Tabs only on client
+  const [isMounted, setIsMounted] = useState(false);
+
   // Members & Invites State
+  // OTIMIZAÇÃO: Usar dados iniciais se disponíveis
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
+  const currentUserRole = useMemo(() => {
+    if (!user) return null;
+    return members.find((member) => member.user_id === user.id)?.role || null;
+  }, [members, user]);
+  
+  // Verificar se pode excluir workspace: role "owner" OU é o owner_id do workspace
+  const canDeleteWorkspace = useMemo(() => {
+    if (!user || !workspace) return false;
+    // Verificar por role na lista de membros
+    const isOwnerByRole = currentUserRole === "owner";
+    // Verificar por owner_id no workspace (fallback)
+    const isOwnerById = (workspace as any).owner_id === user.id;
+    return isOwnerByRole || isOwnerById;
+  }, [currentUserRole, user, workspace]);
+  
+  // NOTA: Removido useEffect que sobrescrevia membros - causava perda de dados quando initialMembers mudava
+  // Os dados iniciais já são passados no useState acima, e membros são atualizados apenas quando workspace muda (linha 145)
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [newMember, setNewMember] = useState({ email: "", role: "member" });
+  const [roleUpdateLoading, setRoleUpdateLoading] = useState<Record<string, boolean>>({});
 
   // Modal States
   const [inviteToRevoke, setInviteToRevoke] = useState<string | null>(null);
   const [isRevoking, setIsRevoking] = useState(false);
-  const [memberToRemove, setMemberToRemove] = useState<string | null>(null); // Não implementado na API ainda, mas preparado
+  const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
+  const [isDeleteWorkspaceOpen, setIsDeleteWorkspaceOpen] = useState(false);
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
 
   const handleSaveSettings = async () => {
     if (!workspace) return;
@@ -179,6 +297,27 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         toast.error("Erro ao salvar configurações", { description: error.message });
     } finally {
         setIsSaving(false);
+    }
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!workspace) return;
+    setIsDeletingWorkspace(true);
+    try {
+      const result = await deleteWorkspace(workspace.id);
+      if (!result.success) {
+        toast.error(result.error || "Erro ao excluir workspace");
+        return;
+      }
+      toast.success("Workspace excluído com sucesso");
+      setIsDeleteWorkspaceOpen(false);
+      router.push("/home");
+      router.refresh();
+    } catch (error) {
+      console.error("Erro ao excluir workspace:", error);
+      toast.error("Erro ao excluir workspace");
+    } finally {
+      setIsDeletingWorkspace(false);
     }
   };
 
@@ -211,10 +350,72 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       setMemberToRemove(userId);
   };
 
+  const handleUpdateMemberRole = async (userId: string, nextRole: "admin" | "member" | "viewer") => {
+      if (!workspace) return;
+      const previousRole = members.find((m) => m.user_id === userId)?.role;
+      if (!previousRole || previousRole === nextRole) return;
+
+      setRoleUpdateLoading((prev) => ({ ...prev, [userId]: true }));
+      setMembers((prev) => prev.map((m) => m.user_id === userId ? { ...m, role: nextRole } : m));
+
+      try {
+          const result = await updateMemberRole(workspace.id, userId, nextRole);
+          if (!result.success) {
+              throw new Error("Erro ao atualizar função");
+          }
+          toast.success("Função atualizada");
+      } catch (error: any) {
+          setMembers((prev) => prev.map((m) => m.user_id === userId ? { ...m, role: previousRole } : m));
+          toast.error("Erro ao atualizar função", {
+              description: error?.message || "Tente novamente."
+          });
+      } finally {
+          setRoleUpdateLoading((prev) => ({ ...prev, [userId]: false }));
+      }
+  };
+
   const confirmRemoveMember = async () => {
-      // TODO: Implement server action for removing member
-      toast.info("Em breve", { description: "Funcionalidade de remover membro ainda não implementada na API." });
-      setMemberToRemove(null);
+      if (!memberToRemove || !workspace) return;
+      setIsRemovingMember(true);
+      try {
+          const result = await removeMember(workspace.id, memberToRemove);
+          
+          if (!result.success) {
+            if (result.error === "Membro nao encontrado para remocao") {
+              setMembers(members.filter(m => m.user_id !== memberToRemove));
+              toast.success("Membro removido", {
+                description: "O usuario ja nao esta no workspace.",
+              });
+              return;
+            }
+            throw new Error(result.error || "Erro ao remover membro");
+          }
+
+          // Atualizar estado local imediatamente (otimistic update)
+          setMembers(members.filter(m => m.user_id !== memberToRemove));
+          
+          if (result.warning) {
+            toast.success("Membro removido", { 
+              description: result.warning
+            });
+          } else {
+            toast.success("Membro removido", { 
+              description: "O usuário perdeu acesso ao workspace." 
+            });
+          }
+          
+          // Não chamar router.refresh() - revalidatePath já foi chamado na server action
+          // O estado local já foi atualizado, então a UI está sincronizada
+          // Chamar router.refresh() pode causar erro de Server Components render
+      } catch (error: any) {
+          console.error("Erro ao remover membro:", error);
+          toast.error("Erro ao remover membro", { 
+            description: error?.message || "Ocorreu um erro inesperado. Tente novamente." 
+          });
+      } finally {
+          setIsRemovingMember(false);
+          setMemberToRemove(null);
+      }
   }
 
   const handleInviteMember = async () => {
@@ -225,17 +426,43 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
     try {
         const result = await inviteMember(workspace.id, newMember.email, newMember.role as "admin" | "member" | "viewer");
+        if (!result?.success) {
+            const message = result?.error || "Ocorreu um erro ao processar o convite.";
+            toast.error("Erro ao enviar convite", { description: message });
+            return;
+        }
         
-        if (result.inviteLink) {
+        // ✅ CORREÇÃO: Todos os convites agora são pendentes (fluxo unificado)
+        // A função sempre retorna inviteLink quando bem-sucedida
+        if (result.success && "inviteLink" in result && result.inviteLink) {
+            // Se foi criado convite pendente
             setInviteLink(result.inviteLink);
             toast.success("Convite criado!", {
                 description: "Copie o link para enviar ao usuário."
             });
+            // Recarregar lista de convites pendentes
+            if (workspace.id) {
+                const updatedInvites = await getPendingInvites(workspace.id);
+                setInvites(updatedInvites);
+            }
+        } else {
+            // Convite foi criado mas sem link (em produção)
+            toast.success("Convite enviado!", {
+                description: "O email de convite foi enviado para o usuário."
+            });
+            // Recarregar lista de convites pendentes
+            if (workspace.id) {
+                const updatedInvites = await getPendingInvites(workspace.id);
+                setInvites(updatedInvites);
+            }
         }
         
         setNewMember({ email: "", role: "member" });
     } catch (error: any) {
-        toast.error("Erro ao enviar convite", { description: error.message });
+        console.error("❌ Erro ao enviar convite no cliente:", error);
+        toast.error("Erro ao enviar convite", { 
+            description: error?.message || "Ocorreu um erro ao processar o convite. Verifique os logs para mais detalhes." 
+        });
     } finally {
         setIsInviting(false);
     }
@@ -266,30 +493,76 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
       : "US";
   };
 
+  const getRoleLabel = (role: string): string => {
+    const roleMap: Record<string, string> = {
+      owner: "Proprietário",
+      admin: "Administrador", 
+      member: "Membro",
+      viewer: "Visualizador"
+    };
+    return roleMap[role] || role;
+  };
+
+  // Renderizar apenas após montagem no cliente para evitar erro de hidratação
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-white pb-20">
+        <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+          <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{effectiveMode === "team" ? "Time" : "Configuracoes do Workspace"}</h1>
+              <p className="text-sm text-gray-500">
+                {effectiveMode === "team" ? "Gerencie os membros e convites do workspace." : "Gerencie as preferencias gerais e faturamento."}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full bg-white px-6">
+          <div className="max-w-[1600px] mx-auto">
+            <div className="py-3">
+              <div className="flex items-center justify-center py-12">
+                <div className="text-muted-foreground">Carregando...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container max-w-5xl py-10 mx-auto">
-      <div className="flex flex-col gap-2 mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Configurações do Workspace</h1>
-        <p className="text-muted-foreground">
-          Gerencie as preferências gerais, membros da equipe e faturamento.
-        </p>
+    <div className="min-h-screen bg-white pb-20">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{effectiveMode === "team" ? "Time" : "Configuracoes do Workspace"}</h1>
+            <p className="text-sm text-gray-500">
+                {effectiveMode === "team" ? "Gerencie os membros e convites do workspace." : "Gerencie as preferencias gerais e faturamento."}
+              </p>
+          </div>
+        </div>
       </div>
 
-      <Tabs 
-        value={activeTab} 
-        onValueChange={(val) => router.push(`/settings?tab=${val}`)} 
-        className="w-full space-y-6"
+      <div className="w-full bg-white px-6">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="py-3">
+      <Tabs
+        value={activeTab}
+        onValueChange={handleTabChange}
+        className="w-full space-y-3"
       >
         {/* Navigation Tabs */}
-        <TabsList className="grid w-full grid-cols-4 md:w-[500px]">
-          <TabsTrigger value="general">Geral</TabsTrigger>
-          <TabsTrigger value="members">Membros</TabsTrigger>
-          <TabsTrigger value="billing">Faturamento</TabsTrigger>
-          <TabsTrigger value="profile">Perfil</TabsTrigger>
-        </TabsList>
+        {effectiveMode === "settings" && (
+          <TabsList variant="grid" className="grid w-full grid-cols-3 md:w-[420px]">
+            <TabsTrigger value="general" variant="grid">Geral</TabsTrigger>
+            <TabsTrigger value="billing" variant="grid">Faturamento</TabsTrigger>
+            <TabsTrigger value="profile" variant="grid">Perfil</TabsTrigger>
+          </TabsList>
+        )}
 
         {/* A. ABA GERAL (WORKSPACE) */}
-        <TabsContent value="general" className="space-y-6">
+        <TabsContent value="general" className="mt-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -416,6 +689,30 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </CardContent>
           </Card>
 
+          {/* Danger Zone */}
+          <Card className="border-red-200">
+            <CardHeader>
+              <CardTitle className="text-red-600">Excluir Workspace</CardTitle>
+              <CardDescription>
+                Esta ação é permanente. Todas as tarefas e dados deste workspace serão removidos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between gap-4">
+              <div className="text-sm text-gray-600">
+                {canDeleteWorkspace
+                  ? "Use com cuidado. Essa ação não pode ser desfeita."
+                  : "Somente o owner pode excluir o workspace."}
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setIsDeleteWorkspaceOpen(true)}
+                disabled={!workspace || isLoadingWorkspace || isDeletingWorkspace || !canDeleteWorkspace}
+              >
+                Excluir
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* WhatsApp Integration */}
           <Card className="overflow-hidden">
             <CardHeader>
@@ -447,9 +744,16 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </TabsContent>
 
         {/* B. ABA MEMBROS (GESTÃO DE TIME) */}
-        <TabsContent value="members" className="space-y-6">
+        <TabsContent value="members" className="mt-0 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">Membros do Time</h2>
+            <h2 className="text-lg font-medium flex items-center gap-2">
+              Membros do Time
+              {invites.length > 0 && (
+                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                  {invites.length} pendente{invites.length > 1 ? 's' : ''}
+                </Badge>
+              )}
+            </h2>
             
             <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
               <DialogTrigger asChild>
@@ -458,7 +762,7 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   Convidar Pessoas
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                   <DialogTitle>Convidar novo membro</DialogTitle>
                   <DialogDescription>
@@ -488,9 +792,9 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             <SelectValue placeholder="Selecione uma função" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
-                            <SelectItem value="viewer">Viewer</SelectItem>
+                            <SelectItem value="admin">Administrador</SelectItem>
+                            <SelectItem value="member">Membro</SelectItem>
+                            <SelectItem value="viewer">Visualizador</SelectItem>
                         </SelectContent>
                         </Select>
                     </div>
@@ -501,12 +805,12 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                             <CheckCircle2 className="h-8 w-8 text-green-600" />
                             <h3 className="font-medium text-green-900">Convite Criado!</h3>
                             <p className="text-sm text-green-700">
-                                Em ambiente de desenvolvimento, use o link abaixo:
+                                Copie o link abaixo para compartilhar:
                             </p>
                         </div>
-                        <div className="flex items-center gap-2 p-2 bg-slate-100 rounded-md border">
-                            <code className="text-xs flex-1 truncate">{inviteLink}</code>
-                            <Button size="sm" variant="ghost" onClick={() => {
+                        <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-md border min-w-0">
+                            <code className="text-xs flex-1 break-all min-w-0 pr-2">{inviteLink}</code>
+                            <Button size="sm" variant="ghost" className="flex-shrink-0" onClick={() => {
                                 navigator.clipboard.writeText(inviteLink);
                                 toast.success("Link copiado!");
                             }}>
@@ -518,9 +822,14 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
 
                 <DialogFooter>
                   {inviteLink ? (
-                      <Button onClick={() => {
+                      <Button onClick={async () => {
                           setInviteLink(null);
                           setIsInviteOpen(false);
+                          // Recarregar lista de convites após fechar modal
+                          if (workspace?.id) {
+                              const updatedInvites = await getPendingInvites(workspace.id);
+                              setInvites(updatedInvites);
+                          }
                           router.refresh();
                       }}>Concluir</Button>
                   ) : (
@@ -536,20 +845,20 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </Dialog>
           </div>
 
-          <Card>
+          <Card className="border-none shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
+                <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                   <tr>
-                    <th className="px-6 py-4 font-medium">Usuário</th>
-                    <th className="px-6 py-4 font-medium">Função</th>
-                    <th className="px-6 py-4 font-medium text-right">Ações</th>
+                    <th className="px-4 py-3 font-medium">Usuário</th>
+                    <th className="px-4 py-3 font-medium">Função</th>
+                    <th className="px-4 py-3 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-gray-100">
                   {members.length === 0 && (
                       <tr>
-                          <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
+                          <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                               Nenhum membro encontrado além de você.
                           </td>
                       </tr>
@@ -557,27 +866,61 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
                   {members.map((member) => {
                     const name = member.profiles?.full_name || "Usuário";
                     const email = member.profiles?.email || "";
-                    const initials = getInitials(name);
+                    const avatarUrl = member.profiles?.avatar_url;
+                    const hasAvatar = avatarUrl && avatarUrl.trim() !== '';
+                    const canEditRole = (currentUserRole === "owner" || currentUserRole === "admin") &&
+                        member.role !== "owner" &&
+                        member.user_id !== user?.id;
+                    const roleOptions = currentUserRole === "owner"
+                        ? ["admin", "member", "viewer"]
+                        : ["member", "viewer"];
                     
                     return (
-                        <tr key={member.user_id} className="bg-white hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4">
+                        <tr key={member.user_id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
+                        <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
-                                {initials}
-                            </div>
+                            {hasAvatar ? (
+                                <img 
+                                    src={avatarUrl} 
+                                    alt={name}
+                                    className="h-8 w-8 rounded-full object-cover"
+                                />
+                            ) : (
+                                <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold text-xs">
+                                    {getInitials(name)}
+                                </div>
+                            )}
                             <div>
                                 <div className="font-medium text-gray-900">{name}</div>
                                 <div className="text-muted-foreground text-xs">{email}</div>
                             </div>
                             </div>
                         </td>
-                        <td className="px-6 py-4">
-                            <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
-                            {member.role}
-                            </Badge>
+                        <td className="px-4 py-3">
+                            {canEditRole ? (
+                                <Select
+                                    value={member.role}
+                                    onValueChange={(val) => handleUpdateMemberRole(member.user_id, val as "admin" | "member" | "viewer")}
+                                    disabled={roleUpdateLoading[member.user_id]}
+                                >
+                                    <SelectTrigger className="h-8 w-[160px]">
+                                        <SelectValue placeholder="Selecione" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {roleOptions.map((role) => (
+                                            <SelectItem key={role} value={role}>
+                                                {getRoleLabel(role)}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Badge variant={member.role === "owner" ? "default" : member.role === "admin" ? "secondary" : "outline"}>
+                                    {getRoleLabel(member.role)}
+                                </Badge>
+                            )}
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-4 py-3 text-right">
                             <Button 
                             variant="ghost" 
                             size="icon" 
@@ -599,33 +942,33 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
           {invites.length > 0 && (
               <div className="space-y-4">
                   <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Convites Pendentes</h3>
-                  <Card>
+                  <Card className="border-none shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-muted-foreground uppercase bg-gray-50/50 border-b">
+                        <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                         <tr>
-                            <th className="px-6 py-4 font-medium">Email</th>
-                            <th className="px-6 py-4 font-medium">Função</th>
-                            <th className="px-6 py-4 font-medium text-right">Ações</th>
+                            <th className="px-4 py-3 font-medium">Email</th>
+                            <th className="px-4 py-3 font-medium">Função</th>
+                            <th className="px-4 py-3 font-medium text-right">Ações</th>
                         </tr>
                         </thead>
-                        <tbody className="divide-y">
+                        <tbody className="divide-y divide-gray-100">
                         {invites.map((invite) => (
-                            <tr key={invite.id} className="bg-white hover:bg-gray-50/50 transition-colors">
-                            <td className="px-6 py-4">
+                            <tr key={invite.id} className="hover:bg-gray-50/50 transition-colors h-[52px]">
+                            <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-bold text-xs">
-                                        <Mail className="h-4 w-4" />
+                                    <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700">
+                                        <Mail className="h-3.5 w-3.5" />
                                     </div>
                                     <span className="text-gray-700">{invite.email}</span>
                                 </div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-4 py-3">
                                 <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                                    {invite.role} (Pendente)
+                                    {getRoleLabel(invite.role)} (Pendente)
                                 </Badge>
                             </td>
-                            <td className="px-6 py-4 text-right">
+                            <td className="px-4 py-3 text-right">
                                 <Button 
                                 variant="ghost" 
                                 size="sm" 
@@ -648,43 +991,80 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         </TabsContent>
 
         {/* C. ABA FATURAMENTO (BILLING) */}
-        <TabsContent value="billing" className="space-y-6">
+        <TabsContent value="billing" className="mt-0 space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
             {/* Card do Plano */}
             <Card className="md:col-span-2">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Plano Atual</CardTitle>
-                  <Badge className="bg-green-600 hover:bg-green-700">Plano Pro</Badge>
+                  {isLoadingSubscription ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                  ) : (subscriptionData?.account_plan || subscriptionData?.plan) ? (
+                    <Badge className="bg-green-600 hover:bg-green-700">
+                      {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)}
+                    </Badge>
+                  ) : subscriptionData?.subscription_status === 'trialing' && subscriptionData?.plan !== 'agency' ? (
+                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 border-yellow-200">
+                      Trial
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Nenhum plano</Badge>
+                  )}
                 </div>
                 <CardDescription>
-                  Ciclo de faturamento mensal. Próxima cobrança em 01 Dez 2025.
+                {subscriptionData?.subscription_status === 'trialing' && subscriptionData?.trial_ends_at && !subscriptionData?.account_plan && subscriptionData?.plan !== 'agency'
+                    ? `Trial ativo. Expira em ${new Date(subscriptionData.trial_ends_at).toLocaleDateString('pt-BR')}.`
+                    : subscriptionData?.subscription_status === 'active'
+                    ? 'Ciclo de faturamento mensal.'
+                    : 'Escolha um plano para começar.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-end gap-2">
-                  <span className="text-4xl font-bold">R$ 97</span>
-                  <span className="text-muted-foreground mb-1">/mês</span>
-                </div>
-
-                {/* Barra de Progresso Customizada */}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium">Uso de Tarefas</span>
-                    <span className="text-muted-foreground">450 / ilimitado</span>
+                {isLoadingSubscription ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
-                  <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary w-[25%] rounded-full"></div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Você está usando 25% da capacidade visual do dashboard (exemplo).
-                  </p>
-                </div>
+                ) : subscriptionData ? (
+                  <>
+                    <div className="flex items-end gap-2">
+                      <span className="text-4xl font-bold">
+                        {(subscriptionData.account_plan || subscriptionData.plan) === 'starter' ? 'R$ 49' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'pro' ? 'R$ 69' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'business' ? 'R$ 129' :
+                         (subscriptionData.account_plan || subscriptionData.plan) === 'agency' ? 'Sob consulta' :
+                         subscriptionData.subscription_status === 'trialing' ? 'Grátis' : 'R$ 0'}
+                      </span>
+                      <span className="text-muted-foreground mb-1">
+                        {subscriptionData.subscription_status === 'trialing' && subscriptionData.plan !== 'agency' ? ' (trial)' : '/mês'}
+                      </span>
+                    </div>
 
-                <div className="flex gap-3 pt-2">
-                   <Button variant="outline">Gerenciar Assinatura</Button>
-                   <Button variant="ghost">Ver Planos</Button>
-                </div>
+                    {subscriptionData.subscription_status === 'trialing' && subscriptionData.trial_ends_at && !subscriptionData.account_plan && subscriptionData.plan !== 'agency' && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p className="text-sm text-yellow-800">
+                          <strong>Trial ativo:</strong> Você está testando o plano {getDisplayPlanName(subscriptionData.plan, subscriptionData.account_plan)} por 14 dias.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3 pt-2">
+                      <Button variant="outline" onClick={() => router.push('/billing')}>
+                        Gerenciar Assinatura
+                      </Button>
+                      <Button variant="ghost" onClick={() => router.push('/billing')}>
+                        Ver Planos
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground mb-4">Nenhum plano encontrado.</p>
+                    <Button onClick={() => router.push('/billing')}>
+                      Escolher Plano
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -696,33 +1076,19 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
             </CardHeader>
             <CardContent>
               <div className="space-y-1">
-                {BILLING_HISTORY.map((invoice, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-md transition-colors border-b last:border-0 border-gray-100">
-                    <div className="flex items-center gap-4">
-                      <div className="p-2 bg-gray-100 rounded-full text-gray-500">
-                        <CreditCard className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-sm">{invoice.date}</span>
-                        <span className="text-xs text-muted-foreground">Cartão final 4242</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-medium text-sm">{invoice.amount}</span>
-                      <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 gap-1">
-                        <CheckCircle2 className="h-3 w-3" />
-                        {invoice.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                {/* TODO: Implementar busca de faturas do Asaas */}
+                <div className="text-center py-8 text-muted-foreground">
+                  <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Histórico de faturas em breve</p>
+                  <p className="text-xs mt-1">As faturas serão exibidas aqui após a primeira cobrança.</p>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* D. ABA PERFIL (USER PROFILE) */}
-        <TabsContent value="profile" className="space-y-6">
+        <TabsContent value="profile" className="mt-0 space-y-6">
           {/* Personal Info */}
           <Card>
             <CardHeader>
@@ -822,8 +1188,21 @@ export function SettingsPageClient({ user, workspace: initialWorkspace, initialM
         description="O usuário perderá acesso a todas as tarefas e dados deste workspace. Esta ação não pode ser desfeita."
         confirmText="Sim, remover membro"
         onConfirm={confirmRemoveMember}
-        isLoading={false}
+        isLoading={isRemovingMember}
       />
+
+      <ConfirmModal
+        open={isDeleteWorkspaceOpen}
+        onOpenChange={setIsDeleteWorkspaceOpen}
+        title="Excluir Workspace"
+        description="Esta ação não pode ser desfeita. Todas as tarefas e dados deste workspace serão removidos."
+        confirmText="Sim, excluir workspace"
+        onConfirm={handleDeleteWorkspace}
+        isLoading={isDeletingWorkspace}
+      />
+        </div>
+      </div>
     </div>
+  </div>
   );
 }

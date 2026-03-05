@@ -8,16 +8,16 @@ interface KanbanEmptyCardProps {
     columnTitle?: string;
     columnId?: string;
     onClick?: () => void;
+    isOver?: boolean;
 }
 
-export function KanbanEmptyCard({ columnTitle, columnId, onClick }: KanbanEmptyCardProps) {
-    const { isOver, setNodeRef } = useDroppable({
-        id: `empty-${columnId || "default"}`,
-    });
+export function KanbanEmptyCard({ columnTitle, columnId, onClick, isOver }: KanbanEmptyCardProps) {
+    // useDroppable removido para evitar conflito com a coluna pai
+    // O estado visual agora é controlado pela prop isOver passada pelo DroppableColumn
 
     return (
         <div
-            ref={setNodeRef}
+            // ref removido pois não é mais droppable direto
             className={cn(
                 "w-full h-24 rounded-xl border-2 border-dashed bg-gray-50/50",
                 "flex flex-col items-center justify-center gap-2",

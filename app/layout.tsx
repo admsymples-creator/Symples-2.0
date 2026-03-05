@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { UIScaleProvider } from "@/components/providers/UIScaleProvider";
 import { Toaster } from "sonner";
+import { MicrosoftClarity } from "@/components/analytics/MicrosoftClarity";
+import { ChunkLoadErrorHandler } from "@/components/providers/ChunkLoadErrorHandler";
 
 // Root layout component
 const inter = Inter({
@@ -25,8 +27,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <UIScaleProvider>
+          <ChunkLoadErrorHandler />
           {children}
-          <Toaster 
+          <Toaster
             theme="light"
             className="font-sans"
             toastOptions={{
@@ -43,6 +46,7 @@ export default function RootLayout({
               },
             }}
           />
+          <MicrosoftClarity />
         </UIScaleProvider>
       </body>
     </html>

@@ -7,6 +7,7 @@ import { KanbanEmptyCard } from "./KanbanEmptyCard";
 import { TaskSectionHeader } from "./TaskSectionHeader";
 import { QuickTaskAdd } from "./QuickTaskAdd";
 import { GroupActionMenu } from "./GroupActionMenu";
+import { GhostGroup } from "./GhostGroup";
 import { MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
@@ -62,10 +63,11 @@ interface TaskBoardProps {
   onClearGroup?: (groupId: string) => void;
   showGroupActions?: boolean;
   viewOption?: string; // Para saber se é "group" ou outro tipo
+  onCreateGroup?: () => void;
 }
 
 // Componente de Coluna Droppable
-function DroppableColumn({
+const DroppableColumn = memo(function DroppableColumn({
   column,
   onTaskClick,
   onAddTask,
@@ -100,36 +102,39 @@ function DroppableColumn({
   showGroupActions?: boolean;
   viewOption?: string;
 }) {
+  // Memoizar data do droppable para evitar recriação
+  const droppableData = useMemo(() => ({
+    type: 'column' as const,
+    columnId: column.id,
+  }), [column.id]);
+
   // Configura a coluna inteira como uma zona de drop
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
-    data: {
-      type: 'column',
-      columnId: column.id,
-    }
+    data: droppableData,
   });
-  
+
   const [isAdding, setIsAdding] = useState(false);
 
   // Garantir que tasks seja sempre um array
   const tasks = column.tasks || [];
-  
+
   // Estabilizar array de IDs usado no DnD (SortableContext)
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
-  
+
   // Handlers memoizados
   const handleSetAdding = useCallback(() => {
     setIsAdding(true);
   }, []);
-  
+
   const handleCancelAdd = useCallback(() => {
     setIsAdding(false);
   }, []);
-  
+
   const handleTaskClick = useCallback((taskId: string) => {
     onTaskClick?.(taskId);
   }, [onTaskClick]);
-  
+
   const handleSubmitAdd = useCallback(async (title: string, dueDate?: Date | null, assigneeId?: string | null) => {
     const result = onAddTask?.(column.id, title, dueDate, assigneeId);
     if (result && typeof result === 'object' && 'then' in result) {
@@ -137,11 +142,20 @@ function DroppableColumn({
     }
   }, [onAddTask, column.id]);
 
+  // Memoizar handlers de task por ID para evitar recriação no map
+  const taskClickHandlers = useMemo(() => {
+    const handlers: Record<string, () => void> = {};
+    tasks.forEach((task) => {
+      handlers[task.id] = () => handleTaskClick(task.id);
+    });
+    return handlers;
+  }, [tasks, handleTaskClick]);
+
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        "bg-gray-50/50 rounded-xl w-[300px] flex-none flex flex-col transition-all duration-200 h-full max-h-full",
+        "bg-gray-50/50 rounded-xl w-[300px] flex-none flex flex-col transition-all duration-200 h-full min-h-0",
         // Feedback visual quando arrastar sobre a coluna (Estilo Clean)
         isOver ? "bg-slate-100/80 ring-2 ring-inset ring-slate-200/50" : "hover:bg-gray-50/80"
       )}
@@ -153,11 +167,11 @@ function DroppableColumn({
           count={tasks.length}
           color={column.color}
           actions={
-            viewOption === "group" && 
-            showGroupActions && 
-            column.id !== "inbox" && 
-            column.id !== "Inbox" &&
-            (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup) ? (
+            viewOption === "group" &&
+              showGroupActions &&
+              column.id !== "inbox" &&
+              column.id !== "Inbox" &&
+              (onRenameGroup || onColorChange || onDeleteGroup || onClearGroup) ? (
               <GroupActionMenu
                 groupId={column.id}
                 groupTitle={column.title}
@@ -166,31 +180,32 @@ function DroppableColumn({
                 onColorChange={onColorChange}
                 onDelete={onDeleteGroup}
                 onClear={onClearGroup}
+                onAddTask={onAddTask ? handleSetAdding : undefined}
               />
             ) : (
               onAddTask ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSetAdding();
-                  }}
-                >
-                  Adicionar Tarefa
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetAdding();
+                      }}
+                    >
+                      Adicionar Tarefa
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : undefined
             )
           }
@@ -198,17 +213,18 @@ function DroppableColumn({
       </div>
 
       {/* Corpo da Coluna (Scroll) */}
-      <div className="flex-1 min-h-0 flex flex-col px-1 pb-2">
+      <div className="flex-1 min-h-0 flex flex-col px-2 pt-1 pb-2">
         <SortableContext
           items={taskIds}
           strategy={verticalListSortingStrategy}
         >
-          <div className="flex-1 overflow-y-auto space-y-2 scrollbar-thin pr-1 min-h-[100px]">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 scrollbar-thin pr-1 min-h-[150px]">
             {tasks.length === 0 && !isAdding ? (
               <KanbanEmptyCard
                 columnTitle={column.title}
                 columnId={column.id}
                 onClick={handleSetAdding}
+                isOver={isOver}
               />
             ) : (
               tasks.map((task) => (
@@ -223,7 +239,7 @@ function DroppableColumn({
                   dueDate={task.dueDate}
                   tags={task.tags}
                   groupColor={task.group?.color}
-                  onClick={() => handleTaskClick(task.id)}
+                  onClick={taskClickHandlers[task.id]}
                   members={members}
                   onToggleComplete={onToggleComplete}
                   onTaskUpdated={onTaskUpdated}
@@ -233,39 +249,61 @@ function DroppableColumn({
                 />
               ))
             )}
-
-            {/* Quick Add no final da lista */}
-            {(tasks.length > 0 || isAdding) && (
-              <div className="pt-1 pb-2">
-                <QuickTaskAdd
-                  placeholder="Adicionar tarefa aqui..."
-                  autoFocus={isAdding}
-                  onCancel={handleCancelAdd}
-                  onSubmit={handleSubmitAdd}
-                  members={members || []}
-                />
-              </div>
-            )}
           </div>
         </SortableContext>
+
+        {/* Quick Add fixo no final da coluna */}
+        {(tasks.length > 0 || isAdding) && (
+          <div className="pt-2 flex-shrink-0">
+            <QuickTaskAdd
+              placeholder="Adicionar tarefa aqui..."
+              autoFocus={isAdding}
+              onCancel={handleCancelAdd}
+              onSubmit={handleSubmitAdd}
+              members={members || []}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Comparação otimizada para evitar re-renders desnecessários
+  return (
+    prevProps.column.id === nextProps.column.id &&
+    prevProps.column.title === nextProps.column.title &&
+    prevProps.column.color === nextProps.column.color &&
+    prevProps.column.tasks === nextProps.column.tasks &&
+    prevProps.isDragDisabled === nextProps.isDragDisabled &&
+    prevProps.showGroupActions === nextProps.showGroupActions &&
+    prevProps.viewOption === nextProps.viewOption &&
+    prevProps.onTaskClick === nextProps.onTaskClick &&
+    prevProps.onAddTask === nextProps.onAddTask &&
+    prevProps.onToggleComplete === nextProps.onToggleComplete &&
+    prevProps.onTaskUpdated === nextProps.onTaskUpdated &&
+    prevProps.onTaskUpdatedOptimistic === nextProps.onTaskUpdatedOptimistic &&
+    prevProps.onDelete === nextProps.onDelete &&
+    prevProps.onRenameGroup === nextProps.onRenameGroup &&
+    prevProps.onColorChange === nextProps.onColorChange &&
+    prevProps.onDeleteGroup === nextProps.onDeleteGroup &&
+    prevProps.onClearGroup === nextProps.onClearGroup &&
+    JSON.stringify(prevProps.members) === JSON.stringify(nextProps.members)
+  );
+});
 
 // TaskBoard Component
 // Nota: O DndContext reside no componente pai (TasksView) para gerenciar o estado global do drag
-function TaskBoardComponent({ 
-  columns, 
-  onTaskClick, 
-  onAddTask, 
-  onTaskMoved, 
-  members, 
-  groupBy, 
-  onToggleComplete, 
-  onTaskUpdated, 
-  onTaskUpdatedOptimistic, 
-  onDelete, 
+function TaskBoardComponent({
+  columns,
+  onTaskClick,
+  onAddTask,
+  onTaskMoved,
+  members,
+  groupBy,
+  onToggleComplete,
+  onTaskUpdated,
+  onTaskUpdatedOptimistic,
+  onDelete,
   isDragDisabled = false,
   onRenameGroup,
   onColorChange,
@@ -273,11 +311,12 @@ function TaskBoardComponent({
   onClearGroup,
   showGroupActions = true,
   viewOption,
+  onCreateGroup,
 }: TaskBoardProps) {
-  
+
   // 🔍 DEBUG: Verificar se callback está chegando no TaskBoardComponent
   return (
-    <div className="flex h-full overflow-x-auto gap-4 scrollbar-thin px-4 pb-4 items-start">
+    <div className="flex h-full overflow-x-auto overflow-y-hidden gap-4 scrollbar-thin px-2 pb-0 items-stretch">
       {columns.map((column) => (
         <DroppableColumn
           key={column.id}
@@ -299,6 +338,9 @@ function TaskBoardComponent({
           viewOption={viewOption}
         />
       ))}
+      {viewOption === "group" && onCreateGroup && (
+        <GhostGroup onClick={onCreateGroup} className="w-[300px] flex-none" />
+      )}
     </div>
   );
 }
@@ -328,7 +370,8 @@ export const TaskBoard = memo(TaskBoardComponent, (prev, next) => {
     prev.onDeleteGroup !== next.onDeleteGroup ||
     prev.onClearGroup !== next.onClearGroup ||
     prev.showGroupActions !== next.showGroupActions ||
-    prev.viewOption !== next.viewOption
+    prev.viewOption !== next.viewOption ||
+    prev.onCreateGroup !== next.onCreateGroup
   ) {
     return false; // Re-renderizar
   }

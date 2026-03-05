@@ -41,6 +41,7 @@ export type Database = {
     Tables: {
       profiles: {
         Row: {
+          account_plan: string | null
           avatar_url: string | null
           created_at: string | null
           email: string | null
@@ -49,6 +50,7 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          account_plan?: string | null
           avatar_url?: string | null
           created_at?: string | null
           email?: string | null
@@ -57,6 +59,7 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          account_plan?: string | null
           avatar_url?: string | null
           created_at?: string | null
           email?: string | null
@@ -66,9 +69,56 @@ export type Database = {
         }
         Relationships: []
       }
+      clients: {
+        Row: {
+          id: string
+          workspace_id: string
+          name: string
+          email: string | null
+          phone: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          name: string
+          email?: string | null
+          phone?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          name?: string
+          email?: string | null
+          phone?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_workspace_id_fkey"
+            columns: ["workspace_id"]
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
+          client_id: string | null
           created_at: string | null
           created_by: string | null
           description: string | null
@@ -82,9 +132,20 @@ export type Database = {
           title: string
           updated_at: string | null
           workspace_id: string | null
+          recurrence_type: "daily" | "weekly" | "monthly" | "custom" | null
+          recurrence_parent_id: string | null
+          recurrence_interval: number | null
+          recurrence_end_date: string | null
+          recurrence_count: number | null
+          recurrence_days: number[] | null
+          subtasks: Json | null
+          tags: string[] | null
+          group_id: string | null
+          visible_on_board: boolean | null
         }
         Insert: {
           assignee_id?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -98,9 +159,20 @@ export type Database = {
           title: string
           updated_at?: string | null
           workspace_id?: string | null
+          recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null
+          recurrence_parent_id?: string | null
+          recurrence_interval?: number | null
+          recurrence_end_date?: string | null
+          recurrence_count?: number | null
+          recurrence_days?: number[] | null
+          subtasks?: Json | null
+          tags?: string[] | null
+          group_id?: string | null
+          visible_on_board?: boolean | null
         }
         Update: {
           assignee_id?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -114,6 +186,16 @@ export type Database = {
           title?: string
           updated_at?: string | null
           workspace_id?: string | null
+          recurrence_type?: "daily" | "weekly" | "monthly" | "custom" | null
+          recurrence_parent_id?: string | null
+          recurrence_interval?: number | null
+          recurrence_end_date?: string | null
+          recurrence_count?: number | null
+          recurrence_days?: number[] | null
+          subtasks?: Json | null
+          tags?: string[] | null
+          group_id?: string | null
+          visible_on_board?: boolean | null
         }
         Relationships: [
           {
@@ -121,6 +203,13 @@ export type Database = {
             columns: ["assignee_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
           {
@@ -232,41 +321,113 @@ export type Database = {
           },
         ]
       }
+      task_members: {
+        Row: {
+          task_id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          task_id: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          task_id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_members_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transactions: {
         Row: {
           amount: number
           category: string | null
+          client_id: string | null
+          counterparty_name: string | null
           created_at: string | null
-          date: string | null
+          created_by: string | null
           description: string
+          due_date: string | null
           id: string
+          is_recurring: boolean | null
+          related_task_id: string | null
           status: string | null
           type: string | null
+          updated_at: string | null
           workspace_id: string
         }
         Insert: {
           amount: number
           category?: string | null
+          client_id?: string | null
+          counterparty_name?: string | null
           created_at?: string | null
-          date?: string | null
+          created_by?: string | null
           description: string
+          due_date?: string | null
           id?: string
+          is_recurring?: boolean | null
+          related_task_id?: string | null
           status?: string | null
           type?: string | null
+          updated_at?: string | null
           workspace_id: string
         }
         Update: {
           amount?: number
           category?: string | null
+          client_id?: string | null
+          counterparty_name?: string | null
           created_at?: string | null
-          date?: string | null
+          created_by?: string | null
           description?: string
+          due_date?: string | null
           id?: string
+          is_recurring?: boolean | null
+          related_task_id?: string | null
           status?: string | null
           type?: string | null
+          updated_at?: string | null
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_related_task_id_fkey"
+            columns: ["related_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transactions_workspace_id_fkey"
             columns: ["workspace_id"]
@@ -363,6 +524,66 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          id: string
+          recipient_id: string
+          triggering_user_id: string | null
+          category: string
+          resource_type: string
+          resource_id: string | null
+          title: string
+          content: string | null
+          action_url: string | null
+          metadata: Json | null
+          read_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          recipient_id: string
+          triggering_user_id?: string | null
+          category?: string
+          resource_type: string
+          resource_id?: string | null
+          title: string
+          content?: string | null
+          action_url?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          recipient_id?: string
+          triggering_user_id?: string | null
+          category?: string
+          resource_type?: string
+          resource_id?: string | null
+          title?: string
+          content?: string | null
+          action_url?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_triggering_user_id_fkey"
+            columns: ["triggering_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -413,6 +634,12 @@ export type Database = {
           name: string
           owner_id: string | null
           slug: string | null
+          plan: 'starter' | 'pro' | 'business' | 'agency' | null
+          subscription_status: 'trialing' | 'active' | 'past_due' | 'canceled' | null
+          subscription_id: string | null
+          trial_ends_at: string | null
+          member_limit: number | null
+          updated_at: string | null
         }
         Insert: {
           created_at?: string | null
@@ -421,6 +648,12 @@ export type Database = {
           name: string
           owner_id?: string | null
           slug?: string | null
+          plan?: 'starter' | 'pro' | 'business' | 'agency' | null
+          subscription_status?: 'trialing' | 'active' | 'past_due' | 'canceled' | null
+          subscription_id?: string | null
+          trial_ends_at?: string | null
+          member_limit?: number | null
+          updated_at?: string | null
         }
         Update: {
           created_at?: string | null
@@ -429,6 +662,12 @@ export type Database = {
           name?: string
           owner_id?: string | null
           slug?: string | null
+          plan?: 'starter' | 'pro' | 'business' | 'agency' | null
+          subscription_status?: 'trialing' | 'active' | 'past_due' | 'canceled' | null
+          subscription_id?: string | null
+          trial_ends_at?: string | null
+          member_limit?: number | null
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -436,6 +675,65 @@ export type Database = {
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_messages: {
+        Row: {
+          id: string
+          workspace_id: string | null
+          user_id: string
+          role: string
+          content: string
+          type: string | null
+          image_url: string | null
+          audio_url: string | null
+          audio_duration: number | null
+          audio_transcription: string | null
+          is_thinking: boolean | null
+          is_context_divider: boolean | null
+          component_data: Json | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          workspace_id?: string | null
+          user_id: string
+          role: string
+          content?: string
+          type?: string | null
+          image_url?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_transcription?: string | null
+          is_thinking?: boolean | null
+          is_context_divider?: boolean | null
+          component_data?: Json | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          workspace_id?: string | null
+          user_id?: string
+          role?: string
+          content?: string
+          type?: string | null
+          image_url?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_transcription?: string | null
+          is_thinking?: boolean | null
+          is_context_divider?: boolean | null
+          component_data?: Json | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_messages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
@@ -462,116 +760,116 @@ type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
+  | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+  | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+  ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
-    ? R
-    : never
+  ? R
+  : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
-    : never
+    DefaultSchema["Views"])
+  ? (DefaultSchema["Tables"] &
+    DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+      Row: infer R
+    }
+  ? R
+  : never
+  : never
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+  | keyof DefaultSchema["Tables"]
+  | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
-    }
-    ? I
-    : never
+    Insert: infer I
+  }
+  ? I
+  : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
-    : never
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+    Insert: infer I
+  }
+  ? I
+  : never
+  : never
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+  | keyof DefaultSchema["Tables"]
+  | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
-    }
-    ? U
-    : never
+    Update: infer U
+  }
+  ? U
+  : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
-    : never
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+    Update: infer U
+  }
+  ? U
+  : never
+  : never
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
+  | keyof DefaultSchema["Enums"]
+  | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+  ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
+  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+  : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
+  | keyof DefaultSchema["CompositeTypes"]
+  | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+  ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+  : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
+  ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+  : never
 
 export const Constants = {
   graphql_public: {
@@ -581,3 +879,35 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+// ============================================
+// TIPOS DE NOTIFICAÇÕES
+// ============================================
+
+export type NotificationCategory = 'operational' | 'admin' | 'system';
+
+export type NotificationMetadata = {
+  // Visual Overrides
+  icon?: string; // Nome do ícone Lucide (ex: 'Mic', 'ShieldAlert')
+  color?: string; // Classe Tailwind de texto (ex: 'text-green-600')
+  bg?: string; // Classe Tailwind de fundo (ex: 'bg-green-50')
+
+  // Contexto Específico
+  actor_name?: string; // Nome de quem fez a ação
+  actor_avatar?: string; // Avatar de quem fez a ação
+  file_type?: 'image' | 'pdf' | 'audio' | 'document' | 'other'; // Para anexos
+  file_count?: number; // Para agrupamento (ex: "5 arquivos")
+  file_name?: string; // Nome do arquivo anexado
+  role_changed_to?: string; // Para alertas de admin
+  role?: string; // Role do usuário (para convites)
+  task_title?: string; // Título da tarefa relacionada
+  workspace_name?: string; // Nome do workspace relacionado
+  workspace_id?: string; // ID do workspace relacionado (para filtros robustos)
+  invite_id?: string; // ID do convite (para aceitar/recusar via notificacao)
+  days_overdue?: number; // Dias de atraso (para tarefas atrasadas)
+  
+  // Menções e contexto de tarefas/comentários
+  mention_type?: "comment" | "description"; // Origem da menção
+  task_id?: string; // ID da tarefa relacionada à menção
+  comment_id?: string; // ID do comentário onde ocorreu a menção
+};

@@ -103,3 +103,77 @@ export async function getTaskGroups(
 
   return { success: true, data };
 }
+
+export async function reorderTaskGroup(
+  groupId: string,
+  direction: "up" | "down",
+  workspaceId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerActionClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Usuário não autenticado" };
+  }
+
+  // Buscar todos os grupos do workspace ordenados por created_at
+  const { data: groups, error: fetchError } = await (supabase as any)
+    .from("task_groups")
+    .select("id, name, created_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
+
+  if (fetchError || !groups || groups.length < 2) {
+    return { success: false, error: "Erro ao buscar grupos ou não há grupos suficientes" };
+  }
+
+  // Encontrar índice do grupo atual
+  const currentIndex = groups.findIndex((g: any) => g.id === groupId);
+  if (currentIndex === -1) {
+    return { success: false, error: "Grupo não encontrado" };
+  }
+
+  // Verificar limites
+  if (direction === "up" && currentIndex === 0) {
+    return { success: false, error: "Grupo já está no topo" };
+  }
+  if (direction === "down" && currentIndex === groups.length - 1) {
+    return { success: false, error: "Grupo já está no final" };
+  }
+
+  // Calcular novo índice
+  const newIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  const targetGroup = groups[newIndex];
+
+  // Trocar as posições usando created_at como referência
+  const targetCreatedAt = new Date(targetGroup.created_at).getTime();
+  const currentCreatedAt = new Date(groups[currentIndex].created_at).getTime();
+
+  // Calcular novo timestamp (meio caminho entre o alvo e seu vizinho)
+  let newTimestamp: number;
+  if (direction === "up") {
+    // Mover para cima: colocar antes do grupo alvo
+    const prevGroup = groups[newIndex - 1];
+    const prevCreatedAt = prevGroup ? new Date(prevGroup.created_at).getTime() : targetCreatedAt - 1000;
+    newTimestamp = (prevCreatedAt + targetCreatedAt) / 2;
+  } else {
+    // Mover para baixo: colocar depois do grupo alvo
+    const nextGroup = groups[newIndex + 1];
+    const nextCreatedAt = nextGroup ? new Date(nextGroup.created_at).getTime() : targetCreatedAt + 1000;
+    newTimestamp = (targetCreatedAt + nextCreatedAt) / 2;
+  }
+
+  // Atualizar created_at do grupo atual
+  const { error: updateError } = await (supabase as any)
+    .from("task_groups")
+    .update({ created_at: new Date(newTimestamp).toISOString() })
+    .eq("id", groupId);
+
+  if (updateError) {
+    console.error("Erro ao reordenar grupo:", updateError);
+    return { success: false, error: updateError.message };
+  }
+
+  revalidatePath("/tasks");
+  return { success: true };
+}

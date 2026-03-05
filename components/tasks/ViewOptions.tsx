@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { LayoutGrid, Check, X } from "lucide-react" // Ícone mais adequado para "Agrupar"
+import { LayoutGrid, Check, X } from "lucide-react"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
@@ -14,94 +14,102 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
-export function GroupingMenu() {
+interface GroupingMenuProps {
+  /** Valor controlado pelo pai: UI atualiza na hora, URL em segundo plano */
+  value?: string
+  onGroupChange?: (value: string) => void
+}
+
+export function GroupingMenu({ value: controlledValue, onGroupChange }: GroupingMenuProps = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  // 1. Ler estado da URL (Source of Truth)
-  const currentGroup = searchParams.get("group") || "none"
+  // Estado: controlado pelo pai (value/onGroupChange) ou pela URL
+  const currentGroup = controlledValue ?? searchParams.get("group") ?? "group"
 
-  // 2. Mapeamento de Labels para exibição no Badge
   const groupLabels: Record<string, string> = {
-    none: "Nenhum",
+    group: "Personalizado",
+    project: "Projeto",
     status: "Status",
-    priority: "Prioridade",
     date: "Data",
     assignee: "Responsável"
   }
 
-  // 3. Handler Instantâneo (Reactive Pattern)
   const handleGroupChange = (value: string) => {
-    const params = new URLSearchParams(searchParams.toString())
-    
-    if (value === "none") {
-      params.delete("group")
-    } else {
-      params.set("group", value)
+    if (onGroupChange) {
+      onGroupChange(value)
+      return
     }
-
-    // scroll: false é CRÍTICO para evitar que a página pule para o topo ao clicar
-    router.push(`${pathname}?${params.toString()}`, { scroll: false })
-  }
-
-  // 4. Handler para limpar filtro (resetar para "none")
-  const handleClear = () => {
     const params = new URLSearchParams(searchParams.toString())
-    params.delete("group")
+    params.set("group", value)
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  const isGrouped = currentGroup !== "none"
+  const handleClear = () => {
+    if (onGroupChange) {
+      onGroupChange("group")
+      return
+    }
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("group", "group")
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  const isGrouped = currentGroup !== "group"
 
   return (
     <div className="flex items-center gap-1">
+      {isGrouped && (
+        <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
+          <span>{groupLabels[currentGroup] || "Status"}</span>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="ml-1 rounded-full p-0.5 text-slate-600 hover:text-slate-800 hover:bg-slate-100"
+            title="Limpar agrupamento"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="icon"
+            title={groupLabels[currentGroup] ? `Agrupar (${groupLabels[currentGroup]})` : "Agrupar"}
             className={cn(
-              "h-9 px-3 border-dashed transition-all",
-              isGrouped 
-                ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" 
-                : "text-gray-600 border-gray-300 hover:bg-gray-50"
+              "h-9 w-9 transition-all flex items-center justify-center",
+              isGrouped
+                ? "text-slate-700 hover:text-slate-800 hover:bg-slate-50"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             )}
           >
-            <LayoutGrid className={cn("mr-2 h-4 w-4", isGrouped ? "text-green-600" : "text-gray-500")} />
-            Agrupar
-            {isGrouped && (
-              <>
-                <div className="mx-2 h-4 w-[1px] bg-green-200" />
-                <Badge 
-                  variant="secondary" 
-                  className="h-5 px-1.5 text-[10px] font-medium bg-white text-green-700 hover:bg-white"
-                >
-                  {groupLabels[currentGroup]}
-                </Badge>
-              </>
-            )}
+            <LayoutGrid className={cn("h-4 w-4", isGrouped ? "text-slate-600" : "text-gray-500")} />
           </Button>
         </DropdownMenuTrigger>
-        
+
         <DropdownMenuContent className="w-48" align="start">
           <DropdownMenuLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
             AGRUPAR POR
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          
+
           <DropdownMenuRadioGroup value={currentGroup} onValueChange={handleGroupChange}>
-            <DropdownMenuRadioItem value="none" className="cursor-pointer">
-              Nenhum (Lista)
+            <DropdownMenuRadioItem value="group" className="cursor-pointer">
+              Personalizado
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="project" className="cursor-pointer">
+              Projeto
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="status" className="cursor-pointer">
               Status
             </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="priority" className="cursor-pointer">
-              Prioridade
+            <DropdownMenuRadioItem value="date" className="cursor-pointer">
+              Data
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="assignee" className="cursor-pointer">
               Responsável
@@ -109,18 +117,6 @@ export function GroupingMenu() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      
-      {isGrouped && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleClear}
-          className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-          title="Limpar filtro de agrupamento"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      )}
     </div>
   )
 }

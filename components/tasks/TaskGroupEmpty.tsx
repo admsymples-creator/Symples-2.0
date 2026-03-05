@@ -1,13 +1,31 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { ReactNode } from "react";
 
 interface TaskGroupEmptyProps {
     groupTitle?: string;
     onCreateClick?: () => void;
+    variant?: "default" | "inbox";
+    children?: ReactNode;
 }
 
-export function TaskGroupEmpty({ groupTitle, onCreateClick }: TaskGroupEmptyProps) {
+export function TaskGroupEmpty({ 
+    groupTitle, 
+    onCreateClick, 
+    variant = "default",
+    children 
+}: TaskGroupEmptyProps) {
+    // Variante Inbox: ultra compacta, mostra children (QuickTaskAdd) diretamente
+    if (variant === "inbox") {
+        return (
+            <div className="py-1 px-2">
+                {children}
+            </div>
+        );
+    }
+
+    // Variante default: estilo tradicional
     return (
         <div
             className={cn(

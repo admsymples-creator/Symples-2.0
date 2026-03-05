@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
@@ -33,6 +33,12 @@ interface UserNavProps {
 export function UserNav({ user }: UserNavProps) {
     const router = useRouter();
     const [isSigningOut, setIsSigningOut] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
+
+    // Prevenir erro de hidratação - montar apenas no cliente
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Fallback data
     const name = user?.name || "Usuário";
@@ -54,15 +60,34 @@ export function UserNav({ user }: UserNavProps) {
         // toast.loading("Saindo..."); 
         
         try {
-            await signOut();
-            // Redirection is handled by the server action, 
-            // but we can also force a client-side redirect just in case
-            // or simply wait.
-        } catch (error) {
+            const result = await signOut();
+            if (!result?.success) {
+                throw new Error(result?.message || "Falha ao fazer logout");
+            }
+            router.replace("/login");
+            router.refresh();
+        } catch (error: any) {
             console.error("Erro ao sair:", error);
             setIsSigningOut(false);
+            toast.error("Erro ao sair", {
+                description: error?.message || "Tente novamente.",
+            });
         }
     };
+
+    // Renderizar apenas após montagem no cliente para evitar erro de hidratação
+    if (!isMounted) {
+        return (
+            <div className="relative h-9 w-9 rounded-full">
+                <Avatar className="h-9 w-9">
+                    <AvatarImage src={avatarUrl || undefined} alt={name} />
+                    <AvatarFallback className="bg-green-100 text-green-700 font-medium">
+                        {initials}
+                    </AvatarFallback>
+                </Avatar>
+            </div>
+        );
+    }
 
     return (
         <DropdownMenu>

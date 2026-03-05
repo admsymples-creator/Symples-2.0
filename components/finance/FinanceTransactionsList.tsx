@@ -1,0 +1,228 @@
+"use client";
+
+import React, { useState } from "react";
+import { format, parseISO } from "date-fns";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ArrowUpCircle, ArrowDownCircle, ChevronDown } from "lucide-react";
+import { TransactionActionsMenu } from "./TransactionActionsMenu";
+import { EditTransactionModal } from "./EditTransactionModal";
+import { useRouter } from "next/navigation";
+
+type TransactionStatus = "paid" | "pending" | "overdue" | "scheduled" | "cancelled";
+
+interface Transaction {
+  id: string;
+  due_date: string | null; // Data de vencimento
+  created_at?: string; // Data de criação
+  description: string;
+  amount: number;
+  status: TransactionStatus;
+  category: string;
+  type: "income" | "expense";
+  is_recurring?: boolean;
+  counterparty_name?: string | null;
+  client_name?: string | null;
+  client_id?: string | null;
+  workspace_id?: string | null;
+}
+
+interface FinanceTransactionsListProps {
+  transactions: Transaction[];
+  type: "income" | "expense";
+  title: string;
+  icon: React.ReactNode;
+  totalAmount: number;
+}
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+};
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const styles: Record<string, string> = {
+    paid: "bg-green-100 text-green-700 hover:bg-green-100 border-green-200",
+    pending: "bg-gray-100 text-gray-700 hover:bg-gray-100 border-gray-200",
+    overdue: "bg-orange-100 text-orange-700 hover:bg-orange-100 border-orange-200",
+    scheduled: "bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200",
+    cancelled: "bg-red-100 text-red-700 hover:bg-red-100 border-red-200",
+  };
+
+  const labels: Record<string, string> = {
+    paid: "Pago",
+    pending: "Pendente",
+    overdue: "Atrasado",
+    scheduled: "Agendado",
+    cancelled: "Cancelado",
+  };
+
+  const safeStatus = styles[status] ? status : "pending";
+
+  return (
+    <Badge variant="outline" className={`${styles[safeStatus]} border font-normal text-xs`}>
+      {labels[safeStatus] || status}
+    </Badge>
+  );
+};
+
+const INITIAL_ITEMS = 5;
+const LOAD_MORE_ITEMS = 5;
+
+export function FinanceTransactionsList({
+  transactions,
+  type,
+  title,
+  icon,
+  totalAmount,
+}: FinanceTransactionsListProps) {
+  const router = useRouter();
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleEdit = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSuccess = () => {
+    setIsEditModalOpen(false);
+    setEditingTransaction(null);
+    router.refresh();
+  };
+
+  const handleDelete = () => {
+    router.refresh();
+  };
+
+  const handleLoadMore = () => {
+    setIsLoading(true);
+    // Simula um pequeno delay para feedback visual
+    setTimeout(() => {
+      setVisibleCount(prev => Math.min(prev + LOAD_MORE_ITEMS, transactions.length));
+      setIsLoading(false);
+    }, 300);
+  };
+
+  const processedTransactions = transactions.map((t) => {
+    const dueDate = t.due_date ? format(parseISO(t.due_date), "dd/MM") : "Sem venc.";
+    const createdDate = t.created_at ? format(parseISO(t.created_at), "dd/MM/yyyy") : undefined;
+    return {
+      ...t,
+      dueDate,
+      createdDate,
+    };
+  });
+
+  const visibleTransactions = processedTransactions.slice(0, visibleCount);
+  const hasMore = visibleCount < processedTransactions.length;
+  const remainingCount = processedTransactions.length - visibleCount;
+
+  return (
+    <>
+      <Card className="border-none shadow-sm flex flex-col h-[600px]">
+        <CardHeader className="pb-3 border-b border-border/60 flex-shrink-0">
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              {icon}
+              {title}
+            </CardTitle>
+            <span className={cn(
+              "font-bold text-sm",
+              type === "income" ? "text-green-600" : "text-red-600"
+            )}>
+              {formatCurrency(totalAmount)}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4 px-0 flex-1 min-h-0 overflow-y-auto flex flex-col">
+          <div className="space-y-1 flex-1">
+            {processedTransactions.length === 0 ? (
+              <p className="text-center text-gray-400 py-4 text-sm">
+                Nenhuma {type === "income" ? "entrada" : "saída"} neste mês
+              </p>
+            ) : (
+              visibleTransactions.map((item) => (
+                <div 
+                  key={item.id} 
+                  className="flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors group"
+                >
+                  <div className="flex flex-col gap-0.5 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 font-mono">Venc: {item.dueDate}</span>
+                      {item.createdDate && (
+                        <span className="text-xs text-gray-300 font-mono">• Criado: {item.createdDate}</span>
+                      )}
+                    </div>
+                    <span className="font-medium text-sm text-gray-900">{item.description}</span>
+                    {(item.client_name || item.counterparty_name) && (
+                      <span className="text-xs text-gray-500">
+                        {type === "income" ? "Cliente" : "Fornecedor"}: {item.client_name || item.counterparty_name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={cn(
+                        "font-semibold text-sm",
+                        type === "income" ? "text-green-600" : "text-gray-900"
+                      )}>
+                        {type === "income" ? "+" : "-"} {formatCurrency(item.amount)}
+                      </span>
+                      <StatusBadge status={item.status} />
+                    </div>
+                    <TransactionActionsMenu
+                      transaction={item}
+                      onEdit={() => handleEdit(item)}
+                      onDeleted={handleDelete}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          
+          {hasMore && (
+            <div className="flex-shrink-0 pt-2 pb-2 px-4 border-t border-gray-100 bg-gradient-to-t from-white to-transparent">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLoadMore}
+                disabled={isLoading}
+                className="w-full text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2" />
+                    Carregando...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4 mr-2" />
+                    Ver mais {remainingCount} {remainingCount === 1 ? "transação" : "transações"}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {editingTransaction && (
+        <EditTransactionModal
+          open={isEditModalOpen}
+          onOpenChange={setIsEditModalOpen}
+          transaction={editingTransaction as any}
+          onSuccess={handleEditSuccess}
+        />
+      )}
+    </>
+  );
+}
+

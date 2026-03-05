@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     avatar_url TEXT,
     email TEXT NOT NULL,
     whatsapp TEXT, -- Campo para integração WhatsApp
+    account_plan TEXT CHECK (account_plan IN ('agency')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
     magic_code TEXT UNIQUE,
     owner_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
     trial_ends_at TIMESTAMPTZ DEFAULT (now() + interval '15 days'),
-    subscription_status TEXT DEFAULT 'trial' CHECK (subscription_status IN ('trial', 'active', 'cancelled', 'expired', 'past_due')),
+    subscription_status TEXT DEFAULT 'trialing' CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled')),
     subscription_id TEXT, -- ID da assinatura no gateway de pagamento (Stripe, etc.)
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -95,17 +96,33 @@ CREATE TABLE IF NOT EXISTS public.task_comments (
 -- 4. FINANCEIRO (Transações)
 -- ============================================
 
--- TRANSACTIONS (Transações Financeiras)
+-- CLIENTS (Clientes do Financeiro)
+CREATE TABLE IF NOT EXISTS public.clients (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    workspace_id UUID REFERENCES public.workspaces(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(workspace_id, name)
+);
+
+-- TRANSACTIONS (Transacoes Financeiras)
 CREATE TABLE IF NOT EXISTS public.transactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     workspace_id UUID REFERENCES public.workspaces(id) ON DELETE CASCADE NOT NULL,
     related_task_id UUID REFERENCES public.tasks(id) ON DELETE SET NULL,
     description TEXT NOT NULL,
+    counterparty_name TEXT,
+    client_id UUID REFERENCES public.clients(id) ON DELETE SET NULL,
     amount DECIMAL(10, 2) NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     category TEXT DEFAULT 'Geral',
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'scheduled', 'cancelled')),
-    due_date DATE DEFAULT CURRENT_DATE,
+    is_recurring BOOLEAN DEFAULT false,
+    due_date DATE,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -156,16 +173,24 @@ CREATE INDEX IF NOT EXISTS idx_tasks_is_personal ON public.tasks(is_personal, cr
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status) WHERE status IS NOT NULL;
 
 -- Índices para workspaces (novos)
-CREATE INDEX IF NOT EXISTS idx_workspaces_trial_ends_at ON public.workspaces(trial_ends_at) WHERE subscription_status = 'trial';
+CREATE INDEX IF NOT EXISTS idx_workspaces_trial_ends_at ON public.workspaces(trial_ends_at) WHERE subscription_status = 'trialing';
 CREATE INDEX IF NOT EXISTS idx_workspaces_subscription_status ON public.workspaces(subscription_status);
 
 -- Índices para workspace_members
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON public.workspace_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_id ON public.workspace_members(workspace_id);
 
+-- Indices para clients
+CREATE INDEX IF NOT EXISTS idx_clients_workspace_id ON public.clients(workspace_id);
+
 -- Índices para transactions
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace_id ON public.transactions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_due_date ON public.transactions(due_date);
+CREATE INDEX IF NOT EXISTS idx_transactions_client_id ON public.transactions(client_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_related_task_id ON public.transactions(related_task_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_created_at_null_due
+  ON public.transactions(workspace_id, created_at)
+  WHERE due_date IS NULL;
 
 -- Índices para outras tabelas
 CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON public.task_comments(task_id);
@@ -208,6 +233,12 @@ CREATE TRIGGER set_updated_at_workspace_members
 DROP TRIGGER IF EXISTS set_updated_at_tasks ON public.tasks;
 CREATE TRIGGER set_updated_at_tasks
     BEFORE UPDATE ON public.tasks
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS set_updated_at_clients ON public.clients;
+CREATE TRIGGER set_updated_at_clients
+    BEFORE UPDATE ON public.clients
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
@@ -303,7 +334,7 @@ BEGIN
         SELECT 1
         FROM public.workspaces
         WHERE id = workspace_uuid
-        AND subscription_status = 'trial'
+        AND subscription_status = 'trialing'
         AND trial_ends_at > NOW()
     );
 END;
@@ -319,7 +350,7 @@ BEGIN
         WHERE id = workspace_uuid
         AND (
             subscription_status = 'active'
-            OR (subscription_status = 'trial' AND trial_ends_at > NOW())
+            OR (subscription_status = 'trialing' AND trial_ends_at > NOW())
         )
     );
 END;
@@ -335,6 +366,7 @@ ALTER TABLE public.workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspace_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
@@ -575,7 +607,35 @@ CREATE POLICY "Users can delete own comments"
     USING (user_id = auth.uid());
 
 -- ============================================
--- 17. RLS POLICIES - TRANSACTIONS
+-- 17. RLS POLICIES - CLIENTS
+-- ============================================
+
+DROP POLICY IF EXISTS "Workspace members can view clients" ON public.clients;
+CREATE POLICY "Workspace members can view clients"
+    ON public.clients FOR SELECT
+    USING (is_workspace_member(workspace_id));
+
+DROP POLICY IF EXISTS "Members can create clients" ON public.clients;
+CREATE POLICY "Members can create clients"
+    ON public.clients FOR INSERT
+    WITH CHECK (is_workspace_member(workspace_id));
+
+DROP POLICY IF EXISTS "Members can update clients" ON public.clients;
+CREATE POLICY "Members can update clients"
+    ON public.clients FOR UPDATE
+    USING (is_workspace_member(workspace_id))
+    WITH CHECK (is_workspace_member(workspace_id));
+
+DROP POLICY IF EXISTS "Admins or creators can delete clients" ON public.clients;
+CREATE POLICY "Admins or creators can delete clients"
+    ON public.clients FOR DELETE
+    USING (
+        is_workspace_admin(workspace_id)
+        OR created_by = auth.uid()
+    );
+
+-- ============================================
+-- 18. RLS POLICIES - TRANSACTIONS
 -- ============================================
 
 DROP POLICY IF EXISTS "Workspace members can view transactions" ON public.transactions;
@@ -670,4 +730,6 @@ CREATE POLICY "System can insert audit logs"
 -- ============================================
 -- FIM DO SCHEMA
 -- ============================================
+
+
 

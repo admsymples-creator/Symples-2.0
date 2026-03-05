@@ -2,6 +2,8 @@
 
 import { createServerActionClient } from "@/lib/supabase/server";
 import { revalidatePath } from 'next/cache'
+import { isPersonalWorkspace } from "@/lib/utils/workspace-helpers";
+import { clearUserWorkspacesCache } from "@/lib/actions/user";
 
 export async function createWorkspace(formData: FormData) {
   const supabase = await createServerActionClient()
@@ -23,6 +25,79 @@ export async function createWorkspace(formData: FormData) {
     return { error: 'Nome da empresa é obrigatório' }
   }
 
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('account_plan')
+    .eq('id', user.id)
+    .single();
+
+  const hasAgencyAccount = (profileData as any)?.account_plan === 'agency';
+
+  const { data: existingMemberships, error: existingError } = await supabase
+    .from('workspace_members')
+    .select(`
+      workspace_id,
+      workspaces:workspace_id (
+        id,
+        name,
+        slug,
+        plan
+      )
+    `)
+    .eq('user_id', user.id);
+
+  if (existingError) {
+    console.error('Erro ao buscar workspaces existentes:', existingError);
+    return { error: 'Erro ao verificar limite de workspaces' };
+  }
+
+  const existingWorkspaces = (existingMemberships || [])
+    .map((item: any) => (Array.isArray(item.workspaces) ? item.workspaces[0] : item.workspaces))
+    .filter((ws: any) => ws && typeof ws === 'object');
+
+  const personalWorkspaces = existingWorkspaces.filter((ws: any) => isPersonalWorkspace(ws, existingWorkspaces));
+  const professionalWorkspaces = existingWorkspaces.filter((ws: any) => !isPersonalWorkspace(ws, existingWorkspaces));
+  const isPersonalName = name.trim().toLowerCase() === "pessoal";
+
+  const getPlanTier = (workspaces: any[]) => {
+    let tier: "starter" | "pro" | "business" | "agency" = "starter";
+    for (const ws of workspaces) {
+      const plan = (ws?.plan || "").toLowerCase();
+      if (plan === "agency") return "agency";
+      if (plan === "business") tier = "business";
+      if (plan === "pro" && tier !== "business") tier = "pro";
+    }
+    return tier;
+  };
+
+  const planTier = getPlanTier(existingWorkspaces);
+  const trialDaysValue = Number(user.user_metadata?.trial_days);
+  const trialPlanValue = (user.user_metadata as any)?.trial_plan as 'pro' | 'business' | undefined;
+  const isTrialInvite = [15, 30, 60].includes(trialDaysValue);
+  const selectedTrialPlan = trialPlanValue && ['pro', 'business'].includes(trialPlanValue) ? trialPlanValue : 'pro';
+  const effectivePlanTier = isTrialInvite ? selectedTrialPlan : planTier;
+  const insertPlan = isTrialInvite ? selectedTrialPlan : 'pro';
+
+  if (!hasAgencyAccount && effectivePlanTier !== "agency") {
+    if (isPersonalName && personalWorkspaces.length >= 1) {
+      return { error: "Você já tem um workspace pessoal." };
+    }
+
+    if (effectivePlanTier === "starter" && !isPersonalName) {
+      return { error: "Plano Pessoal permite apenas um workspace pessoal." };
+    }
+
+    if ((effectivePlanTier === "pro" || effectivePlanTier === "business") && isPersonalName && personalWorkspaces.length >= 1) {
+      return { error: "Seu plano permite apenas 1 workspace pessoal." };
+    }
+
+    if ((effectivePlanTier === "pro" || effectivePlanTier === "business") && !isPersonalName && professionalWorkspaces.length >= 1) {
+      return { error: "Seu plano permite apenas 1 workspace profissional." };
+    }
+  }
+
+  const shouldApplyTrialDays = existingWorkspaces.length === 0;
+
   // 3. Gerar Magic Code (#START-XXXX) e Slug
   const randomCode = Math.floor(1000 + Math.random() * 9000)
   const magicCode = `#START-${randomCode}`
@@ -37,7 +112,11 @@ export async function createWorkspace(formData: FormData) {
     + '-' + randomCode // Sufixo para unicidade
 
   // 4. Insert (Supabase)
-  // Inserir Workspace
+  // Inserir Workspace com Trial
+  const trialDaysValueSafe = shouldApplyTrialDays && isTrialInvite ? trialDaysValue : null;
+  const trialDays = trialDaysValueSafe ? trialDaysValueSafe : 14;
+  const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+  
   const { data: workspace, error: workspaceError } = await supabase
     .from('workspaces')
     .insert({
@@ -45,6 +124,10 @@ export async function createWorkspace(formData: FormData) {
       owner_id: user.id,
       magic_code: magicCode,
       slug,
+      plan: 'pro', // Trial padrão: Pro
+      subscription_status: 'trialing', // Status de trial
+      trial_ends_at: trialEndsAt, // 14 dias no futuro
+      member_limit: insertPlan === 'business' ? 15 : 5, // Limite baseado no plano durante trial
       // segment: segment 
     })
     .select()
@@ -76,14 +159,25 @@ export async function createWorkspace(formData: FormData) {
     // Não retornamos erro aqui para não travar o fluxo, já que o workspace foi criado
   }
 
+  // Limpar cache para que o novo workspace apareça imediatamente apÇüs o redirect
+  try {
+    await supabase.auth.updateUser({ data: { trial_days: null, trial_plan: null } });
+  } catch (error) {
+    console.error('Erro ao limpar trial_days do usuario:', error);
+  }
+
+  await clearUserWorkspacesCache(user.id);
+
   // Revalidar o layout principal para atualizar a lista de workspaces
   revalidatePath('/', 'layout')
+  revalidatePath('/home');
+  revalidatePath(`/${workspace.slug}/home`);
 
   // 5. Retorno
   return {
     success: true,
     workspaceId: workspace.id,
+    workspaceSlug: workspace.slug,
     magicCode,
   }
 }
-
