@@ -339,6 +339,7 @@ export function DayColumn({
           status: "todo" as any,
           is_personal: isPersonalContext,
           origin_context: originContext,
+          assignee_id: "current",
           recurrence_type: currentRecurrenceType || undefined,
           recurrence_days: Array.isArray(currentRecurrenceDays) && currentRecurrenceDays.length > 0 ? currentRecurrenceDays : undefined,
         };
